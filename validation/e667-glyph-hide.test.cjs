@@ -30,10 +30,11 @@ test('DLL: every covered path asks the matcher only while a line is pushed, and 
  assert.match(c,/CloseHandle\(p\); Command\("OFF"\);/,'HookBridge gone: nothing stays hidden');
  for(const fn of ['HExtTextOutW','HExtTextOutA','HTextOutW','HTextOutA'])assert.match(c,new RegExp('BOOL WINAPI '+fn+'\\([^)]*\\) \\{[^\\n]*\\n[^\\n]*\\n if \\(HideOn && s'),fn);
  assert.match(c,/bool hide = HideOn && c && c < 0x10000 && HideGlyph\(/,'GetGlyphOutlineW');
- assert.match(c,/DWORD r = OGetGlyphOutlineW\(dc, c, f, gm, n, b, m\);\s*if \(hide && r != GDI_ERROR && b && n\) BlankGlyph\(f, b, r < n \? r : n\);\s*return r;/,'original call first: metrics and size unchanged, only pixels blanked');
+ assert.match(c,/DWORD r = OGetGlyphOutlineW\(dc, c, f, gm, n, b, m\);\s*if \(hide && r != GDI_ERROR\) r = ServeGlyph\(dc, f, gm, b, n, r, sv, seq, ch\);\s*return r;/,'original call first: metrics and size unchanged, only pixels changed');
+ assert.match(c,/if \(!DotMode \|\| !gm\) \{ if \(b && n\) BlankGlyph\(f, b, r < n \? r : n\); return r; \}/,'MODE blank (default): pixels blanked as in version 2');
  assert.match(c,/if \(\(o & ETO_OPAQUE\) && r\) OExtTextOutW\(dc, x, y, ETO_OPAQUE/,'opaque background kept');
  assert.match(c,/TA_UPDATECP/,'current position kept');
- assert.match(c,/HideText\(std::wstring\(s, len\), face, "gdip"\)\) return 0;/,'GdipDrawString');
+ assert.match(c,/HideText\(std::wstring\(s, len\), face, "gdip", &sv, &seq\)\) \{ if \(DotMode\) GdipDots\([^;]*;\s*return 0; \}/,'GdipDrawString');
  assert.match(c,/flags & 1/,'GdipDrawDriverString only with characters (CmapLookup)');
  assert.match(c,/vt\[27\], \(void \*\)&HDrawText/);assert.match(c,/vt\[28\], \(void \*\)&HDrawTextLayout/);
  assert.match(c,/vt\[18\], \(void \*\)&HCreateTextLayout/);
