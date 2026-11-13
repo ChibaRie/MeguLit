@@ -11,7 +11,8 @@ test('learner is API-independent, generic and hides only after learning, inside 
  assert.doesNotMatch(g,/#include <windows\.h>|d3d9/i,'no Windows / Direct3D in the decision core');
  assert.doesNotMatch(g,/kirikiri|krkr|siglus|bgi|yuris|bruns|unity|renpy|leaf|clannad|dustmania/i,'no engine or game names');
  assert.match(g,/armedUntil = now \+ 60000/,'a line stays armed 60 s after the last push');
- assert.match(g,/if \(learned && armed && !readOnly && rt == areaRt && atlases\.count/,'hides only learned atlases on the learned target');
+ assert.match(g,/bool sameAtlas = rt == areaRt && atlases\.count\(AtlasKey\(rt, tw, th\)\), sheet = rtW == areaW && rtH == areaH && std::fabs\(\(x\.y1 - x\.y0\) - glyphH\) <= glyphH \* 0\.25f;/,'learned atlas, or a per-line glyph sheet of the learned glyph height');
+ assert.match(g,/if \(learned && armed && !readOnly && \(sameAtlas \|\| sheet\)\)/,'hides only after learning, while armed');
  assert.match(g,/cx >= area\.x0 && cx <= area\.x1 && cy >= area\.y0 && cy <= area\.y1/,'only inside the text area');
  assert.match(g,/a\.size\(\) == n \? &a : b\.size\(\) == n \? &b : nullptr/,'learns only when the glyph count equals the characters');
  assert.match(g,/ToMe_CHARS engine=gpu line=/,'reports rectangles in the text-architecture record');});
@@ -23,7 +24,11 @@ test('DLL never writes game data: dropped quads are draws not made, buffers are 
  assert.match(c,/SafeCopy\(&s\.data\[p\.off\], p\.ptr, size\)/,'vertex / index data copied into a shadow at Unlock');
  assert.doesNotMatch(c,/memcpy\(p\.ptr|WriteProcessMemory|VirtualProtect/,'nothing written into game buffers or code tables');
  assert.match(c,/CloseHandle\(p\); \{ Guard g; Learner\.Off\(\); \}/,'HookBridge gone: nothing stays hidden');
- assert.match(c,/MeguLitGpu version=1/,'version marker');});
+ assert.match(c,/MeguLitGpu version=1/,'version marker');
+ const d=read('native/gpuhide/GpuHide11.h');
+ assert.match(d,/D3D11CreateDeviceAndSwapChain/);assert.match(d,/c->IAGetInputLayout\(&l\)/,'pipeline state read with the context getters (state set before the DLL arrived)');
+ assert.match(d,/L\.uv = \(int\)Ctx\.vbStride - 8/,'input layout made before the DLL arrived is guessed');
+ assert.doesNotMatch(read('native/gpuhide/build.cmd'),/d3d11\.lib/,'the DLL never imports d3d11.dll (a D3D9 game must not load it)');});
 
 test('HookBridge loads the layer, arms it for glyph-fallback streams and treats a hit like the GDI hide',()=>{
  const b=read('native/HookBridge.cs'),l=read('native/GpuHideLayer.cs'),i=read('native/HookInjector.cs'),s=read('native/Build-HookBridge.ps1');
@@ -43,6 +48,6 @@ test('built, self-tested and shipped like every native binary',()=>{
  assert.equal(nb.marker,'MeguLitGpu version=1');assert.equal(nb.ci,true);assert.deepStrictEqual(nb.selftests,['native/gpuhide/selftest/run.cmd']);
  const r=read('Release.ps1');assert.match(r,/'native\/MeguLitGpu32\.dll','native\/MeguLitGpu64\.dll'/);assert.match(r,/'native\/MeguLitGpu64\.dll','MeguLitGpu version=1'/);
  const h=read('native/gpuhide/selftest/host.cpp');
- for(const m of ['d3d9-up','d3d9-vb','d3d9-ivb','gdi'])assert.ok(read('native/gpuhide/selftest/run.cmd').includes(m),'self-test mode '+m);
+ for(const m of ['d3d9-up','d3d9-vb','d3d9-ivb','d3d11','gdi'])assert.ok(read('native/gpuhide/selftest/run.cmd').includes(m),'self-test mode '+m);
  assert.match(h,/dialogue glyphs %s \(%d\/8 white\), name kept \(%d\/3\), scene kept/,'pixels: line gone, name and scene kept');
  assert.ok(read('docs/hide-layers.md').includes('GpuArm(string streamId, string line)'),'interface documented');});

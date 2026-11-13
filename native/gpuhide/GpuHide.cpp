@@ -15,7 +15,7 @@
 //    inside the learned text area while a line is armed (60 s after the last LINE, until OFF). Menus, names and
 //    anything outside the text area are never touched. Unsure (no match yet, shaders, unknown vertex layout) = no hide.
 //  - Reports over \\.\pipe\MeguLitGpu-<pid> (UTF-8 lines):
-//      ToMe_GPUHIDE ready version=1 apis=d3d9,gdi
+//      ToMe_GPUHIDE ready version=1 apis=d3d9,d3d11,gdi
 //      ToMe_GPUHIDE learn seq=N area=x,y,w,h atlas=WxH glyphs=K chars=C        (text area learned, read-only)
 //      ToMe_GPUHIDE hit seq=N quads=Q chars=C                                   (first hidden draw of a line)
 //      ToMe_CHARS engine=gpu line=N hidden=0|1 sw=W sh=H vx=0 vy=0 vw=W vh=H n=K rects=x,y,w,h;... text=<line>
@@ -356,12 +356,14 @@ static int Install(HMODULE d3d9) {
  return devices;
 }
 
+#include "GpuHide11.h"
+
 // --------------------------------------------------------------------------------------------------------------- pipes
 static DWORD WINAPI Sender(void *) {
  wchar_t name[64]; swprintf_s(name, L"\\\\.\\pipe\\MeguLitGpu-%lu", GetCurrentProcessId()); HANDLE pipe = INVALID_HANDLE_VALUE;
  while (!Quit) {
   WaitForSingleObject(OutEvent, 1000);
-  if (pipe == INVALID_HANDLE_VALUE) { pipe = CreateFileW(name, GENERIC_WRITE, 0, NULL, OPEN_EXISTING, 0, NULL); if (pipe == INVALID_HANDLE_VALUE) continue; Send("ToMe_GPUHIDE ready version=1 apis=d3d9,gdi"); }
+  if (pipe == INVALID_HANDLE_VALUE) { pipe = CreateFileW(name, GENERIC_WRITE, 0, NULL, OPEN_EXISTING, 0, NULL); if (pipe == INVALID_HANDLE_VALUE) continue; Send("ToMe_GPUHIDE ready version=1 apis=d3d9,d3d11,gdi"); }
   for (;;) { std::string s; { Guard g; if (Outbox.empty()) break; s = Outbox.front(); Outbox.pop_front(); } s += "\n"; DWORD done; if (!WriteFile(pipe, s.data(), (DWORD)s.size(), &done, NULL)) { CloseHandle(pipe); pipe = INVALID_HANDLE_VALUE; break; } }
  }
  return 0;
@@ -389,9 +391,14 @@ static DWORD WINAPI Start(void *module) {
  Learner.emit = Emit; Learner.log = Diag ? Log : NULL;
  CreateThread(NULL, 0, Sender, NULL, 0, NULL); CreateThread(NULL, 0, Control, NULL, 0, NULL);
  MH_Initialize(); int gdi = InstallGdi(); CreateThread(NULL, 0, GdiTicker, NULL, 0, NULL); Log("installed gdi hooks=%d", gdi); Send("ToMe_GPUHIDE status gdi hooked=" + std::to_string(gdi));
- // Wait for the game's d3d9.dll (games often load it after their first window), then hook it once.
- for (int i = 0; i < 600 && !Quit; i++) { HMODULE d = GetModuleHandleW(L"d3d9.dll"); if (d) { int n = Install(d); n = n && HookCount >= 15 ? n : 0; Log("installed d3d9 devices=%d hooks=%d", n, HookCount); Send(std::string(n ? "ToMe_GPUHIDE status d3d9 hooked gdi=" : "ToMe_GPUHIDE status d3d9 no device gdi=") + std::to_string(gdi)); return 0; } Sleep(500); }
- Send("ToMe_GPUHIDE status no d3d9 gdi=" + std::to_string(gdi)); return 0;
+ // Wait for the game's d3d9.dll / d3d11.dll (games often load them after their first window), then hook each once.
+ bool d9 = false, d11 = false;
+ for (int i = 0; i < 600 && !Quit && !(d9 && d11); i++) {
+  HMODULE d = GetModuleHandleW(L"d3d9.dll"); if (d && !d9) { d9 = true; int n = Install(d); n = n && HookCount >= 15 ? n : 0; Log("installed d3d9 devices=%d hooks=%d", n, HookCount); Send(std::string(n ? "ToMe_GPUHIDE status d3d9 hooked gdi=" : "ToMe_GPUHIDE status d3d9 no device gdi=") + std::to_string(gdi)); }
+  HMODULE e = GetModuleHandleW(L"d3d11.dll"); if (e && !d11) { d11 = true; int before = HookCount, n = Install11(e); Log("installed d3d11 devices=%d hooks=%d", n, HookCount - before); Send(n && HookCount - before >= 7 ? "ToMe_GPUHIDE status d3d11 hooked" : "ToMe_GPUHIDE status d3d11 no device"); }
+  Sleep(500); }
+ if (!d9 && !d11) Send("ToMe_GPUHIDE status no d3d gdi=" + std::to_string(gdi));
+ return 0;
 }
 BOOL WINAPI DllMain(HINSTANCE h, DWORD reason, void *) {
  if (reason == DLL_PROCESS_ATTACH) {

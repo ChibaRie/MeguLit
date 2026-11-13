@@ -3,8 +3,8 @@
 // Input: textured quads per draw call (screen rect + texture-coordinate rect, the texture's size, the render target).
 // It learns which quads are the dialogue's glyphs and where the text area is, and decides which quads to leave out.
 //
-// Glyph-like quad: 4..160 px on screen each way, aspect 1:5..5:1, sampled from a sub-rectangle of at most 1/24 of a
-// texture of at least 64x64 (an atlas), drawn 1:1 to 1:6 (no huge magnification of a tiny sprite).
+// Glyph-like quad: 4..160 px on screen each way, aspect 1:5..5:1, sampled from a cell of a sheet (at most half of a
+// texture of at least 32x32; at most 1/24 of a texture bigger than 256x256), drawn at 0.4..6x its texel size.
 // Per line (LINE <text>, n = non-blank characters):
 //  - groups = (render target, atlas size). Two counts per group: (A) distinct glyph positions drawn in the last frame,
 //    (B) distinct glyph keys (position + atlas cell) first drawn since the line started (the previous line's glyphs
@@ -27,10 +27,11 @@
 struct Quad { float x0, y0, x1, y1, u0, v0, u1, v1; unsigned first; };
 
 static inline bool GlyphLike(const Quad &q, unsigned tw, unsigned th) {
- if (tw < 64 || th < 64) return false;
+ if (tw < 32 || th < 32) return false;
  float w = q.x1 - q.x0, h = q.y1 - q.y0; if (w < 4 || h < 4 || w > 160 || h > 160) return false; if (w > h * 5 || h > w * 5) return false;
  float tu = (q.u1 - q.u0) * tw, tv = (q.v1 - q.v0) * th; if (tu < 3 || tv < 3) return false;
- if ((q.u1 - q.u0) * (q.v1 - q.v0) > 1.0f / 24) return false;
+ // a cell of a sheet: at most half the texture (a whole-texture sprite is never a glyph); big sheets need small cells
+ float area = (q.u1 - q.u0) * (q.v1 - q.v0); if (area > 0.5f || (tw * th > 256 * 256 && area > 1.0f / 24)) return false;
  float scale = w / tu; if (scale < 0.4f || scale > 6) return false;
  return true;
 }
@@ -45,7 +46,7 @@ struct GlyphLearner {
  // line
  std::wstring text; unsigned n = 0, seq = 0, lineAt = 0, prevLineAt = 0, armedUntil = 0; bool reported = false, hitSent = false, hiddenSent = false; unsigned hiddenQuads = 0;
  // learned
- bool learned = false; void *areaRt = nullptr; Rect area{}; std::set<long long> atlases; unsigned learnedSeq = 0; float glyphH = 0;
+ bool learned = false; void *areaRt = nullptr; unsigned areaW = 0, areaH = 0; Rect area{}; std::set<long long> atlases; unsigned learnedSeq = 0; float glyphH = 0;
  std::map<long long, Group> groups; unsigned frameNo = 0, bbW = 0, bbH = 0;
  std::map<void *, std::pair<Rect, Rect>> rtMap; // rt texture -> (uv rect, screen rect)
 
@@ -67,7 +68,9 @@ struct GlyphLearner {
   if (b.u1 - b.u0 < 0.05f || b.v1 - b.v0 < 0.05f) return; rtMap[tex] = std::make_pair(Rect{ b.u0, b.v0, b.u1, b.v1 }, Rect{ b.x0, b.y0, b.x1, b.y1 });
  }
  bool ToScreen(void *rt, unsigned rtW, unsigned rtH, Rect &r) const {
-  if (!rt) return true; auto it = rtMap.find(rt); if (it == rtMap.end() || !rtW || !rtH) return false; const Rect &uv = it->second.first, &sc = it->second.second;
+  if (!rt) return true;
+  if (rtW && rtW == bbW && rtH == bbH) return true; // a full-screen composition target: same pixels as the back buffer
+  auto it = rtMap.find(rt); if (it == rtMap.end() || !rtW || !rtH) return false; const Rect &uv = it->second.first, &sc = it->second.second;
   auto mx = [&](float x) { return sc.x0 + (x / rtW - uv.x0) / (uv.x1 - uv.x0) * (sc.x1 - sc.x0); }; auto my = [&](float y) { return sc.y0 + (y / rtH - uv.y0) / (uv.y1 - uv.y0) * (sc.y1 - sc.y0); };
   r = Rect{ mx(r.x0), my(r.y0), mx(r.x1), my(r.y1) }; return true;
  }
@@ -84,7 +87,10 @@ struct GlyphLearner {
    if (g->frame.size() < 4096) g->frame.push_back(r);
    long long k = ((long long)(int)(x.x0 * 0.5f) << 44) ^ ((long long)(int)(x.y0 * 0.5f) << 30) ^ ((long long)(int)(x.u0 * 4096) << 15) ^ (long long)(int)(x.v0 * 4096);
    auto it = g->keys.find(k); if (it == g->keys.end()) { if (g->keys.size() > 20000) g->keys.clear(); g->keys[k] = Seen{ r, now, frameNo }; } else it->second.lastFrame = frameNo;
-   if (learned && armed && !readOnly && rt == areaRt && atlases.count(AtlasKey(rt, tw, th))) {
+   // learned atlas on the learned target; or, for engines that build a small glyph sheet per line (a new texture every
+   // line), any glyph quad of the learned glyph height on a target of the learned size (effect buffers drawn twice)
+   bool sameAtlas = rt == areaRt && atlases.count(AtlasKey(rt, tw, th)), sheet = rtW == areaW && rtH == areaH && std::fabs((x.y1 - x.y0) - glyphH) <= glyphH * 0.25f;
+   if (learned && armed && !readOnly && (sameAtlas || sheet)) {
     float cx = (x.x0 + x.x1) / 2, cy = (x.y0 + x.y1) / 2;
     if (cx >= area.x0 && cx <= area.x1 && cy >= area.y0 && cy <= area.y1) { drop.push_back((int)i); hiddenQuads++; }
    }
@@ -133,7 +139,7 @@ struct GlyphLearner {
   float h = 0; Rect box{ 1e30f, 1e30f, -1e30f, -1e30f }; for (auto &r : cs) { h += r.y1 - r.y0; box.x0 = (std::min)(box.x0, r.x0); box.y0 = (std::min)(box.y0, r.y0); box.x1 = (std::max)(box.x1, r.x1); box.y1 = (std::max)(box.y1, r.y1); } h /= cs.size();
   char b[256];
   if (!learned) {
-   learned = true; areaRt = g.rt; glyphH = h; learnedSeq = seq; area = Rect{ box.x0 - h, box.y0 - h, box.x1 + h * 8, box.y1 + h * 2 };
+   learned = true; areaRt = g.rt; areaW = g.rtW; areaH = g.rtH; glyphH = h; learnedSeq = seq; area = Rect{ box.x0 - h, box.y0 - h, box.x1 + h * 8, box.y1 + h * 2 };
    // atlases that drew inside the area during this line (outline / shadow sheets too, at least 3 glyphs)
    for (auto &kv : groups) { if (kv.second.rt != g.rt) continue; int in = 0; for (auto &r : kv.second.frame) { float cx = (r.x0 + r.x1) / 2, cy = (r.y0 + r.y1) / 2; if (cx >= area.x0 && cx <= area.x1 && cy >= area.y0 && cy <= area.y1) in++; } if (in >= 3 || &kv.second == &g) atlases.insert(AtlasKey(kv.second.rt, kv.second.tw, kv.second.th)); }
    snprintf(b, sizeof b, "ToMe_GPUHIDE learn seq=%u area=%.0f,%.0f,%.0f,%.0f atlas=%ux%u glyphs=%u chars=%u atlases=%u", seq, area.x0, area.y0, area.x1 - area.x0, area.y1 - area.y0, g.tw, g.th, (unsigned)cs.size(), n, (unsigned)atlases.size()); if (emit) emit(b);
