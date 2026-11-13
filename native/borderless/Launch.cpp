@@ -7,8 +7,11 @@
 #include <cstdio>
 #include <string>
 
+// Build marker shared with the DLL (tools/native-stale.cjs checks every output of the borderless entry for it).
+static const char Marker[] = "MeguLitBorderless ready mode=launcher";
+
 int wmain(int argc, wchar_t **argv) {
-  if (argc < 3) { std::fwprintf(stderr, L"MeguLitLaunch <dll> <game.exe> [args...]\n"); return 2; }
+  if (argc < 3) { std::fprintf(stderr, "%s\nMeguLitLaunch <dll> <game.exe> [args...]\n", Marker); return 2; }
   wchar_t dll[MAX_PATH]; if (!GetFullPathNameW(argv[1], MAX_PATH, dll, nullptr) || GetFileAttributesW(dll) == INVALID_FILE_ATTRIBUTES) { std::fwprintf(stderr, L"no dll\n"); return 2; }
   std::wstring cmd = L"\"" + std::wstring(argv[2]) + L"\"";
   for (int i = 3; i < argc; ++i) cmd += L" \"" + std::wstring(argv[i]) + L"\"";
