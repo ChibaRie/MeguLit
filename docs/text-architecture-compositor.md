@@ -60,9 +60,16 @@ GDI blit); a live 800×600 DirectDraw game delivered 58 fps through the same pat
   each checked with a full-frame colour scan — it wins when equal-sized dots of it line up at one pitch. Colours that
   give > 200 dot-shaped blobs (dither, noise) are textures, not text.
 - **Tracking**, every frame, whole frame (≈ 0.6 ms colour scan at 1080p, SSE2): blobs of the text colour → dots;
-  1-px-thin ones only next to a full dot; `HardEdged` rejects antialiased glyph fragments (name labels, menus, an engine
-  still drawing some text itself); `Static` drops dot-like things already present, unchanged, in the frame from before
+  1-px-thin ones only next to a full dot; `Isolated` rejects fragments of real glyphs (nothing else in the text colour
+  within 7 px — a dakuten or a stroke tip always has its glyph next to it; works also when the game scales its frame and
+  the dot loses its hard edge, as Siglus does); a lone dot or pair away from the line's cluster (click-wait animation)
+  is dropped; `Static` drops dot-like things already present, unchanged, in the frame from before
   the line message (a UI "・" or "…" in the text colour) unless they continue the line's own rows.
+- **Mapping with ① reports**: when ① reported which characters became dots (`glyphs`, k d/c), dot *k* in reading
+  order is character *k* of the reported span, extended over glyphs the game took from its cache (a dot with no new
+  report — ① doc) inside, after, then before the span. This also copes with streams that carry more than the game
+  shows (Siglus: variable names before the line). Complete = the span is covered; more dots than can be placed =
+  mismatch → undot.
 - **Reading order**: rows clustered at 0.75 pitch (black-box tops vary by up to ~0.7 em inside a row: 。、ー sit low),
   left→right; vertical text: columns right→left, top→bottom. Dot *i* in order = character *i* of ①'s blank-stripped
   text.
@@ -162,9 +169,15 @@ the device / swap chain / cooperative-level window. `MEGULIT_BORDERLESS_LOG=<fil
   real game frame with the dialogue rows cleaned and spec-1 dots where the game's glyphs were (ダストマニア・グロテスク
   layout: 28 px cells, 24 per row), MeguLitCompositor captures it with WGC and draws. 7 lines / 166 dots incl. a
   shadowed and a shaking line: **7/7 lines, 100 % dots** in overlay, scale and 1080p runs.
-- Live, ダストマニア・グロテスク (BRUNS, DirectDraw, 800×600), portable MeguLit with ①'s worktree build: capture works at
-  58 fps, but ① did not dot this game yet (the game kept drawing its glyphs; reported to ①), so the live per-game dot
-  rate is still open. Re-run: `H:\MeguLit-Work\capture-comp\live.ps1` + `drive.cjs`.
+- **Live, CLANNAD HD (SiglusEngine, 1243×933 client, on screen, muted)** with ①'s HookBridge + MeguLitFont v3 (dot mode,
+  stream EmbedSiglus), compositor fed through `services/capture-compositor.cjs` (`H:\MeguLit-Work\capture-comp\live-dots.cjs`):
+  17 dialogue lines from a new game, **16 complete (dots found, erased, MeguLit's text drawn on the game's cells), 1
+  handed back** (mismatch → undot, nothing drawn wrong). The game presents at ~320 fps and the compositor keeps up:
+  2.9 ms per frame (median), 1.9 ms added latency (p95 3.9 ms), tracking 1.7 ms. Siglus scales its frame, so the dots
+  arrive blurred (core 2×2 + rim) — handled by `Isolated`. Caveat from ①: glyphs Siglus rasterised before dot mode
+  stay real for the whole process (its glyph cache); such lines are handed back.
+- Live, ダストマニア・グロテスク (BRUNS, DirectDraw): capture works (58 fps), but its dialogue comes from a bitmap font
+  (no TextOut / GetGlyphOutline), so ① cannot dot it — the generic layer has nothing to replace there.
 - Off-screen testing note: WGC delivers **no frames for a window entirely outside the desktop**, and a normal window
   keeps no content for its off-screen part. The test window is therefore a per-pixel-alpha layered window with 1 px on
   the screen edge at alpha 0 (invisible, fully captured). A constant low alpha does not work (DWM stores layered windows

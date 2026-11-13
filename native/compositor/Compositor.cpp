@@ -80,6 +80,10 @@ struct LineMsg {
   int id = 0; std::u32string text; std::vector<Ruby> ruby; std::wstring tl; std::vector<int> dotChar;
   int vertical = -1; float em = 0; bool colorKnown = false; Rgb color; std::vector<Box> cells;
   std::vector<CharMetric> metric; // by dot index (= index into ①'s blank-stripped text)
+  // Characters ① reported as drawn as dots in this line (k d/c), sorted. When there are any, dot k in reading order is
+  // character rec[k]: a stream may carry more than the game shows (Siglus: variable names before the line), and a glyph
+  // cache keeps some characters real, so "dot i = character i" only holds when nothing was reported.
+  std::vector<int> rec;
   bool undot = false;        // fallback chosen: the game draws this line itself, MeguLit neither erases nor draws it
   LineStatus last = LineStatus::Waiting; double lastChange = 0; int lastFound = -1; bool complete = false;
   std::vector<Box> demoCells; // --demo: the compositor paints these dots itself (stand-in for part ①)
@@ -196,7 +200,7 @@ public:
       cur.metric.assign(cur.dotChar.size(), {});
       MergeMetrics(cur, j["glyphs"]);
       cur.lastChange = NowMs();
-      LineSpec s; s.id = cur.id; s.expected = j.has("expected") ? int(j["expected"].num()) : int(cur.dotChar.size()); s.vertical = cur.vertical; s.em = cur.em; s.colorKnown = cur.colorKnown; s.color = cur.color; if (!opt.demo) s.cells = cur.cells;
+      LineSpec s; s.id = cur.id; s.expected = !cur.rec.empty() ? -1 : j.has("expected") ? int(j["expected"].num()) : int(cur.dotChar.size()); s.vertical = cur.vertical; s.em = cur.em; s.colorKnown = cur.colorKnown; s.color = cur.color; if (!opt.demo) s.cells = cur.cells;
       tracker.BeginLine(s); choicesOn = false; layouts.clear();
     } else if (t == "annotate") { // translation / furigana that arrive after the line: {"t":"annotate","id":7,"tl":"…","ruby":[[s,e,"よみ"],...]}
       const int id = int(j["id"].num());
@@ -206,7 +210,9 @@ public:
         if (j.has("ruby")) { l->ruby.clear(); for (size_t i = 0; i < j["ruby"].size(); ++i) { const Json &r = j["ruby"][i]; l->ruby.push_back({ int(r[0].num()), int(r[1].num()), Wide(r[2].str()) }); } }
       }
     } else if (t == "glyphs") { // later ① dot records of a line: {"t":"glyphs","id":7,"glyphs":[{"i":0,"h":28,"b":24,"a":28,"x":1,"y":2},...]}
-      const int id = int(j["id"].num()); if (cur.id == id) MergeMetrics(cur, j["glyphs"]); else if (kept.count(id)) MergeMetrics(kept[id], j["glyphs"]);
+      const int id = int(j["id"].num());
+      if (cur.id == id) { MergeMetrics(cur, j["glyphs"]); if (!cur.rec.empty()) tracker.SetExpected(-1); } // counts judged here (Targets)
+      else if (kept.count(id)) MergeMetrics(kept[id], j["glyphs"]);
     } else if (t == "choices") {
       choices.clear(); std::vector<int> counts;
       for (size_t i = 0; i < j["items"].size(); ++i) { ChoiceText c; c.text = U32(Wide(j["items"][i]["text"].str())); c.tl = Wide(j["items"][i]["tl"].str()); choices.push_back(c); counts.push_back(int(DotCharIndex(c.text).size())); }
@@ -556,16 +562,23 @@ private:
     }
     const TrackResult &r = lastResult;
     const int found = int(r.dots.size());
-    if (r.status != cur.last || found != cur.lastFound) {
-      cur.last = r.status; cur.lastFound = found; cur.lastChange = NowMs();
-      Emit("{\"e\":\"line\",\"id\":" + std::to_string(cur.id) + ",\"status\":\"" + StatusName(r.status) + "\",\"found\":" + std::to_string(found) + ",\"expected\":" + std::to_string(cur.dotChar.size()) + "}");
+    LineStatus st = r.status;
+    if (!cur.rec.empty() && found > 0 && st != LineStatus::Fading) {
+      // With ① reports the tracker does not know the count: complete once the reported span is covered, mismatch when
+      // the dots cannot all be placed on characters of the line.
+      st = found > int(Targets(cur, found).size()) ? LineStatus::Mismatch : found >= Expected(cur) ? LineStatus::Complete : LineStatus::Revealing;
+      lastResult.status = st;
     }
-    if (r.status == LineStatus::Complete) cur.complete = true;
+    if (st != cur.last || found != cur.lastFound) {
+      cur.last = st; cur.lastFound = found; cur.lastChange = NowMs();
+      Emit("{\"e\":\"line\",\"id\":" + std::to_string(cur.id) + ",\"status\":\"" + StatusName(st) + "\",\"found\":" + std::to_string(found) + ",\"expected\":" + std::to_string(Expected(cur)) + "}");
+    }
+    if (st == LineStatus::Complete) cur.complete = true;
     // Fallback (never double or misplace text): more dots than characters, or a reveal stuck short of the full line
     // for 3 s → hand the line back to the game (the hook redraws real glyphs) and stop erasing/drawing it.
-    if (!cur.undot && (r.status == LineStatus::Mismatch || (r.status == LineStatus::Revealing && NowMs() - cur.lastChange > 3000 && !opt.demo))) {
+    if (!cur.undot && (st == LineStatus::Mismatch || (st == LineStatus::Revealing && NowMs() - cur.lastChange > 3000 && !opt.demo))) {
       cur.undot = true; tracker.DropCurrent(); lastResult.dots.clear();
-      Emit("{\"e\":\"undot\",\"id\":" + std::to_string(cur.id) + ",\"reason\":\"" + (r.status == LineStatus::Mismatch ? "too-many-dots" : "reveal-stalled") + "\",\"found\":" + std::to_string(found) + "}");
+      Emit("{\"e\":\"undot\",\"id\":" + std::to_string(cur.id) + ",\"reason\":\"" + (st == LineStatus::Mismatch ? "too-many-dots" : "reveal-stalled") + "\",\"found\":" + std::to_string(found) + "}");
     }
     if (cur.undot) lastResult.dots.clear();
   }
@@ -650,8 +663,12 @@ private:
     const float emSrc = l.em > 0 ? l.em : std::max(8.f, lastResult.pitch > 0 ? lastResult.pitch : 24.f);
     const float em = emSrc * Sy();
     Box area = dots[0].box; for (const Dot &d : dots) { area.x0 = std::min(area.x0, d.box.x0); area.y0 = std::min(area.y0, d.box.y0); area.x1 = std::max(area.x1, d.box.x1); area.y1 = std::max(area.y1, d.box.y1); }
-    const int n = std::min<int>(int(dots.size()), int(l.dotChar.size()));
-    if (style.mode == 2 && !l.tl.empty()) { DrawTranslationOnly(l, dots, emSrc, vertical); return; }
+    const std::vector<int> tg = Targets(l, int(dots.size()));
+    const int n = std::min<int>(int(dots.size()), int(tg.size()));
+    // Translation only replaces the whole line: only when every character of it is a dot (reported characters without
+    // gaps; a glyph cache leaves some real, then the bilingual drawing is used for this line).
+    const bool whole = l.rec.empty() || l.rec.back() - l.rec.front() + 1 == int(l.rec.size());
+    if (style.mode == 2 && !l.tl.empty() && whole) { DrawTranslationOnly(l, dots, emSrc, vertical); return; }
     // Cells. With ①'s metrics: cell top-left = dot top-left − (x, y), baseline = cell top + ascent, exactly the game's.
     // Without: the dot is the black-box top-left; the row's highest dot ≈ cell top + 0.06 em, the cell starts ≈ 0.06 em
     // left of the dot.
@@ -664,8 +681,9 @@ private:
     }
     std::vector<D2D1_POINT_2F> cellTop(n), cellEnd(n); // per glyph, output px: top-left and right/bottom of the cell
     for (int i = 0; i < n; ++i) {
-      const Dot &d = dots[i]; const char32_t ch = l.text[l.dotChar[i]];
-      const CharMetric m = i < int(l.metric.size()) ? l.metric[i] : CharMetric{};
+      const Dot &d = dots[i]; const char32_t ch = l.text[tg[i]];
+      const int mi = l.rec.empty() ? i : tg[i];
+      const CharMetric m = mi < int(l.metric.size()) ? l.metric[mi] : CharMetric{};
       float cellX, cellY, adv, base, size = em;
       if (m.known && !vertical) {
         cellX = d.box.x0 - m.x; cellY = d.box.y0 - m.y; adv = m.a; base = m.b;
@@ -678,13 +696,14 @@ private:
       else { const D2D1_POINT_2F c = Map(cellX + emSrc / 2, cellY + emSrc / 2); at = { c.x - g.w / 2, c.y - g.h / 2 }; }
       Text(g.layout.get(), at, style.useGameColor ? d.color : style.jpColor, std::clamp(d.alpha, 0.f, 1.f));
       cellTop[i] = Map(cellX, cellY); cellEnd[i] = Map(cellX + adv, cellY + (m.known ? m.h : emSrc));
-      hits.push_back({ { LONG(client.left + cellX), LONG(client.top + cellY), LONG(client.left + cellX + adv), LONG(client.top + cellY + (m.known ? m.h : emSrc)) }, l.id, l.dotChar[i] });
+      hits.push_back({ { LONG(client.left + cellX), LONG(client.top + cellY), LONG(client.left + cellX + adv), LONG(client.top + cellY + (m.known ? m.h : emSrc)) }, l.id, tg[i] });
     }
     if (style.ruby) for (const Ruby &r : l.ruby) {
       // Shown once every base character of the span is on screen.
       int first = -1, last = -1;
-      for (int i = 0; i < n; ++i) { if (l.dotChar[i] >= r.start && l.dotChar[i] < r.end) { if (first < 0) first = i; last = i; } }
-      if (first < 0 || l.dotChar[last] < r.end - 1 || r.text.empty()) continue;
+      int inSpan = 0;
+      for (int i = 0; i < n; ++i) { if (tg[i] >= r.start && tg[i] < r.end) { if (first < 0) first = i; last = i; ++inSpan; } }
+      if (first < 0 || inSpan < r.end - r.start || r.text.empty()) continue; // every base character drawn by MeguLit
       const float rs = em * style.rubyScale;
       com_ptr<IDWriteTextLayout> rl; dw->CreateTextLayout(r.text.c_str(), UINT32(r.text.size()), Format(style.rubyFont, rs, vertical), 4096, 4096, rl.put());
       DWRITE_TEXT_METRICS m{}; rl->GetMetrics(&m);
@@ -716,7 +735,7 @@ private:
     const Dot &first = dots[0];
     float x0 = first.cx - emSrc / 2, y0 = first.cy - emSrc / 2;
     float right = float(page.x1), bottom = float(page.y1);
-    const int expected = int(l.dotChar.size());
+    const int expected = Expected(l);
     const float pitch = lastResult.pitch > 0 ? lastResult.pitch : emSrc;
     if (!vertical) { right = std::max(right, std::min(x0 + expected * pitch, float(srcW) - emSrc)); bottom = std::max(bottom, y0 + emSrc * 3); }
     else { x0 = first.cx + emSrc / 2; bottom = std::max(bottom, std::min(y0 + expected * pitch, float(srcH) - emSrc)); }
@@ -787,8 +806,20 @@ private:
       const Json &d = g[k]; const int i = int(d["i"].num(-1)); const std::string kind = d["k"].str();
       if (i < 0 || i >= int(l.metric.size()) || (!kind.empty() && kind != "d" && kind != "c")) continue;
       l.metric[i] = { true, float(d["h"].num()), float(d["b"].num()), float(d["a"].num()), float(d["x"].num()), float(d["y"].num()) };
+      if (!std::binary_search(l.rec.begin(), l.rec.end(), i)) l.rec.insert(std::upper_bound(l.rec.begin(), l.rec.end(), i), i);
     }
   }
+  // Dot k in reading order → character index. With ① reports: the reported span, plus characters whose glyph the game
+  // took from its cache (a dot with no new report, ① doc) — they fill gaps inside the span and, when there are more dots
+  // than that, extend it after its end, then before its start. Without reports: dot i = character i.
+  static std::vector<int> Targets(const LineMsg &l, int n) {
+    if (l.rec.empty()) return l.dotChar;
+    int a = l.rec.front(), b = l.rec.back(); const int len = int(l.text.size());
+    while (b - a + 1 < n && b + 1 < len) ++b;
+    while (b - a + 1 < n && a > 0) --a;
+    std::vector<int> t; for (int i = a; i <= b; ++i) t.push_back(i); return t;
+  }
+  int Expected(const LineMsg &l) const { return l.rec.empty() ? int(l.dotChar.size()) : l.rec.back() - l.rec.front() + 1; }
 
   void ApplyStyle(const Json &j) {
     const std::string m = j["mode"].str(); if (m == "bilingual") style.mode = 0; else if (m == "jp") style.mode = 1; else if (m == "translation") style.mode = 2;

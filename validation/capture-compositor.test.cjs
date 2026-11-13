@@ -19,7 +19,8 @@ test('dot finder is portable, generic and follows dot spec 1', () => {
   assert.match(s, /if \(w <= 3 && h <= 3 && w >= 1 && h >= 1\) return b\.area == w \* h;/, 'spec-1 dots: solid ≤3 px blocks, clipped ones included');
   assert.match(s, /inline bool IsDotless\(char32_t c\) \{ return c <= 0x20 \|\| c == 0x3000 \|\| c == 0x200B \|\| c == 0xFEFF; \}/, 'same blank set as ①');
   assert.match(s, /inline Box EraseBox\(/, 'shadow/outline copies of a dot are erased with it');
-  assert.match(s, /inline bool HardEdged\(/, 'antialiased glyph fragments are not dots');
+  assert.match(s, /inline bool Isolated\(/, 'fragments of real glyphs are not dots (also for engine-scaled, blurred dots)');
+  assert.match(s, /static void DropOutliers\(/, 'click-wait animations away from the line are not dots');
   assert.match(s, /bool Static\(const Dot &d\) const/, 'static UI in the text colour is not a dot');
   assert.match(s, /bool Continues\(const std::vector<Dot> &old, const Dot &f, float pk\) const/, 'ADV line on the old places vs NVL kept line');
   assert.match(s, /inline bool PatchInpaint\(/, 'dithered boxes keep their pattern');
@@ -34,6 +35,7 @@ test('compositor: Magpie capture, D2D on the same device, click-through window, 
   assert.match(c, /SetWindowsHookExW\(WH_MOUSE_LL, MouseLL/, 'only clicks on MeguLit glyph boxes are taken (look-up)');
   assert.match(c, /Fail\("capture"\)/, 'capture failure → fallback event, old overlay stays');
   assert.match(c, /"too-many-dots" : "reveal-stalled"/, 'a line that cannot be matched is handed back, never misdrawn');
+  assert.match(c, /static std::vector<int> Targets\(const LineMsg &l, int n\)/, 'dots map onto ①-reported characters, cached glyphs fill the span');
   assert.match(c, /Magpie Effects\/Lanczos\.hlsl, GPL-3\.0/);
   assert.match(read('THIRD-PARTY.md'), /Magpie/);
 });

@@ -313,6 +313,19 @@ inline bool HardEdged(const Image &im, const Box &b, const Rgb &text) {
   return worst <= .6 && soft < 3;
 }
 
+// A dot stands alone in its glyph cell: within 7 px of it (outside its own 1 px rim) there is nothing in the text
+// colour. A fragment of a real glyph (a dakuten, the tip of a stroke) always has more of its glyph right next to it —
+// also when the game scales its frame and the dot loses its hard edge, so this replaces an edge test.
+inline bool Isolated(const Image &im, const Box &b, const Rgb &text, int tol, int reach = 7) {
+  int n = 0;
+  for (int y = std::max(0, b.y0 - reach); y < std::min(im.h, b.y1 + reach); ++y)
+    for (int x = std::max(0, b.x0 - reach); x < std::min(im.w, b.x1 + reach); ++x) {
+      if (x >= b.x0 - 1 && x <= b.x1 && y >= b.y0 - 1 && y <= b.y1) continue;
+      if (ColorDist(im.at(x, y), text) <= tol * 3 && ++n > 2) return false;
+    }
+  return true;
+}
+
 // Inpaint, first choice: copy a same-sized patch from right next to the box (above, below, left, right, shifted by an
 // even amount so 2-pixel dither and other short periodic patterns keep their phase), the one whose 1 px ring matches the
 // box's ring best. Exact on flat, dithered and regularly textured boxes; returns false when no neighbour matches well
@@ -362,7 +375,7 @@ inline void Inpaint(Image &im, const Box &dotBox, int pad = 1) {
 // Frame-to-frame state for one game window.
 class DotTracker {
 public:
-  struct Options { int smin = 1, smax = 14, colorTol = 36; float keepRatio = .9f; int lostFrames = 45; };
+  struct Options { int smin = 1, smax = 14, colorTol = 20; float keepRatio = .9f; int lostFrames = 45; };
   explicit DotTracker(Options o = {}) : opt(o) {}
 
   void BeginLine(const LineSpec &s) {
@@ -375,6 +388,8 @@ public:
     const bool vert = cur.vertical;
     cur = TrackResult{}; cur.vertical = vert; cur.pitch = lastPitch; cur.kept = keptLines; cur.area = area; prevCount = 0; missFrames = 0; maxSeen = 0; wantBase = true;
   }
+  // ① reports which characters became dots shortly after drawing them: the line's dot count is that, not its length.
+  void SetExpected(int n) { spec.expected = n; }
   void EndPage() { keptLines.clear(); pendingKeep.clear(); area = {}; }
   // Fallback for the current line: forget its dots so they are neither kept nor inpainted.
   void DropCurrent() { cur.dots.clear(); pendingKeep.clear(); }
@@ -393,7 +408,7 @@ public:
     const Box roi = SearchBox(im);
     ColorBlobs(im, roi, color, opt.colorTol, opt.smax, blobs, seen, stack);
     std::vector<Dot> found;
-    for (const Blob &b : blobs) if (DotShaped(b, opt.smin, opt.smax) && SizeOk(b) && HardEdged(im, b.box, color)) found.push_back(ToDot(b, 1.f));
+    for (const Blob &b : blobs) if (DotShaped(b, opt.smin, opt.smax) && SizeOk(b) && Isolated(im, b.box, color, opt.colorTol)) found.push_back(ToDot(b, 1.f));
     if (found.size() > 1500) { cur.dots.clear(); cur.status = LineStatus::Mismatch; return Finish(); } // a texture, not text
     DropLoneThin(found);
     if (dotSize == 0 && !found.empty()) { std::vector<float> s; for (auto &d : found) s.push_back(float(std::max(d.box.w(), d.box.h()))); dotSize = Median(s); }
@@ -462,6 +477,7 @@ public:
       }
     }
 
+    DropOutliers(mine);
     cur.vertical = spec.vertical >= 0 ? spec.vertical == 1 : (mine.size() >= 2 ? InferVertical(mine) : cur.vertical);
     const float pitch = mine.size() >= 2 ? Pitch(mine) : cur.pitch;
     float step = 0;
@@ -555,6 +571,26 @@ private:
     for (const Dot &o : prevLine) if (std::fabs(o.cx - d.cx) < 1.5f && std::fabs(o.cy - d.cy) < 1.5f) return false;
     return true;
   }
+  // The line is one cluster: dots linked by gaps of at most 4 median neighbour distances (rows are ~1.5 em apart, cells
+  // 1 em). A lone dot or a pair outside it is not text: a click-wait animation (often a pair of dots), a UI indicator,
+  // a speck in the art.
+  static void DropOutliers(std::vector<Dot> &d) {
+    if (d.size() < 3) return;
+    const size_t n = d.size();
+    std::vector<float> nn(n, 1e9f);
+    for (size_t i = 0; i < n; ++i) for (size_t j = 0; j < n; ++j) if (i != j) nn[i] = std::min(nn[i], std::hypot(d[i].cx - d[j].cx, d[i].cy - d[j].cy));
+    const float link = 4 * Median(nn);
+    std::vector<int> comp(n, -1), sizes(n, 0); int best = -1, bestSize = 0;
+    for (size_t s0 = 0; s0 < n; ++s0) {
+      if (comp[s0] >= 0) continue;
+      std::vector<size_t> st{ s0 }; comp[s0] = int(s0); int size = 0;
+      while (!st.empty()) { const size_t i = st.back(); st.pop_back(); ++size; for (size_t j = 0; j < n; ++j) if (comp[j] < 0 && std::hypot(d[i].cx - d[j].cx, d[i].cy - d[j].cy) <= link) { comp[j] = int(s0); st.push_back(j); } }
+      sizes[s0] = size; if (size > bestSize) { bestSize = size; best = int(s0); }
+    }
+    // Other clusters of 3+ dots stay (separate runs: a menu, a name box); lone dots and pairs away from the line go.
+    std::vector<Dot> keep; for (size_t i = 0; i < n; ++i) if (comp[i] == best || sizes[comp[i]] >= 3) keep.push_back(d[i]);
+    d.swap(keep);
+  }
   bool SizeOk(const Blob &b) const {
     if (std::max(b.box.w(), b.box.h()) <= 3) return true; /* spec-1 dot, maybe clipped */
     if (dotSize == 0) return true; const float s = float(std::max(b.box.w(), b.box.h())); return std::fabs(s - dotSize) <= std::max(1.5f, dotSize * .4f); }
@@ -618,7 +654,7 @@ private:
       int lined = 0;
       for (size_t a = 0; a < d.size(); ++a) for (size_t b = 0; b < d.size(); ++b) if (a != b) {
         const float dx = std::fabs(d[a].cx - d[b].cx), dy = std::fabs(d[a].cy - d[b].cy);
-        if ((dy < 2.5f && dx > 0 && dx <= p * 1.6f) || (dx < 2.5f && dy > 0 && dy <= p * 1.6f)) { ++lined; break; }
+        if ((dy < 6.f && dx > dy && dx <= p * 1.6f) || (dx < 6.f && dy > dx && dy <= p * 1.6f)) { ++lined; break; } // black-box tops vary a few px
       }
       double score = lined;
       if (d.size() == 1 && spec.expected == 1) score = 1;
