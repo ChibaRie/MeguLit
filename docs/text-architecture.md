@@ -20,6 +20,7 @@ version, a line in this log, and stays backward compatible where possible (new f
 | Spec | Date       | Change |
 |------|------------|--------|
 | 1    | 2026-11-14 | First version: dot geometry, `ToMe_GLYPHDOT` records, `hookGlyphDots` events, `glyphMode` command. |
+| 1    | 2026-11-14 | Compatible addition: `glyphMode` `all:true` (write-back streams on dots too).                    |
 | 1    | 2026-11-14 | Compatible addition: in dot mode `ToMe_GLYPHDOT line` is sent when the line is pushed, before any dot. |
 
 ## ① Glyph dots
@@ -55,8 +56,8 @@ it. `MEGULIT_GLYPH_MODE=dot` in HookBridge's environment starts in dot mode (tes
 
 Scope today: dot mode covers the streams the glyph fallback covers, i.e. selected streams **without** write-back. A
 write-back (embed) stream still gets its text replaced in the game, so it never shows dots. To put such a stream on dots
-too, the front end would answer its embed requests with the original text and HookBridge would push its lines; that is
-an open item for ② (not implemented, will be announced here with a spec bump).
+too, send `{"type":"glyphMode","mode":"dot","all":true}` (or `MEGULIT_GLYPH_ALL=1`): every selected stream then has its
+write-back switched off (the game draws its own line, which becomes dots) and its lines are pushed to the DLL.
 
 In dot mode HookBridge does not switch the LunaHook GDI hide (`MeguLitGdiHide.h`) on for the stream: a string it left out
 would never reach the dots.

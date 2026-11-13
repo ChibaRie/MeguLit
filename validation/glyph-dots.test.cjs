@@ -10,7 +10,7 @@ const read=f=>fs.readFileSync(path.join(__dirname,'..',f),'utf8');
 
 test('spec: docs/text-architecture.md publishes the dot geometry, records, events and a change log',()=>{
  const d=read('docs/text-architecture.md');
- for(const s of ['## ① Glyph dots','## Changes to this document','| 1    | 2026-11-14 |','ToMe_GLYPHDOT line seq=<n> text=<line>','ToMe_GLYPHDOT dots seq=<n> path=<ggo|text|gdip|d2d|run> list=<dot>;<dot>;...','`<dot>` = `i:u:h:b:a:x:y:s:k`','ToMe_GLYPHDOT cache seq=<n>','"type":"hookGlyphDots"','{"type":"glyphMode","mode":"dot"}','MEGULIT_GLYPH_MODE=dot','run-dots.cmd'])assert.ok(d.includes(s),s);
+ for(const s of ['## ① Glyph dots','## Changes to this document','| 1    | 2026-11-14 |','ToMe_GLYPHDOT line seq=<n> text=<line>','ToMe_GLYPHDOT dots seq=<n> path=<ggo|text|gdip|d2d|run> list=<dot>;<dot>;...','`<dot>` = `i:u:h:b:a:x:y:s:k`','ToMe_GLYPHDOT cache seq=<n>','"type":"hookGlyphDots"','{"type":"glyphMode","mode":"dot"}','"all":true','MEGULIT_GLYPH_ALL=1','MEGULIT_GLYPH_MODE=dot','run-dots.cmd'])assert.ok(d.includes(s),s);
  assert.match(d,/\*\*Side\*\* `s` = 3 px when the cell height .* 12 px or more,\s*else 2 px/);});
 
 test('DLL: dot mode keeps metrics, draws one square per character, reports every dot; blank mode unchanged',()=>{
@@ -47,8 +47,8 @@ test('HookBridge: MODE on connect and on change, LunaHook GDI hide off for dot s
  const b=read('native/HookBridge.cs');
  assert.ok(b.includes('w.WriteLine("MODE "+GlyphMode);'),'mode sent on every control connection');
  assert.ok(b.includes('static string GlyphMode=Environment.GetEnvironmentVariable("MEGULIT_GLYPH_MODE")=="dot"?"dot":"blank";'),'blank by default');
- assert.ok(b.includes('else if(type=="glyphMode"){object mv;GlyphModeSet('));
- assert.ok(b.includes('static bool DotsOwn(Candidate c){return GlyphMode=="dot"&&c!=null&&c.gdiProbe;}'));
+ assert.ok(b.includes('else if(type=="glyphMode"){object mv,av;GlyphAll=d.TryGetValue("all",out av)&&Convert.ToBoolean(av);GlyphModeSet('));
+ assert.ok(b.includes('static bool DotsOwn(Candidate c){return GlyphMode=="dot"&&c!=null&&(c.gdiProbe||GlyphAll);}'));
  assert.ok(b.includes('on=(ReplacementEnabled||ProbeWanted)&&!DotsOwn(c);'),'probe never arms the GDI hide in dot mode');
  assert.ok(b.includes('&&!DotsOwn(Candidates[Selected]))Luna_UseEmbed(Candidates[Selected].tp,true);'),'nor does a reconnect');
  assert.ok(b.includes('else if(line.StartsWith("ToMe_GLYPHDOT ",StringComparison.Ordinal))GlyphDots(line.Substring(14));'));
