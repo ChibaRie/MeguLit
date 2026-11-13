@@ -470,8 +470,8 @@ static void Deactivate(string reason){if(WaitHook!=null)WaitHook.Disable();lock(
     var engineInfo=EngineInfo(s);if(engineInfo!=null)Emit(engineInfo);if((s??"").StartsWith("MeguLit_GDIHIDE hit",StringComparison.Ordinal))GdiHideHit(s.Substring(20));};InsertEvent insert=OnInsert;EmbedEvent embed=OnEmbed;QueryEvent query=s=>IntPtr.Zero;GameEvent game=(i,t,v)=>{};Keep.AddRange(new Delegate[]{connected,disconnected,create,destroy,output,info,insert,embed,query,game});
    Luna_Settings(180,932,4000,4000,false);Luna_Start(connected,disconnected,create,destroy,output,info,insert,embed,query,game);Started=true;Luna_ConnectProcess(Pid);
    if(Luna_CheckIfNeedInject(Pid)){var start=new ProcessStartInfo(loader,Pid+" "+args[1]+" \""+args[2]+"\" "+args[3]+" \""+hook+"\""){UseShellExecute=false,CreateNoWindow=true,RedirectStandardError=true};using(var child=Process.Start(start)){if(!child.WaitForExit(12000))throw new Exception("LunaHook 加载超时");if(child.ExitCode!=0)throw new Exception("LunaHook 加载失败："+child.StandardError.ReadToEnd().Trim());}}
-   PreArmSignature();
    try{if(GameProcess==null)GameProcess=Process.GetProcessById((int)Pid);}catch{}try{string mp=MemoryPath();if(mp!="")TextPathCanary.Init(Path.Combine(Path.GetDirectoryName(Path.GetDirectoryName(mp)),"text-paths",Path.GetFileName(mp)));}catch(Exception e){Diagnostic("text path canary "+e.Message);}
+   PreArmSignature();
    KrkrText(bit,loader,args);
    RenpyText(bit,loader,args);
    FontProbe(bit,loader,args);

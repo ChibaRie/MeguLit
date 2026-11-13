@@ -135,12 +135,34 @@ def _megulit_renpy_main():
             except Exception:
                 pass
 
+        def invisible(self, r):
+            # Ren'Py 7 (gl) honours Render.alpha; the gl2 renderer (Ren'Py 7.4+, 8) ignores it and draws alpha through
+            # its "renpy.alpha" shader, as Transform(alpha=...) does (live check 2026-11-14, Ren'Py 8.4: alpha alone
+            # left the text on screen).
+            r.alpha = 0.0
+            if getattr(sys.modules.get('renpy.display.render'), 'models', False):
+                r.add_shader('renpy.alpha')
+                r.add_uniform('u_renpy_alpha', 0.0)
+                r.add_uniform('u_renpy_over', 0.0)
+
+        def is_invisible(self, r):
+            if getattr(r, 'alpha', 1.0) != 0.0:
+                return False
+            if getattr(sys.modules.get('renpy.display.render'), 'models', False):
+                u = getattr(r, 'uniforms', None) or {}
+                return u.get('u_renpy_alpha', 1.0) == 0.0
+            return True
+
         def unhide(self):
             # MeguLit stopped asking (or went away): every Render drawn invisible is visible again, at once
             items, self.hidden = self.hidden, []
             for d, r in items:
                 try:
                     r.alpha = 1.0
+                    u = getattr(r, 'uniforms', None)
+                    if u and 'u_renpy_alpha' in u:
+                        u['u_renpy_alpha'] = 1.0
+                        u['u_renpy_over'] = 1.0
                 except Exception:
                     pass
                 self.redraw(d)
@@ -207,7 +229,7 @@ def _megulit_renpy_main():
                     if core.page and core.want:
                         for c in core.page:
                             if c['d'] is d or (c['d'] is None and core.matches(d, c)):
-                                rv.alpha = 0.0
+                                core.invisible(rv)
                                 core.hidden.append((d, rv))
                                 del core.hidden[:-64]
                                 break
@@ -235,7 +257,7 @@ def _megulit_renpy_main():
                 if c is not None and c['rects'] is not None:
                     # hidden = this sentence's Text is drawn from a Render at alpha 0 (a cached one counts: Ren'Py
                     # draws the same object again); a Text rendered before hiding was asked for is re-rendered.
-                    hid = core.want and any(d is c['d'] and r.alpha == 0.0 for d, r in core.hidden)
+                    hid = core.want and any(d is c['d'] and core.is_invisible(r) for d, r in core.hidden)
                     if core.want and not hid:
                         core.redraw(c['d'])
                     if hid != c['hid']:
@@ -421,7 +443,7 @@ def _megulit_renpy_main():
                 self.send(self.line_text('begin', c, box))
                 self.send(self.line_text('end', c, box))
             c['d'], c['rects'], c['text'], c['sw'], c['sh'], c['view'] = d, rects, text.replace('\n', '\x1f'), int(sw), int(sh), self.viewport()
-            c['hid'] = self.want and any(h is d and r.alpha == 0.0 for h, r in self.hidden)
+            c['hid'] = self.want and any(h is d and self.is_invisible(r) for h, r in self.hidden)
             self.send(self.chars_text(c))
             return True
 

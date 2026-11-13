@@ -54,7 +54,17 @@ def install_fakes():
         def blit(self, child, pos):
             self.children.append((child, pos[0], pos[1], True, True))
             return child
+
+        # gl2 (Ren'Py 7.4+ / 8): alpha goes through the renpy.alpha shader and its uniforms
+        def add_shader(self, name):
+            self.shaders = getattr(self, 'shaders', ()) + (name,)
+
+        def add_uniform(self, name, value):
+            if getattr(self, 'uniforms', None) is None:
+                self.uniforms = {}
+            self.uniforms[name] = value
     render.Render = Render
+    render.models = True
 
     def render_screen(root, w, h):
         # Ren'Py renders each displayable into its own Render: the Text's (possibly wrapped) render() sets its alpha
@@ -62,7 +72,8 @@ def install_fakes():
         while stack:
             node = stack.pop()
             for d in node.render_of:
-                node.alpha = d.render(w, h, 0, 0).alpha
+                r = d.render(w, h, 0, 0)
+                node.alpha = r.alpha if (getattr(r, 'uniforms', None) or {}).get('u_renpy_alpha', 1.0) == 0.0 or r.alpha == 1.0 else 1.0
             stack.extend(e[0] for e in node.children)
         return root
     render.render_screen = render_screen
