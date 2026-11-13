@@ -57,8 +57,9 @@ it. `MEGULIT_GLYPH_MODE=dot` in HookBridge's environment starts in dot mode (tes
 
 Scope today: dot mode covers the streams the glyph fallback covers, i.e. selected streams **without** write-back. A
 write-back (embed) stream still gets its text replaced in the game, so it never shows dots. To put such a stream on dots
-too, send `{"type":"glyphMode","mode":"dot","all":true}` (or `MEGULIT_GLYPH_ALL=1`): every selected stream then has its
-write-back switched off (the game draws its own line, which becomes dots) and its lines are pushed to the DLL.
+too, send `{"type":"glyphMode","mode":"dot","all":true}` (or `MEGULIT_GLYPH_ALL=1`): the selected write-back stream's
+embed callback then pushes the line to the DLL first and hands the text back unchanged, so the line is known before the
+game draws it (the plain text output arrives after the glyphs are drawn, e.g. BGI: ~180 ms late).
 
 In dot mode HookBridge does not switch the LunaHook GDI hide (`MeguLitGdiHide.h`) on for the stream: a string it left out
 would never reach the dots.
@@ -164,3 +165,21 @@ draw the dot in logical units (it scales with the transform).
   font). Same conclusion: ③ territory.
 - No other 64-bit GDI galgame is available on E: or in the owned Steam library (WITCH ON THE HOLY NIGHT: no license).
   The 64-bit GDI paths are covered by the x64 self-test host.
+
+#### Which engines in the E:\GAL import scan draw dialogue through GDI (2026-11-14)
+
+Importing GetGlyphOutline/TextOut is not enough: many engines call GDI only for metrics or menus. Measured live with the
+font probe (`ToMe_FONT` counts and the matcher's `placed`/`requested`):
+
+| Game (engine) | GDI calls during dialogue | Dots possible at ① |
+|---|---|---|
+| ダストマニア（BRUNS） | none: bitmap font sheets `fontf_*.bmp` | no → engine level |
+| THE SHELL HD（Artemis, x64） | none: own rasteriser | no → ③ |
+| ファタモルガーナの館（KiriKiri Z + addFont TTF） | only Segoe UI 12 px UI text | no → ③ |
+| サノバウィッチ（Yuzusoft KiriKiri Z） | GetGlyphOutline **metrics only** (SimSun 48, hundreds of chars placed, 0 rasterised) | no: glyphs rasterised elsewhere → ③ |
+| 沙耶の唄（Nitro+ 2003） | GDI rasterisation (ＭＳ Ｐゴシック 24), but each glyph once (cache) and LunaHook finds no dialogue stream | only with a stream; cached dots |
+| 素晴らしき日々（BGI） | GetGlyphOutline rasterisation (MS Gothic 136 bold) | yes in principle, but the plain text output arrives ~180 ms after the glyphs; needs `all:true` (line pushed from the embed callback). Live run blocked: the opening movie (MoleBox) hangs on this machine with replacement on, also in blank mode |
+| Not run: CLANNAD (Siglus), 月姫/PLUS+DISC, AIR (avg32), 女装山脈, サイコロジック・ラブコメディ, Under The Moon, 涙 | TextOutA / GetGlyphOutline imports | candidates for the next live run |
+
+So far no game shows real dialogue dots end to end; the cases above are what decides ①'s reach. The x86/x64 self-test hosts
+remain the proof that every covered API produces exact dots.

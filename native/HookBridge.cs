@@ -205,6 +205,7 @@ static volatile bool SkipHeld;static int BurstRun;const int BurstSkipLines=8;sta
  static string LastTwinText="";static readonly HashSet<string> TwinEmbed=new HashSet<string>();
  static bool ForeignTwin(string text){if(String.IsNullOrWhiteSpace(text)||text.Length<24||text.Length>600)return false;if(System.Text.RegularExpressions.Regex.IsMatch(text,"[\u3040-\u30ff\u4e00-\u9fff]"))return false;return System.Text.RegularExpressions.Regex.IsMatch(text,"\\p{L}{2,}[,;]?[ \\t]+\\p{L}{2,}[,;]?[ \\t]+\\p{L}{2,}");}
  static void OnEmbed(string text,ThreadParam tp){
+  if(GlyphMode=="dot"&&GlyphAll&&Selected!=""&&tp.Key()==Selected){GlyphLine(text);Thread.Sleep(8);try{Luna_EmbedCallback(tp,text,text);}catch(Exception e){Diagnostic("glyph dots embed passthrough failed "+e.Message);}return;}
   lock(Gate){
    Candidate candidate;
    /* 2026-11-13 (9-nine in English: the Japanese came from the multi-language container stream, the game drew the English
@@ -408,8 +409,9 @@ static void Deactivate(string reason){if(WaitHook!=null)WaitHook.Disable();lock(
     stream, because a string it leaves out would never reach the dots. Every dot is forwarded as a hookGlyphDots event. */
  static string GlyphMode=Environment.GetEnvironmentVariable("MEGULIT_GLYPH_MODE")=="dot"?"dot":"blank";
  static volatile bool GlyphAll=Environment.GetEnvironmentVariable("MEGULIT_GLYPH_ALL")=="1";
- /* all: write-back streams too — their write-back stays off (the game draws its own line, as dots) and their lines are pushed. */
- static bool DotsOwn(Candidate c){return GlyphMode=="dot"&&c!=null&&(c.gdiProbe||GlyphAll);}
+ /* all: write-back streams too. Their embed callback stays on, but in dot mode it pushes the line to the DLL first and then
+    hands the text back unchanged, so the line is known before the game draws it (the text output arrives too late for that). */
+ static bool DotsOwn(Candidate c){return GlyphMode=="dot"&&c!=null&&c.gdiProbe;}
  static void GlyphModeSet(string mode,bool force=false){mode=mode=="dot"?"dot":"blank";if(mode==GlyphMode&&!force)return;GlyphMode=mode;GlyphSend("MODE "+mode);Diagnostic("glyph mode "+mode);string id;lock(Gate){id=Enabled?Selected:"";}if(id!="")Select(id);}
  static void GlyphDots(string s){
   var line=System.Text.RegularExpressions.Regex.Match(s,@"^line seq=(\d{1,9}) text=(.*)$");if(line.Success){Emit(new{type="hookGlyphDots",state="line",seq=Int64.Parse(line.Groups[1].Value),text=line.Groups[2].Value});return;}
