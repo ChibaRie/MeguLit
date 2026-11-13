@@ -147,7 +147,9 @@ static void FinishEmbed(long id,string trans,bool hide=false){PendingEmbed p;loc
  internal static string InterleavedTwin(string key,string text){lock(CleanLines){string best=null;var cutoff=DateTime.UtcNow.AddSeconds(-2.5);foreach(var e in CleanLines){if(e.Key<cutoff)continue;string c=e.Value;string from;if(CleanStreamOf.TryGetValue(c,out from)&&from==key)continue;if(Interleaves(text,c)&&(best==null||c.Length>best.Length))best=c;}return best;}}
  internal static bool Interleaves(string text,string clean){if(text==null||clean==null)return false;string t=text.Replace("　","").Replace(" ","").Trim(),c=clean.Replace("　","").Replace(" ","").Trim();if(c.Length<4||t.Length<c.Length*3/2)return false;var set=new HashSet<char>(c);foreach(char ch in t)if(!set.Contains(ch))return false;var seen=new HashSet<char>(t);int hit=0;foreach(char ch in set)if(seen.Contains(ch))hit++;return hit*5>=set.Count*4;}
  static bool DialogueLike(string text){return text!=null&&text.Length<=600&&System.Text.RegularExpressions.Regex.IsMatch(text,"[぀-ヿ]")&&System.Text.RegularExpressions.Regex.Matches(text,"[぀-ヿ一-鿿]").Count>=8;}
- static bool StaleMemory(){return FromMemory&&!ReceivedText;}
+ /* glyph dots (all): the remembered stream must stay selected from the first line on (caching engines), so a
+    stream that happens to speak first (title menus) never displaces it */
+ static bool StaleMemory(){return FromMemory&&!ReceivedText&&!(GlyphMode=="dot"&&GlyphAll);}
  static void SaveSelection(Candidate c){try{File.WriteAllText(Under("cache","hook-session.json"),Json.Serialize(new{pid=Pid,started=ProcessStarted,code=c.code,addr=c.tp.addr.ToString("x"),ctx=c.tp.ctx.ToString("x"),ctx2=c.tp.ctx2.ToString("x"),name=c.name,embeddable=c.embed}));}catch{}}
  static bool InitialReplacement(string[] args){return !(args.Length==5&&args[4]=="--read-only");}
  static bool TryIslandThread(bool known,uint pid,ulong address,string code,out ThreadParam tp){
@@ -205,7 +207,7 @@ static volatile bool SkipHeld;static int BurstRun;const int BurstSkipLines=8;sta
  static string LastTwinText="";static readonly HashSet<string> TwinEmbed=new HashSet<string>();
  static bool ForeignTwin(string text){if(String.IsNullOrWhiteSpace(text)||text.Length<24||text.Length>600)return false;if(System.Text.RegularExpressions.Regex.IsMatch(text,"[\u3040-\u30ff\u4e00-\u9fff]"))return false;return System.Text.RegularExpressions.Regex.IsMatch(text,"\\p{L}{2,}[,;]?[ \\t]+\\p{L}{2,}[,;]?[ \\t]+\\p{L}{2,}");}
  static void OnEmbed(string text,ThreadParam tp){
-  if(GlyphMode=="dot"&&GlyphAll&&Selected!=""&&tp.Key()==Selected){GlyphLine(text);Thread.Sleep(8);try{Luna_EmbedCallback(tp,text,text);}catch(Exception e){Diagnostic("glyph dots embed passthrough failed "+e.Message);}return;}
+  if(GlyphMode=="dot"&&GlyphAll&&Selected!=""&&tp.Key()==Selected){GlyphLine(text);Thread.Sleep(8);try{Luna_EmbedCallback(tp,text,text);}catch(Exception e){Diagnostic("glyph dots embed passthrough failed "+e.Message);return;}lock(Gate){ReceivedText=true;ReplacementCallback=true;}RememberStream();/* the next launch pre-selects this stream before the first line, so caching engines never rasterise a real dialogue glyph */return;}
   lock(Gate){
    Candidate candidate;
    /* 2026-11-13 (9-nine in English: the Japanese came from the multi-language container stream, the game drew the English
