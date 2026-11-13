@@ -15,7 +15,7 @@ function pageInfo(s){const m=/^ToMe_(KRKR|RENPY) (begin|end) line=(\d+) same=([0
 
 function python(){for(const [cmd,args] of [['python',['-I']],['py',['-3','-I']]]){const r=spawnSync(cmd,[...args,'-c','import sys;print(sys.version_info[0])'],{encoding:'utf8'});if(r.status===0&&r.stdout.trim()==='3')return [cmd,args];}return null;}
 const py=python();
-function scriptLines(){const r=spawnSync(py[0],[...py[1],path.join(root,'native/renpytext/selftest/host.py'),'--sink',path.join(root,'native/MeguLitRenpy.py')],{encoding:'utf8'});assert.equal(r.status,0,r.stderr);return JSON.parse(r.stdout);}
+function scriptLines(){const r=spawnSync(py[0],[...py[1],path.join(root,'native/renpytext/selftest/host.py'),'--sink',path.join(root,'native/MeguLitRenpy.py')],{encoding:'utf8'});assert.equal(r.status,0,r.stderr);/* text architecture 3 records (ToMe_CHARS) and the host's own notes are tested in text-paths.test.cjs */return JSON.parse(r.stdout).filter(l=>!/^(ToMe_CHARS|HOST) /.test(l));}
 
 function fixture(t){t.mock.timers.enable({apis:['setTimeout']});let now=100000;const events=[];
  const hook=new HookNative({native:__dirname,hook:__dirname,logs:'Z:/no-fixture-log'},m=>events.push(m),()=>{},()=>now);hook.trace=()=>{};t.after(()=>hook.stop());

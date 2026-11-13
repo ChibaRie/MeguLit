@@ -23,6 +23,7 @@ version, a line in this log, and stays backward compatible where possible (new f
 | 1    | 2026-11-14 | First version: dot geometry, `ToMe_GLYPHDOT` records, `hookGlyphDots` events, `glyphMode` command. |
 | 1    | 2026-11-14 | Compatible addition: `glyphMode` `all:true` (write-back streams on dots too).                    |
 | 1    | 2026-11-14 | Compatible addition: in dot mode `ToMe_GLYPHDOT line` is sent when the line is pushed, before any dot. |
+| ③ 1  | 2026-11-14 | Non-dot paths: `ToMe_CHARS` records, `hookCharRects` events, crash canary (`feat/text-paths`).    |
 
 ## ① Glyph dots
 
@@ -187,3 +188,137 @@ font probe (`ToMe_FONT` counts and the matcher's `placed`/`requested`):
 
 Rule seen live: dots need the line **before** the glyphs are rasterised, i.e. a write-back (embed) stream with `all:true`; a read-only stream is ~180 ms late. Only Siglus shows real dialogue dots so far (limited by its glyph cache; ② drew 16 of 17 CLANNAD lines on the game's cells from these dots). For caching engines dot mode must be on and the stream selected before the first dialogue glyph is rasterised (MODE dot at connect + the remembered stream pre-armed at start), otherwise the characters cached earlier stay real for the whole process; HookBridge does both: MODE is sent at connect, the dot passthrough remembers the stream, and with `all:true` a remembered stream is never displaced by another stream that speaks first (title menus). Verified on CLANNAD: fresh process, NEW GAME, the first line 一面、白い世界… = 8 records, 8 dots, no other ink (live\clannad-first-line-dots.png); the cases above are what decides ①'s reach. The x86/x64 self-test hosts
 remain the proof that every covered API produces exact dots.
+## ③ Non-dot paths (engines that do not take glyphs from Windows)
+
+Branch `feat/text-paths`. Four engine families draw their text without asking Windows for glyphs, so ① can never put
+dots there. Each of them gets an engine-level path that gives ② the same two things: (a) the current line is not drawn,
+(b) the place of every character of it. Instead of dots in pixels, the game side **reports rectangles**.
+
+| Path    | Engines                                   | Hides how                                         | Rectangles from |
+|---------|-------------------------------------------|---------------------------------------------------|-----------------|
+| web     | NW.js / Electron shells: TyranoScript, WebGAL, Monogatari, ink web, any DOM-text engine | one style rule on the message element: `color` / `-webkit-text-fill-color` transparent, no shadow / stroke | `Range.getClientRects` per character, × `devicePixelRatio` |
+| unity   | Unity Mono (TextMeshPro, uGUI)            | the dialogue component's alpha 0 (`TMP_Text.alpha`, `Graphic.color.a`) | TMP `textInfo.characterInfo` / `TextGenerator.verts`, through the canvas camera |
+| krkr    | KiriKiri 2 / Z KAG message layers (own rasteriser, `.tft` prerendered fonts) | the existing opacity-0 drawing of the message `lineLayer` (E472, `__megulitKrkrHide`) | the TJS `processCh` wrapper: x / y of each character, width from the drawing font |
+| renpy   | Ren'Py 7 / 8                              | the say Text's own Render: `Render.alpha` 0 (gl) and the `renpy.alpha` shader with `u_renpy_alpha` 0 (gl2) | the Text's `Layout` glyphs through the render tree's offsets and reverse matrices |
+
+Rules shared by all four (the same as ① and the older layers):
+
+- **Never change game data.** Nothing is written to the game folder, its archives, saves or settings. Web: Chromium
+  switches only; Unity: a shadow folder (below); KiriKiri / Ren'Py: wrappers in the running engine that fall back to the
+  engine's own function on any error.
+- **Hidden is confirmed per line.** A record says `hidden=1` only after the game side really drew that line invisible
+  (web: computed colour of every text node transparent; Unity: alpha still 0 at the end of the frame; Ren'Py: the Text's
+  Render is drawn with alpha 0 / the alpha shader; KiriKiri: the line's glyphs went through the opacity-0 draw). A game
+  that draws its text again (MeguLit gone, switch off, the game animating its own colour) sends `hidden=0` for the same
+  line. `core/text-paths.cjs HiddenGate` keeps the latest state per line; ② draws over a line only while it is hidden.
+- **Only while MeguLit is there.** Every path follows HookBridge's replacement switch, and the game side drops hiding by
+  itself when the connection to MeguLit goes away (pipe / socket / DevTools closed).
+- **Crash canary.** `data/text-paths/<exe name>-<exe size>.json` (the key of the stream memory). A path is armed the
+  first time it hides, stays armed while the game runs, and is cleared after 20 s or a clean exit (code 0). A game that
+  exits with another code while armed, or is found still armed at the next start, gets that path **off** for the game
+  (`off.<path>.reason`); switching it on again is the user's call (`Canary.reset`). C#: `native/TextPathCanary.cs`
+  (krkr, renpy, in HookBridge); node: `core/text-paths.cjs Canary` (web, unity, at launch).
+
+### Record (spec 1 of ③)
+
+Game side → MeguLit, one UTF-8 line per sentence (sent again whenever its rectangles or its hidden state change):
+
+```
+ToMe_CHARS engine=<krkr|renpy|web|unity> line=N hidden=0|1 sw=W sh=H vx=X vy=Y vw=W vh=H n=K rects=x,y,w,h;x,y,w,h;... text=<line>
+```
+
+- `text`: the sentence as drawn, a newline (sent as U+001F) where the game started a new row. Blanks and ruby are not
+  part of it.
+- `rects`: exactly one per character of `text` without its newlines, in order, in **game-screen pixels** (0..sw,
+  0..sh), top-left origin, `w`/`h` the character's box (KiriKiri and Ren'Py: advance × line height; web: the glyph's
+  client rect; Unity: the glyph quad).
+- `vx vy vw vh`: where the game screen sits in the window's client area, in client pixels (web and Unity: the whole
+  client, `0 0 sw sh`; Ren'Py: `renpy.display.draw` drawable viewport; KiriKiri: `0 0 0 0` = unknown, aspect fit).
+- `line`: increases per sentence; a typewriter that grows the same sentence keeps its number.
+- Parser and helpers: `core/text-paths.cjs` (`parseChars`, `formatChars`, `toClient(rec, clientW, clientH)` → client
+  pixels, `viewportOf`).
+
+Transport: KiriKiri and Ren'Py send it on their existing pipes (`\\.\pipe\MeguLitKrkr-<pid>`,
+`\\.\pipe\MeguLitRenpy-<pid>`); HookBridge passes it on unchanged as `{"type":"hookChars","line":...}`. Web and Unity
+records come from node directly (`core/text-paths-web.cjs`, `core/text-paths-unity.cjs`). Both end in
+`HookNative.charRects`, which emits the front-end event:
+
+```
+{"type":"hookCharRects","engine":"renpy","line":3,"hidden":true,"sw":1280,"sh":720,"viewport":[0,0,1280,720],
+ "rects":[[208,563,24,45],...],"text":"…","at":…}
+```
+
+For ②: `toClient(event, clientWidth, clientHeight)` gives each character's box in the game window's client area. The
+erase rule is simpler than for dots: the game drew nothing for a hidden line, so nothing has to be erased.
+
+### Paths in detail
+
+**Web** (`core/text-paths-web.cjs`). `chromiumShell(exe)`: `icudtl.dat` plus `nw.dll` / `package.nw` (NW.js) or
+`resources\app.asar` / `resources\app` (Electron) next to the program. `services/bridge.cjs` adds
+`--remote-debugging-port=<free loopback port> --remote-debugging-address=127.0.0.1 --remote-allow-origins=…` to the
+start (a Steam game is then started directly with `SteamAppId` in the environment, never through Steam). `WebTextPath`
+attaches over the DevTools protocol to every page target, adds `PAGE_SCRIPT` for every new document and evaluates it in
+the current one, and talks through the `__megulitReport` binding. The page script finds the message element (known
+containers of TyranoScript, Monogatari, WebGAL, ink pages, else the smallest visible element whose text is the hook line
+sent with `want()`), toggles `data-megulit-hide` on it, and reports after every DOM change (40 ms debounce). Canvas
+engines (RenJS / Phaser, PixiJS text) report `canvas` and stay as they are.
+
+**Unity** (`core/text-paths-unity.cjs`, `native/unitytext/MeguLitUnityText.cs`). Mono games only (IL2CPP: below). The
+game is started from a shadow folder `data/unity-shadow/<exe>-<size>`: every folder of the game is a directory junction,
+every file a hard link (a copy when the volume differs, mtime kept); MeguLit adds UnityDoorstop (`winhttp.dll`,
+`doorstop_config.ini`) and BepInEx 5.4.23.6 with `BepInEx\plugins\MeguLit\MeguLitUnityText.dll`, the control port, and
+`steam_appid.txt` for Steam games. Unity finds `<exe>_Data` through the junction; BepInEx writes its config and log in
+the shadow only. A game that ships its own BepInEx / doorstop / version.dll proxy is left alone. Rebuilding the shadow
+never deletes through a junction (links are removed as links). The plugin hooks nothing: twice a second it picks the
+dialogue component among the visible TMP_Text / UI.Text (not faded out by its colour or a CanvasGroup, on screen): the
+one whose text is the hook line (`WANT`), else the one with the most kana / kanji that changed last. It reports the
+characters' quads from the laid-out mesh, leaves out quads tiny in both directions (markup some games leave as empty
+glyphs), and maps uGUI quads to characters by the sequence whose length matches the quad count (rich-text tags,
+blanks and line breaks get quads or not depending on the Unity version). Control: loopback TCP (Unity's Mono has no
+reliable Windows named pipes), lines `HIDE 0|1`, `WANT <text>` in, `ToMe_CHARS` / `ToMe_UNITY status` out. Pack:
+`runtime/unity-text` (`tools/unity-text-pack.cjs` builds it from the BepInEx release archives, SHA-256 pinned, plus the
+plugin and LICENSES.txt; marker `runtime/unity-text/MeguLitUnityText.dll` in `core/runtime-packs.cjs`). The
+`setup/runtime.json` entry (onDemand, hidden) is added at release with the published zip's size and hash.
+XUnity.AutoTranslator was evaluated as the base: its documented plugin API has no per-component callback, and its
+translation pipeline is asynchronous and global (it would also blank menus), so the path uses BepInEx + this small
+plugin; XUnity's IL2CPP build is the candidate for the IL2CPP case.
+
+**KiriKiri** (`native/krkrtext/script.inc`, `KrkrText.cpp`). The existing KAG wrappers already know where each
+character is drawn (`track`, E300) and draw the message `lineLayer` at opacity 0 while `Local\MeguLitKrkrHide-<pid>` is
+set (E472). ③ adds the box of each character (x, y, `drawFont.getTextWidth(ch)`, font size) and sends one `ToMe_CHARS`
+at the sentence's end (click wait or clear), `hidden=1` when the sentence's glyphs went through the opacity-0 draw and
+hiding is still on. The DLL forwards `ToMe_CHARS` lines up to 28000 characters.
+
+**Ren'Py** (`native/MeguLitRenpy.py`). Every sentence, ADV as well as NVL, is located in the render tree (E301); its
+glyph boxes go out as `ToMe_CHARS` (width: the glyph's advance, else the distance to the next glyph). A wrapper on
+`renpy.text.text.Text.render` draws the say Text (all sentences of the NVL page on screen) invisible while
+`Local\MeguLitRenpyHide-<pid>` is set and the pipe to MeguLit is connected; HookBridge sets that event on the same rule
+as KiriKiri's. When hiding stops, every Render drawn invisible gets its alpha back and is redrawn at once.
+
+### Launch and wiring
+
+`core/text-paths-launch.cjs prepare()` (called by `services/bridge.cjs` before a direct start) is **off unless
+`preferences.ownTextOutput` is true** (the owner's "MeguLit draws all text" switch; ② turns it on with its UI). It
+returns the adjusted start (program, arguments, environment, folder) and a session; after the game window is up the
+session joins the hook reader (`attach`): records go to `HookNative.charRects`, HookBridge's replacement switch
+(`enable` / `disable`) becomes `hide(on)`, and every source line becomes `want(text)`. The game's exit code goes to the
+canary. KiriKiri and Ren'Py need nothing at launch (HookBridge loads their DLLs).
+
+### Live checks (2026-11-14, off screen, muted, new game, no saves)
+
+| Path  | Game | Result |
+|-------|------|--------|
+| web   | TyranoScript's own sample game (MIT, `ShikemokuMK/tyranoscript`) in headless Chrome | **works**: title → Start, 4 lines, hidden while asked (pixels gone), shown again at once, boxes on every character (shots `H:\MeguLit-Work\text-paths\web`). No NW.js / Electron galgame on E: or in Steam to try the launch switches on. |
+| unity | 月に寄りそう乙女の作法 (Tsukiniyorisou, Unity 2020.3 Mono, 32-bit, Steam) | **works**: shadow folder (junctions, copies on H:), BepInEx + plugin loaded, Start → NVL page; hidden=1 and the text gone, typewriter records per character, boxes on every glyph, drawn again on HIDE 0; canary refuses hiding after a simulated crash. Found live: Steam restarts the program from its real folder unless `SteamAppId` / `steam_appid.txt` are set; the dialogue was a uGUI Text with rich-text tags. |
+| renpy | 夏末盛开的花 (Flowers Blooming at the End of Summer, Ren'Py 8.4, gl2) | **works** after one fix: `Render.alpha` alone is ignored by gl2, the `renpy.alpha` shader hides it. New game, ADV lines located (21 / 20 / 16 / 30 characters), hidden from the first frame of the next line, shown again on reset, boxes on every character. |
+| krkr  | ファタモルガーナの館 (KiriKiri 2, on screen, new game, Ctrl skip) | **works**: 45 sentences located, every one hidden=1 while asked (dialogue gone, the name plate is a separate layer), boxes on every character. Two fixes found live: a sentence counts as hidden when each of its characters was drawn while hiding was on (the glyphs stay invisible after the switch, the end record comes at the click wait), and blanks get no box. Not covered: 千恋＊万花 (Yuzusoft, KiriKiri Z) draws through the `textrender.dll` plugin, not KAG `processCh` / `drawText` (draws=0); ATRI needs a running Steam. |
+
+Yuzusoft KiriKiri Z (千恋＊万花, probed live 2026-11-14 with the test-only build `cl /DMEGULIT_KRKR_DEBUG`, which
+evaluates `krkrdebug.tjs` placed next to the DLL): the message layer is `CustomMessageLayer`; its text is drawn natively
+into `textLayer` (`CustomMessageTextLayer`, a 1920x263 image holding nothing but the text) by the `TextRender` plugin
+class (calls seen: `clear`, `setRenderSize`, `done`), never through `processCh` or any `drawText`. Setting
+`textLayer.opacity` to 0 hides exactly the dialogue (the name plate stays). The character boxes still have to come from
+the `TextRender` instance (`getCharacters`) or from the text-only layer's pixels: next step for this family.
+
+Not covered yet: Unity IL2CPP (BepInEx 6 + generated interop assemblies, or XUnity's IL2CPP build), canvas web engines,
+KiriKiri games drawing through the textrender plugin (Yuzusoft) or their own message-layer class, Ren'Py text outside the say screen.

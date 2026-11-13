@@ -91,7 +91,9 @@ public:
   if (numparams >= 1 && param[0]->Type() == tvtString) {
    ttstr value(*param[0]);
    const tjs_char *text = value.c_str();
-   if (text && wcsncmp(text, L"ToMe_KRKR ", 10) == 0 && wcslen(text) < 8192) {
+   // ToMe_CHARS: text architecture ③, one record per sentence with every character's box (up to 28000 characters)
+   size_t len = text ? wcslen(text) : 0;
+   if (text && ((wcsncmp(text, L"ToMe_KRKR ", 10) == 0 && len < 8192) || (wcsncmp(text, L"ToMe_CHARS ", 11) == 0 && len < 28000))) {
     std::string line = Utf8(text);
     for (char &c : line) if (c == '\n') c = '\x1f'; else if (c == '\r') c = ' '; // one protocol line; HookBridge restores the breaks
     Push(line);
@@ -275,6 +277,22 @@ void Tick() {
  if (error.empty() && result.compare(0, 3, L"ok ") == 0) Installed = true;
  if (result == L"lost") Installed = false;
  SetStatus(status);
+#ifdef MEGULIT_KRKR_DEBUG
+ // Test builds only (never shipped): krkrdebug.tjs next to the DLL is evaluated once, its result sent as a status line.
+ wchar_t path[MAX_PATH]; DWORD n = GetModuleFileNameW(Self, path, MAX_PATH);
+ std::wstring file(path, n); file = file.substr(0, file.find_last_of(L"\\/") + 1) + L"krkrdebug.tjs";
+ HANDLE h = CreateFileW(file.c_str(), GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, NULL);
+ if (h != INVALID_HANDLE_VALUE) {
+  std::string data; char buf[4096]; DWORD got;
+  while (ReadFile(h, buf, sizeof buf, &got, NULL) && got) data.append(buf, got);
+  CloseHandle(h); DeleteFileW(file.c_str());
+  int wn = MultiByteToWideChar(CP_UTF8, 0, data.c_str(), (int)data.size(), NULL, 0);
+  std::wstring src(wn, L'\0'); MultiByteToWideChar(CP_UTF8, 0, data.c_str(), (int)data.size(), &src[0], wn);
+  std::wstring r2, e2; EvalCall dbg{src.c_str(), &r2, &e2};
+  TVPDoTryBlock(EvalTry, EvalCatch, NULL, &dbg);
+  Push("ToMe_KRKR debug " + Utf8((e2.empty() ? r2 : e2).c_str()));
+ }
+#endif
 }
 bool TickSafe() { __try { Tick(); return true; } __except (EXCEPTION_EXECUTE_HANDLER) { return false; } }
 void TickGuarded() { if (!TickSafe()) { TickMessage = 0; SetStatus("crashed; stopped"); } }

@@ -11,6 +11,10 @@
 // The end text keeps the game's own line breaks: a character drawn on a new row starts with a newline.
 // E321/E550: begin and end lines carry color=rrggbb, the layer's chColor for the sentence's last character: games draw read and
 // unread text in different colours, and the reader paints each page line in the colour the game used.
+// Text architecture ③ (docs/text-architecture.md): every sentence also ends with one record holding the box of each
+// character it drew (x, y, the drawing font's width of the character, the font size), in game-screen pixels:
+//   ToMe_CHARS engine=krkr line=N hidden=0|1 sw= sh= vx=0 vy=0 vw=0 vh=0 n= rects=x,y,w,h;... text=...
+// hidden=1 only when the sentence's glyphs really went through the opacity-0 drawing below (st.hid grew) and it is still on.
 LR"MGLT((function(){
  try {
   if(typeof global.kag!='Object' || global.kag===void || global.kag===null) return 'wait kag';
@@ -20,7 +24,7 @@ LR"MGLT((function(){
      KiriKiri builds; typeof does not */
   var st=(typeof global.__megulitKrkrState=='Object')?global.__megulitKrkrState:void;
   if(st===void) {
-   st=%['skipped'=>0,'skippedCls'=>'','lastFont'=>'','pfontName'=>void,'art'=>0,'artText'=>'','artSeen'=>[],'calls'=>0,'hid'=>0,'wrapped'=>[],'recs'=>[],'active'=>void,'lastVis'=>-1,'timer'=>void,'line'=>0,'report'=>global.__megulitKrkrReport,'kag'=>k,'hooked'=>0,'oldLB'=>void,'oldPB'=>void,'oldPBC'=>void];
+   st=%['skipped'=>0,'charsSent'=>0,'charsErr'=>'','skippedCls'=>'','lastFont'=>'','pfontName'=>void,'art'=>0,'artText'=>'','artSeen'=>[],'calls'=>0,'hid'=>0,'wrapped'=>[],'recs'=>[],'active'=>void,'lastVis'=>-1,'timer'=>void,'line'=>0,'report'=>global.__megulitKrkrReport,'kag'=>k,'hooked'=>0,'oldLB'=>void,'oldPB'=>void,'oldPBC'=>void];
    st.screen=function(){
     var sw=+this.kag.scWidth,sh=+this.kag.scHeight;
     if(!(sw>0) || !(sh>0)) {sw=+this.kag.primaryLayer.width;sh=+this.kag.primaryLayer.height;}
@@ -59,13 +63,18 @@ LR"MGLT((function(){
     if(rec.n==0) {
      this.fontReport(L);
      rec.line=++this.line;this.active=rec;rec.x0=cx;rec.y0=cy;rec.x1=cx;rec.y1=cy;rec.size=size;rec.text='';rec.sw=sw;rec.sh=sh;
-     rec.nvl=L.height>=sh*0.45?1:0;rec.same=rec.cleared?0:1;rec.cleared=false;
+     rec.nvl=L.height>=sh*0.45?1:0;rec.same=rec.cleared?0:1;rec.cleared=false;rec.rs='';rec.cn=0;rec.hc=0;rec.ct='';
      if(typeof L.chColor=='Integer') rec.color=L.chColor&0xffffff; /* E550: begin carries the colour too (narration grey / speech white), before the line is shown */
      var right=a[0]+L.width-(+L.marginR)-size;
      if(!(right>cx)) right=cx;
      this.send('begin',rec,cx,right);
     }
-    if(ch!='\n' && ch!='\r') {if(rec.n>0 && cy!=rec.ly) rec.text+='\n';rec.text+=ch;}
+    if(ch!='\n' && ch!='\r') {
+     if(rec.n>0 && cy!=rec.ly) rec.text+='\n';rec.text+=ch;
+     var cw=size;try {cw=+this.drawFont(L).getTextWidth(ch);} catch(e) {cw=size;}if(!(cw>0)) cw=size;
+     /* blanks get no box (the record's text has none); a character counts as hidden when it was drawn while hiding was on */
+     if(ch!=' ' && ch!='　' && ch!="\t") {rec.rs+=(rec.cn>0?';':'')+int(cx)+','+int(cy)+','+int(cw)+','+int(size);rec.cn++;rec.ct+=ch;if(this.hideOn()) rec.hc++;} else rec.ct+='';
+    }
     rec.ly=cy;
     rec.n++;
     if(typeof L.chColor=='Integer') rec.color=L.chColor&0xffffff;
@@ -74,9 +83,19 @@ LR"MGLT((function(){
     if(cy<rec.y0) rec.y0=cy;
     if(cy>rec.y1) rec.y1=cy;
    } incontextof st;
+   st.chars=function(rec){
+    if(!(rec.cn>0)) return;
+    /* the glyphs stay as drawn: a sentence is hidden when every one of its characters went through the opacity-0 draw */
+    var h=(rec.hc>=rec.cn)?1:0;this.charsSent++;
+    var t='',row='',c;
+    for(var j=0;j<rec.text.length;j++) {c=rec.text.charAt(j);if(c=="\n") {if(row!='') t+=(t!=''?"\n":'')+row;row='';} else if(c!=' ' && c!='　' && c!="\t") row+=c;}
+    if(row!='') t+=(t!=''?"\n":'')+row;
+    this.report('ToMe_CHARS engine=krkr line='+rec.line+' hidden='+h+' sw='+int(rec.sw)+' sh='+int(rec.sh)+' vx=0 vy=0 vw=0 vh=0 n='+rec.cn+' rects='+rec.rs+' text='+t);
+   } incontextof st;
+)MGLT" LR"MGLT(
    st.flush=function(rec){
-    if(rec.n>0) this.send('end',rec,rec.x0,rec.x1);
-    rec.n=0;rec.text='';
+    if(rec.n>0) {this.send('end',rec,rec.x0,rec.x1);try {this.chars(rec);} catch(e) {this.charsErr=e.message;}}
+    rec.n=0;rec.text='';rec.rs='';rec.cn=0;rec.hc=0;rec.ct='';
    } incontextof st;
    st.flushAll=function(){for(var i=0;i<this.recs.count;i++) this.flush(this.recs[i]);} incontextof st;
    /* 2026-11-12 (user: the game must think it draws its text while the output is ours): while MeguLit asks for it
@@ -217,7 +236,7 @@ LR"MGLT((function(){
       if(typeof ms!='Object' || ms===void || ms===null) continue;
       for(var j=0;j<ms.count && j<32;j++) this.install(ms[j]);
      }
-     return 'ok layers='+this.recs.count+' lines='+this.line+' wait='+(this.oldLB!==void?1:0)+(this.oldPB!==void?1:0)+' wrapped='+this.wrapped.count+' draws='+this.calls+' hidden='+this.hid+' art='+this.art+' artLayers='+this.artSeen.count+' font='+this.fontNow()+' skipped='+this.skipped+(this.skippedCls!=''?'('+this.skippedCls+')':'');
+     return 'ok layers='+this.recs.count+' lines='+this.line+' wait='+(this.oldLB!==void?1:0)+(this.oldPB!==void?1:0)+' wrapped='+this.wrapped.count+' draws='+this.calls+' hidden='+this.hid+' art='+this.art+' artLayers='+this.artSeen.count+' font='+this.fontNow()+' chars='+this.charsSent+(this.charsErr!=''?' charsErr='+this.charsErr:'')+' skipped='+this.skipped+(this.skippedCls!=''?'('+this.skippedCls+')':'');
     } catch(e) {return 'error '+e.message;}
    } incontextof st;
    global.__megulitKrkrState=st;
