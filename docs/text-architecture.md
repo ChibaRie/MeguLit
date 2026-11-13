@@ -290,5 +290,12 @@ canary. KiriKiri and Ren'Py need nothing at launch (HookBridge loads their DLLs)
 | renpy | 夏末盛开的花 (Flowers Blooming at the End of Summer, Ren'Py 8.4, gl2) | **works** after one fix: `Render.alpha` alone is ignored by gl2, the `renpy.alpha` shader hides it. New game, ADV lines located (21 / 20 / 16 / 30 characters), hidden from the first frame of the next line, shown again on reset, boxes on every character. |
 | krkr  | ファタモルガーナの館 (KiriKiri 2, on screen, new game, Ctrl skip) | **works**: 45 sentences located, every one hidden=1 while asked (dialogue gone, the name plate is a separate layer), boxes on every character. Two fixes found live: a sentence counts as hidden when each of its characters was drawn while hiding was on (the glyphs stay invisible after the switch, the end record comes at the click wait), and blanks get no box. Not covered: 千恋＊万花 (Yuzusoft, KiriKiri Z) draws through the `textrender.dll` plugin, not KAG `processCh` / `drawText` (draws=0); ATRI needs a running Steam. |
 
+Yuzusoft KiriKiri Z (千恋＊万花, probed live 2026-11-14 with the test-only build `cl /DMEGULIT_KRKR_DEBUG`, which
+evaluates `krkrdebug.tjs` placed next to the DLL): the message layer is `CustomMessageLayer`; its text is drawn natively
+into `textLayer` (`CustomMessageTextLayer`, a 1920x263 image holding nothing but the text) by the `TextRender` plugin
+class (calls seen: `clear`, `setRenderSize`, `done`), never through `processCh` or any `drawText`. Setting
+`textLayer.opacity` to 0 hides exactly the dialogue (the name plate stays). The character boxes still have to come from
+the `TextRender` instance (`getCharacters`) or from the text-only layer's pixels: next step for this family.
+
 Not covered yet: Unity IL2CPP (BepInEx 6 + generated interop assemblies, or XUnity's IL2CPP build), canvas web engines,
 KiriKiri games drawing through the textrender plugin (Yuzusoft) or their own message-layer class, Ren'Py text outside the say screen.
