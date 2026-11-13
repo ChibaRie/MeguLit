@@ -533,6 +533,7 @@ class HookNative{
  /* a menu/title label: letters, at most 24 chars or 4 words, no sentence end */
  static leaveLabel(x){return !!x&&x.length<=24&&x.split(/\s+/).length<=4&&/[\p{L}]{2,}/u.test(x)&&!/[。．.!?！？…」』"”]\s*$/.test(x);}
  emitSource(text,origin,engine='',nativeLine=0){
+  try{this.textPath?.want(text);}catch{}
   /* E501 every source path (native line, merged batch, skip burst) meets the same frame-dump filter as the aux entries */
   if(require('./language-tracks.cjs').stuttered(text)){this.trace('drop typewriter/redraw frame '+JSON.stringify(String(text).slice(0,40)));return;}
   {const sp=splitSpeaker(text,this.knownSpeakers);if(sp.name){this.speaker={text:sp.name,at:this.now()};this.noteSpeaker(sp.name);if(!sp.text.trim()){this.trace('speaker name split from the text flow');return;}text=sp.text;}}
@@ -574,7 +575,9 @@ class HookNative{
     reports a hidden draw and only then the stream becomes hide-only (hookThreads embeddable+hideOnly) and the normal hide path takes over. */
  probeHide(on){on=on===true;if(!this.process||this.probing===on)return;this.probing=on;this.trace('hide probe '+(on?'on':'off'));this.send({type:'probe',on});}
  suspendReplacement(on){if(!this.process||!this.enabled)return;if(on&&!this.suspended){this.suspended=true;this.trace('replacement paused for style sampling');this.send({type:'disable',reason:'style-sampling'});}else if(!on&&this.suspended){this.suspended=false;this.trace('replacement resumed after style sampling');this.send({type:'enable'});}}
- send(v){if(this.process?.stdin.writable)this.process.stdin.write(JSON.stringify(v)+'\n');}
+ /* Text architecture ③ (core/text-paths-launch.cjs): a web / Unity engine path follows the same replacement switch and gets each source line to find the dialogue */
+ attachTextPath(p){this.textPath=p;try{p.hide(this.enabled===true);}catch{}}
+ send(v){if(v&&(v.type==='enable'||v.type==='disable'))try{this.textPath?.hide(v.type==='enable');}catch{}if(this.process?.stdin.writable)this.process.stdin.write(JSON.stringify(v)+'\n');}
  stop(dispose=true){this.embedModeSent=undefined;this.probing=false;if(this.state?.scriptSource)this.notify({scriptSource:false});if(this.state?.embedTranslating)this.notify({embedTranslating:false});clearTimeout(this.skipBurst?.timer);this.skipBurst=null;this.pageReset();this.islandSources.clear();this.islandDraw=null;this.islandDraws=[];this.islandDelivered=0;clearTimeout(this.islandTimer);clearTimeout(this.sourceTimer);clearTimeout(this.sourceDeadline);this.sourceDeadline=null;this.pendingSource=null;this.verified=false;this.retryAt=0;this.attempt=0;this.markerKey='';this.waitTarget=null;if(this.process){const old=this.process;this.send({type:'quit'});old.stdin.end();this.process=null;++this.serial;const timer=setTimeout(()=>{if(old.exitCode===null)old.kill();},2000);timer.unref?.();}this.enabled=false;this.notify({hookActive:false,processAttached:false,streamSelected:false,receivedText:false,replacementState:'disabled',hookSource:null,hookThreads:[],hookDrawCount:0,hookDrawAt:0});if(dispose){this.lastSource='';this.identity='';this.wanted=false;clearInterval(this.timer);}}
 }
 module.exports={FLOW_PAGE_EXES,HookNative,PAGE_ENGINES,cleanSource,scriptSource,identifierNoise,splitSpeaker,speakerName};

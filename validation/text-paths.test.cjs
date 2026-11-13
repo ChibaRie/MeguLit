@@ -110,3 +110,60 @@ test('HookBridge and hook-native: char records reach the front end as hookCharRe
  hook.stop();
  const got=events.filter(e=>e.type==='hookCharRects');assert.equal(got.length,1,'malformed record dropped');assert.deepEqual([got[0].type,got[0].engine,got[0].hidden,got[0].text],['hookCharRects','renpy',true,'台詞']);
 });
+
+const U=require('../core/text-paths-unity.cjs');
+function fakeUnity(dir,{bits=32,il2cpp=false,modded=false}={}){const exe=path.join(dir,'Game.exe');const b=Buffer.alloc(512);b.write('MZ');b.writeUInt32LE(0x80,0x3c);b.write('PE\0\0',0x80,'latin1');b.writeUInt16LE(bits===64?0x8664:0x14c,0x84);fs.writeFileSync(exe,b);
+ fs.mkdirSync(path.join(dir,'Game_Data','Managed'),{recursive:true});fs.writeFileSync(path.join(dir,'Game_Data','Managed','Assembly-CSharp.dll'),'x');fs.writeFileSync(path.join(dir,'UnityPlayer.dll'),'up');fs.mkdirSync(path.join(dir,'MonoBleedingEdge'));
+ if(il2cpp)fs.writeFileSync(path.join(dir,'GameAssembly.dll'),'g');if(modded)fs.writeFileSync(path.join(dir,'winhttp.dll'),'other mod');return exe;}
+function fakePack(dir){for(const a of ['x86','x64']){fs.mkdirSync(path.join(dir,a,'BepInEx','core'),{recursive:true});fs.writeFileSync(path.join(dir,a,'winhttp.dll'),'doorstop '+a);fs.writeFileSync(path.join(dir,a,'doorstop_config.ini'),'[General]\nenabled = true\n');fs.writeFileSync(path.join(dir,a,'BepInEx','core','BepInEx.dll'),'b');}fs.writeFileSync(path.join(dir,'MeguLitUnityText.dll'),'plugin');return dir;}
+const listAll=d=>fs.readdirSync(d,{recursive:true}).map(String).sort();
+const unjunction=d=>{if(!fs.existsSync(d))return;for(const s of fs.readdirSync(d)){const p=path.join(d,s);for(const n of fs.readdirSync(p)){const q=path.join(p,n);if(fs.lstatSync(q).isSymbolicLink())fs.rmdirSync(q);}}};
+
+test('Unity shadow: the game folder is mirrored (junctions + links), never written; doorstop, BepInEx, plugin, port and Steam id live in the shadow only',()=>{
+ const base=tmp(),game=path.join(base,'game'),pack=fakePack(path.join(base,'pack'));fs.mkdirSync(game);const exe=fakeUnity(game);
+ assert.equal(U.unityGame(exe),'mono');assert.equal(U.bits(exe),32);const before=listAll(game);
+ const sh=U.makeShadow({exe,shadowRoot:path.join(base,'shadow'),pack,port:4321,steamAppId:'1776970'});
+ assert.deepEqual(listAll(game),before,'game folder unchanged');
+ assert.equal(sh.flavour,'x86');assert.ok(fs.lstatSync(path.join(sh.shadow,'Game_Data')).isSymbolicLink(),'data folder is a junction');
+ assert.equal(fs.readFileSync(path.join(sh.shadow,'winhttp.dll'),'utf8'),'doorstop x86');
+ assert.equal(fs.readFileSync(path.join(sh.shadow,'BepInEx','plugins','MeguLit','MeguLitUnityText.port'),'utf8'),'4321');
+ assert.equal(fs.readFileSync(path.join(sh.shadow,'steam_appid.txt'),'utf8'),'1776970');
+ assert.ok(fs.existsSync(path.join(sh.shadow,'Game_Data','Managed','Assembly-CSharp.dll')),'the real data through the junction');
+ fs.writeFileSync(path.join(sh.shadow,'stale.txt'),'x');U.makeShadow({exe,shadowRoot:path.join(base,'shadow'),pack,port:4322});
+ assert.equal(fs.existsSync(path.join(sh.shadow,'stale.txt')),false,'an entry the game no longer has goes');
+ assert.deepEqual(listAll(game),before);assert.ok(fs.existsSync(path.join(game,'Game_Data','Managed','Assembly-CSharp.dll')),'nothing behind a junction deleted');
+ const other=path.join(base,'il2cpp');fs.mkdirSync(other);assert.throws(()=>U.makeShadow({exe:fakeUnity(other,{il2cpp:true}),shadowRoot:path.join(base,'shadow'),pack,port:1}),/UNITY_NOT_MONO/);
+ const mod=path.join(base,'mod');fs.mkdirSync(mod);assert.throws(()=>U.makeShadow({exe:fakeUnity(mod,{modded:true}),shadowRoot:path.join(base,'shadow'),pack,port:1}),/UNITY_ALREADY_MODDED/,'never mixed with someone else\'s mods');
+ unjunction(path.join(base,'shadow'));fs.rmSync(base,{recursive:true,force:true});
+});
+
+test('Unity control socket: plugin records in, HIDE / WANT out; canary blocks hiding after a crash',async()=>{
+ const dir=tmp(),exe=path.join(dir,'g.exe');fs.writeFileSync(exe,'x');const canary=new TP.Canary(dir,exe);const got=[];
+ const u=new U.UnityTextPath({canary,onChars:l=>got.push(TP.parseChars(l))});const port=await u.listen();
+ const net=require('node:net'),c=net.connect(port,'127.0.0.1');let fromHost='';c.setEncoding('utf8');c.on('data',d=>fromHost+=d);
+ await new Promise(r=>c.once('connect',r));await new Promise(r=>setTimeout(r,50));u.want('一行目');u.hide(true);
+ c.write('ToMe_UNITY status ok unity=2020.3\nToMe_CHARS engine=unity line=1 hidden=1 sw=1727 sh=971 vx=0 vy=0 vw=1727 vh=971 n=2 rects=364,62,32,33;397,62,32,33 text=前略\n');
+ await new Promise(r=>setTimeout(r,150));
+ assert.match(fromHost,/WANT 一行目\nHIDE 1\n/);assert.deepEqual(got.map(r=>[r.engine,r.hidden,r.text]),[['unity',true,'前略']]);assert.ok(canary.read().armed.unity);
+ u.exited(-1073741819);assert.equal(canary.allowed('unity'),false);fromHost='';u.hide(true);await new Promise(r=>setTimeout(r,100));assert.match(fromHost,/HIDE 0/,'refused after a crash');
+ c.destroy();u.stop();fs.rmSync(dir,{recursive:true,force:true});
+ const cs=read('native/unitytext/MeguLitUnityText.cs');
+ assert.match(cs,/\[BepInPlugin\("com\.megulit\.unitytext"/);assert.match(cs,/tmpAlpha\.SetValue\(c, a, null\)/);assert.match(cs,/bool hidden = hidingCurrent && GetAlpha\(current\) <= 0f;/,'hidden only if still alpha 0 at the end of the frame');
+ assert.match(cs,/connected = false; hideAsked = false;/,'socket gone: drawn again');
+ assert.doesNotMatch(cs,/PlayerPrefs\.|File\.Write|\.Save\(/,'never writes game data');
+});
+
+test('launch: off unless switched on; web gets switches, Unity a shadow program; the reader feeds hide and want',async()=>{
+ const L=require('../core/text-paths-launch.cjs'),base=tmp();
+ const web=path.join(base,'web');fs.mkdirSync(web);for(const f of ['Game.exe','icudtl.dat','nw.dll'])fs.writeFileSync(path.join(web,f),'');
+ assert.equal(await L.prepare({root:base,exe:path.join(web,'Game.exe'),enabled:false}),null);
+ const p=await L.prepare({root:base,exe:path.join(web,'Game.exe'),enabled:true,profile:{source:'steam',appid:'42'}});
+ assert.equal(p.path,'web');assert.match(p.args[0],/^--remote-debugging-port=\d+$/);assert.equal(p.env.SteamAppId,'42');
+ const hook={charRects(){},trace(){},attachTextPath(s){this.textPath=s;}};L.attach(p,hook);assert.equal(hook.textPath,p.session);
+ assert.ok(require('../core/hook-native.cjs').HookNative.prototype.attachTextPath,'hook reader takes a text path');
+ const src=read('core/hook-native.cjs');assert.ok(src.includes("send(v){if(v&&(v.type==='enable'||v.type==='disable'))try{this.textPath?.hide(v.type==='enable');}catch{}"));assert.ok(src.includes('try{this.textPath?.want(text);}catch{}'));
+ const b=read('services/bridge.cjs');assert.ok(b.includes('enabled:prefs.ownTextOutput===true'));assert.ok(b.includes('const steam=steamApp&&!companion&&!textPath;'),'never a restart through Steam on this path');
+ assert.ok(b.includes('textPath.session.exited(child.exit.code??-1)'),'exit code to the canary');
+ assert.equal(require('../core/runtime-packs.cjs').MARKERS['unity-text'],'runtime/unity-text/MeguLitUnityText.dll');
+ fs.rmSync(base,{recursive:true,force:true});
+});

@@ -116,16 +116,20 @@ async function launch(db,id,runtime=null,windowsLaunch=false,{retried=false,redi
       found is the game started directly with those arguments, otherwise the Steam path is kept as before. */
    const companionArgs=steamApp&&!/^(launcher|config)/i.test(path.basename(game.executable))?require('./steam-companion.cjs').launchArgs(game.executable):null;
    const companion=!!companionArgs;
-   const steam=steamApp&&!companion;
+   /* Text architecture ③ (core/text-paths-launch.cjs, owner switch preferences.ownTextOutput): a web or Unity engine path may start
+      the game with Chromium debugging switches or from MeguLit's shadow folder (Steam app id in the environment, never a restart
+      through Steam). Anything failing here leaves the launch exactly as before. */
+   let textPath=null;try{let prefs={};try{prefs=JSON.parse(fs.readFileSync(path.join(root,'data','preferences.json'),'utf8'))||{};}catch{}textPath=await require('../core/text-paths-launch.cjs').prepare({root,exe:game.executable,profile,enabled:prefs.ownTextOutput===true,trace});}catch(error){textPath=null;trace('text-paths-failed',{error:String(error?.message||error).slice(0,160)});}
+   const steam=steamApp&&!companion&&!textPath;
    const {startProcess,waitForVisibleGame}=require('./game-readiness.cjs');
-   const child=await startProcess(steam?'explorer.exe':game.executable,steam?['steam://rungameid/'+profile.appid]:companion?companionArgs:[],path.dirname(game.executable),'GAME_LAUNCH_FAILED',undefined,companion?{...process.env,SteamAppId:String(profile.appid),SteamGameId:String(profile.appid),SteamOverlayGameId:String(profile.appid)}:null);
+   const child=textPath?await startProcess(textPath.exe,[...(companionArgs||[]),...textPath.args],textPath.cwd,'GAME_LAUNCH_FAILED',undefined,{...process.env,...textPath.env}):await startProcess(steam?'explorer.exe':game.executable,steam?['steam://rungameid/'+profile.appid]:companion?companionArgs:[],path.dirname(game.executable),'GAME_LAUNCH_FAILED',undefined,companion?{...process.env,SteamAppId:String(profile.appid),SteamGameId:String(profile.appid),SteamOverlayGameId:String(profile.appid)}:null);
    trace('launch-process-started',{pid:child.pid,steam,steamDirect:companion||undefined});
    stage='window-wait';
    /* Steam may start another program in the install folder than the one on record (Summer Pockets: the library has
       SummerPocketsRB.exe, Steam runs SiglusEngine_Steam.exe; user 2026-11-09: the game was up and MeguLit said the launch
       failed). For Steam launches a game process from any program in that folder counts. */
    const siblings=steam?(()=>{try{return fs.readdirSync(path.dirname(game.executable)).filter(f=>/\.exe$/i.test(f)&&!/^(unins|setup|install|config|crash|unitycrash|vc_?redist|dxsetup|launcher)/i.test(f)).map(f=>path.join(path.dirname(game.executable),f)).filter(f=>f.toLowerCase()!==game.executable.toLowerCase()&&fs.statSync(f).size>200000).slice(0,8);}catch{return [];}})():[];
-   const anyProcess=async()=>{const own=await gameProcesses(root,game.executable);if(own.length||!siblings.length)return own;for(const exe of siblings){const found=await gameProcesses(root,exe).catch(()=>[]);if(found.length){trace('steam-runs-other-program',{exe:path.basename(exe)});return found;}}return own;};
+   const anyProcess=async()=>{const own=await gameProcesses(root,game.executable);if(!own.length&&textPath&&textPath.exe!==game.executable){const shadow=await gameProcesses(root,textPath.exe).catch(()=>[]);if(shadow.length)return shadow;}if(own.length||!siblings.length)return own;for(const exe of siblings){const found=await gameProcesses(root,exe).catch(()=>[]);if(found.length){trace('steam-runs-other-program',{exe:path.basename(exe)});return found;}}return own;};
    /* E303: Steam may prepare a first start (cloud sync, install scripts) for longer than 15 s; wait up to 45 s for its window. */
    const startedAt=Date.now();
    try{state=await waitForVisibleGame(anyProcess,{helper:steam,indirect:steam,helperError:'GAME_LAUNCH_FAILED',exit:()=>child.exit,trace,...(steam?{attempts:180,timeout:45000}:{})});}
@@ -138,6 +142,9 @@ async function launch(db,id,runtime=null,windowsLaunch=false,{retried=false,redi
     trace('locale-fallback',{});stage='locale-start';const result=await lib.locale.launch(game.executable,{trace});if(result.needLocaleEmulator)throw error;
     state={pid:result.gamePid,locale:'japanese'};
    }
+   /* ③ the engine path joins the hook reader once the game is up; its exit code goes to the crash canary */
+   if(textPath){try{const tp=require('../core/text-paths-launch.cjs');const join=(n=0)=>{const hook=runtime?.reader?.gal?.hooks;if(hook){tp.attach(textPath,hook);return;}if(n<20)setTimeout(()=>join(n+1),1500).unref?.();};join();textPath.connect().catch(()=>{});
+    const exitWatch=setInterval(()=>{if(child.exit){clearInterval(exitWatch);try{textPath.session.exited(child.exit.code??-1);textPath.session.stop();}catch{}}},2000);exitWatch.unref?.();}catch(error){trace('text-paths-attach-failed',{error:String(error?.message||error).slice(0,160)});}}
   }
   trace('new-window-ready',state);
   {const watch=featureWatch;featureWatch=null;setTimeout(()=>watch.stop(),30000).unref?.();}
