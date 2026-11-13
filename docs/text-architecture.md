@@ -294,8 +294,14 @@ Yuzusoft KiriKiri Z (千恋＊万花, probed live 2026-11-14 with the test-only 
 evaluates `krkrdebug.tjs` placed next to the DLL): the message layer is `CustomMessageLayer`; its text is drawn natively
 into `textLayer` (`CustomMessageTextLayer`, a 1920x263 image holding nothing but the text) by the `TextRender` plugin
 class (calls seen: `clear`, `setRenderSize`, `done`), never through `processCh` or any `drawText`. Setting
-`textLayer.opacity` to 0 hides exactly the dialogue (the name plate stays). The character boxes still have to come from
-the `TextRender` instance (`getCharacters`) or from the text-only layer's pixels: next step for this family.
+`textLayer.opacity` to 0 hides exactly the dialogue (the name plate stays). **Covered now** (`script.inc` `st.tr*`):
+`TextRender.done` is wrapped once on the class (`incontextof null`, so every instance reaches it), followed by
+`getCharacters(0, n)` (entries: `text`, `x`, `y`, `cw`, `size` in the render box). Boxes = message layer's absolute
+position + `marginL` / `marginT` (+ `PreRenderFontEx.resizePadding` vertically), `cw` × `size`. Hidden = the current
+message layer's `textLayer` at opacity 0 while asked (checked every 100 ms with the dialog-visibility timer), the game's
+own opacity restored when MeguLit stops; a hidden-state change resends the line's record. Lines are numbered from
+100000 so they never collide with KAG `processCh` sentences. Live 2026-11-14 千恋＊万花: 『お客さん』, 「……ぁ？」, … boxes on
+every glyph, hidden=1 with the dialogue gone, back on reset.
 
 Not covered yet: Unity IL2CPP (BepInEx 6 + generated interop assemblies, or XUnity's IL2CPP build), canvas web engines,
 KiriKiri games drawing through the textrender plugin (Yuzusoft) or their own message-layer class, Ren'Py text outside the say screen.
