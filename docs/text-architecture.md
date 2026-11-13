@@ -7,6 +7,7 @@ would have drawn it. Three parts, each with its own section below:
    becomes a small dot with the original metrics, so layout, wrapping and pacing stay the game's own.
 2. **Capture compositor** (`feat/capture-compositor`): captures the game window, finds the dots, erases them, draws
    MeguLit's text at their positions and shows the result in MeguLit's own window.
+   Details: docs/text-architecture-compositor.md.
 3. **Non-dot paths** (`feat/text-paths`): engines that do not take glyphs from Windows (web, Unity, KiriKiri with
    prerendered fonts, Ren'Py) report character rectangles themselves.
 
