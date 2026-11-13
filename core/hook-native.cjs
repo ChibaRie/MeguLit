@@ -125,6 +125,10 @@ class HookNative{
    /* 2026-11-14 glyph hide (native/fontprobe/GlyphMatch.h): the engine-agnostic fallback hid the game's own drawing of the line (hit),
       learned the dialogue font (key), or found the engine reuses rasterised glyphs and stopped (cached; the bridge turns the stream back to read-only). */
    if(m.type==='hookGlyphHide'){this.glyphHide(m);return;}
+   /* 2026-11-14 glyph dots (docs/text-architecture.md): MODE dot serves one small square per dialogue character; the
+      bridge forwards the line and every served dot. They are passed on as hookGlyphDots for the capture compositor and the
+      current line's dot table is kept in state (hookGlyphDots: seq, text, dots by index, cached). */
+   if(m.type==='hookGlyphDots'){this.glyphDots(m);return;}
    if(m.type==='hookRender'){this.notify({hookDrawCount:Number(m.count)||0,hookDrawAt:Number(m.at)||0});return;}
    if(m.type==='waitMarkerDrawn'){this.emit({type:'waitMarkerDrawn'});return;}
    if(m.type==='waitMarkerStatus'){this.notify({waitMarkerMessage:String(m.message||'').slice(0,300),waitMarkerHookActive:m.active===true});return;}
@@ -142,6 +146,15 @@ class HookNative{
  // replaces the captured line; anything else, or any error, keeps the captured text so the dialogue never goes missing.
  /* E285 (user: a Chinese script was imported, yet the game was given DeepSeek's wording): one lookup per line, shared by the
     reader and the text written back into the game, so the matcher's reading position moves once per line. */
+ /* Front end -> bridge: MODE dot or blank for the glyph fallback (the compositor switches dots on while it runs). */
+ setGlyphMode(mode){this.send({type:'glyphMode',mode:mode==='dot'?'dot':'blank'});}
+ glyphDots(m){if(!m||!['line','dots','cached'].includes(m.state))return;const cur=this.state.hookGlyphDots;
+  if(m.state==='cached'){if(cur)this.notify({hookGlyphDots:{...cur,cached:true}});this.emit(m);return;}
+  if(!Number.isSafeInteger(m.seq))return;
+  let next=cur&&cur.seq===m.seq?{...cur}:{seq:m.seq,text:'',dots:[],cached:cur?.cached===true};
+  if(m.state==='line'&&typeof m.text==='string')next.text=m.text.slice(0,2048);
+  if(m.state==='dots'&&Array.isArray(m.dots)){const dots=[...next.dots];for(const d of m.dots.slice(0,1024))if(d&&Number.isInteger(d.i)&&typeof d.ch==='string'&&/^[dcpr]$/.test(d.k)&&!dots.some(o=>o.i===d.i&&o.k===d.k&&(d.i>=0||o.ch===d.ch&&o.h===d.h)))dots.push({i:d.i,ch:d.ch.slice(0,2),h:d.h|0,b:d.b|0,a:d.a|0,x:d.x|0,y:d.y|0,s:d.s|0,k:d.k,path:String(m.path||'').slice(0,8)});next.dots=dots.slice(0,2048);}
+  this.state={...this.state,hookGlyphDots:next};this.emit(m);}
  glyphHide(m){if(!m||!['ready','hit','key','cached'].includes(m.state))return;const v={hookGlyphHide:m.state==='key'||m.state==='ready'?(this.state.hookGlyphHide||'learning'):m.state};if(m.state==='ready'&&Number.isFinite(m.version))v.hookGlyphVersion=Number(m.version);if(m.state==='hit'&&typeof m.path==='string')v.hookGlyphPath=m.path.slice(0,16);if(m.state==='key'&&typeof m.face==='string'&&Number.isFinite(m.size))v.hookGlyphFont={face:m.face.slice(0,64),size:Number(m.size)};this.trace('glyph hide '+m.state+(m.path?' '+String(m.path).slice(0,16):'')+(m.size?' '+Number(m.size)+'px':''));this.notify(v);}
  markScriptSource(){try{if(this.state&&!this.state.scriptSource)this.notify({scriptSource:true});}catch{}}
  resolveSource(text){const provider=this.originalText;if(!provider||!text)return null;const key=String(text).replace(/\s+/g,'');this.sourceCache??=new Map();if(this.sourceCache.has(key)&&this.sourceCache.get(key).provider===provider)return this.sourceCache.get(key).r;const r=provider.resolve(text);this.sourceCache.set(key,{provider,r});if(this.sourceCache.size>200)this.sourceCache.delete(this.sourceCache.keys().next().value);return r;}

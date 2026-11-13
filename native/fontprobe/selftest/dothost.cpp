@@ -1,0 +1,185 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Self-test for glyph dots (MODE dot) in MeguLitFont<bit>.dll, without a game and without a window: plays HookBridge
+// (serves both pipes, sends MODE dot + FONT + one LINE per case), draws that line through one API per case into an
+// off-screen DIB, saves the DIB as PNG and checks it: exactly one dot per non-blank character of the line, each a solid
+// square of at most DotSide x DotSide pixels at the expected position (the character's black box top-left for GDI, its
+// layout box top-left for GDI+ and Direct2D, +-1 px), and no other ink. Then checks the ToMe_GLYPHDOT report of every
+// case (index, character, kind) and that menu text and metrics stay untouched.
+// Usage: dothost.exe <MeguLitFont dll> [folder for the PNGs]   (spec: docs/text-architecture.md)
+#include <windows.h>
+#include <gdiplus.h>
+#include <d2d1.h>
+#include <dwrite.h>
+#include <stdio.h>
+#include <string>
+#include <vector>
+#include <map>
+#include <algorithm>
+static std::string Got;
+static HANDLE Ctl = INVALID_HANDLE_VALUE;
+static int Failed = 0;
+static void Check(bool ok, const std::string &what) { printf("%s %s\n", ok ? "ok  " : "FAIL", what.c_str()); if (!ok) Failed++; }
+DWORD WINAPI Listen(void *) {
+ wchar_t name[64]; swprintf_s(name, L"\\\\.\\pipe\\MeguLitFont-%lu", GetCurrentProcessId());
+ HANDLE p = CreateNamedPipeW(name, PIPE_ACCESS_INBOUND, PIPE_TYPE_BYTE, 1, 0, 65536, 0, NULL);
+ if (p == INVALID_HANDLE_VALUE || !ConnectNamedPipe(p, NULL) && GetLastError() != ERROR_PIPE_CONNECTED) return 1;
+ char buf[4096]; DWORD n; while (ReadFile(p, buf, sizeof buf, &n, NULL) && n) Got.append(buf, n);
+ return 0;
+}
+static std::string Utf8(const std::wstring &w) { int n = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), NULL, 0, NULL, NULL); std::string s(n, 0); WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), &s[0], n, NULL, NULL); return s; }
+static void Push(const std::string &l) { std::string d = l + "\n"; DWORD done = 0; WriteFile(Ctl, d.data(), (DWORD)d.size(), &done, NULL); Sleep(120); }
+static const int W = 1000, H = 90, Side = 3, X0 = 20, Y0 = 20;
+static HDC Dc; static DWORD *Bits; static HBITMAP Bmp; static const wchar_t *Face = L"MS Gothic";
+static void Clear() { GdiFlush(); for (int i = 0; i < W * H; i++) Bits[i] = 0xffffffff; }
+static bool InkAt(int x, int y) { return (Bits[y * W + x] & 0xff) < 128; }
+static int Ink() { GdiFlush(); int n = 0; for (int y = 0; y < H; y++) for (int x = 0; x < W; x++) n += InkAt(x, y); return n; }
+struct Blob { int x0, y0, x1, y1, n; };
+static std::vector<Blob> Blobs() {
+ GdiFlush(); std::vector<char> seen(W * H); std::vector<Blob> out;
+ for (int y = 0; y < H; y++) for (int x = 0; x < W; x++) if (InkAt(x, y) && !seen[y * W + x]) {
+  Blob b{x, y, x, y, 0}; std::vector<int> st{y * W + x}; seen[y * W + x] = 1;
+  while (!st.empty()) { int p = st.back(); st.pop_back(); int px = p % W, py = p / W; b.n++; b.x0 = (std::min)(b.x0, px); b.x1 = (std::max)(b.x1, px); b.y0 = (std::min)(b.y0, py); b.y1 = (std::max)(b.y1, py);
+   for (int dy = -1; dy <= 1; dy++) for (int dx = -1; dx <= 1; dx++) { int qx = px + dx, qy = py + dy; if (qx < 0 || qy < 0 || qx >= W || qy >= H) continue; int q = qy * W + qx; if (!seen[q] && InkAt(qx, qy)) { seen[q] = 1; st.push_back(q); } } }
+  out.push_back(b); }
+ return out;
+}
+static CLSID PngClsid() { CLSID c; CLSIDFromString(L"{557CF406-1A04-11D3-9A73-0000F81EF32E}", &c); return c; }
+static std::wstring Shots;
+static void Save(const char *name) {
+ if (Shots.empty()) return; GdiFlush(); Gdiplus::GpBitmap *bmp = NULL; Gdiplus::DllExports::GdipCreateBitmapFromHBITMAP(Bmp, NULL, &bmp); if (!bmp) return;
+ std::wstring path = Shots + L"\\dots-" + std::wstring(name, name + strlen(name)) + (sizeof(void *) == 8 ? L"-x64.png" : L"-x86.png"); CLSID png = PngClsid();
+ Gdiplus::DllExports::GdipSaveImageToFile(bmp, path.c_str(), &png, NULL); Gdiplus::DllExports::GdipDisposeImage(bmp);
+}
+// The image holds exactly expected.size() solid dots of at most Side x Side, each within 1 px of its expected top-left.
+static void Dots(const char *name, const std::vector<POINT> &expected) {
+ Save(name); auto blobs = Blobs(); bool shape = true, place = true; std::vector<bool> used(blobs.size());
+ for (auto &b : blobs) { int w = b.x1 - b.x0 + 1, h = b.y1 - b.y0 + 1; if (w > Side || h > Side || b.n != w * h) shape = false; }
+ for (auto &e : expected) { bool hit = false; for (size_t i = 0; i < blobs.size(); i++) if (!used[i] && abs(blobs[i].x0 - e.x) <= 1 && abs(blobs[i].y0 - e.y) <= 1) { used[i] = hit = true; break; } if (!hit) { place = false; printf("     missing dot at %ld,%ld\n", e.x, e.y); } }
+ if (!place || blobs.size() != expected.size()) for (auto &b : blobs) printf("     blob %d,%d %dx%d n=%d\n", b.x0, b.y0, b.x1 - b.x0 + 1, b.y1 - b.y0 + 1, b.n);
+ Check(blobs.size() == expected.size() && shape && place, std::string(name) + ": exactly " + std::to_string(expected.size()) + " solid dots (<= 3x3) at the expected positions, nothing else (" + std::to_string(blobs.size()) + " found)");
+}
+static const MAT2 Id = {{0, 1}, {0, 0}, {0, 0}, {0, 1}};
+static TEXTMETRICW Tm;
+struct Metric { GLYPHMETRICS gm; int adv; };
+static std::map<wchar_t, Metric> Metrics; // measured before any line is pushed (the hooked calls then never touch a line)
+struct Plain { GLYPHMETRICS gm; DWORD size; };
+static std::map<std::pair<wchar_t, UINT>, Plain> Plains; // per character and GGO format, before any line: what the dot glyph must keep
+static void Measure(const std::wstring &s) { for (wchar_t c : s) if (!Metrics.count(c)) { Metric m{}; GetGlyphOutlineW(Dc, c, GGO_METRICS, &m.gm, 0, NULL, &Id); SIZE z{}; GetTextExtentPoint32W(Dc, &c, 1, &z); m.adv = z.cx; Metrics[c] = m; } }
+// GDI expectation: black box top-left of each character drawn from (x, top) at its advance.
+static std::vector<POINT> GdiExpected(const std::wstring &s, int x, int top, const std::vector<int> *dx = NULL) {
+ std::vector<POINT> out; int pen = x; for (size_t i = 0; i < s.size(); i++) { auto &m = Metrics[s[i]]; out.push_back({pen + m.gm.gmptGlyphOrigin.x, top + Tm.tmAscent - m.gm.gmptGlyphOrigin.y}); pen += dx ? (*dx)[i] : m.adv; } return out;
+}
+// The host as an engine: GetGlyphOutline per character (size query, then the buffer), blitted at pen + origin.
+static void DrawGgo(const std::wstring &s, UINT format, int x, int base, std::vector<POINT> &expect, bool &metricsSame) {
+ int pen = x;
+ for (wchar_t c : s) {
+  GLYPHMETRICS gm{}; DWORD n = GetGlyphOutlineW(Dc, c, format, &gm, 0, NULL, &Id); std::vector<BYTE> b(n ? n : 1); DWORD r = n ? GetGlyphOutlineW(Dc, c, format, &gm, n, b.data(), &Id) : 0;
+  auto &m = Plains[{c, format}]; if (memcmp(&gm, &m.gm, sizeof gm) || n != m.size || r != n) metricsSame = false;
+  int left = pen + gm.gmptGlyphOrigin.x, top = base - gm.gmptGlyphOrigin.y; UINT kind = format & 0x0f; expect.push_back({left, top});
+  if (kind == GGO_NATIVE || kind == GGO_BEZIER) {
+   const BYTE *p = b.data(), *end = p + (r == GDI_ERROR ? 0 : r); std::vector<POINT> pts; std::vector<INT> counts;
+   auto fx = [](FIXED f) { return f.value + f.fract / 65536.0; };
+   while (p + sizeof(TTPOLYGONHEADER) <= end) { auto *h = (const TTPOLYGONHEADER *)p; if (h->cb < sizeof(TTPOLYGONHEADER) || p + h->cb > end) break; size_t first = pts.size(); pts.push_back({(LONG)(pen + fx(h->pfxStart.x)), (LONG)(base - fx(h->pfxStart.y))});
+    const BYTE *q = p + sizeof(TTPOLYGONHEADER), *e = p + h->cb; while (q + 4 <= e) { auto *cv = (const TTPOLYCURVE *)q; for (WORD i = 0; i < cv->cpfx; i++) pts.push_back({(LONG)(pen + fx(cv->apfx[i].x)), (LONG)(base - fx(cv->apfx[i].y))}); q += 4 + sizeof(POINTFX) * cv->cpfx; }
+    counts.push_back((INT)(pts.size() - first)); p += h->cb; }
+   if (!counts.empty()) { SelectObject(Dc, GetStockObject(BLACK_BRUSH)); SelectObject(Dc, GetStockObject(NULL_PEN)); SetPolyFillMode(Dc, WINDING); PolyPolygon(Dc, pts.data(), counts.data(), (int)counts.size()); }
+  } else {
+   int bx = gm.gmBlackBoxX, by = gm.gmBlackBoxY; int pitch = kind == GGO_BITMAP ? ((bx + 31) / 32) * 4 : (bx + 3) & ~3; int full = kind == GGO_GRAY2_BITMAP ? 4 : kind == GGO_GRAY4_BITMAP ? 16 : 64;
+   for (int yy = 0; yy < by; yy++) for (int xx = 0; xx < bx; xx++) { int v = kind == GGO_BITMAP ? ((b[yy * pitch + xx / 8] >> (7 - xx % 8)) & 1) * full : b[yy * pitch + xx]; int px = left + xx, py = top + yy;
+    if (v && px >= 0 && py >= 0 && px < W && py < H) { BYTE g = (BYTE)(255 - 255 * v / full); Bits[py * W + px] = 0xff000000 | (g << 16) | (g << 8) | g; } }
+  }
+  pen += gm.gmCellIncX;
+ }
+}
+static std::wstring A = L"吾輩は猫である。名前はまだ無い。", B = L"どこで生れたかとんと見当がつかぬ。";
+static int Seq = 0; static std::map<int, std::wstring> SeqText; static std::map<int, std::string> SeqPath;
+static const std::wstring &Next(const char *path) { const std::wstring &l = (++Seq % 2) ? A : B; SeqText[Seq] = l; SeqPath[Seq] = path; Push("LINE " + Utf8(l)); return l; }
+int wmain(int argc, wchar_t **argv) {
+ if (argc < 2) return 2;
+ if (argc > 2) { Shots = argv[2]; CreateDirectoryW(Shots.c_str(), NULL); }
+ ULONG_PTR token; Gdiplus::GdiplusStartupInput in; Gdiplus::GdiplusStartup(&token, &in, NULL);
+ ID2D1Factory *d2 = NULL; D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, &d2); IDWriteFactory *dw = NULL; DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory), (IUnknown **)&dw);
+ CreateThread(NULL, 0, Listen, NULL, 0, NULL);
+ wchar_t name[64]; swprintf_s(name, L"\\\\.\\pipe\\MeguLitFontCtl-%lu", GetCurrentProcessId());
+ Ctl = CreateNamedPipeW(name, PIPE_ACCESS_OUTBOUND, PIPE_TYPE_BYTE, 1, 65536, 0, 0, NULL);
+ Sleep(100);
+ HMODULE dll = LoadLibraryW(argv[1]); if (!dll) { printf("load failed\n"); return 3; }
+ typedef DWORD(__cdecl * VER)(); VER ver = (VER)GetProcAddress(dll, "MeguLitFontVersion"); DWORD version = ver ? ver() : 0;
+ Check(version >= 3, "exports MeguLitFontVersion >= 3 (glyph dots)"); printf("version %lu\n", version);
+ if (version < 3) { printf("FAIL old DLL\n"); return 5; }
+ if (!ConnectNamedPipe(Ctl, NULL) && GetLastError() != ERROR_PIPE_CONNECTED) { printf("control pipe not connected\n"); return 4; }
+ Sleep(1500); // late hooks (GDI+, DirectWrite, Direct2D) run once a second
+ BITMAPINFO bi{}; bi.bmiHeader = {sizeof(BITMAPINFOHEADER), W, -H, 1, 32, BI_RGB};
+ Dc = CreateCompatibleDC(NULL); Bmp = CreateDIBSection(Dc, &bi, DIB_RGB_COLORS, (void **)&Bits, NULL, 0); SelectObject(Dc, Bmp);
+ bool japanese = false;
+ for (const wchar_t *f : {L"MS Gothic", L"Yu Gothic", L"Meiryo", L"MS Mincho"}) {
+  HFONT probe = CreateFontW(-28, 0, 0, 0, 400, 0, 0, 0, DEFAULT_CHARSET, 0, 0, ANTIALIASED_QUALITY, 0, f); HGDIOBJ old = SelectObject(Dc, probe); wchar_t got[64] = {}; GetTextFaceW(Dc, 64, got); WORD gi = 0xffff; GetGlyphIndicesW(Dc, L"猫", 1, &gi, GGI_MARK_NONEXISTING_GLYPHS); SelectObject(Dc, old); DeleteObject(probe);
+  if (!_wcsicmp(got, f) && gi != 0xffff) { Face = f; japanese = true; break; } }
+ if (!japanese) { printf("SKIP drawing checks: no Japanese font on this machine\n"); printf(Failed ? "FAIL %d\n" : "PASS\n", Failed); return Failed ? 1 : 0; }
+ printf("font %ls\n", Face);
+ HFONT dialogue = CreateFontW(-28, 0, 0, 0, 400, 0, 0, 0, SHIFTJIS_CHARSET, 0, 0, ANTIALIASED_QUALITY, 0, Face);
+ SetBkMode(Dc, TRANSPARENT); SetTextColor(Dc, 0); SelectObject(Dc, dialogue); GetTextMetricsW(Dc, &Tm);
+ Measure(A); Measure(B); Measure(L"セーブロード");
+ for (UINT f : {GGO_GRAY8_BITMAP, GGO_GRAY4_BITMAP, GGO_GRAY2_BITMAP, GGO_BITMAP, GGO_NATIVE, GGO_BEZIER}) for (const std::wstring *l : {&A, &B}) for (wchar_t c : *l) { Plain p{}; p.size = GetGlyphOutlineW(Dc, c, f, &p.gm, 0, NULL, &Id); Plains[{c, f}] = p; }
+ Push("MODE dot"); { char seed[96]; sprintf_s(seed, "FONT 28 %ls", Face); Push(seed); }
+ const int base = Y0 + Tm.tmAscent;
+
+ struct { UINT format; const char *name; } ggo[] = {{GGO_GRAY8_BITMAP, "ggo-gray8"}, {GGO_GRAY4_BITMAP, "ggo-gray4"}, {GGO_GRAY2_BITMAP, "ggo-gray2"}, {GGO_BITMAP, "ggo-mono"}, {GGO_NATIVE, "ggo-native"}, {GGO_BEZIER, "ggo-bezier"}};
+ for (auto &g : ggo) { const std::wstring &l = Next("ggo"); Clear(); std::vector<POINT> e; bool same = true; DrawGgo(l, g.format, X0, base, e, same); Dots(g.name, e); Check(same, std::string(g.name) + ": dot glyph keeps the original metrics and buffer size"); }
+
+ { const std::wstring &l = Next("text"); Clear(); TextOutW(Dc, X0, Y0, l.c_str(), (int)l.size()); Dots("textoutw", GdiExpected(l, X0, Y0)); }
+ { const std::wstring &l = Next("text"); Clear(); std::vector<int> dx(l.size(), 31); ExtTextOutW(Dc, X0, Y0, 0, NULL, l.c_str(), (UINT)l.size(), dx.data()); Dots("exttextoutw-dx", GdiExpected(l, X0, Y0, &dx)); }
+ { const std::wstring &l = Next("text"); Clear(); std::vector<WORD> gi(l.size()); GetGlyphIndicesW(Dc, l.c_str(), (int)l.size(), gi.data(), 0); ExtTextOutW(Dc, X0, Y0, ETO_GLYPH_INDEX, NULL, (LPCWSTR)gi.data(), (UINT)gi.size(), NULL); Dots("exttextoutw-glyphindex", GdiExpected(l, X0, Y0)); }
+ { const std::wstring &l = Next("text"); Clear(); SetTextAlign(Dc, TA_BASELINE); TextOutW(Dc, X0, base, l.c_str(), (int)l.size()); SetTextAlign(Dc, TA_TOP); Dots("textoutw-baseline", GdiExpected(l, X0, Y0)); }
+ { const std::wstring &l = Next("text"); Clear(); int n = WideCharToMultiByte(932, 0, l.c_str(), (int)l.size(), NULL, 0, NULL, NULL); std::string sj(n, 0); WideCharToMultiByte(932, 0, l.c_str(), (int)l.size(), &sj[0], n, NULL, NULL); TextOutA(Dc, X0, Y0, sj.c_str(), n); Dots("textouta-sjis", GdiExpected(l, X0, Y0)); }
+ { const std::wstring &l = Next("text"); Clear(); RECT r = {X0, Y0, W, H}; DrawTextW(Dc, l.c_str(), (int)l.size(), &r, DT_LEFT | DT_TOP | DT_SINGLELINE | DT_NOPREFIX); Dots("drawtextw", GdiExpected(l, X0, Y0)); }
+ { const std::wstring &l = Next("text"); Clear(); int pen = X0; std::vector<POINT> e; for (wchar_t c : l) { TextOutW(Dc, pen, Y0, &c, 1); auto &m = Metrics[c]; e.push_back({pen + m.gm.gmptGlyphOrigin.x, Y0 + Tm.tmAscent - m.gm.gmptGlyphOrigin.y}); pen += m.adv; } Dots("textoutw-per-char", e); }
+ { Clear(); TextOutW(Dc, X0, Y0, L"セーブ　ロード", 7); Save("menu-untouched"); Check(Ink() > 200, "menu string in the dialogue font while a line is pushed: drawn normally (no dots)"); }
+
+ { using namespace Gdiplus; GpGraphics *g = NULL; DllExports::GdipCreateFromHDC(Dc, &g); GpFontFamily *fam = NULL; DllExports::GdipCreateFontFamilyFromName(Face, NULL, &fam); GpFont *font = NULL; DllExports::GdipCreateFont(fam, 28, FontStyleRegular, UnitPixel, &font); GpSolidFill *brush = NULL; DllExports::GdipCreateSolidFill(0xff000000, &brush); RectF rc((REAL)X0, (REAL)Y0, (REAL)(W - X0), (REAL)(H - Y0));
+  auto boxes = [&](const std::wstring &l) { std::vector<POINT> e; GpStringFormat *f = NULL; GpStringFormat *gen = NULL; DllExports::GdipStringFormatGetGenericDefault(&gen); DllExports::GdipCloneStringFormat(gen, &f);
+   for (size_t at = 0; at < l.size(); at += 32) { int k = (int)(std::min<size_t>)(32, l.size() - at); std::vector<CharacterRange> cr(k); std::vector<GpRegion *> rg(k); for (int j = 0; j < k; j++) { cr[j] = CharacterRange((INT)(at + j), 1); DllExports::GdipCreateRegion(&rg[j]); }
+    DllExports::GdipSetStringFormatMeasurableCharacterRanges(f, k, cr.data()); DllExports::GdipMeasureCharacterRanges(g, l.c_str(), (INT)l.size(), font, rc, f, k, rg.data());
+    for (int j = 0; j < k; j++) { RectF b; DllExports::GdipGetRegionBounds(rg[j], g, &b); e.push_back({(LONG)(b.X + .5f), (LONG)(b.Y + .5f)}); DllExports::GdipDeleteRegion(rg[j]); } }
+   DllExports::GdipDeleteStringFormat(f); return e; };
+  { const std::wstring &l = Next("gdip"); std::vector<POINT> e = boxes(l); Clear(); DllExports::GdipDrawString(g, l.c_str(), -1, font, &rc, NULL, brush); DllExports::GdipFlush(g, FlushIntentionSync); Dots("gdip-drawstring", e); }
+  { const std::wstring &l = Next("gdip"); std::vector<PointF> pos; std::vector<POINT> e; REAL x = (REAL)X0; for (wchar_t c : l) { pos.push_back(PointF(x, (REAL)base)); e.push_back({(LONG)(x + .5f), Y0}); x += (REAL)Metrics[c].adv; }
+   Clear(); DllExports::GdipDrawDriverString(g, (const UINT16 *)l.c_str(), (INT)l.size(), font, brush, pos.data(), DriverStringOptionsCmapLookup, NULL); DllExports::GdipFlush(g, FlushIntentionSync);
+   // the dot top is the baseline minus the cell ascent of the family (its own rounding): compare against the drawn row
+   auto blobs = Blobs(); if (!blobs.empty()) for (auto &p : e) p.y = blobs[0].y0; Dots("gdip-drawdriverstring", e); }
+  DllExports::GdipDeleteBrush(brush); DllExports::GdipDeleteFont(font); DllExports::GdipDeleteFontFamily(fam); DllExports::GdipDeleteGraphics(g); }
+
+ { D2D1_RENDER_TARGET_PROPERTIES props = D2D1::RenderTargetProperties(D2D1_RENDER_TARGET_TYPE_DEFAULT, D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_IGNORE), 96, 96);
+  ID2D1DCRenderTarget *rt = NULL; d2->CreateDCRenderTarget(&props, &rt); RECT r = {0, 0, W, H}; IDWriteTextFormat *format = NULL; dw->CreateTextFormat(Face, NULL, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 28, L"ja-jp", &format);
+  ID2D1SolidColorBrush *brush = NULL; D2D1_RECT_F box = D2D1::RectF((FLOAT)X0, (FLOAT)Y0, (FLOAT)W, (FLOAT)H);
+  auto hits = [&](const std::wstring &l) { std::vector<POINT> e; IDWriteTextLayout *t = NULL; dw->CreateTextLayout(l.c_str(), (UINT32)l.size(), format, (FLOAT)(W - X0), (FLOAT)(H - Y0), &t);
+   for (UINT32 i = 0; i < l.size(); i++) { FLOAT px, py; DWRITE_HIT_TEST_METRICS m; t->HitTestTextPosition(i, FALSE, &px, &py, &m); e.push_back({(LONG)(X0 + m.left + .5f), (LONG)(Y0 + m.top + .5f)}); } t->Release(); return e; };
+  auto begin = [&]() { Clear(); rt->BindDC(Dc, &r); rt->BeginDraw(); rt->Clear(D2D1::ColorF(1, 1, 1)); if (!brush) rt->CreateSolidColorBrush(D2D1::ColorF(0, 0, 0), &brush); };
+  { const std::wstring &l = Next("d2d"); std::vector<POINT> e = hits(l); begin(); rt->DrawText(l.c_str(), (UINT32)l.size(), format, box, brush); rt->EndDraw(); Dots("d2d-drawtext", e); }
+  { const std::wstring &l = Next("d2d"); std::vector<POINT> e = hits(l); IDWriteTextLayout *t = NULL; dw->CreateTextLayout(l.c_str(), (UINT32)l.size(), format, (FLOAT)(W - X0), (FLOAT)(H - Y0), &t); begin(); rt->DrawTextLayout(D2D1::Point2F((FLOAT)X0, (FLOAT)Y0), t, brush); rt->EndDraw(); t->Release(); Dots("d2d-drawtextlayout", e); }
+  { IDWriteFontCollection *sys = NULL; dw->GetSystemFontCollection(&sys); UINT32 at = 0; BOOL exists = FALSE; sys->FindFamilyName(Face, &at, &exists); IDWriteFontFamily *fam = NULL; sys->GetFontFamily(at, &fam); IDWriteFont *f = NULL; fam->GetFirstMatchingFont(DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STRETCH_NORMAL, DWRITE_FONT_STYLE_NORMAL, &f); IDWriteFontFace *ff = NULL; f->CreateFontFace(&ff);
+   const std::wstring &l = Next("run"); std::vector<UINT32> cps(l.begin(), l.end()); std::vector<UINT16> gi(l.size()); ff->GetGlyphIndices(cps.data(), (UINT32)cps.size(), gi.data()); std::vector<DWRITE_GLYPH_METRICS> gm(l.size()); ff->GetDesignGlyphMetrics(gi.data(), (UINT32)gi.size(), gm.data(), FALSE); DWRITE_FONT_METRICS fm; ff->GetMetrics(&fm);
+   float em = 28.f / fm.designUnitsPerEm, asc = fm.ascent * em; std::vector<FLOAT> adv(l.size()); std::vector<POINT> e; float pen = (FLOAT)X0; for (size_t i = 0; i < l.size(); i++) { adv[i] = gm[i].advanceWidth * em; e.push_back({(LONG)(pen + .5f), (LONG)(base - asc + .5f)}); pen += adv[i]; }
+   DWRITE_GLYPH_RUN run{ff, 28.f, (UINT32)gi.size(), gi.data(), adv.data(), NULL, FALSE, 0}; begin(); rt->DrawGlyphRun(D2D1::Point2F((FLOAT)X0, (FLOAT)base), &run, brush); rt->EndDraw(); Dots("d2d-drawglyphrun", e);
+   ff->Release(); f->Release(); fam->Release(); sys->Release(); }
+  if (brush) brush->Release(); format->Release(); rt->Release(); }
+
+ Push("OFF"); Sleep(400);
+ { Clear(); TextOutW(Dc, X0, Y0, A.c_str(), (int)A.size()); Save("after-off"); Check(Ink() > 500, "after OFF: the line is drawn in full again"); }
+ printf("%s", Got.c_str());
+ Check(Got.find("ToMe_GLYPHHIDE ready version=3 modes=blank,dot") != std::string::npos, "control connection answered with version 3 and the modes");
+ // Every case: one ToMe_GLYPHDOT line + its dots, each index of the line exactly once, the right character, kind d.
+ for (auto &kv : SeqText) {
+  int seq = kv.first; const std::wstring &l = kv.second; std::string tag = "seq=" + std::to_string(seq) + " ";
+  bool line = Got.find("ToMe_GLYPHDOT line " + tag + "text=" + Utf8(l)) != std::string::npos; std::map<int, int> count; bool chars = true, path = true; size_t pos = 0;
+  while ((pos = Got.find("ToMe_GLYPHDOT dots " + tag, pos)) != std::string::npos) {
+   size_t eol = Got.find('\n', pos); std::string msg = Got.substr(pos, eol - pos); pos = eol;
+   if (msg.find("path=" + SeqPath[seq] + " ") == std::string::npos) path = false;
+   std::string list = msg.substr(msg.find("list=") + 5); size_t a = 0;
+   while (a < list.size()) { size_t b = list.find(';', a); if (b == std::string::npos) b = list.size(); int i, h, bl, ad, x, y, s; unsigned ch; char k;
+    if (sscanf_s(list.substr(a, b - a).c_str(), "%d:%x:%d:%d:%d:%d:%d:%d:%c", &i, &ch, &h, &bl, &ad, &x, &y, &s, &k, 1) == 9) { count[i]++; if (i < 0 || i >= (int)l.size() || l[i] != (wchar_t)ch || k != 'd' || s != Side || h <= 0) chars = false; } else chars = false; a = b + 1; } }
+  bool all = count.size() == l.size(); for (auto &c : count) all = all && c.second == 1;
+  Check(line && all && chars && path, "report " + tag + "(" + SeqPath[seq] + "): line text, every index once, character and kind d, dot side 3");
+ }
+ printf(Failed ? "FAIL %d\n" : "PASS\n", Failed); return Failed ? 1 : 0;
+}

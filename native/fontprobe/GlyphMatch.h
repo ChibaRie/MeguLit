@@ -15,7 +15,10 @@
 // Glyph caches: an engine that rasterises each character once and reuses the bitmap would keep a blanked glyph for
 // later text. Detected when two lines in a row leave out at least three characters that were hidden in earlier lines
 // while other characters of the same line are still rasterised; then hiding stops for the run ("cache" report) and
-// MeguLit falls back to the per-engine hooks (or reads only).
+// MeguLit falls back to the per-engine hooks (or reads only). In dot mode (StopOnCache = false, docs/text-architecture.md)
+// a cached dot glyph is acceptable: the cache is reported ("ToMe_GLYPHDOT cache") and the matcher keeps going.
+// Served: which line character a matched draw is (index into the line with blanks removed, see Squeeze), so the dot
+// glyph that replaces it can be reported to MeguLit's compositor.
 #pragma once
 #include <cstdint>
 #include <functional>
@@ -66,6 +69,14 @@ inline std::wstring Squeeze(const std::wstring &s)
   return out;
 }
 // drawn is part of line; short kana runs of the line (ruby readings carried inline) may be skipped between characters.
+// Kind of a served draw: 'd' a character of the current line placed by the in-order walk (or found again by a whole
+// string), 'c' a character of the current line drawn again after it was hidden (index of its last placement), 'p' a
+// character of the previous line (index into the previous line), 'r' ruby kana over a hidden draw (index -1).
+struct Served
+{
+  int index = -1;
+  char kind = 0; // 0: not served (blank or no match)
+};
 inline bool PartOf(const std::wstring &line, const std::wstring &drawn)
 {
   if (drawn.empty() || line.size() < drawn.size())
@@ -94,11 +105,44 @@ inline bool PartOf(const std::wstring &line, const std::wstring &drawn)
   return false;
 }
 
+// Positions of each character of drawn (already squeezed) in line, starting the search at from (then from 0); short
+// kana runs of the line may be skipped. Empty when drawn is not part of line.
+inline std::vector<int> Locate(const std::wstring &line, const std::wstring &drawn, size_t from)
+{
+  std::vector<int> out;
+  auto at = [&](size_t i) {
+    if (line[i] != drawn[0])
+      return false;
+    out.assign(1, (int)i);
+    size_t j = 1, k = i + 1, gap = 0;
+    while (j < drawn.size() && k < line.size())
+    {
+      if (line[k] == drawn[j])
+        out.push_back((int)k), j++, k++, gap = 0;
+      else if (Kana(line[k]) && gap < 12)
+        gap++, k++;
+      else
+        break;
+    }
+    return j == drawn.size();
+  };
+  if (drawn.empty() || line.size() < drawn.size())
+    return {};
+  for (size_t i = from; i + drawn.size() <= line.size(); i++)
+    if (at(i))
+      return out;
+  for (size_t i = 0; i < from && i + drawn.size() <= line.size(); i++)
+    if (at(i))
+      return out;
+  return {};
+}
+
 class Matcher
 {
 public:
   static constexpr uint32_t ArmedFor = 60000, RubyWindow = 1500, PreviousWindow = 1500;
   std::function<void(const std::string &)> Report = [](const std::string &) {};
+  bool StopOnCache = true; // blank mode: a glyph cache stops hiding; dot mode: reported, hiding goes on
 
   void SetLine(const std::wstring &text, uint32_t now)
   {
@@ -124,6 +168,7 @@ public:
     positions.clear();
     hits = 0;
     reported = false;
+    placedAt.clear();
   }
   void Off()
   {
@@ -158,7 +203,7 @@ public:
 
   // One glyph rasterised (GetGlyphOutline). render=false: a metrics-only call (moves the cursor, nothing to blank).
   // True: return a blank glyph with the same metrics.
-  bool Glyph(wchar_t c, const Key &k, uint32_t now, bool render, const char *path)
+  bool Glyph(wchar_t c, const Key &k, uint32_t now, bool render, const char *path, Served *served = nullptr)
   {
     if (!Active(now) || Blank(c))
       return false;
@@ -183,7 +228,18 @@ public:
       return false;
     }
     if (pos >= 0)
-      positions.insert(pos);
+      positions.insert(pos), placedAt[c] = pos;
+    if (served)
+    {
+      if (pos >= 0)
+        *served = {pos, 'd'};
+      else if (late)
+        *served = {(int)previous.find(c), 'p'};
+      else if (dk)
+        *served = {placedAt.count(c) ? placedAt[c] : -1, 'c'};
+      else
+        *served = {-1, 'r'};
+    }
     if (render && !late)
       hidden.insert(c);
     Hit(k, now, path);
@@ -191,7 +247,8 @@ public:
   }
 
   // One whole string drawn (TextOut/ExtTextOut, GdipDrawString, D2D DrawText). True: do not draw it.
-  bool Text(const std::wstring &s, const Key &k, uint32_t now, const char *path)
+  // served (optional) gets one entry per character of s (blanks stay unserved).
+  bool Text(const std::wstring &s, const Key &k, uint32_t now, const char *path, std::vector<Served> *served = nullptr)
   {
     if (!Active(now))
       return false;
@@ -199,7 +256,18 @@ public:
     if (drawn.empty())
       return false;
     if (drawn.size() == 1)
-      return Glyph(drawn[0], k, now, true, path); // engines that draw one character per call walk the line like glyphs
+    {
+      Served one;
+      bool r = Glyph(drawn[0], k, now, true, path, &one); // engines that draw one character per call walk the line like glyphs
+      if (r && served)
+      {
+        served->assign(s.size(), Served{});
+        for (size_t i = 0; i < s.size(); i++)
+          if (!Blank(s[i]))
+            (*served)[i] = one;
+      }
+      return r;
+    }
     bool dk = DialogueKey(k);
     bool hit = (drawn.size() >= 2 || dk) && (PartOf(current, drawn) || (now - lineAt < ArmedFor && PartOf(previous, drawn)));
     if (hit && !dk && KnowsKey() && drawn.size() < 4)
@@ -220,6 +288,28 @@ public:
       Adopt(k);
     for (wchar_t c : drawn)
       requested.insert(c);
+    if (served)
+    {
+      served->assign(s.size(), Served{});
+      std::vector<int> at = Locate(current, drawn, (size_t)cursor);
+      char kind = 'd';
+      if (at.empty() && !previous.empty())
+        at = Locate(previous, drawn, 0), kind = 'p';
+      if (at.empty())
+        kind = 'r';
+      else if (kind == 'd')
+      {
+        cursor = at.back() + 1;
+        for (size_t j = 0; j < at.size(); j++)
+          positions.insert(at[j]), placedAt[drawn[j]] = at[j];
+      }
+      for (size_t i = 0, j = 0; i < s.size(); i++)
+        if (!Blank(s[i]))
+        {
+          (*served)[i] = {j < at.size() ? at[j] : -1, kind};
+          j++;
+        }
+    }
     Hit(k, now, path);
     return true;
   }
@@ -244,10 +334,15 @@ public:
       if (lines < 8)
         Report("ToMe_GLYPHHIDE line seq=" + std::to_string(seq) + " chars=" + std::to_string(current.size()) + " placed=" + std::to_string(positions.size()) + " hidden=" + std::to_string(hidden.size()) + " requested=" + std::to_string(requested.size()) + " repeat=" + std::to_string(repeat.size()) + " missing=" + std::to_string(missing.size()));
       lines++;
-      if (suspect >= 2)
+      if (suspect >= 2 && StopOnCache)
       {
         cached = true;
         Report("ToMe_GLYPHHIDE cache seq=" + std::to_string(seq) + " missing=" + std::to_string(missing.size()) + " of " + std::to_string(repeat.size()));
+      }
+      else if (suspect >= 2 && !cacheReported)
+      {
+        cacheReported = true; // dot mode: reused dot glyphs are acceptable, the compositor is told once per run
+        Report("ToMe_GLYPHDOT cache seq=" + std::to_string(seq) + " missing=" + std::to_string(missing.size()) + " of " + std::to_string(repeat.size()));
       }
     }
     for (wchar_t c : hidden)
@@ -263,6 +358,8 @@ private:
   long seq = 0, lines = 0, hits = 0;
   int cursor = 0, suspect = 0, hiddenSize = 0;
   bool reported = false, cached = false, chain = false; // chain: the last draw was hidden (ruby follows it)
+  bool cacheReported = false;
+  std::map<wchar_t, int> placedAt; // character -> its last placed index in the current line
   Key seeded, leader;
   std::vector<Key> learned;
   std::map<Key, std::pair<int, int>> runs; // key -> (run length, last position)
