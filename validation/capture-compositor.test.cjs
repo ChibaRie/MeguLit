@@ -90,7 +90,8 @@ test('DotSelfTest: synthetic frames (typewriter, fades, shake, scroll, NVL, spec
 
 test('runtime: textRenderer setting, compositor with the bound game, overlay hides only while the compositor draws', () => {
   const { CompositorHost, rectsToClient } = require('../core/compositor-host.cjs');
-  assert.strictEqual(require('../core/game-style.js').clean({}).textRenderer, 'overlay', 'overlay stays the default');
+  assert.strictEqual(require('../core/game-style.js').clean({}).textRenderer, undefined, 'no default in per-game styles: absent = overlay');
+  assert.match(read('core/gal-native.cjs'), /if\(value&&value\.textRenderer===undefined\)/, 'reader saves keep the app-wide choice');
   assert.strictEqual(require('../core/game-style.js').clean({ textRenderer: 'compositor' }).textRenderer, 'compositor');
   assert.match(read('services/settings-schema.cjs'), /choice\('embedding','textRenderer'/);
   assert.match(read('core/gal-native.cjs'), /this\.compositor\?\.hook\(message\)/);

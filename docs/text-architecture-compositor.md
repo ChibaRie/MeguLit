@@ -184,10 +184,26 @@ the device / swap chain / cooperative-level window. `MEGULIT_BORDERLESS_LOG=<fil
   premultiplied: alpha 1/255 leaves 1 bit per channel). DirectDraw games blit to the screen and are clipped there, so
   their picture can only be captured while on screen (normal use: the game sits under MeguLit's window).
 
+## In the runtime (`core/compositor-host.cjs`)
+
+Setting **文字显示** (`textRenderer`, settings scope 嵌入): 阅读窗口 `overlay` (default) | 画进游戏画面 `compositor`. It is
+app-wide: stored in `gal-preferences.json`, never part of a per-game style profile, kept through the reader's own saves.
+With `compositor`, GalNative starts MeguLitCompositor as soon as the game window is bound and stops it with the game;
+it forwards ①'s `hookGlyphDots`, ③'s `hookCharRects` (game screen → client px), the reader's translation of each line
+(`Reader.message` → `annotate`, matched on blank-stripped text), menu choices (choice locate) and the reader mode
+(`interfaceMode` translation → translation only). The reader page hides its own line only while the compositor draws
+it (`compositorDrawing`); `undot`, `fallback` (capture failed: the game stays on the overlay until it restarts) and exit
+give the line back. Log: `logs/compositor.log`. Test aid: `MEGULIT_COMPOSITOR_ARGS="--shots|<dir>|--shot-every|N"`.
+
+Live through the real runtime (portable copy, 2026-11-14): ファタモルガーナの館 with ③'s KiriKiri path — compositor started
+with the game, ③'s first hidden line (18 characters) drawn on its rects; the following lines were drawn by the game
+itself because that profile had embedded translation on. CLANNAD with ①'s dots — compositor started with the game,
+14 lines tracked, 1 handed back (this install carries a Chinese patch, so part of the run showed the game's own
+Chinese).
+
 ## Open (next steps)
 
-- Wire `services/capture-compositor.cjs` into `services/runtime.cjs` behind a setting (default off) once ① is merged:
-  forward `hookGlyphDots` events, reader translations/furigana (`annotate`), reader style, choices; on `undot` switch
-  that line to the overlay; on `fallback` keep the overlay mode.
+- ③ NVL pages: rect lines are drawn for the current line only (kept lines need their rects re-sent).
+- Furigana from the reader page (its ruby is computed in the page) is not forwarded yet; the game's own ruby is.
 - ① dots in BRUNS (and a live per-game detection rate).
 - Magpie's cursor edge release in scale mode; DXGI flip-model games with their own HDR formats (capture is BGRA8).

@@ -38,6 +38,7 @@ class CaptureCompositor {
     if (this.proc) return true;
     if (!hwnd) return false;
     const args = ['--hwnd', String(hwnd)]; if (scale) args.push('--scale');
+    /* test aid: extra switches, e.g. "--shots <dir> --shot-every 120" */if (process.env.MEGULIT_COMPOSITOR_ARGS) args.push(...process.env.MEGULIT_COMPOSITOR_ARGS.split('|'));
     try { this.proc = this.spawnFn(this.exe, args, { stdio: ['pipe', 'pipe', 'ignore'], windowsHide: true }); }
     catch (e) { this.onEvent({ e: 'fallback', reason: 'spawn', message: String(e && e.message || e) }); return false; }
     this.proc.stdout.on('data', d => this.read(d));

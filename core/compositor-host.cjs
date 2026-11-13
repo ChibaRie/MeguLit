@@ -30,12 +30,24 @@ class CompositorHost {
     this.cc = null; this.hwnd = ''; this.failedFor = ''; this.lines = new Map(); this.drawing = false; this.mode = '';
     this.client = [0, 0];
   }
-  wanted(preferences) { return preferences?.textRenderer === 'compositor'; }
+  trace(line) { try { require('node:fs').appendFileSync(path.join(this.root || '.', 'logs', 'compositor.log'), new Date().toISOString() + ' ' + line + '\n'); } catch {} }
+  // 文字显示 is one choice for the whole app, not a per-game style: read from the global gal-preferences.json (the per-game
+  // style profile merged into the reader's preferences would otherwise bring back the default).
+  wanted(preferences) {
+    if (this.root) try {
+      const fs = require('node:fs'), file = path.join(this.root, 'data', 'config', 'gal-preferences.json'), t = fs.statSync(file).mtimeMs;
+      if (t !== this.settingTime) { this.settingTime = t; this.setting = JSON.parse(fs.readFileSync(file, 'utf8')).textRenderer; }
+      if (this.setting) return this.setting === 'compositor';
+    } catch {}
+    return preferences?.textRenderer === 'compositor';
+  }
   // Called with every preferences/state change of the bound game (GalNative.notify).
   configure(preferences, state) {
     const hwnd = String(state?.gameHwnd || ''), identity = hwnd + '|' + String(state?.gameStarted || '');
     if (state?.clientWidth && state?.clientHeight) this.client = [state.clientWidth, state.clientHeight];
     const want = this.wanted(preferences) && state?.bound === true && /^\d{1,19}$/.test(hwnd) && hwnd !== '0' && this.failedFor !== identity;
+    const why = !this.wanted(preferences) ? 'setting overlay' : state?.bound !== true ? 'not bound' : !/^\d{1,19}$/.test(hwnd) || hwnd === '0' ? 'no game window' : this.failedFor === identity ? 'capture failed earlier' : 'on';
+    if (why !== this.lastWhy) { this.lastWhy = why; this.trace('configure: ' + why + ' hwnd=' + hwnd); }
     if (this.cc && (!want || identity !== this.identity)) this.stop();
     if (!want) return;
     if (!this.cc) {
@@ -74,6 +86,8 @@ class CompositorHost {
     this.cc.choices(options.map(o => typeof o === 'string' ? { text: o } : { text: String(o?.text || o?.source || ''), tl: String(o?.translation || o?.tl || '') }));
   }
   event(e) {
+    if (e.e !== 'stats' && (e.e !== 'line' || e.status !== this.lastStatus)) this.trace('event ' + JSON.stringify(e).slice(0, 300));
+    if (e.e === 'line') this.lastStatus = e.status;
     if (e.e === 'line') { const drawing = e.found > 0 && (e.status === 'complete' || e.status === 'revealing' || e.status === 'fading'); this.setDrawing(drawing || (this.drawing && e.status === 'waiting')); }
     else if (e.e === 'undot') this.setDrawing(false);
     else if (e.e === 'fallback') { this.failedFor = this.identity; this.setDrawing(false); this.onEvent({ type: 'compositorState', state: 'fallback', reason: e.reason }); this.stop(); }
