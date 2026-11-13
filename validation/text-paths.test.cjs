@@ -58,7 +58,7 @@ test('Ren\'Py: every located sentence (ADV too) sends its character boxes; the s
  assert.deepEqual(chars[1].rects[0],[220,250,14,19],'zoomed branch scaled');
  assert.deepEqual(chars[2].rects[0],[160,550,24,34],'ADV line located too');
  assert.equal(lines.at(-1),'HOST alpha3=[0.0, 1.0]','alpha 0 while asked, 1 again the frame after MeguLit stops asking');
- const s=read('native/MeguLitRenpy.py');assert.match(s,/MeguLitRenpyHide-%d/);assert.match(s,/r.add_shader('renpy.alpha')/,'gl2 ignores Render.alpha: the renpy.alpha shader does the hiding (live, Ren'Py 8.4)');assert.match(s,/if not self\.connected:\s*\r?\n\s*return False/,'never hidden without the pipe to MeguLit');
+ const s=read('native/MeguLitRenpy.py');assert.match(s,/MeguLitRenpyHide-%d/);assert.ok(s.includes("r.add_shader('renpy.alpha')"),'gl2 ignores Render.alpha: the renpy.alpha shader does the hiding (live, Ren\'Py 8.4)');assert.match(s,/if not self\.connected:\s*\r?\n\s*return False/,'never hidden without the pipe to MeguLit');
 });
 
 test('KiriKiri: the TJS script reports each sentence\'s boxes at its end; hidden only after real opacity-0 draws; the DLL forwards ToMe_CHARS',()=>{
