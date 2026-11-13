@@ -116,6 +116,8 @@ class HookNative{
    if(m.type==='hookSignature'){this.state.hookSignature={found:!!m.found,moved:!!m.moved,module:String(m.module||'').slice(0,100)};this.trace('stream signature '+(m.found?(m.moved?'relocated ':'same place ')+String(m.code||'').slice(0,200):'not found in '+String(m.module||'')));return;}
    if(m.type==='hookMemory'){this.remembered={name:String(m.name||'').slice(0,100),code:String(m.code||'').slice(0,1000)};this.trace('stream memory '+this.remembered.name+' '+this.remembered.code);this.notify({hookRemembered:true});try{this.onRemembered?.(this.remembered);}catch(e){this.trace('remembered error '+(e?.message||e));}return;}
    if(m.type==='hookEngineLine'&&PAGE_ENGINES.has(m.engine)){this.pageLine(m);return;}
+   /* Text architecture ③ (core/text-paths.cjs): a char-rect record from an engine path; hidden only once the game side confirmed it */
+   if(m.type==='hookChars'){this.charRects(m.line);return;}
    if(m.type==='hookTextPos'&&m.engine==='pal_sprite_v1'){this.palPosition(m);return;}
    /* 2026-11-12 the engine's own text window state (KiriKiri ToMe_DIALOG): a line arriving while it is hidden is art text */
    if(m.type==='hookDialog'&&typeof m.visible==='boolean'){this.engineDialog=m.visible;this.engineDialogAt=this.now();}
@@ -142,6 +144,7 @@ class HookNative{
  // replaces the captured line; anything else, or any error, keeps the captured text so the dialogue never goes missing.
  /* E285 (user: a Chinese script was imported, yet the game was given DeepSeek's wording): one lookup per line, shared by the
     reader and the text written back into the game, so the matcher's reading position moves once per line. */
+ charRects(raw){const tp=require('./text-paths.cjs'),rec=tp.parseChars(raw);if(!rec)return;const gate=this.charGates||(this.charGates=new Map());if(!gate.has(rec.engine))gate.set(rec.engine,new tp.HiddenGate());rec.hidden=gate.get(rec.engine).report(rec)&&rec.hidden;rec.at=this.now();this.emit(rec);}
  glyphHide(m){if(!m||!['ready','hit','key','cached'].includes(m.state))return;const v={hookGlyphHide:m.state==='key'||m.state==='ready'?(this.state.hookGlyphHide||'learning'):m.state};if(m.state==='ready'&&Number.isFinite(m.version))v.hookGlyphVersion=Number(m.version);if(m.state==='hit'&&typeof m.path==='string')v.hookGlyphPath=m.path.slice(0,16);if(m.state==='key'&&typeof m.face==='string'&&Number.isFinite(m.size))v.hookGlyphFont={face:m.face.slice(0,64),size:Number(m.size)};this.trace('glyph hide '+m.state+(m.path?' '+String(m.path).slice(0,16):'')+(m.size?' '+Number(m.size)+'px':''));this.notify(v);}
  markScriptSource(){try{if(this.state&&!this.state.scriptSource)this.notify({scriptSource:true});}catch{}}
  resolveSource(text){const provider=this.originalText;if(!provider||!text)return null;const key=String(text).replace(/\s+/g,'');this.sourceCache??=new Map();if(this.sourceCache.has(key)&&this.sourceCache.get(key).provider===provider)return this.sourceCache.get(key).r;const r=provider.resolve(text);this.sourceCache.set(key,{provider,r});if(this.sourceCache.size>200)this.sourceCache.delete(this.sourceCache.keys().next().value);return r;}

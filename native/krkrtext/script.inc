@@ -11,6 +11,10 @@
 // The end text keeps the game's own line breaks: a character drawn on a new row starts with a newline.
 // E321/E550: begin and end lines carry color=rrggbb, the layer's chColor for the sentence's last character: games draw read and
 // unread text in different colours, and the reader paints each page line in the colour the game used.
+// Text architecture ③ (docs/text-architecture.md): every sentence also ends with one record holding the box of each
+// character it drew (x, y, the drawing font's width of the character, the font size), in game-screen pixels:
+//   ToMe_CHARS engine=krkr line=N hidden=0|1 sw= sh= vx=0 vy=0 vw=0 vh=0 n= rects=x,y,w,h;... text=...
+// hidden=1 only when the sentence's glyphs really went through the opacity-0 drawing below (st.hid grew) and it is still on.
 LR"MGLT((function(){
  try {
   if(typeof global.kag!='Object' || global.kag===void || global.kag===null) return 'wait kag';
@@ -59,13 +63,17 @@ LR"MGLT((function(){
     if(rec.n==0) {
      this.fontReport(L);
      rec.line=++this.line;this.active=rec;rec.x0=cx;rec.y0=cy;rec.x1=cx;rec.y1=cy;rec.size=size;rec.text='';rec.sw=sw;rec.sh=sh;
-     rec.nvl=L.height>=sh*0.45?1:0;rec.same=rec.cleared?0:1;rec.cleared=false;
+     rec.nvl=L.height>=sh*0.45?1:0;rec.same=rec.cleared?0:1;rec.cleared=false;rec.rs='';rec.cn=0;rec.h0=this.hid;
      if(typeof L.chColor=='Integer') rec.color=L.chColor&0xffffff; /* E550: begin carries the colour too (narration grey / speech white), before the line is shown */
      var right=a[0]+L.width-(+L.marginR)-size;
      if(!(right>cx)) right=cx;
      this.send('begin',rec,cx,right);
     }
-    if(ch!='\n' && ch!='\r') {if(rec.n>0 && cy!=rec.ly) rec.text+='\n';rec.text+=ch;}
+    if(ch!='\n' && ch!='\r') {
+     if(rec.n>0 && cy!=rec.ly) rec.text+='\n';rec.text+=ch;
+     var cw=size;try {cw=+this.drawFont(L).getTextWidth(ch);} catch(e) {cw=size;}if(!(cw>0)) cw=size;
+     rec.rs+=(rec.cn>0?';':'')+int(cx)+','+int(cy)+','+int(cw)+','+int(size);rec.cn++;
+    }
     rec.ly=cy;
     rec.n++;
     if(typeof L.chColor=='Integer') rec.color=L.chColor&0xffffff;
@@ -74,9 +82,15 @@ LR"MGLT((function(){
     if(cy<rec.y0) rec.y0=cy;
     if(cy>rec.y1) rec.y1=cy;
    } incontextof st;
+   st.chars=function(rec){
+    if(!(rec.cn>0)) return;
+    var h=(this.hid>rec.h0 && this.hideOn())?1:0;
+    this.report('ToMe_CHARS engine=krkr line='+rec.line+' hidden='+h+' sw='+int(rec.sw)+' sh='+int(rec.sh)+' vx=0 vy=0 vw=0 vh=0 n='+rec.cn+' rects='+rec.rs+' text='+rec.text);
+   } incontextof st;
+)MGLT" LR"MGLT(
    st.flush=function(rec){
-    if(rec.n>0) this.send('end',rec,rec.x0,rec.x1);
-    rec.n=0;rec.text='';
+    if(rec.n>0) {this.send('end',rec,rec.x0,rec.x1);try {this.chars(rec);} catch(e) {}}
+    rec.n=0;rec.text='';rec.rs='';rec.cn=0;
    } incontextof st;
    st.flushAll=function(){for(var i=0;i<this.recs.count;i++) this.flush(this.recs[i]);} incontextof st;
    /* 2026-11-12 (user: the game must think it draws its text while the output is ours): while MeguLit asks for it

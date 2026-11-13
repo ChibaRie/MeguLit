@@ -91,7 +91,9 @@ public:
   if (numparams >= 1 && param[0]->Type() == tvtString) {
    ttstr value(*param[0]);
    const tjs_char *text = value.c_str();
-   if (text && wcsncmp(text, L"ToMe_KRKR ", 10) == 0 && wcslen(text) < 8192) {
+   // ToMe_CHARS: text architecture ③, one record per sentence with every character's box (up to 28000 characters)
+   size_t len = text ? wcslen(text) : 0;
+   if (text && ((wcsncmp(text, L"ToMe_KRKR ", 10) == 0 && len < 8192) || (wcsncmp(text, L"ToMe_CHARS ", 11) == 0 && len < 28000))) {
     std::string line = Utf8(text);
     for (char &c : line) if (c == '\n') c = '\x1f'; else if (c == '\r') c = ' '; // one protocol line; HookBridge restores the breaks
     Push(line);
