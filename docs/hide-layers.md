@@ -102,5 +102,10 @@ line is drawn again. Built and run by `Build.ps1` and CI through `native/native-
   engine composes the whole frame (background, characters, text window, glyphs) on the CPU into one 1024 × 1024 texture
   and draws one full-screen quad per frame. No glyph ever reaches Direct3D or GDI as its own draw, so this layer cannot
   hide it. It needs the engine's own path (the LunaHook BRUNS `push_back` hook, or a hook on the engine's glyph copy).
+- いろとりどりのヒカリHD (FVP, 32-bit, Direct3D 9, Chinese patch): hooked, all draws seen (into a 2048 × 2048 render
+  target, then composited). FVP rasterises each whole line on the CPU into one image and draws it as 256 × 256 tile
+  quads (4 quads for one line, the glow box included), so there are no per-glyph quads either. A "line texture" mode
+  (hide the tile quads that appeared with the line in the text band) would be the next step for this family; it is
+  not built because it cannot tell text tiles from other new tiles as safely as glyph quads.
 - Not covered yet: Direct3D 11 / DXGI and OpenGL (same learner, `GlyphQuads.h`, needs the API side), vertex shaders /
   declarations, engines that bake the whole text into one texture per line (one quad per line, not per glyph).
