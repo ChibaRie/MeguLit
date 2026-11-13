@@ -64,8 +64,8 @@ const LINE='遠くで引きさく、モーター音が響いているのに気�
 test('the screenshot line comes back from its GBK reading',()=>{assert.equal(repairShiftJisAsGbk(LINE_GBK),LINE);assert.equal(garbledSource(LINE_GBK),true);assert.equal(garbledSource(LINE),false);});
 test('a stream locks as Shift-JIS-as-GBK after two clear lines, then also kanji-only lines and 「……」 come back',()=>{
  const c=new StreamCodepage();
- assert.deepEqual(c.fix('s','搶嫗戝妛'),{text:'搶嫗戝妛',repaired:false,locked:false});
- assert.equal(c.fix('s',LINE_GBK).text,LINE);const second=c.fix('s',MOJI);assert.equal(second.locked,true);assert.equal(c.mode('s'),'sjis-as-gbk');
+ assert.deepEqual(c.fix('s','搶嫗戝妛'),{text:'搶嫗戝妛',repaired:false,locked:false,unreadable:false});
+ assert.equal(c.fix('s',LINE_GBK).text,LINE);const second=c.fix('s',MOJI);assert.equal(second.locked,true);assert.equal(c.mode('s'),'shift_jis read as gbk');
  assert.equal(c.fix('s','搶嫗戝妛').text,'東京大学');assert.equal(c.fix('s','乽乧乧乿').text,'「……」');assert.equal(c.fix('s','僟僗僩儅僯傾丒僌儘僥僗僋').text,'ダストマニア・グロテスク');
 });
 test('a stream with real kana is never read back loosely, and other streams are judged on their own',()=>{
@@ -79,9 +79,28 @@ test('the hook delivers the repaired Japanese and never an unreadable line',t=>{
  line(LINE_GBK);line(MOJI);line('搶嫗戝妛');line('寳懐ｯｹ莠・ｯｹ莠・ｼ瑚ｿ呎ｬ｡諸槫−口謌ｦ');
  const shown=ev.filter(e=>e.hookSource).map(e=>e.hookSource);
  assert.deepEqual(shown,[LINE,'このメッセージは初回起動時のみ表示されます。','東京大学']);
- assert.ok(traces.some(m=>/^stream locked as Shift-JIS read as GBK/.test(m)));assert.ok(traces.some(m=>/^source dropped unreadable/.test(m)));
+ assert.ok(traces.some(m=>/^stream locked as shift_jis read as gbk/.test(m)));assert.ok(traces.some(m=>/^source dropped unreadable/.test(m)));
 });
 test('the embed path translates the repaired line and leaves unreadable text to the game',()=>{
  const src=fs.readFileSync(path.join(__dirname,'../services/reader.cjs'),'utf8');
- assert.match(src,/const fixed=sanity\.repairShiftJisAsGbk\(text\);if\(fixed\)text=fixed;else if\(sanity\.garbledSource\(text,\{controls:false\}\)\)\{this\.gal\?\.hooks\?\.embedReply\(id,'',/);
+ assert.match(src,/const fixed=sanity\.repairMojibake\(text\);if\(fixed\)text=fixed\.text;else if\(sanity\.garbledSource\(text,\{controls:false\}\)\)\{this\.gal\?\.hooks\?\.embedReply\(id,'',/);
+});
+
+/* the same lines as a game shows them on other systems: Shift-JIS or UTF-8 bytes read with another code page
+   (the platform decoders, as Windows does for these code pages) */
+const {repairMojibake}=require('../core/text-sanity.cjs');
+const LINES=['このメッセージは初回起動時のみ表示されます。','「お兄ちゃん、早く起きてよ！」',LINE];
+const SJIS=['82b182cc83818362835a815b835782cd8f8989f18b4e93ae8e9e82cc82dd955c8ea682b382ea82dc82b78142','817582a88c5a82bf82e182f18141918182ad8b4e82ab82c482e681498176','899382ad82c588f882ab82b382ad81418382815b835e815b89b982aa8bbf82a282c482a282e982cc82c98b4382aa82c282a282bd8142'],UTF8=['e38193e381aee383a1e38383e382bbe383bce382b8e381afe5889de59b9ee8b5b7e58b95e69982e381aee381bfe8a1a8e7a4bae38195e3828ce381bee38199e38082','e3808ce3818ae58584e381a1e38283e38293e38081e697a9e3818fe8b5b7e3818de381a6e38288efbc81e3808d','e981a0e3818fe381a7e5bc95e3818de38195e3818fe38081e383a2e383bce382bfe383bce99fb3e3818ce99fbfe38184e381a6e38184e3828be381aee381abe6b097e3818ce381a4e38184e3819fe38082'];
+const seen=(hex,codec)=>new TextDecoder(codec).decode(Buffer.from(hex,'hex'));
+for(const [bytes,codec,pair] of [[SJIS,'gbk','shift_jis read as gbk'],[SJIS,'windows-1252','shift_jis read as windows-1252'],[UTF8,'windows-1252','utf-8 read as windows-1252']])
+ test('Japanese stored as '+pair+' comes back',()=>{let n=0;bytes.forEach((hex,i)=>{const r=repairMojibake(seen(hex,codec));if(r){assert.deepEqual(r,{text:LINES[i],pair});n++;}});assert.ok(n>=2,pair+' '+n);});
+test('code pages that drop bytes give nothing back, and that text is still never drawn as is',()=>{
+ for(const [bytes,codec] of [[SJIS,'big5'],[SJIS,'euc-kr'],[UTF8,'gbk'],[UTF8,'shift_jis']])for(const hex of bytes){const t=seen(hex,codec);assert.equal(repairMojibake(t),null,codec+' '+t);assert.equal(garbledSource(t),true,codec+' '+t);}
+});
+test('real Chinese, Korean and Western text is never read back',()=>{
+ for(const t of['这是一个测试，我们走吧。','這是一個測試，我們走吧。','안녕하세요, 오늘 날씨가 좋네요.','Café au lait, s’il vous plaît — merci™','Ünïcödé façade','東京大学'])assert.equal(repairMojibake(t),null,t);
+});
+test('a stream locked to a code page drops a line whose bytes were lost',()=>{
+ const c=new StreamCodepage();c.fix('w',seen(SJIS[0],'windows-1252'));c.fix('w',seen(SJIS[1],'windows-1252'));assert.equal(c.mode('w'),'shift_jis read as windows-1252');
+ assert.equal(c.fix('w','‚±一').unreadable,true);assert.equal(c.fix('w','OK').unreadable,false);
 });
