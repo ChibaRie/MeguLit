@@ -179,7 +179,8 @@ font probe (`ToMe_FONT` counts and the matcher's `placed`/`requested`):
 | サノバウィッチ（Yuzusoft KiriKiri Z） | GetGlyphOutline **metrics only** (SimSun 48, hundreds of chars placed, 0 rasterised) | no: glyphs rasterised elsewhere → ③ |
 | 沙耶の唄（Nitro+ 2003） | GDI rasterisation (ＭＳ Ｐゴシック 24), but each glyph once (cache) and LunaHook finds no dialogue stream | only with a stream; cached dots |
 | 素晴らしき日々（BGI） | GetGlyphOutline rasterisation (MS Gothic 136 bold) | yes in principle, but the plain text output arrives ~180 ms after the glyphs; needs `all:true` (line pushed from the embed callback). Live run blocked: the opening movie (MoleBox) hangs on this machine with replacement on, also in blank mode |
-| Not run: CLANNAD (Siglus), 月姫/PLUS+DISC, AIR (avg32), 女装山脈, サイコロジック・ラブコメディ, Under The Moon, 涙 | TextOutA / GetGlyphOutline imports | candidates for the next live run |
+| CLANNAD（SiglusEngine, Steam build） | GetGlyphOutline rasterisation, ~36 px (scaled to the window), **once per character** (glyph cache) | **yes, live** with `all:true` on the `EmbedSiglus` stream: every character rasterised during a pushed line became a dot with the game's own shadow, at the right cell, advance unchanged (shot H:\MeguLit-Work\glyph-dots\live\clannad-siglus-dots*.png). Characters already in Siglus' cache are drawn as before, and a dotted character stays a dot wherever it is reused (also outside the dialogue) |
+| Not run: 月姫/PLUS+DISC, AIR (avg32), 女装山脈, サイコロジック・ラブコメディ, Under The Moon, 涙 | TextOutA / GetGlyphOutline imports | candidates for the next live run |
 
-So far no game shows real dialogue dots end to end; the cases above are what decides ①'s reach. The x86/x64 self-test hosts
+Only Siglus shows real dialogue dots so far (limited by its glyph cache); the cases above are what decides ①'s reach. The x86/x64 self-test hosts
 remain the proof that every covered API produces exact dots.
