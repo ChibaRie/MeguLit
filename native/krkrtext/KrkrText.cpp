@@ -277,6 +277,22 @@ void Tick() {
  if (error.empty() && result.compare(0, 3, L"ok ") == 0) Installed = true;
  if (result == L"lost") Installed = false;
  SetStatus(status);
+#ifdef MEGULIT_KRKR_DEBUG
+ // Test builds only (never shipped): krkrdebug.tjs next to the DLL is evaluated once, its result sent as a status line.
+ wchar_t path[MAX_PATH]; DWORD n = GetModuleFileNameW(Self, path, MAX_PATH);
+ std::wstring file(path, n); file = file.substr(0, file.find_last_of(L"\\/") + 1) + L"krkrdebug.tjs";
+ HANDLE h = CreateFileW(file.c_str(), GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, NULL);
+ if (h != INVALID_HANDLE_VALUE) {
+  std::string data; char buf[4096]; DWORD got;
+  while (ReadFile(h, buf, sizeof buf, &got, NULL) && got) data.append(buf, got);
+  CloseHandle(h); DeleteFileW(file.c_str());
+  int wn = MultiByteToWideChar(CP_UTF8, 0, data.c_str(), (int)data.size(), NULL, 0);
+  std::wstring src(wn, L'\0'); MultiByteToWideChar(CP_UTF8, 0, data.c_str(), (int)data.size(), &src[0], wn);
+  std::wstring r2, e2; EvalCall dbg{src.c_str(), &r2, &e2};
+  TVPDoTryBlock(EvalTry, EvalCatch, NULL, &dbg);
+  Push("ToMe_KRKR debug " + Utf8((e2.empty() ? r2 : e2).c_str()));
+ }
+#endif
 }
 bool TickSafe() { __try { Tick(); return true; } __except (EXCEPTION_EXECUTE_HANDLER) { return false; } }
 void TickGuarded() { if (!TickSafe()) { TickMessage = 0; SetStatus("crashed; stopped"); } }
