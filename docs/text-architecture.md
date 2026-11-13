@@ -151,3 +151,15 @@ draw the dot in logical units (it scales with the transform).
   solid ≤3×3 dot per character at the expected position (±1 px) and nothing else, unchanged metrics and buffer sizes,
   menu text untouched, every report correct. Wired into Build.ps1 and CI through `native/native-builds.json`
   (marker `MeguLitFont version=3`, checked by `tools/native-stale.cjs`).
+
+### Live checks (2026-11-14)
+
+- MeguLitFont v3 loads in 32- and 64-bit games and answers `ready version=3 modes=blank,dot`; with `all:true` HookBridge
+  pushes the lines and announces them (`ToMe_GLYPHDOT line`).
+- ダストマニア・グロテスク（BRUNS, 32-bit）: the dialogue is blitted from bitmap font sheets (`font\ff_*.bmp`), with no
+  TextOut/GetGlyphOutline calls while a line shows (fix/bruns-embed, live). No dots are possible at the Windows font
+  layer; this game needs an engine-level path (③ or a per-character write-back), not ①.
+- THE SHELL HD (Artemis, 64-bit, Steam): lines pushed, but no GDI glyph calls at all (the engine rasterises its own
+  font). Same conclusion: ③ territory.
+- No other 64-bit GDI galgame is available on E: or in the owned Steam library (WITCH ON THE HOLY NIGHT: no license).
+  The 64-bit GDI paths are covered by the x64 self-test host.
