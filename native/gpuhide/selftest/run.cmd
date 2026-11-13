@@ -1,6 +1,6 @@
 @echo off
 rem Self-test of hide layer 4 (MeguLitGpu32/64.dll): x86 and x64 hosts, Direct3D 9 (DrawPrimitiveUP, vertex buffer with
-rem transforms, indexed), Direct3D 11 (NDC positions, guessed input layout) and GDI blits. Usage: run.cmd [dll folder]   (default native\). Exit code 0 = all passed.
+rem transforms, indexed, vertex declaration + vertex shader with one triangle fan per glyph), Direct3D 11 (NDC positions, guessed input layout) and GDI blits. Usage: run.cmd [dll folder]   (default native\). Exit code 0 = all passed.
 setlocal
 cd /d "%~dp0"
 set "DLLS=%~1"
@@ -18,7 +18,7 @@ call "%MEGULIT_VS%" -arch=x64 -host_arch=x64 -no_logo >nul || exit /b 1
 cl %FLAGS% /Fo"%OUT%\host64.obj" host.cpp /Fe:"%OUT%\host64.exe" /link d3d9.lib d3d11.lib d3dcompiler.lib user32.lib gdi32.lib >nul || exit /b 1
 endlocal
 set FAIL=0
-for %%m in (d3d9-up d3d9-vb d3d9-ivb d3d11 gdi) do (
+for %%m in (d3d9-up d3d9-vb d3d9-ivb d3d9-decl d3d11 gdi) do (
  "%OUT%\host32.exe" "%DLLS%\MeguLitGpu32.dll" %%m || set FAIL=1
  "%OUT%\host64.exe" "%DLLS%\MeguLitGpu64.dll" %%m || set FAIL=1
 )

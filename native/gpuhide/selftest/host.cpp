@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Self-test for MeguLitGpu32/64.dll (hide layer 4). Usage: host.exe <dll> <d3d9-up|d3d9-vb|d3d9-ivb|d3d11|gdi> [png prefix]
+// Self-test for MeguLitGpu32/64.dll (hide layer 4). Usage: host.exe <dll> <d3d9-up|d3d9-vb|d3d9-ivb|d3d9-decl|d3d11|gdi> [png prefix]
 // The host plays the game and HookBridge at once: it renders a scene (one full-screen quad), a "name" (3 glyph quads
 // above the text box) and an 8-character dialogue line (8 glyph quads in a row) from one glyph atlas, loads the DLL
 // after its device exists (like a late injection), and talks to it over the real pipes.
@@ -76,6 +76,33 @@ static void FrameGdi(int first, DWORD *pixels) {
 static HDC Dib(int w, int h, DWORD **bits) { BITMAPINFO bi = {}; bi.bmiHeader.biSize = sizeof bi.bmiHeader; bi.bmiHeader.biWidth = w; bi.bmiHeader.biHeight = -h; bi.bmiHeader.biPlanes = 1; bi.bmiHeader.biBitCount = 32; HBITMAP bm = CreateDIBSection(NULL, &bi, DIB_RGB_COLORS, (void **)bits, NULL, 0); HDC dc = CreateCompatibleDC(NULL); SelectObject(dc, bm); return dc; }
 
 
+// ------------------------------------------------------------------------------------------------------- D3D9 decl
+// The atlas engines' way (MAGES): a vertex declaration and a vertex shader (positions already in clip space), one
+// DrawPrimitiveUP triangle fan per character.
+static IDirect3DVertexDeclaration9 *Decl9; static IDirect3DVertexShader9 *Vs9;
+struct V5 { float x, y, z, u, v; };
+static void Fan9(float x, float y, float s, int cell) { float u0, v0, u1, v1; Cell(cell, u0, v0, u1, v1); auto nx = [](float p) { return p / W * 2 - 1; }; auto ny = [](float p) { return 1 - p / H * 2; };
+ V5 f[4] = { { nx(x), ny(y), 0.5f, u0, v0 }, { nx(x + s), ny(y), 0.5f, u1, v0 }, { nx(x + s), ny(y + s), 0.5f, u1, v1 }, { nx(x), ny(y + s), 0.5f, u0, v1 } }; Dev->DrawPrimitiveUP(D3DPT_TRIANGLEFAN, 2, f, sizeof(V5)); }
+static void FrameDecl(int first, DWORD *pixels) {
+ Dev->Clear(0, NULL, D3DCLEAR_TARGET, 0, 1, 0); Dev->BeginScene();
+ Dev->SetRenderState(D3DRS_ALPHABLENDENABLE, TRUE); Dev->SetRenderState(D3DRS_SRCBLEND, D3DBLEND_SRCALPHA); Dev->SetRenderState(D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA); Dev->SetRenderState(D3DRS_LIGHTING, FALSE); Dev->SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE);
+ Dev->SetFVF(D3DFVF_XYZRHW | D3DFVF_TEX1); Dev->SetVertexShader(NULL); Dev->SetTexture(0, Scene);
+ V s[4] = { { 0, 0, 0, 1, 0, 0 }, { (float)W, 0, 0, 1, 1, 0 }, { 0, (float)H, 0, 1, 0, 1 }, { (float)W, (float)H, 0, 1, 1, 1 } }; Dev->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, 2, s, sizeof(V));
+ Dev->SetVertexDeclaration(Decl9); Dev->SetVertexShader(Vs9); Dev->SetTexture(0, Atlas);
+ for (int i = 0; i < 3; i++) Fan9((float)NameX(i), (float)NY, GS, 40 + i);
+ for (int i = 0; i < 8; i++) Fan9((float)TextX(i), (float)GY, GS, first + i);
+ Dev->SetVertexShader(NULL); Dev->EndScene();
+ if (pixels) { IDirect3DSurface9 *bb, *sys; Dev->GetBackBuffer(0, 0, D3DBACKBUFFER_TYPE_MONO, &bb); D3DSURFACE_DESC d; bb->GetDesc(&d); Dev->CreateOffscreenPlainSurface(W, H, d.Format, D3DPOOL_SYSTEMMEM, &sys, NULL); Dev->GetRenderTargetData(bb, sys); D3DLOCKED_RECT r; sys->LockRect(&r, NULL, D3DLOCK_READONLY); for (int y = 0; y < H; y++) memcpy(pixels + y * W, (char *)r.pBits + y * r.Pitch, W * 4); sys->UnlockRect(); sys->Release(); bb->Release(); }
+ Dev->Present(NULL, NULL, NULL, NULL);
+}
+static bool InitDecl() {
+ D3DVERTEXELEMENT9 e[] = { { 0, 0, D3DDECLTYPE_FLOAT3, D3DDECLMETHOD_DEFAULT, D3DDECLUSAGE_POSITION, 0 }, { 0, 12, D3DDECLTYPE_FLOAT2, D3DDECLMETHOD_DEFAULT, D3DDECLUSAGE_TEXCOORD, 0 }, D3DDECL_END() };
+ if (FAILED(Dev->CreateVertexDeclaration(e, &Decl9))) return false;
+ const char *src = "struct O{float4 p:POSITION;float2 t:TEXCOORD0;};O main(float3 p:POSITION,float2 t:TEXCOORD0){O o;o.p=float4(p,1);o.t=t;return o;}";
+ ID3DBlob *b = NULL; if (FAILED(D3DCompile(src, strlen(src), NULL, NULL, NULL, "main", "vs_2_0", 0, 0, &b, NULL))) return false;
+ return SUCCEEDED(Dev->CreateVertexShader((const DWORD *)b->GetBufferPointer(), &Vs9));
+}
+
 // ------------------------------------------------------------------------------------------------------------- D3D11
 // Positions in normalised device coordinates (the DLL maps them through the viewport), a dynamic vertex buffer written
 // with Map / Unmap, an input layout made before the DLL arrived (the DLL guesses it: position float2 at 0, texture
@@ -116,7 +143,7 @@ static bool Init11() {
 }
 
 // ----------------------------------------------------------------------------------------------------------- the test
-static void Frame(int first, DWORD *px) { if (Mode == "gdi") { FrameGdi(first, px); Sleep(40); } else if (Mode == "d3d11") { FrameD3D11(first, px); Sleep(16); } else { FrameD3D(first, px); Sleep(16); } }
+static void Frame(int first, DWORD *px) { if (Mode == "gdi") { FrameGdi(first, px); Sleep(40); } else if (Mode == "d3d11") { FrameD3D11(first, px); Sleep(16); } else if (Mode == "d3d9-decl") { FrameDecl(first, px); Sleep(16); } else { FrameD3D(first, px); Sleep(16); } }
 static bool White(DWORD c) { return (c & 0xFFFFFF) == 0xFFFFFF; }
 static bool Blue(DWORD c) { return (c & 0xFFFFFF) == 0x000080; }
 static void Pixels(int first, bool textShown, const char *label) {
@@ -131,7 +158,7 @@ static bool RectsOk(const std::string &r) {
  return ok == 8;
 }
 int wmain(int argc, wchar_t **argv) {
- if (argc < 3) { printf("usage: host <dll> <d3d9-up|d3d9-vb|d3d9-ivb|d3d11|gdi>\n"); return 2; }
+ if (argc < 3) { printf("usage: host <dll> <d3d9-up|d3d9-vb|d3d9-ivb|d3d9-decl|d3d11|gdi>\n"); return 2; }
  char m[32]; WideCharToMultiByte(CP_UTF8, 0, argv[2], -1, m, sizeof m, NULL, NULL); Mode = m; printf("mode %s (%d-bit)\n", m, (int)sizeof(void *) * 8);
  WNDCLASSW wc = {}; wc.lpfnWndProc = DefWindowProcW; wc.hInstance = GetModuleHandleW(NULL); wc.lpszClassName = L"GpuHideTest"; RegisterClassW(&wc);
  Win = CreateWindowExW(WS_EX_TOOLWINDOW, wc.lpszClassName, L"gpu hide test", WS_POPUP, -32000, -32000, W, H, NULL, NULL, wc.hInstance, NULL); // never shown
@@ -143,6 +170,7 @@ int wmain(int argc, wchar_t **argv) {
   Atlas = MakeTex(256, true); Scene = MakeTex(64, false);
   Dev->CreateVertexBuffer(64 * 6 * sizeof(V), D3DUSAGE_DYNAMIC | D3DUSAGE_WRITEONLY, 0, D3DPOOL_DEFAULT, &Vb, NULL); Dev->CreateIndexBuffer(64 * 6 * 2, D3DUSAGE_DYNAMIC | D3DUSAGE_WRITEONLY, D3DFMT_INDEX16, D3DPOOL_DEFAULT, &Ib, NULL);
   Dev->SetSamplerState(0, D3DSAMP_MINFILTER, D3DTEXF_POINT); Dev->SetSamplerState(0, D3DSAMP_MAGFILTER, D3DTEXF_POINT);
+  if (Mode == "d3d9-decl" && !InitDecl()) { printf("SKIP no vertex shader support\n"); return 0; }
  }
  Frame(0, nullptr);
  // HookBridge's side of both pipes

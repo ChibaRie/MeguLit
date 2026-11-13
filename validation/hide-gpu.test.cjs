@@ -28,7 +28,9 @@ test('DLL never writes game data: dropped quads are draws not made, buffers are 
  const d=read('native/gpuhide/GpuHide11.h');
  assert.match(d,/D3D11CreateDeviceAndSwapChain/);assert.match(d,/c->IAGetInputLayout\(&l\)/,'pipeline state read with the context getters (state set before the DLL arrived)');
  assert.match(d,/L\.uv = \(int\)Ctx\.vbStride - 8/,'input layout made before the DLL arrived is guessed');
- assert.doesNotMatch(read('native/gpuhide/build.cmd'),/d3d11\.lib/,'the DLL never imports d3d11.dll (a D3D9 game must not load it)');});
+ assert.doesNotMatch(read('native/gpuhide/build.cmd'),/d3d11\.lib/,'the DLL never imports d3d11.dll (a D3D9 game must not load it)');
+ assert.match(c,/HMODULE d = SystemModule\(L"d3d9\.dll"\)/,'throwaway devices only through the system d3d9.dll (WHITE ALBUM2 ships a wrapper d3d9.dll; using it crashed the game)');
+ assert.match(c,/DeclInfo ParseDecl\(IDirect3DVertexDeclaration9 \*x\)/,'vertex declarations decoded (MAGES atlas draws)');});
 
 test('HookBridge loads the layer, arms it for glyph-fallback streams and treats a hit like the GDI hide',()=>{
  const b=read('native/HookBridge.cs'),l=read('native/GpuHideLayer.cs'),i=read('native/HookInjector.cs'),s=read('native/Build-HookBridge.ps1');
@@ -48,6 +50,6 @@ test('built, self-tested and shipped like every native binary',()=>{
  assert.equal(nb.marker,'MeguLitGpu version=1');assert.equal(nb.ci,true);assert.deepStrictEqual(nb.selftests,['native/gpuhide/selftest/run.cmd']);
  const r=read('Release.ps1');assert.match(r,/'native\/MeguLitGpu32\.dll','native\/MeguLitGpu64\.dll'/);assert.match(r,/'native\/MeguLitGpu64\.dll','MeguLitGpu version=1'/);
  const h=read('native/gpuhide/selftest/host.cpp');
- for(const m of ['d3d9-up','d3d9-vb','d3d9-ivb','d3d11','gdi'])assert.ok(read('native/gpuhide/selftest/run.cmd').includes(m),'self-test mode '+m);
+ for(const m of ['d3d9-up','d3d9-vb','d3d9-ivb','d3d9-decl','d3d11','gdi'])assert.ok(read('native/gpuhide/selftest/run.cmd').includes(m),'self-test mode '+m);
  assert.match(h,/dialogue glyphs %s \(%d\/8 white\), name kept \(%d\/3\), scene kept/,'pixels: line gone, name and scene kept');
  assert.ok(read('docs/hide-layers.md').includes('GpuArm(string streamId, string line)'),'interface documented');});

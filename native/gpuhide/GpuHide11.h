@@ -45,7 +45,7 @@ template <class F> static bool Quads11(UINT count, F vtx, std::vector<Quad> &out
 }
 static std::vector<int> Decide11(std::vector<Quad> &q, const char *kind, UINT count) {
  TexInfo ti = Tex11(Ctx.tex0); TexInfo rt = Tex11(Ctx.rt); bool back = Ctx.rt == BackRes11 || !rt.rt;
- if (Diag) { int g = 0; for (auto &x : q) if (GlyphLike(x, ti.w, ti.h)) g++; if (Frame % 30 == 0 || g) { char b[900]; int n = _snprintf_s(b, sizeof b, _TRUNCATE, "F%u %s rt=%p(%ux%u%s) tex=%p(%ux%u%s) n=%u q=%u g=%d", Frame, kind, Ctx.rt, rt.w, rt.h, back ? " back" : "", Ctx.tex0, ti.w, ti.h, ti.rt ? " rt" : "", count, (unsigned)q.size(), g); for (size_t i = 0; i < q.size() && i < 6 && n < 700; i++) n += _snprintf_s(b + n, sizeof b - n, _TRUNCATE, " [%.0f,%.0f %.0fx%.0f uv %.3f,%.3f %.3fx%.3f]", q[i].x0, q[i].y0, q[i].x1 - q[i].x0, q[i].y1 - q[i].y0, q[i].u0, q[i].v0, q[i].u1 - q[i].u0, q[i].v1 - q[i].v0); Log("%s", b); } }
+ if (Diag) { int g = 0; for (auto &x : q) if (GlyphLike(x, ti.w, ti.h)) g++; if (Frame % 300 == 0 || (g && Frame % 10 == 0)) { char b[900]; int n = _snprintf_s(b, sizeof b, _TRUNCATE, "F%u %s rt=%p(%ux%u%s) tex=%p(%ux%u%s) n=%u q=%u g=%d", Frame, kind, Ctx.rt, rt.w, rt.h, back ? " back" : "", Ctx.tex0, ti.w, ti.h, ti.rt ? " rt" : "", count, (unsigned)q.size(), g); for (size_t i = 0; i < q.size() && i < 6 && n < 700; i++) n += _snprintf_s(b + n, sizeof b - n, _TRUNCATE, " [%.0f,%.0f %.0fx%.0f uv %.3f,%.3f %.3fx%.3f]", q[i].x0, q[i].y0, q[i].x1 - q[i].x0, q[i].y1 - q[i].y0, q[i].u0, q[i].v0, q[i].u1 - q[i].u0, q[i].v1 - q[i].v0); Log("%s", b); } }
  std::vector<int> drop; if (!Ctx.tex0 || !ti.w) return drop;
  if (back && ti.rt) { Learner.Composite(Ctx.tex0, q); return drop; }
  if (!back && Ctx.rt) Textures[Ctx.rt] = rt;
@@ -70,7 +70,7 @@ static void STDMETHODCALLTYPE HDraw11(ID3D11DeviceContext *c, UINT count, UINT s
  Draw11F o = (Draw11F)CurOrig; std::vector<int> drop; std::vector<Quad> q;
  Snapshot(c); { Guard g; auto vb = Buffers.find(Ctx.vb); bool ok = false;
   if (vb != Buffers.end() && Ctx.vbStride) { const Shadow &s = vb->second; ok = Quads11(count, [&](UINT i) -> const unsigned char * { size_t at = Ctx.vbOff + (size_t)(start + i) * Ctx.vbStride; return at + Ctx.vbStride <= s.data.size() ? &s.data[at] : NULL; }, q); }
-  if (ok) drop = Decide11(q, "D11", count); else if (Diag && Frame % 30 == 0) Log("F%u D11 undecoded n=%u layout=%p%s topo=%d vb=%p stride=%u shadow=%d", Frame, count, Ctx.layout, Layouts11.count(Ctx.layout) ? "" : "(guess)", (int)Ctx.topo, Ctx.vb, Ctx.vbStride, (int)Buffers.count(Ctx.vb)); }
+  if (ok) drop = Decide11(q, "D11", count); else if (Diag && Frame % 300 == 0) Log("F%u D11 undecoded n=%u layout=%p%s topo=%d vb=%p stride=%u shadow=%d", Frame, count, Ctx.layout, Layouts11.count(Ctx.layout) ? "" : "(guess)", (int)Ctx.topo, Ctx.vb, Ctx.vbStride, (int)Buffers.count(Ctx.vb)); }
  if (drop.empty()) { o(c, count, start); return; }
  if (count == 4) return; // the strip's only quad is the dropped one
  size_t k = 0; UINT qn = (UINT)q.size(), i = 0;
@@ -81,7 +81,7 @@ static void STDMETHODCALLTYPE HDrawIndexed11(ID3D11DeviceContext *c, UINT count,
  Snapshot(c); { Guard g; auto vb = Buffers.find(Ctx.vb), ib = Buffers.find(Ctx.ib); bool ok = false;
   if (vb != Buffers.end() && ib != Buffers.end() && Ctx.vbStride) { const Shadow &s = vb->second, &x = ib->second; bool i32 = Ctx.ibFmt == DXGI_FORMAT_R32_UINT; unsigned isz = i32 ? 4 : 2;
    ok = Quads11(count, [&](UINT i) -> const unsigned char * { size_t ia = Ctx.ibOff + (size_t)(startIdx + i) * isz; if (ia + isz > x.data.size()) return NULL; UINT idx = i32 ? *(const UINT *)&x.data[ia] : *(const USHORT *)&x.data[ia]; size_t at = Ctx.vbOff + ((size_t)base + idx) * Ctx.vbStride; return at + Ctx.vbStride <= s.data.size() ? &s.data[at] : NULL; }, q); }
-  if (ok) drop = Decide11(q, "DI11", count); else if (Diag && Frame % 30 == 0) Log("F%u DI11 undecoded n=%u layout=%p topo=%d", Frame, count, Ctx.layout, (int)Ctx.topo); }
+  if (ok) drop = Decide11(q, "DI11", count); else if (Diag && Frame % 300 == 0) Log("F%u DI11 undecoded n=%u layout=%p topo=%d", Frame, count, Ctx.layout, (int)Ctx.topo); }
  if (drop.empty()) { o(c, count, startIdx, base); return; }
  if (count == 4) return;
  size_t k = 0; UINT qn = (UINT)q.size(), i = 0;

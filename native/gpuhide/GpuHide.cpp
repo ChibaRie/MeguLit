@@ -81,7 +81,7 @@ static std::vector<PendingLock> Pending;
 struct TexInfo { UINT w, h; D3DFORMAT fmt; bool rt; };
 static std::map<void *, TexInfo> Textures;
 struct Dev {
- IDirect3DDevice9 *d; void *tex0; void *rtTex; UINT rtW, rtH; void *vb; UINT vbOff, vbStride; void *ib; DWORD fvf; bool decl, vs;
+ IDirect3DDevice9 *d; void *tex0; void *rtTex; UINT rtW, rtH; void *vb; UINT vbOff, vbStride; void *ib; DWORD fvf; bool decl, vs; void *declPtr;
  D3DMATRIX m[3]; bool mSet[3]; D3DVIEWPORT9 vp; UINT bbW, bbH; bool rtIsBack;
 };
 static Dev Devs[4]; static int DevCount;
@@ -113,18 +113,44 @@ static void Project(Dev &v, const float *p, bool rhw, float &sx, float &sy) {
  for (int k = 0; k < 3; k++) { const float *m = &v.m[k]._11; for (int c = 0; c < 4; c++) t[c] = in[0] * m[c] + in[1] * m[4 + c] + in[2] * m[8 + c] + in[3] * m[12 + c]; memcpy(in, t, sizeof t); }
  float w = in[3] != 0 ? in[3] : 1; sx = v.vp.X + (in[0] / w + 1) * 0.5f * v.vp.Width; sy = v.vp.Y + (1 - in[1] / w) * 0.5f * v.vp.Height;
 }
+// Where position and texture coordinate 0 sit in a vertex. mode 0: untransformed (fixed-function world x view x
+// projection), 1: pixels (XYZRHW / POSITIONT), 2: decided per draw (a vertex shader does the transform: NDC when every
+// corner lies within [-1, 1], else pixels).
+struct Layout9 { unsigned pos = 0, uv = 0, stride = 0; int mode = 0; };
+struct DeclInfo { bool ok; unsigned pos, uv, stride; bool posT; };
+static std::map<void *, DeclInfo> Decls; // vertex declaration -> layout (read with GetDeclaration when it is set)
+static DeclInfo ParseDecl(IDirect3DVertexDeclaration9 *x) {
+ DeclInfo d = { false, 0, 0, 0, false }; D3DVERTEXELEMENT9 e[MAXD3DDECLLENGTH + 1]; UINT n = MAXD3DDECLLENGTH + 1; if (FAILED(x->GetDeclaration(e, &n))) return d;
+ bool pos = false, uv = false;
+ for (UINT i = 0; i < n && e[i].Stream != 0xFF; i++) {
+  if (e[i].Stream != 0) continue; unsigned sz = e[i].Type == D3DDECLTYPE_FLOAT1 ? 4 : e[i].Type == D3DDECLTYPE_FLOAT2 ? 8 : e[i].Type == D3DDECLTYPE_FLOAT3 ? 12 : e[i].Type == D3DDECLTYPE_FLOAT4 ? 16 : 4;
+  d.stride = (std::max)(d.stride, (unsigned)e[i].Offset + sz);
+  bool f2 = e[i].Type == D3DDECLTYPE_FLOAT2 || e[i].Type == D3DDECLTYPE_FLOAT3 || e[i].Type == D3DDECLTYPE_FLOAT4;
+  if (!pos && f2 && e[i].UsageIndex == 0 && (e[i].Usage == D3DDECLUSAGE_POSITION || e[i].Usage == D3DDECLUSAGE_POSITIONT)) { pos = true; d.pos = e[i].Offset; d.posT = e[i].Usage == D3DDECLUSAGE_POSITIONT; }
+  if (!uv && e[i].Type == D3DDECLTYPE_FLOAT2 && e[i].Usage == D3DDECLUSAGE_TEXCOORD && e[i].UsageIndex == 0) { uv = true; d.uv = e[i].Offset; }
+ }
+ d.ok = pos && uv; return d;
+}
+static bool LayoutOf(Dev &v, Layout9 &L) {
+ if (v.decl) { auto it = Decls.find(v.declPtr); if (it == Decls.end() || !it->second.ok) return false; const DeclInfo &d = it->second; L.pos = d.pos; L.uv = d.uv; L.stride = d.stride; L.mode = d.posT ? 1 : v.vs ? 2 : 0; return true; }
+ unsigned posSize; bool rhw; if (!PosLayout(v.fvf, posSize, rhw, L.uv, L.stride)) return false; L.pos = 0; L.mode = rhw ? 1 : v.vs ? 2 : 0; return true;
+}
 // Turns one draw into quads (two triangles each). Vertex fetch: vtx(i) -> pointer to vertex i of the draw.
 template <class F> static bool Quads(Dev &v, D3DPRIMITIVETYPE pt, UINT prims, F vtx, std::vector<Quad> &out) {
- unsigned posSize, uvOff, stride; bool rhw; if (v.decl || v.vs || !PosLayout(v.fvf, posSize, rhw, uvOff, stride)) return false;
- if (!rhw && !(v.mSet[2])) return false; // transforms set before we arrived: positions unknown
- auto corner = [&](UINT i, float &x, float &y, float &u, float &w) -> bool { const unsigned char *p = vtx(i); if (!p) return false; Project(v, (const float *)p, rhw, x, y); u = ((const float *)(p + uvOff))[0]; w = ((const float *)(p + uvOff))[1]; return std::isfinite(x) && std::isfinite(y); };
- auto quad = [&](UINT a, UINT n, UINT first) -> bool {
-  Quad q; q.x0 = q.y0 = q.u0 = q.v0 = 1e30f; q.x1 = q.y1 = q.u1 = q.v1 = -1e30f; q.first = first;
-  for (UINT i = 0; i < n; i++) { float x, y, u, w; if (!corner(a + i, x, y, u, w)) return false; q.x0 = (std::min)(q.x0, x); q.y0 = (std::min)(q.y0, y); q.x1 = (std::max)(q.x1, x); q.y1 = (std::max)(q.y1, y); q.u0 = (std::min)(q.u0, u); q.v0 = (std::min)(q.v0, w); q.u1 = (std::max)(q.u1, u); q.v1 = (std::max)(q.v1, w); }
-  out.push_back(q); return true; };
- if (pt == D3DPT_TRIANGLELIST) { if (prims % 2) return false; for (UINT t = 0; t < prims; t += 2) if (!quad(t * 3, 6, t)) return false; return true; }
- if ((pt == D3DPT_TRIANGLESTRIP || pt == D3DPT_TRIANGLEFAN) && prims == 2) return quad(0, 4, 0);
- return false;
+ Layout9 L; if (!LayoutOf(v, L)) return false;
+ if (L.mode == 0 && !v.mSet[2]) return false; // transforms set before we arrived: positions unknown
+ UINT n; if (pt == D3DPT_TRIANGLELIST) { if (prims % 2) return false; n = prims * 3; } else if ((pt == D3DPT_TRIANGLESTRIP || pt == D3DPT_TRIANGLEFAN) && prims == 2) n = 4; else return false;
+ std::vector<float> c(n * 4); bool ndc = true;
+ for (UINT i = 0; i < n; i++) { const unsigned char *p = vtx(i); if (!p) return false; const float *ps = (const float *)(p + L.pos), *uv = (const float *)(p + L.uv);
+  float x, y; if (L.mode == 0) Project(v, ps, false, x, y); else { x = ps[0]; y = ps[1]; }
+  if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(uv[0]) || !std::isfinite(uv[1])) return false;
+  if (std::fabs(x) > 1.01f || std::fabs(y) > 1.01f) ndc = false; c[i * 4] = x; c[i * 4 + 1] = y; c[i * 4 + 2] = uv[0]; c[i * 4 + 3] = uv[1]; }
+ if (L.mode == 2 && ndc) for (UINT i = 0; i < n; i++) { c[i * 4] = v.vp.X + (c[i * 4] + 1) * 0.5f * v.vp.Width; c[i * 4 + 1] = v.vp.Y + (1 - c[i * 4 + 1]) * 0.5f * v.vp.Height; }
+ auto quad = [&](UINT a, UINT k, UINT first) { Quad q; q.x0 = q.y0 = q.u0 = q.v0 = 1e30f; q.x1 = q.y1 = q.u1 = q.v1 = -1e30f; q.first = first;
+  for (UINT i = a; i < a + k; i++) { q.x0 = (std::min)(q.x0, c[i * 4]); q.y0 = (std::min)(q.y0, c[i * 4 + 1]); q.x1 = (std::max)(q.x1, c[i * 4]); q.y1 = (std::max)(q.y1, c[i * 4 + 1]); q.u0 = (std::min)(q.u0, c[i * 4 + 2]); q.v0 = (std::min)(q.v0, c[i * 4 + 3]); q.u1 = (std::max)(q.u1, c[i * 4 + 2]); q.v1 = (std::max)(q.v1, c[i * 4 + 3]); }
+  out.push_back(q); };
+ if (pt == D3DPT_TRIANGLELIST) { for (UINT t = 0; t < prims; t += 2) quad(t * 3, 6, t); } else quad(0, 4, 0);
+ return true;
 }
 
 // ----------------------------------------------------------------------------------------------------------- draw hooks
@@ -135,9 +161,9 @@ typedef HRESULT(WINAPI *DrawIUP)(IDirect3DDevice9 *, D3DPRIMITIVETYPE, UINT, UIN
 
 static TexInfo TexOf(void *t) { auto it = Textures.find(t); if (it != Textures.end()) return it->second; TexInfo i = { 0, 0, D3DFMT_UNKNOWN, false }; return i; }
 static void DiagDraw(Dev &v, const char *kind, D3DPRIMITIVETYPE pt, UINT prims, const std::vector<Quad> &q, bool decoded) {
- if (!Diag) return; bool full = Frame % 30 == 0; int glyphs = 0; TexInfo ti = TexOf(v.tex0);
+ if (!Diag) return; bool full = Frame % 300 == 0; int glyphs = 0; TexInfo ti = TexOf(v.tex0);
  for (auto &x : q) if (GlyphLike(x, ti.w, ti.h)) glyphs++;
- if (!full && glyphs == 0) return;
+ if (!full && (glyphs == 0 || Frame % 10)) return;
  char b[1600]; int n = _snprintf_s(b, sizeof b, _TRUNCATE, "F%u %s rt=%p(%ux%u%s) tex=%p(%ux%u f%d%s) pt=%d n=%u fvf=%lx%s%s q=%u g=%d", Frame, kind, v.rtTex, v.rtW, v.rtH, v.rtIsBack ? " back" : "", v.tex0, ti.w, ti.h, (int)ti.fmt, ti.rt ? " rt" : "", (int)pt, prims, v.fvf, v.decl ? " decl" : "", v.vs ? " vs" : "", (unsigned)q.size(), glyphs);
  if (!decoded) n += _snprintf_s(b + n, sizeof b - n, _TRUNCATE, " undecoded");
  for (size_t i = 0; i < q.size() && i < 8 && n < 1400; i++) n += _snprintf_s(b + n, sizeof b - n, _TRUNCATE, " [%.0f,%.0f %.0fx%.0f uv %.3f,%.3f %.3fx%.3f]", q[i].x0, q[i].y0, q[i].x1 - q[i].x0, q[i].y1 - q[i].y0, q[i].u0, q[i].v0, q[i].u1 - q[i].u0, q[i].v1 - q[i].v0);
@@ -175,10 +201,10 @@ static HRESULT WINAPI HDrawIndexedPrimitive(IDirect3DDevice9 *d, D3DPRIMITIVETYP
 static HRESULT WINAPI HDrawPrimitiveUP(IDirect3DDevice9 *d, D3DPRIMITIVETYPE pt, UINT prims, const void *data, UINT stride) {
  DrawUP o = ORIG(DrawUP, d, 83); std::vector<int> drop; std::vector<Quad> q; const unsigned char *b = (const unsigned char *)data;
  { Guard g; Dev &v = *DevOf(d); UINT verts = pt == D3DPT_TRIANGLELIST ? prims * 3 : prims + 2; bool ok = false;
-  if (data && stride) { unsigned ps, uo, st; bool rhw; if (PosLayout(v.fvf, ps, rhw, uo, st) && st <= stride) ok = Quads(v, pt, prims, [&](UINT i) -> const unsigned char * { return i < verts ? b + (size_t)i * stride : NULL; }, q); }
+  if (data && stride) { Layout9 L; if (LayoutOf(v, L) && L.stride <= stride) ok = Quads(v, pt, prims, [&](UINT i) -> const unsigned char * { return i < verts ? b + (size_t)i * stride : NULL; }, q); }
   if (Diag) DiagDraw(v, "UP", pt, prims, q, ok); if (ok) drop = Decide(v, q); }
  if (drop.empty()) return o(d, pt, prims, data, stride);
- if (pt != D3DPT_TRIANGLELIST) return D3D_OK; // the single quad of a strip/fan is the dropped one
+ if (pt != D3DPT_TRIANGLELIST) return D3D_OK; // the single quad of a strip / fan is the dropped one
  HRESULT hr = D3D_OK; size_t k = 0; UINT qn = (UINT)q.size(); UINT i = 0;
  while (i < qn) { if (k < drop.size() && (UINT)drop[k] == i) { k++; i++; continue; } UINT j = i; while (j < qn && !(k < drop.size() && (UINT)drop[k] == j)) j++; hr = o(d, pt, (j - i) * 2, b + (size_t)i * 6 * stride, stride); i = j; }
  return hr;
@@ -186,7 +212,7 @@ static HRESULT WINAPI HDrawPrimitiveUP(IDirect3DDevice9 *d, D3DPRIMITIVETYPE pt,
 static HRESULT WINAPI HDrawIndexedPrimitiveUP(IDirect3DDevice9 *d, D3DPRIMITIVETYPE pt, UINT minIdx, UINT nv, UINT prims, const void *idx, D3DFORMAT fmt, const void *data, UINT stride) {
  DrawIUP o = ORIG(DrawIUP, d, 84); std::vector<int> drop; std::vector<Quad> q; const unsigned char *b = (const unsigned char *)data; bool i32 = fmt == D3DFMT_INDEX32;
  { Guard g; Dev &v = *DevOf(d); UINT n = pt == D3DPT_TRIANGLELIST ? prims * 3 : prims + 2; bool ok = false;
-  if (data && idx && stride) { unsigned ps, uo, st; bool rhw; if (PosLayout(v.fvf, ps, rhw, uo, st) && st <= stride) ok = Quads(v, pt, prims, [&](UINT i) -> const unsigned char * { if (i >= n) return NULL; UINT k = i32 ? ((const UINT *)idx)[i] : ((const USHORT *)idx)[i]; return k < minIdx + nv ? b + (size_t)k * stride : NULL; }, q); }
+  if (data && idx && stride) { Layout9 L; if (LayoutOf(v, L) && L.stride <= stride) ok = Quads(v, pt, prims, [&](UINT i) -> const unsigned char * { if (i >= n) return NULL; UINT k = i32 ? ((const UINT *)idx)[i] : ((const USHORT *)idx)[i]; return k < minIdx + nv ? b + (size_t)k * stride : NULL; }, q); }
   if (Diag) DiagDraw(v, "IUP", pt, prims, q, ok); if (ok) drop = Decide(v, q); }
  if (drop.empty()) return o(d, pt, minIdx, nv, prims, idx, fmt, data, stride);
  if (pt != D3DPT_TRIANGLELIST) return D3D_OK;
@@ -224,7 +250,8 @@ static HRESULT WINAPI HSetFVF(IDirect3DDevice9 *d, DWORD fvf) {
  HRESULT hr = ORIG(HRESULT(WINAPI *)(IDirect3DDevice9 *, DWORD), d, 89)(d, fvf); if (SUCCEEDED(hr)) { Guard g; Dev &v = *DevOf(d); v.fvf = fvf; v.decl = false; } return hr;
 }
 static HRESULT WINAPI HSetVertexDeclaration(IDirect3DDevice9 *d, IDirect3DVertexDeclaration9 *x) {
- HRESULT hr = ORIG(HRESULT(WINAPI *)(IDirect3DDevice9 *, IDirect3DVertexDeclaration9 *), d, 87)(d, x); if (SUCCEEDED(hr)) { Guard g; Dev &v = *DevOf(d); v.decl = x != NULL; } return hr;
+ HRESULT hr = ORIG(HRESULT(WINAPI *)(IDirect3DDevice9 *, IDirect3DVertexDeclaration9 *), d, 87)(d, x);
+ if (SUCCEEDED(hr)) { bool known; { Guard g; known = !x || Decls.count(x); } DeclInfo info = {}; if (!known) info = ParseDecl(x); Guard g; if (!known) { if (Decls.size() > 4096) Decls.clear(); Decls[x] = info; } Dev &v = *DevOf(d); v.decl = x != NULL; v.declPtr = x; } return hr;
 }
 static HRESULT WINAPI HSetVertexShader(IDirect3DDevice9 *d, IDirect3DVertexShader9 *x) {
  HRESULT hr = ORIG(HRESULT(WINAPI *)(IDirect3DDevice9 *, IDirect3DVertexShader9 *), d, 92)(d, x); if (SUCCEEDED(hr)) { Guard g; DevOf(d)->vs = x != NULL; } return hr;
@@ -385,17 +412,21 @@ static DWORD WINAPI Control(void *) {
  return 0;
 }
 static void Emit(const std::string &s) { Send(s); }
+// The system copy of a DLL only. A game may ship its own d3d9.dll (a wrapper next to the program that keeps the game's
+// device in globals); creating throwaway devices through it corrupted that state (WHITE ALBUM2 crashed at the first
+// scene). The wrapper ends in the system DLL, so hooking the system functions still sees every draw.
+static HMODULE SystemModule(const wchar_t *name) { wchar_t path[MAX_PATH]; UINT n = GetSystemDirectoryW(path, MAX_PATH); if (!n || n > MAX_PATH - 20) return NULL; swprintf_s(path + n, MAX_PATH - n, L"\\%s", name); return GetModuleHandleW(path); }
 static DWORD WINAPI Start(void *module) {
  wchar_t path[MAX_PATH]; GetModuleFileNameW((HMODULE)module, path, MAX_PATH); wchar_t *slash = wcsrchr(path, L'\\'); if (slash) wcscpy_s(slash + 1, MAX_PATH - (slash + 1 - path), L"MeguLitGpu.diag");
  FILE *f = NULL; if (_wfopen_s(&f, path, L"r, ccs=UTF-8") == 0 && f) { wchar_t log[MAX_PATH] = {}; if (fgetws(log, MAX_PATH, f)) { size_t n = wcslen(log); while (n && (log[n - 1] == L'\n' || log[n - 1] == L'\r' || log[n - 1] == L' ')) log[--n] = 0; wchar_t full[MAX_PATH]; swprintf_s(full, L"%s.%lu.log", log, GetCurrentProcessId()); Diag = _wfsopen(full, L"w", _SH_DENYNO); } fclose(f); }
  Learner.emit = Emit; Learner.log = Diag ? Log : NULL;
  CreateThread(NULL, 0, Sender, NULL, 0, NULL); CreateThread(NULL, 0, Control, NULL, 0, NULL);
  MH_Initialize(); int gdi = InstallGdi(); CreateThread(NULL, 0, GdiTicker, NULL, 0, NULL); Log("installed gdi hooks=%d", gdi); Send("ToMe_GPUHIDE status gdi hooked=" + std::to_string(gdi));
- // Wait for the game's d3d9.dll / d3d11.dll (games often load them after their first window), then hook each once.
+ // Wait for the system's d3d9.dll / d3d11.dll (games often load them after their first window), then hook each once.
  bool d9 = false, d11 = false;
  for (int i = 0; i < 600 && !Quit && !(d9 && d11); i++) {
-  HMODULE d = GetModuleHandleW(L"d3d9.dll"); if (d && !d9) { d9 = true; int n = Install(d); n = n && HookCount >= 15 ? n : 0; Log("installed d3d9 devices=%d hooks=%d", n, HookCount); Send(std::string(n ? "ToMe_GPUHIDE status d3d9 hooked gdi=" : "ToMe_GPUHIDE status d3d9 no device gdi=") + std::to_string(gdi)); }
-  HMODULE e = GetModuleHandleW(L"d3d11.dll"); if (e && !d11) { d11 = true; int before = HookCount, n = Install11(e); Log("installed d3d11 devices=%d hooks=%d", n, HookCount - before); Send(n && HookCount - before >= 7 ? "ToMe_GPUHIDE status d3d11 hooked" : "ToMe_GPUHIDE status d3d11 no device"); }
+  HMODULE d = SystemModule(L"d3d9.dll"); if (d && !d9) { d9 = true; int n = Install(d); n = n && HookCount >= 15 ? n : 0; Log("installed d3d9 devices=%d hooks=%d", n, HookCount); Send(std::string(n ? "ToMe_GPUHIDE status d3d9 hooked gdi=" : "ToMe_GPUHIDE status d3d9 no device gdi=") + std::to_string(gdi)); }
+  HMODULE e = SystemModule(L"d3d11.dll"); if (e && !d11) { d11 = true; int before = HookCount, n = Install11(e); Log("installed d3d11 devices=%d hooks=%d", n, HookCount - before); Send(n && HookCount - before >= 7 ? "ToMe_GPUHIDE status d3d11 hooked" : "ToMe_GPUHIDE status d3d11 no device"); }
   Sleep(500); }
  if (!d9 && !d11) Send("ToMe_GPUHIDE status no d3d gdi=" + std::to_string(gdi));
  return 0;
