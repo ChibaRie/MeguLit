@@ -99,3 +99,15 @@ test('release stops on a hook or font DLL older than the hide sources it ships w
  assert.match(r,/'native\/megulithook\/MeguLitGdiHide\.h','native\/megulithook\/MeguLitHook32\.dll','MeguLit_GDIHIDE'/);
  assert.match(r,/'native\/fontprobe\/GlyphMatch\.h','native\/MeguLitFont32\.dll','ToMe_GLYPHHIDE'/);
  assert.match(r,/is an old build: it lacks/);});
+
+/* E578 live beta39 (2026-11-14, off screen): once the host switched the read-only Bruns stream on, every character waited
+   about 1 s for a write-back that never comes: upstream TextHook::Send left `canembed` unset for a hook that is not
+   EMBED_ABLE. The live run also showed this game draws its dialogue from bitmap font atlases (font\ff_*.bmp), so no GDI
+   text call ever carries the line: hiding it needs the engine's own characters blanked (see notes). */
+test('hook DLL: a stream that cannot write back never waits for a write-back when switched on',()=>{
+ const t=read('native/megulithook/texthook.cc');
+ assert.match(t,/bool canembed = false;/);assert.doesNotMatch(t,/bool canembed;/);
+ const h=read('native/megulithook/MeguLitGdiHide.h');
+ assert.match(h,/Msg::Log\("MeguLit_GDIHIDE seen fn=%s n=%d first=%04x hit=%d ruby=%d on=%d"/,'first strings after arming are logged for diagnosis');
+ assert.match(read('native/megulithook/embed_util.cc'),/Msg::Log\("MeguLit hijack failed flag=%x"/);
+});

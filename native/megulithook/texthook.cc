@@ -373,7 +373,9 @@ void TextHook::Send(hook_context *context)
 
 		parsenewlineseperator(&buff);
 
-		bool canembed;
+		/* MeguLit E578: upstream left this unset for a hook that is not EMBED_ABLE; it was harmless while such a stream was never
+		   switched on, but the GDI hide switches it on and the garbage value made every character wait ~1 s for a write-back */
+		bool canembed = false;
 		if (hp.type & EMBED_ABLE)
 		{
 			if (!checklengthembedable(hp, buff.size))

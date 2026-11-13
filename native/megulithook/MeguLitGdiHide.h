@@ -18,6 +18,8 @@ namespace MeguLitGdiHide
   inline std::atomic<bool> Attached = false;
   // Set by solvefont: an EMBED_ABLE hook asked for the font hijack, so the GDI functions also switch fonts.
   inline bool FontWanted = false;
+  // The first strings seen after arming are logged (fn, length, first character, decision), so a game whose text never matches can be diagnosed from the log.
+  inline std::atomic<long> Seen = 0;
   constexpr DWORD NewLineGap = 400, ArmedFor = 60000, SingleCharWindow = 3000, RubyWindow = 3000;
   constexpr size_t MaxLine = 2048;
 
@@ -145,6 +147,11 @@ namespace MeguLitGdiHide
         ruby = true;
     }
     ReleaseSRWLockShared(&Lock);
+    if (Seen < 12 && now - LastFeed < ArmedFor)
+    {
+      Seen++;
+      Msg::Log("MeguLit_GDIHIDE seen fn=%s n=%d first=%04x hit=%d ruby=%d on=%d", fn, (int)drawn.size(), (unsigned)drawn[0], (int)hit, (int)ruby, (int)check_embed_able(tp));
+    }
     if (!armed || !(hit || ruby) || !check_embed_able(tp))
       return false;
     TEXTMETRICW tm;
