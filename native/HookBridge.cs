@@ -9,7 +9,7 @@ using System.Drawing.Imaging;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Web.Script.Serialization;
-public static class HookBridge {
+public static partial class HookBridge {
  [StructLayout(LayoutKind.Sequential)] public struct ThreadParam {public uint processId;public ulong addr,ctx,ctx2;public string Key(){return addr.ToString("x")+":"+ctx.ToString("x")+":"+ctx2.ToString("x");}}
  [UnmanagedFunctionPointer(CallingConvention.Cdecl)] public delegate void ProcessEvent(uint pid);
  [UnmanagedFunctionPointer(CallingConvention.Cdecl)] public delegate void CreateEvent([MarshalAs(UnmanagedType.LPWStr)]string code,[MarshalAs(UnmanagedType.LPStr)]string name,ThreadParam tp,[MarshalAs(UnmanagedType.I1)]bool embed);
@@ -399,8 +399,8 @@ static void Deactivate(string reason){if(WaitHook!=null)WaitHook.Disable();lock(
  static void GlyphSend(string line){lock(GlyphGate){if(GlyphCtl==null)return;try{GlyphCtl.WriteLine(line);}catch{GlyphCtl=null;}}}
  static bool GlyphWanted(){lock(Gate){Candidate c;return !GlyphCached&&Enabled&&(ReplacementEnabled||ProbeWanted)&&Selected!=""&&Candidates.TryGetValue(Selected,out c)&&c.gdiProbe;}}
  /* Called with every line of the selected stream; line breaks do not matter to the DLL (it ignores blanks). */
- static void GlyphLine(string text){if(GlyphWanted()){lock(GlyphGate){GlyphSent=true;}GlyphSend("LINE "+System.Text.RegularExpressions.Regex.Replace(text??"",@"[\r\n\u2028\u2029]+"," "));}else GlyphOff();}
- static void GlyphOff(){bool was;lock(GlyphGate){was=GlyphSent;GlyphSent=false;}if(was)GlyphSend("OFF");}
+ static void GlyphLine(string text){GpuLine(text);if(GlyphWanted()){lock(GlyphGate){GlyphSent=true;}GlyphSend("LINE "+System.Text.RegularExpressions.Regex.Replace(text??"",@"[\r\n\u2028\u2029]+"," "));}else GlyphOff();}
+ static void GlyphOff(){GpuDisarm();bool was;lock(GlyphGate){was=GlyphSent;GlyphSent=false;}if(was)GlyphSend("OFF");}
  static string GlyphKey;
  static void GlyphSave(object value){try{if(String.IsNullOrEmpty(GlyphFile))return;Directory.CreateDirectory(Path.GetDirectoryName(GlyphFile));File.WriteAllText(GlyphFile,Json.Serialize(value));}catch{}}
  static void GlyphReport(string s){Diagnostic("glyph hide "+s);
@@ -466,6 +466,7 @@ static void Deactivate(string reason){if(WaitHook!=null)WaitHook.Disable();lock(
    KrkrText(bit,loader,args);
    RenpyText(bit,loader,args);
    FontProbe(bit,loader,args);
+   GpuHide(bit,loader,args);
    ScnCapture(bit,loader,args);
    RuntimeDump(bit,loader,args);
    new Thread(Input){IsBackground=true}.Start();DateTime until=DateTime.UtcNow.AddSeconds(15);while(!Quit){if(!Connected&&DateTime.UtcNow>until)throw new Exception("LunaHook 未连接当前游戏");if(WaitHook!=null)WaitHook.Tick();Heartbeat();Thread.Sleep(40);}return 0;

@@ -1,0 +1,29 @@
+@echo off
+rem Self-test of hide layer 4 (MeguLitGpu32/64.dll): x86 and x64 hosts, Direct3D 9 (DrawPrimitiveUP, vertex buffer with
+rem transforms, indexed) and GDI blits. Usage: run.cmd [dll folder]   (default native\). Exit code 0 = all passed.
+setlocal
+cd /d "%~dp0"
+set "DLLS=%~1"
+if "%DLLS%"=="" set "DLLS=%~dp0..\.."
+if "%MEGULIT_VS%"=="" set "MEGULIT_VS=E:\Apps\build-tools\vs2022\Common7\Tools\VsDevCmd.bat"
+set "OUT=%TEMP%\megulit-gpuhide-selftest"
+if not exist "%OUT%" mkdir "%OUT%"
+set FLAGS=/nologo /O2 /MT /EHsc /W3 /utf-8 /DUNICODE /D_UNICODE
+setlocal
+call "%~dp0..\..\vsx86.cmd" >nul || exit /b 1
+cl %FLAGS% /Fo"%OUT%\host32.obj" host.cpp /Fe:"%OUT%\host32.exe" /link d3d9.lib user32.lib gdi32.lib >nul || exit /b 1
+endlocal
+setlocal
+call "%MEGULIT_VS%" -arch=x64 -host_arch=x64 -no_logo >nul || exit /b 1
+cl %FLAGS% /Fo"%OUT%\host64.obj" host.cpp /Fe:"%OUT%\host64.exe" /link d3d9.lib user32.lib gdi32.lib >nul || exit /b 1
+endlocal
+set FAIL=0
+for %%m in (d3d9-up d3d9-vb d3d9-ivb gdi) do (
+ "%OUT%\host32.exe" "%DLLS%\MeguLitGpu32.dll" %%m || set FAIL=1
+ "%OUT%\host64.exe" "%DLLS%\MeguLitGpu64.dll" %%m || set FAIL=1
+)
+findstr /c:"MeguLitGpu version=1" "%DLLS%\MeguLitGpu32.dll" >nul || (echo FAIL MeguLitGpu32.dll has no version marker & set FAIL=1)
+findstr /c:"MeguLitGpu version=1" "%DLLS%\MeguLitGpu64.dll" >nul || (echo FAIL MeguLitGpu64.dll has no version marker & set FAIL=1)
+if %FAIL%==1 (echo GPUHIDE SELFTEST FAILED & exit /b 1)
+echo GPUHIDE SELFTEST PASSED
+endlocal
