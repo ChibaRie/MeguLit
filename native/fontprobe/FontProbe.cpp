@@ -92,14 +92,17 @@ Face FaceOf(HDC dc) {
 SRWLOCK HideLock = SRWLOCK_INIT; GlyphHide::Matcher Hide; volatile LONG HideOn = 0, DotMode = 0;
 struct IndexMap { HFONT font = NULL; long seq = -1; std::map<WORD, wchar_t> map; } Indexes;
 GlyphHide::Key KeyOf(const Face &f) { GlyphHide::Key k; k.face = f.name; k.size = f.size; return k; }
+void AnnounceLine(long seq, const std::wstring &text);
 void Command(std::string l) {
  while (!l.empty() && (l.back() == '\r' || l.back() == '\n')) l.pop_back();
  AcquireSRWLockExclusive(&HideLock);
- if (l.rfind("LINE ", 0) == 0) { Hide.SetLine(Wide(l.substr(5)), GetTickCount()); InterlockedExchange(&HideOn, Hide.Cached() ? 0 : 1); }
+ long announce = -1; std::wstring text;
+ if (l.rfind("LINE ", 0) == 0) { long before = Hide.Sequence(); Hide.SetLine(Wide(l.substr(5)), GetTickCount()); InterlockedExchange(&HideOn, Hide.Cached() ? 0 : 1); if (DotMode && Hide.Sequence() != before) { announce = Hide.Sequence(); text = Hide.Current(); } }
  else if (l == "OFF") { Hide.Off(); InterlockedExchange(&HideOn, 0); }
  else if (l == "MODE dot" || l == "MODE blank") { bool dot = l == "MODE dot"; Hide.StopOnCache = !dot; InterlockedExchange(&DotMode, dot ? 1 : 0); }
  else if (l.rfind("FONT ", 0) == 0) { size_t sp = l.find(' ', 5); if (sp != std::string::npos) { GlyphHide::Key k; k.size = atoi(l.substr(5, sp - 5).c_str()); k.face = Clean(Wide(l.substr(sp + 1))); Hide.Seed(k); } }
  ReleaseSRWLockExclusive(&HideLock);
+ if (announce >= 0) AnnounceLine(announce, text); // dot mode: the line (and how many dots to expect) before the game draws it
 }
 DWORD WINAPI Control(void *) {
  wchar_t name[64]; swprintf_s(name, L"\\\\.\\pipe\\MeguLitFontCtl-%lu", GetCurrentProcessId());
@@ -174,6 +177,11 @@ void ServeDot(long seq, const char *path, const Dot &d) {
   if (DotBuf.empty()) { DotFirst = GetTickCount(); DotPath = path; } else if (DotPath != path) { DotFlushLocked(); DotFirst = GetTickCount(); DotPath = path; }
   char e[96]; sprintf_s(e, "%s%d:%04x:%d:%d:%d:%d:%d:%d:%c", DotBuf.empty() ? "" : ";", d.i, (unsigned)d.ch, d.h, d.b, d.a, d.x, d.y, d.s, d.k); DotBuf += e;
   if (++DotCount >= 48) DotFlushLocked(); }
+ ReleaseSRWLockExclusive(&DotLock);
+}
+void AnnounceLine(long seq, const std::wstring &text) {
+ AcquireSRWLockExclusive(&DotLock); if (seq != DotSeq) { DotFlushLocked(); DotSeq = seq; DotSeen.clear(); }
+ if (seq != DotAnnounced) { DotAnnounced = seq; Send("ToMe_GLYPHDOT line seq=" + std::to_string(seq) + " text=" + Utf8(text)); }
  ReleaseSRWLockExclusive(&DotLock);
 }
 DWORD WINAPI DotFlusher(void *) { for (;;) { Sleep(25); AcquireSRWLockExclusive(&DotLock); if (!DotBuf.empty() && GetTickCount() - DotFirst >= 25) DotFlushLocked(); ReleaseSRWLockExclusive(&DotLock); } }

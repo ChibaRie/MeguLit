@@ -20,6 +20,7 @@ version, a line in this log, and stays backward compatible where possible (new f
 | Spec | Date       | Change |
 |------|------------|--------|
 | 1    | 2026-11-14 | First version: dot geometry, `ToMe_GLYPHDOT` records, `hookGlyphDots` events, `glyphMode` command. |
+| 1    | 2026-11-14 | Compatible addition: in dot mode `ToMe_GLYPHDOT line` is sent when the line is pushed, before any dot. |
 
 ## ① Glyph dots
 
@@ -98,7 +99,7 @@ ToMe_GLYPHDOT dots seq=<n> path=<ggo|text|gdip|d2d|run> list=<dot>;<dot>;...
 ToMe_GLYPHDOT cache seq=<n> missing=<a> of <b>
 ```
 
-- `seq` increases with every new line the bridge pushes; `text` is that line **with all blanks removed** (U+0000–U+0020,
+- `seq` increases with every new line the bridge pushes; in dot mode `line` is sent as soon as the line is pushed (before the game draws it), so the dot count is known in advance. `text` is that line **with all blanks removed** (U+0000–U+0020,
   U+3000, U+200B, U+FEFF). Character indices below index into this text. `line` comes before the first `dots` of its seq.
 - `<dot>` = `i:u:h:b:a:x:y:s:k`
   - `i` index into the line text (`-1` unknown), `u` the character as hex UTF-16 code unit,
