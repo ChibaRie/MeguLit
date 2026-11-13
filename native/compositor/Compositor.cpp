@@ -84,6 +84,9 @@ struct LineMsg {
   // character rec[k]: a stream may carry more than the game shows (Siglus: variable names before the line), and a glyph
   // cache keeps some characters real, so "dot i = character i" only holds when nothing was reported.
   std::vector<int> rec;
+  // ③ (engines without glyph dots): the game reports where each character is and draws nothing there itself. No dot
+  // search, no erasing: MeguLit's glyphs go straight onto these client rects (one per character of text, blanks too).
+  bool rectMode = false; bool rectHidden = false; std::vector<Box> rects;
   bool undot = false;        // fallback chosen: the game draws this line itself, MeguLit neither erases nor draws it
   LineStatus last = LineStatus::Waiting; double lastChange = 0; int lastFound = -1; bool complete = false;
   std::vector<Box> demoCells; // --demo: the compositor paints these dots itself (stand-in for part ①)
@@ -209,6 +212,22 @@ public:
         if (j.has("tl")) l->tl = Wide(j["tl"].str());
         if (j.has("ruby")) { l->ruby.clear(); for (size_t i = 0; i < j["ruby"].size(); ++i) { const Json &r = j["ruby"][i]; l->ruby.push_back({ int(r[0].num()), int(r[1].num()), Wide(r[2].str()) }); } }
       }
+    } else if (t == "rects") { // {"t":"rects","id":3,"text":"…","rects":[[x,y,w,h],...],"hidden":true} client px
+      const int id = int(j["id"].num());
+      if (cur.id != id || !cur.rectMode) {
+        if (cur.id && !cur.undot) kept[cur.id] = cur;
+        cur = LineMsg{}; cur.id = id; cur.rectMode = true; cur.lastChange = NowMs(); LineSpec sp; tracker.BeginLine(sp); choicesOn = false; layouts.clear();
+      }
+      cur.text = U32(Wide(j["text"].str())); cur.rects.clear(); cur.dotChar.clear(); cur.metric.clear();
+      for (size_t i = 0; i < j["rects"].size() && i < cur.text.size(); ++i) {
+        const Json &r = j["rects"][i]; const Box b{ int(r[0].num()), int(r[1].num()), int(r[0].num() + r[2].num()), int(r[1].num() + r[3].num()) };
+        cur.rects.push_back(b);
+        if (IsDotless(cur.text[i]) || b.w() <= 0 || b.h() <= 0) continue;
+        cur.dotChar.push_back(int(i));
+        cur.metric.push_back({ true, float(b.h()), .88f * b.h(), float(b.w()), 0, 0 });
+      }
+      cur.rectHidden = j["hidden"].truthy();
+      if (j.has("tl")) cur.tl = Wide(j["tl"].str());
     } else if (t == "glyphs") { // later ① dot records of a line: {"t":"glyphs","id":7,"glyphs":[{"i":0,"h":28,"b":24,"a":28,"x":1,"y":2},...]}
       const int id = int(j["id"].num());
       if (cur.id == id) { MergeMetrics(cur, j["glyphs"]); if (!cur.rec.empty()) tracker.SetExpected(-1); } // counts judged here (Targets)
@@ -553,6 +572,16 @@ private:
     }
     if (!cur.id && opt.autoLines) { cur = LineMsg{}; cur.id = ++autoId; cur.lastChange = NowMs(); LineSpec s; s.id = cur.id; tracker.BeginLine(s); autoMax = 0; autoEmpty = 0; }
     if (!cur.id) { lastResult = TrackResult{}; return; }
+    if (cur.rectMode) {
+      // The reported rects are the cells: one synthetic dot per character at the cell's top-left (metrics x = y = 0).
+      lastResult = TrackResult{}; lastResult.status = LineStatus::Complete;
+      if (cur.rectHidden) for (int i : cur.dotChar) { Dot d; d.box = { cur.rects[i].x0, cur.rects[i].y0, cur.rects[i].x0 + 1, cur.rects[i].y0 + 1 }; d.cx = float(cur.rects[i].x0 + cur.rects[i].x1) / 2; d.cy = float(cur.rects[i].y0 + cur.rects[i].y1) / 2; d.color = { 255, 255, 255 }; lastResult.dots.push_back(d); }
+      if (!lastResult.dots.empty()) { lastResult.area = cur.rects[cur.dotChar.front()]; for (int i : cur.dotChar) { const Box &b = cur.rects[i]; lastResult.area.x0 = std::min(lastResult.area.x0, b.x0); lastResult.area.y0 = std::min(lastResult.area.y0, b.y0); lastResult.area.x1 = std::max(lastResult.area.x1, b.x1); lastResult.area.y1 = std::max(lastResult.area.y1, b.y1); } lastResult.pitch = float(cur.rects[cur.dotChar.front()].w()); }
+      cur.complete = cur.rectHidden;
+      const int f = int(lastResult.dots.size());
+      if (f != cur.lastFound) { cur.lastFound = f; Emit("{\"e\":\"line\",\"id\":" + std::to_string(cur.id) + ",\"status\":\"" + (cur.rectHidden ? "complete" : "waiting") + "\",\"found\":" + std::to_string(f) + ",\"expected\":" + std::to_string(cur.dotChar.size()) + ",\"rects\":true}"); }
+      return;
+    }
     lastResult = tracker.Update(im);
     if (opt.autoLines && cur.text.empty()) {
       const int f = int(lastResult.dots.size()); autoMax = std::max(autoMax, f);
@@ -591,7 +620,7 @@ private:
       if (b.right <= b.left || b.bottom <= b.top) return;
       ctx->UpdateSubresource(srcTex.get(), 0, &b, static_cast<uint8_t *>(map.pData) + size_t(b.top) * map.RowPitch + size_t(b.left) * 4, map.RowPitch, 0);
     };
-    for (const Dot &d : lastResult.dots) patch(d.box);
+    if (!cur.rectMode) for (const Dot &d : lastResult.dots) patch(d.box); // ③ lines: the game drew nothing to erase
     for (const auto &k : lastResult.kept) if (kept.count(k.id)) for (const Dot &d : k.dots) patch(d.box);
     if (choicesOn && lastChoices.ok && !choiceUndot) for (const auto &it : lastChoices.items) for (const Dot &d : it.dots) patch(d.box);
   }

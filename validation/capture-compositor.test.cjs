@@ -87,3 +87,36 @@ test('DotSelfTest: synthetic frames (typewriter, fades, shake, scroll, NVL, spec
   assert.strictEqual(summary.failed, 0);
   assert.ok(summary.meanRate >= .99, 'mean detection rate ' + summary.meanRate);
 });
+
+test('runtime: textRenderer setting, compositor with the bound game, overlay hides only while the compositor draws', () => {
+  const { CompositorHost, rectsToClient } = require('../core/compositor-host.cjs');
+  assert.strictEqual(require('../core/game-style.js').clean({}).textRenderer, 'overlay', 'overlay stays the default');
+  assert.strictEqual(require('../core/game-style.js').clean({ textRenderer: 'compositor' }).textRenderer, 'compositor');
+  assert.match(read('services/settings-schema.cjs'), /choice\('embedding','textRenderer'/);
+  assert.match(read('core/gal-native.cjs'), /this\.compositor\?\.hook\(message\)/);
+  assert.match(read('services/reader.cjs'), /g\?\.compositor\?\.text\(String\(r\.text\|\|''\),translated\)/);
+  assert.match(read('web/reader/modules/gal.js'), /classList\.toggle\('megulit-composited',message\.compositorDrawing\)/);
+  const sent = [], ui = []; let started = null, evt = null;
+  const fake = { available: () => true, start: o => { started = o; return true; }, stop() { sent.push({ t: 'quit' }); }, send: o => sent.push(o), style: o => sent.push({ t: 'style', ...o }), hookGlyphDots: m => sent.push({ t: 'dots', seq: m.seq }), annotate: o => sent.push({ t: 'annotate', ...o }), choices: i => sent.push({ t: 'choices', i }) };
+  const host = new CompositorHost({ onEvent: m => ui.push(m), make: o => { evt = o.onEvent; return fake; } });
+  host.configure({ textRenderer: 'overlay' }, { bound: true, gameHwnd: '123' });
+  assert.strictEqual(started, null, 'overlay setting: no compositor');
+  host.configure({ textRenderer: 'compositor', interfaceMode: 'translation' }, { bound: true, gameHwnd: '123', gameStarted: 'a', clientWidth: 1280, clientHeight: 720 });
+  assert.deepStrictEqual(started, { hwnd: 123 });
+  assert.strictEqual(sent.find(x => x.t === 'style').mode, 'translation', 'translation-only follows the reader mode');
+  host.hook({ type: 'hookGlyphDots', state: 'line', seq: 4, text: '＄名前＿渚真っ白な手。' });
+  host.text('真っ白な 手。', '雪白的手。');
+  assert.deepStrictEqual(sent.find(x => x.t === 'annotate'), { t: 'annotate', id: 4, tl: '雪白的手。' }, 'translation reaches the line that shows it (stream junk before it)');
+  host.choices(['はい', 'いいえ']);
+  assert.deepStrictEqual(sent.find(x => x.t === 'choices').i, [{ text: 'はい' }, { text: 'いいえ' }]);
+  evt({ e: 'line', id: 4, status: 'complete', found: 6 });
+  assert.deepStrictEqual(ui.at(-1), { compositorDrawing: true });
+  evt({ e: 'undot', id: 4 });
+  assert.deepStrictEqual(ui.at(-1), { compositorDrawing: false }, 'a handed-back line shows in the overlay again');
+  evt({ e: 'fallback', reason: 'capture' });
+  assert.ok(ui.some(m => m.type === 'compositorState' && m.state === 'fallback'));
+  started = null; host.configure({ textRenderer: 'compositor' }, { bound: true, gameHwnd: '123', gameStarted: 'a' });
+  assert.strictEqual(started, null, 'capture failed: this game stays on the overlay');
+  // ③ char rects: game screen 1280x720 → a 1920x1080 client keeps the aspect
+  assert.deepStrictEqual(rectsToClient({ sw: 1280, sh: 720, viewport: [0, 0, 0, 0], rects: [[100, 600, 32, 32]] }, 1920, 1080), [[150, 900, 48, 48]]);
+});
