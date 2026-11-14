@@ -572,7 +572,9 @@ line blank, the reader overlay draws MeguLit's text at the sources' character bo
 
 ### Reader (web/reader/modules/text-place.js)
 Lays the hook reader's own `.sentence-text` (tokens, ruby bases, translation row) on the boxes. Tokens stay the reader's,
-so word card, drag-select and hit regions (click-through elsewhere) are unchanged; ruby bases sit on the union of their
+so word card, drag-select and hit regions are unchanged: the reader window region holds only the words (and the
+translation text), which take the click and show hover; everything else passes to the game. Choices (ruby + translation)
+and the placed name plate / options are painted as pass regions (as E533 art text), so a click there reaches the game; ruby bases sit on the union of their
 tokens (shared rule, gal.js paint); translation under the last row, no plate; translation-only puts the Chinese in the
 Japanese's place at its size. Size = median CJK box width. Boxes are game-client px → reader CSS px through
 `galLayoutInfo()` (client origin and size in the reader surface, physical px / devicePixelRatio). The reader text is
