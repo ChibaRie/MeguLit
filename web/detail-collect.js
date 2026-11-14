@@ -151,7 +151,7 @@ export function mountWords(target,{words=[],lookupOnly=[],counts,locale='zh',esc
   return `<div class="esr-st-day"><dt class="esr-ch-h"><span>${esc(t.byDay)}</span><span>${range}</span></dt><dd><ol class="esr-ch" aria-label="${esc(t.byDayAria)}" style="--cols:${Math.max(shown.length,3)}">${shown.map(k=>{const d=days.get(k);
    return `<li class="${k===firstKey?'first':''}" style="--esr-bh:${(d.n/max).toFixed(3)}"><b>${d.n}</b><i></i><span>${md(d.ms)}</span></li>`;}).join('')}</ol></dd></div>`;}
  function exampleLine(line,label){if(!line?.text)return '';const game=scope==='all'&&line.game?(onGame&&line.gameId?`<button type="button" class="esr-game" data-game="${esc(line.gameId)}">${esc(line.game)}</button>`:`<span class="esr-game">${esc(line.game)}</span>`):'';
-  return `<p class="esr-ex" lang="ja"${exAttr(line.text,line.ruby,esc)}>「${marked(line.text,[line],esc)}」</p><p class="esr-src">${esc(label)} ${esc(dateOnly(line.at,locale))}${game?` · ${game}`:''}</p>`;}
+  return `<p class="esr-ex" lang="ja"${exAttr(line.text,line.ruby,esc)}>「${marked(line.text,[line],esc)}」</p>${line.translation?`<p class="esr-tr" lang="zh">${esc(line.translation)}</p>`:''}<p class="esr-src">${esc(label)} ${esc(dateOnly(line.at,locale))}${game?` · ${game}`:''}</p>`;}
  const meanList=w=>(state.open?w.means:w.means.slice(0,4)).map((m,i)=>`<li${i===0?' class="lead"':''}>${esc(m)}</li>`).join('')||'<li class="lead">—</li>';
  function detail(w){if(!w)return '';const extra=w.means.length-4;
   const more=extra>0?`<button type="button" class="esr-more" aria-expanded="${state.open}">${esc(state.open?t.less:t.otherMeans(extra))}${IC.chev}</button>`:'';
@@ -276,6 +276,73 @@ export function mountWords(target,{words=[],lookupOnly=[],counts,locale='zh',esc
   tl.from(side,{opacity:0,x:40,duration:.7,ease:'power4.out'},'-=.45');cutIn(tl,'-=.3');
   const fill=foot.querySelector('.esr-prog i');if(fill)tl.from(fill,{opacity:0,duration:.6},'<');});
  else if(!window.gsap)loadGsap().catch(()=>{});
+ return life.stop;}
+
+/* ================================================================ dictionary results ================================================================ */
+/* 2026-11-15 (user: moji这边的设计也要同步) 学习 › 词典 results use the 关联单词 layout: giant headwords on the left, one row per entry with its
+   reading and a short meaning, the current entry on the right (big word with ruby from the dictionary reading, accent, part of speech, every
+   meaning with examples, 加入单词本, MOJi audio). Same rules as the word list: only a click, ↑ ↓ or Enter changes the entry, every row keeps the
+   same height, the wheel scrolls the list itself. MOJi details are fetched once per entry (loadDetail); local entries carry their meanings. */
+const D={zh:{results:'查词结果',moji:'MOJi 辞書',jisho:'Jisho.org',local:'本地词典',order:'点击或 ↑ ↓ 选中，滚轮浏览',current:'当前词条',save:'加入单词本',saved:'已在单词本',
+  saveDone:'已加入单词本',saveFail:'暂时无法加入单词本',play:'播放发音',examples:'例句',notes:'MOJi 用户笔记',loading:'正在载入详情',detailFail:'详情暂时无法打开，先显示摘要'},
+ ja:{results:'検索結果',moji:'MOJi 辞書',jisho:'Jisho.org',local:'ローカル辞書',order:'クリックか ↑ ↓ で選択、ホイールでスクロール',current:'選択中の項目',save:'単語帳に追加',saved:'単語帳にあります',
+  saveDone:'単語帳に追加しました',saveFail:'単語帳に追加できませんでした',play:'発音を再生',examples:'例文',notes:'MOJi ユーザーノート',loading:'詳細を読み込み中',detailFail:'詳細を開けません。概要を表示します'},
+ en:{results:'Results',moji:'MOJi',jisho:'Jisho.org',local:'Offline dictionary',order:'Click or ↑ ↓ to select, scroll to browse',current:'Current entry',save:'Add to words',saved:'In your words',
+  saveDone:'Added to your words',saveFail:'Could not add it',play:'Play audio',examples:'Examples',notes:'MOJi user notes',loading:'Loading the entry',detailFail:'Could not open the entry; showing the summary'}};
+const firstReading=r=>String(r||'').split(/\s*[·・,，、]\s*|\s+/)[0].trim();
+export function mountEntries(target,{items=[],source='local',locale='zh',esc,loadDetail,onSave,onPlay,wanted='',savedSpellings}){
+ const t=D[locale]||D.zh,life=lifecycle(target),cache=new Map();
+ const list=items.map((w,i)=>({...w,key:i,means:meanings(String(w.definition||'').split(/\n+|[；;]/)),ruby:w.pron||firstReading(w.reading)}));
+ let cur=Math.max(0,list.findIndex(w=>wanted&&(w.spelling===wanted||w.reading===wanted)));
+ const tags=w=>[w.jlpt?'JLPT '+w.jlpt:'',w.common?'common':'',...(w.partOfSpeech||[]),w.verbType,w.verbGroup].filter(Boolean);
+ const row=w=>{const len=[...String(w.spelling||w.reading||'')].length,sel=w.key===cur;
+  return `<li class="esr-row${sel?' is-cur':''}" role="option" id="ent-o-${w.key}" data-key="${w.key}" aria-selected="${sel}" tabindex="${sel?0:-1}" style="--len:${Math.max(3,len)}">`+
+   `<span class="esr-w" lang="ja">${rubyHTML(w.spelling||w.reading,w.ruby,esc)}</span><span class="esr-g ent-g"><span class="esr-gm">${meansFit(w.means,3,18).map(esc).join('<i class="sep">·</i>')||'—'}</span>`+
+   `<span class="ent-r" lang="ja">${w.spelling&&w.ruby&&w.ruby!==w.spelling?esc(w.ruby):''}</span></span></li>`;};
+ const label=source==='moji'?t.moji:source==='jisho'?t.jisho:t.local;
+ target.innerHTML=`<section class="esr ent" aria-label="${esc(t.results)}">
+  <header class="esr-h"><div class="esr-hl"><span class="esr-tot"><span class="esr-k">${esc(label)}</span><b>${list.length}</b></span></div><div class="esr-hr"><p class="esr-k">${esc(t.order)}</p></div></header>
+  <div class="esr-body"><div class="esr-lw"><div class="esr-vp"><ul class="esr-list" role="listbox" aria-label="${esc(t.results)}" aria-activedescendant="ent-o-${cur}">${list.map(row).join('')}</ul></div></div><aside class="esr-d" aria-live="polite"></aside></div></section>`;
+ const root=target.querySelector('.esr'),vp=root.querySelector('.esr-vp'),side=root.querySelector('.esr-d'),l=root.querySelector('.esr-list');
+ const has=w=>savedSpellings?.has(w.spelling)||savedSpellings?.has(w.reading);
+ function body(w,d){const head={...w,...(d?Object.fromEntries(Object.entries(d).filter(([,v])=>Array.isArray(v)?v.length:v)):{})};
+  const ruby=head.pron||firstReading(head.reading)||w.ruby,accent=[head.pron&&head.pron!==ruby?head.pron:'',head.accent].filter(Boolean).join('  ');
+  const ms=d?.meanings?.length?d.meanings.map((m,i)=>`<li${i===0?' class="lead"':''}><span>${esc(m.zh||m.ja)}</span>${m.zh&&m.ja?`<small lang="ja">${esc(m.ja)}</small>`:''}${m.examples?.length?`<ul class="ent-ex">${m.examples.slice(0,3).map(x=>`<li><span lang="ja">${esc(x.ja)}</span>${x.zh?`<small>${esc(x.zh)}</small>`:''}</li>`).join('')}</ul>`:''}</li>`).join('')
+   :(w.means.length?w.means:['—']).map((m,i)=>`<li${i===0?' class="lead"':''}><span>${esc(m)}</span></li>`).join('');
+  const notes=(d?.notes||[]).slice(0,3).map(n=>`<li>${n.title?`<b>${esc(n.title)}</b>`:''}<span>${esc(n.content||n.text||'')}</span></li>`).join('');
+  const saved=has(w);
+  return `<div class="esr-cap"><span>${esc(t.current)}</span><span${saved?' class="on"':''}>${esc(saved?t.saved:label)}</span></div>
+   <div class="esr-th"><h3 class="esr-t" lang="ja" style="--len:${Math.max(2,[...String(head.spelling||head.reading||'')].length)}">${rubyHTML(head.spelling||head.reading,ruby,esc)}</h3>${accent?`<span class="esr-n ent-acc" lang="ja">${esc(accent)}</span>`:''}</div>
+   <i class="esr-bar" aria-hidden="true"></i>
+   ${tags(head).length?`<div class="ent-tags">${tags(head).map(x=>`<span class="moji-tag">${esc(x)}</span>`).join('')}</div>`:''}
+   <ol class="esr-mean ent-mean">${ms}</ol>
+   <div class="esr-act">${onSave?`<button type="button" class="secondary" data-save${saved?' disabled':''}>${IC.book}${esc(saved?t.saved:t.save)}</button>`:''}${onPlay&&w.id&&source==='moji'?`<button type="button" class="secondary" data-play aria-label="${esc(t.play)}">${IC.play}${esc(t.play)}</button>`:''}</div>
+   ${notes?`<section class="ent-notes"><p class="esr-k">${esc(t.notes)}</p><ul>${notes}</ul></section>`:''}`;}
+ let ticket=0;
+ async function paint(){const w=list[cur];if(!w){side.innerHTML='';return;}const mine=++ticket;
+  if(!loadDetail||!w.id||cache.has(w.key)){side.innerHTML=body(w,cache.get(w.key));return;}
+  side.innerHTML=body(w,null)+`<p class="esr-src ent-wait">${esc(t.loading)}</p>`;
+  let d=null;try{d=await loadDetail(w);}catch{d=null;}cache.set(w.key,d);if(mine!==ticket||!life.live)return;side.innerHTML=body(w,d)+(d?'':`<p class="esr-src">${esc(t.detailFail)}</p>`);}
+ function reveal(r,smooth){if(!r)return;const top=r.offsetTop,bottom=top+r.offsetHeight,h=vp.clientHeight,st=vp.scrollTop,pad=Math.min(80,h*.2);
+  if(top<st+pad)vp.scrollTo({top:Math.max(0,top-pad),behavior:smooth&&!reduced()?'smooth':'auto'});else if(bottom>st+h-pad)vp.scrollTo({top:bottom-h+pad,behavior:smooth&&!reduced()?'smooth':'auto'});}
+ const edge=()=>{vp.classList.toggle('at-top',vp.scrollTop<=2);vp.classList.toggle('at-end',vp.scrollTop+vp.clientHeight>=vp.scrollHeight-2);};
+ function select(k,{focus=false,scroll=false}={}){if(k===cur||!list[k])return;cur=k;
+  l.querySelectorAll('.esr-row').forEach(r=>{const on=Number(r.dataset.key)===k;r.classList.toggle('is-cur',on);r.setAttribute('aria-selected',String(on));r.tabIndex=on?0:-1;});
+  l.setAttribute('aria-activedescendant',`ent-o-${k}`);const r=l.querySelector(`[data-key="${k}"]`);if(focus)r?.focus({preventScroll:true});if(scroll)reveal(r,true);paint();
+  const gsap=motion();if(gsap)life.add(()=>gsap.from(side.querySelectorAll('.esr-t, .esr-bar, .esr-mean > li, .esr-act > *'),{x:-12,opacity:0,duration:.35,stagger:.03,ease:'power3.out'}));}
+ vp.addEventListener('click',e=>{const r=e.target.closest('.esr-row');if(r)select(Number(r.dataset.key),{focus:true});});
+ vp.addEventListener('keydown',e=>{if(!e.target.closest('.esr-row'))return;const k=e.key,n=list.length-1;let next=null;
+  if(k==='ArrowDown'||k==='ArrowUp')next=cur+(k==='ArrowDown'?1:-1);else if(k==='PageDown'||k==='PageUp')next=cur+(k==='PageDown'?5:-5);else if(k==='Home')next=0;else if(k==='End')next=n;
+  else if(k==='Enter'){e.preventDefault();side.querySelector('[data-save]:not([disabled])')?.focus();return;}
+  if(next==null)return;e.preventDefault();select(Math.max(0,Math.min(n,next)),{focus:true,scroll:true});});
+ vp.addEventListener('scroll',edge,{passive:true});
+ side.addEventListener('click',async e=>{const w=list[cur];if(!w)return;
+  const s=e.target.closest('[data-save]');if(s&&onSave){s.disabled=true;try{await onSave(w);savedSpellings?.add(w.spelling);side.innerHTML=body(w,cache.get(w.key));}catch{s.disabled=false;}return;}
+  const p=e.target.closest('[data-play]');if(p&&onPlay){p.disabled=true;try{await onPlay(w);}finally{p.disabled=false;}}});
+ const ro=new ResizeObserver(()=>edge());ro.observe(vp);life.off(()=>ro.disconnect());
+ paint();reveal(l.querySelector('.esr-row.is-cur'),false);edge();
+ const gsap=motion();if(gsap)life.add(()=>{gsap.timeline({defaults:{duration:.5,ease:'power3.out'}}).from(root.querySelectorAll('.esr-h > *'),{y:12,opacity:0,stagger:.06})
+  .from(l.querySelectorAll('.esr-w'),{yPercent:60,opacity:0,stagger:.03,ease:'power4.out'},'<.05').from(side,{opacity:0,x:30},'<.1');});
  return life.stop;}
 
 /* =================================================================== sentences =================================================================== */

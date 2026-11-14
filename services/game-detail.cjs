@@ -11,16 +11,26 @@ function synopsis(root,row,original,locale){const identity=workIdentity(row,orig
 /* 2026-11-13 关联单词 / 收录句子 tabs. One pass over this game's examples feeds both: per word how many lines met it here (×N), the first and latest
    line with its highlight, and the times it was met (for the small "met over time" strip); per saved sentence the words collected from that very
    line (their highlight ranges). JLPT level from the open JLPT list, "in Anki" from anki_links when that table exists. No per-chapter data exists. */
+/* 2026-11-15 (user: 例句要附带翻译) each first / latest line carries its translation: the one kept with the example, else the saved
+   sentence's, else the translation recorded when the line was read (reading_events.original). One query per source over the needed texts. */
+function translate(db,lines){const need=new Map();for(const l of lines)if(l?.text&&!l.translation)(need.get(l.text)||need.set(l.text,[]).get(l.text)).push(l);if(!need.size)return;
+ const texts=[...need.keys()],found=new Map();
+ const take=(sql,col='t')=>{for(let i=0;i<texts.length;i+=400){const part=texts.slice(i,i+400).filter(t=>!found.has(t));if(!part.length)continue;
+  try{for(const r of db.prepare(sql.replace('?L',part.map(()=>'?').join(','))).all(...part))if(r[col]&&!found.has(r.text))found.set(r.text,String(r[col]));}catch{}}};
+ take("SELECT text,translation t FROM saved_sentences WHERE text IN(?L) AND COALESCE(translation,'')<>'' ORDER BY id DESC");
+ take("SELECT text,json_extract(original,'$.translation') t FROM reading_events WHERE text IN(?L) AND COALESCE(json_extract(original,'$.translation'),'')<>'' ORDER BY id DESC");
+ for(const [text,ls] of need){const t=found.get(text);if(t)for(const l of ls)l.translation=t;}}
 function collected(db,id){
  const words=db.prepare('SELECT v.id,v.spelling,v.reading,v.definitions,v.status,v.created_at,COUNT(*) met,MIN(e.created_at) first_at,MAX(e.created_at) last_at FROM examples e JOIN vocabulary v ON v.id=e.word_id WHERE e.game_id=? GROUP BY v.id ORDER BY last_at DESC,v.id DESC LIMIT 250').all(id);
  const groups=db.prepare('SELECT v.status,COUNT(DISTINCT v.id) n FROM examples e JOIN vocabulary v ON v.id=e.word_id WHERE e.game_id=? GROUP BY v.status').all(id);
  const wordCounts={total:groups.reduce((a,g)=>a+g.n,0),byStatus:Object.fromEntries(groups.map(g=>[g.status,g.n]))};
  const byWord=new Map(words.map(w=>[w.id,w])),byText=new Map();
- const line=e=>({text:e.text,start:Number(e.highlight_start)||0,end:Number(e.highlight_end)||0,at:e.created_at});
- for(const e of db.prepare('SELECT e.word_id,e.text,e.highlight_start,e.highlight_end,e.created_at,v.spelling FROM examples e JOIN vocabulary v ON v.id=e.word_id WHERE e.game_id=? ORDER BY e.created_at,e.id').iterate(id)){
+ const line=e=>({text:e.text,translation:e.translation||'',start:Number(e.highlight_start)||0,end:Number(e.highlight_end)||0,at:e.created_at});
+ for(const e of db.prepare('SELECT e.word_id,e.text,e.translation,e.highlight_start,e.highlight_end,e.created_at,v.spelling FROM examples e JOIN vocabulary v ON v.id=e.word_id WHERE e.game_id=? ORDER BY e.created_at,e.id').iterate(id)){
   const w=byWord.get(e.word_id);if(w){w.first??=line(e);w.latest=line(e);(w.times??=[]).push(e.created_at);if(w.times.length>200)w.times.shift();}
   if(e.text){const list=byText.get(e.text)||[];if(list.length<12)list.push({spelling:e.spelling,start:Number(e.highlight_start)||0,end:Number(e.highlight_end)||0});byText.set(e.text,list);}
  }
+ translate(db,words.flatMap(w=>[w.first,w.latest]));
  let jlpt=null;try{jlpt=require('./learning-insights.cjs').loadJlpt();}catch{}
  let anki=new Set();try{if(db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='anki_links'").get())anki=new Set(db.prepare('SELECT word_id FROM anki_links').all().map(r=>r.word_id));}catch{}
  for(const w of words){w.jlpt=jlpt?(jlpt.byForm.get(w.spelling)||jlpt.byForm.get(w.reading)||null)?.level||null:null;w.inAnki=anki.has(w.id);w.times??=[];}
@@ -38,9 +48,10 @@ function studyWords(db,root){
  const groups=db.prepare('SELECT status,COUNT(*) n FROM vocabulary GROUP BY status').all();
  const counts={total:groups.reduce((a,g)=>a+g.n,0),byStatus:Object.fromEntries(groups.map(g=>[g.status,g.n]))};
  const byWord=new Map(words.map(w=>[w.id,w])),titles=new Map(db.prepare('SELECT id,title FROM games').all().map(g=>[g.id,g.title]));
- const line=e=>({text:e.text,start:Number(e.highlight_start)||0,end:Number(e.highlight_end)||0,at:e.created_at,gameId:e.game_id||'',game:titles.get(e.game_id)||''});
- for(const e of db.prepare('SELECT word_id,text,highlight_start,highlight_end,created_at,game_id FROM examples ORDER BY created_at,id').iterate()){
+ const line=e=>({text:e.text,translation:e.translation||'',start:Number(e.highlight_start)||0,end:Number(e.highlight_end)||0,at:e.created_at,gameId:e.game_id||'',game:titles.get(e.game_id)||''});
+ for(const e of db.prepare('SELECT word_id,text,translation,highlight_start,highlight_end,created_at,game_id FROM examples ORDER BY created_at,id').iterate()){
   const w=byWord.get(e.word_id);if(!w)continue;w.first??=line(e);w.latest=line(e);(w.times??=[]).push(e.created_at);if(w.times.length>200)w.times.shift();}
+ translate(db,words.flatMap(w=>[w.first,w.latest]));
  let jlpt=null;try{jlpt=require('./learning-insights.cjs').loadJlpt();}catch{}
  let anki=new Set();try{if(db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='anki_links'").get())anki=new Set(db.prepare('SELECT word_id FROM anki_links').all().map(r=>r.word_id));}catch{}
  for(const w of words){w.jlpt=jlpt?(jlpt.byForm.get(w.spelling)||jlpt.byForm.get(w.reading)||null)?.level||null:null;w.inAnki=anki.has(w.id);w.times??=[];}

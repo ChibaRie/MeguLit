@@ -4,7 +4,7 @@
    follows by itself; buttons keep controls-b's .primary / .secondary / .text-button. One root with nine id-nots sits above controls-b's eight,
    so the few properties that must beat the app-wide !important chains (fonts, h2/h3, p) win without touching those files.
    Motion lives in GSAP (transform / opacity); CSS only carries hover colours and the static poses. */
-html:not(#dc1):not(#dc2):not(#dc3):not(#dc4):not(#dc5):not(#dc6):not(#dc7):not(#dc8):not(#dc9) body .main :is(.game-detail-content,.study-words){
+html:not(#dc1):not(#dc2):not(#dc3):not(#dc4):not(#dc5):not(#dc6):not(#dc7):not(#dc8):not(#dc9) body .main :is(.game-detail-content,.study-words,.dict-entries){
 
 & :is(.esr,.gl){--dc-hi:var(--g-t1);--dc-mid:var(--g-t2);--dc-mute:var(--g-t3);--dc-off:color-mix(in srgb,var(--g-t1) 30%,transparent);
  --dc-line:var(--g-rule);--dc-line-2:var(--g-rule-strong);--dc-ruby:color-mix(in srgb,var(--t-red-2) 48%,var(--g-t1));
@@ -128,8 +128,26 @@ html:not(#dc1):not(#dc2):not(#dc3):not(#dc4):not(#dc5):not(#dc6):not(#dc7):not(#
 & .esr-ex{margin:22px 0 4px;font:400 21px/1.6 var(--dc-ja)!important;color:var(--dc-hi);text-wrap:pretty}
 & .esr-ex *{font-family:var(--dc-ja)!important}
 & .esr-ex em{font-style:normal;color:var(--dc-hi);box-shadow:inset 0 -2px 0 var(--t-red)}
-& .esr-ex+.esr-src+.esr-ex{margin-top:14px;font-size:16px!important;color:var(--dc-mid)}
+& .esr-ex+.esr-src+.esr-ex,& .esr-ex+.esr-tr+.esr-src+.esr-ex{margin-top:14px;font-size:16px!important;color:var(--dc-mid)}
+& .esr-tr{margin:0 0 6px;font:400 15px/1.55 var(--dc-sans)!important;color:var(--dc-mid);text-wrap:pretty}
 & .esr-src{margin:0;font:500 12px/1.4 var(--dc-mono)!important;color:var(--dc-mute)}
+/* 学习 › 词典 results (mountEntries): reading in the meter's track, tags and MOJi notes in the detail column */
+& .ent .esr-g{grid-template-columns:minmax(0,1fr) 120px}
+& .ent-r{font:500 13px/1 var(--dc-sans)!important;color:var(--dc-mute);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+& .ent .esr-row.is-cur .ent-r{color:var(--dc-mid)}
+& .ent-acc{font:500 15px/1.2 var(--dc-sans)!important;letter-spacing:.04em;color:var(--dc-mid)}
+& .ent-tags{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 14px}
+& .ent-mean{gap:12px}
+& .ent-mean>li{display:flex;flex-direction:column;gap:4px}
+& .ent-mean>li>small{font:14px/1.5 var(--dc-ja)!important;color:var(--dc-mute)}
+& .ent-mean li.lead>span{font-size:21px;line-height:1.25;font-weight:800;color:var(--dc-hi)}
+& .ent-ex{list-style:none;margin:4px 0 0;padding:0 0 0 12px;border-left:2px solid var(--dc-line-2);display:grid;gap:6px}
+& .ent-ex li{display:flex;flex-direction:column;gap:2px;font:15px/1.5 var(--dc-ja)!important;color:var(--dc-hi)}
+& .ent-ex small{font:13px/1.4 var(--dc-sans)!important;color:var(--dc-mute)}
+& .ent-notes{margin-top:20px;display:grid;gap:8px}
+& .ent-notes ul{list-style:none;margin:0;padding:0;display:grid;gap:8px;font:14px/1.5 var(--dc-sans);color:var(--dc-mid)}
+& .ent-notes b{display:block;color:var(--dc-hi)}
+& .ent-wait{margin-top:14px}
 /* 学习 › 单词: the line's game after the date, the status picker and delete next to 查词典 */
 & .esr-game{appearance:none;margin:0;padding:0;border:0;background:none;font:inherit;color:var(--dc-mid);cursor:pointer}
 & button.esr-game:hover{color:var(--dc-hi);text-decoration:underline 1px var(--t-red);text-underline-offset:3px}
@@ -352,7 +370,7 @@ html:not(#dc1):not(#dc2):not(#dc3):not(#dc4):not(#dc5):not(#dc6):not(#dc7):not(#
 }
 
 /* light theme: the card shadows soften, the plate keeps its maroon */
-html[data-theme=light]:not(#dc1):not(#dc2):not(#dc3):not(#dc4):not(#dc5):not(#dc6):not(#dc7):not(#dc8):not(#dc9) body .main :is(.game-detail-content,.study-words){
+html[data-theme=light]:not(#dc1):not(#dc2):not(#dc3):not(#dc4):not(#dc5):not(#dc6):not(#dc7):not(#dc8):not(#dc9) body .main :is(.game-detail-content,.study-words,.dict-entries){
  & .gc{background:var(--t-panel),var(--mgc-plate,#fffaf5);box-shadow:0 18px 34px -20px rgba(60,30,20,.35)}
  & .gc:hover,& .gc:focus-visible{box-shadow:0 24px 44px -20px rgba(60,30,20,.4),0 0 0 2px var(--g-gold)}
  & .gc-how:hover{box-shadow:0 18px 34px -20px rgba(60,30,20,.35)}
@@ -363,5 +381,5 @@ html[data-theme=light]:not(#dc1):not(#dc2):not(#dc3):not(#dc4):not(#dc5):not(#dc
  & .gs.is-open .gs-frame{box-shadow:0 0 0 2px var(--g-gold)}
 }
 @media (prefers-reduced-motion:reduce){
- html body .main :is(.game-detail-content,.study-words) :is(.esr-w,.esr-w::before,.gc,.gs-frame,.gl-fb){transition:none!important}
+ html body .main :is(.game-detail-content,.study-words,.dict-entries) :is(.esr-w,.esr-w::before,.gc,.gs-frame,.gl-fb){transition:none!important}
 }

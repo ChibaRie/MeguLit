@@ -46,7 +46,7 @@ test('学习 › 单词 mounts the shared 关联单词 component, not a copy',()
  assert.match(dc,/while\(next>=state\.shown-8&&state\.shown<list\.length\)appendRows\(\)/,'stepping near the end loads the next batch');
  assert.match(dc,/data-status/);assert.match(dc,/data-del/);assert.match(dc,/data-game/);
  assert.doesNotMatch(dc,/>\s*0\d\s*</,'no 01/02 numbering');
- assert.match(web('detail-collect.css'),/:is\(\.game-detail-content,\.study-words\)/,'same styles on both pages');
+ assert.match(web('detail-collect.css'),/:is\(\.game-detail-content,\.study-words/,'same styles on both pages');
 });
 
 test('words list: click-only switching, same height on every row, native wheel scroll',()=>{
@@ -58,6 +58,17 @@ test('words list: click-only switching, same height on every row, native wheel s
  assert.match(css,/\.esr-vp\{[^}]*overflow-y:auto;overscroll-behavior:contain/);
  assert.doesNotMatch(css,/\.esr-row\.is-cur\{padding-top/,'no extra ruby room on the current row only');
  assert.doesNotMatch(css,/\.esr-row:focus-visible\{padding-bottom/);
+});
+
+test('词典 results (MOJi and local) use the same layout: mountEntries, click to switch, no card list',()=>{
+ const app=web('app.js'),dict=app.slice(app.indexOf('function dictionary(target)'),app.indexOf('/* 2026-11-13 Anki review HUD'));
+ assert.match(dict,/mountEntries\(box,\{items,source:lastOnline\?onlineSource:'local'/);
+ assert.match(dict,/loadDetail:lastOnline&&onlineSource==='moji'/);assert.match(dict,/reading_save_word/);
+ assert.doesNotMatch(dict,/openDetail|dict-entry/,'the old full-width cards are gone');
+ assert.match(dict,/id="moji-account"/);assert.match(dict,/value="moji"/);assert.match(dict,/value="local"/);
+ const dc=web('detail-collect.js'),ent=dc.slice(dc.indexOf('export function mountEntries'),dc.indexOf('/* =================================================================== sentences'));
+ assert.doesNotMatch(ent,/'mouseover'|'wheel'/);assert.match(ent,/pron\|\|firstReading/,'ruby from the dictionary reading without the accent mark');
+ assert.match(web('detail-collect.css'),/\.study-words,\.dict-entries\)/);
 });
 
 test('the detail-collect module still parses as an ES module',async()=>{

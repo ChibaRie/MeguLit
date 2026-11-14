@@ -49,7 +49,8 @@ test('dictionary page: no duplicate chips row; clearing the search returns home;
  assert.doesNotMatch(app,/g-dict-chips/);
  assert.match(app,/#lookup-input'\)\.addEventListener\('input',e=>\{if\(e\.target\.value\.trim\(\)\|\|!results\.innerHTML\)return;ticket\+\+;lastItems=\[\];openWanted='';results\.innerHTML='';\}\)/);
  assert.match(app,/openWanted=word;/);
- assert.match(app,/const exact=wanted&&used&&items\.find\([^\n]*\);if\(exact\)openDetail\(exact\);/);
+ /* 2026-11-15 results use mountEntries: the searched word becomes the current entry (its MOJi detail opens on the right) */
+ assert.match(app,/lastItems=items;lastOnline=used;wantedEntry=query;renderList\(\);/);assert.match(app,/wanted,savedSpellings:saved/);
 });
 
 test('a cached sentence clip plays without starting the speech engine',t=>{

@@ -10,7 +10,7 @@ test('local dictionary text is split into clean senses',async()=>{
  assert.deepEqual(formatDefinition('(n,vs) 弹劾\n(1) to accuse (2) to blame; to blame'),[{tags:['n','vs'],glosses:['弹劾']},{tags:[],glosses:['to accuse']},{tags:[],glosses:['to blame']}]);
  assert.deepEqual(formatDefinition(''),[]);
  const html=definitionHtml('a<b>;→英和 c',esc);assert.match(html,/^<ol class="dict-senses">/);assert.ok(!html.includes('→')&&html.includes('a&lt;b&gt;'));
- const app=read('app.js');assert.match(app,/definitionHtml\(w\.definition,esc\)/);assert.match(app,/record dict-entry/);
+ const app=read('app.js');assert.match(app,/formatDefinition\(w\.definition\)\.map\(g=>g\.glosses\.join/,'local results show the clean senses (学习 › 词典 uses mountEntries since 2026-11-15)');
 });
 test('translation guide: short folded card after the settings, animated, icons, three languages',async()=>{
  const g=await load('settings-guides.js'),src=read('settings-guides.js'),css=read('settings-grimoire.css');

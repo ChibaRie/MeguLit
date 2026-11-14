@@ -1,5 +1,5 @@
 import {fitLibraryGrid} from './library-grid-fit.js';
-import {definitionHtml} from './dictionary-format.js';
+import {formatDefinition} from './dictionary-format.js';
 import './primary-buttons.js';
 import {embedStatus} from './embed-status.js';
 import {statisticsHTML,statisticsResultsHTML,bindStatistics,bindStatisticsCharts} from './statistics-view.js';
@@ -1046,26 +1046,23 @@ function dictionary(target){
     };
     poll=setTimeout(tick,3000);
   }
-  const tags=w=>[w.jlpt?'JLPT '+w.jlpt:'',w.common?'common':'',...(w.partOfSpeech||[]),w.verbType,w.verbGroup].filter(Boolean).map(t=>`<span class="moji-tag">${esc(t)}</span>`).join('');
-  const renderList=()=>{
-    results.innerHTML=lastItems.length?`${lastOnline?'<small class="muted">'+(onlineSource==='jisho'?'Jisho.org':'MOJi 辞書')+'</small>':''}<div class="record-list">${lastItems.map((w,i)=>{const link=lastOnline&&w.id&&w.source!=='jisho';return `<article class="record dict-entry${link?' moji-entry':''}"${link?` tabindex="0" role="button" data-moji-index="${i}"`:''}><div class="word-spelling">${esc(w.spelling||w.reading)}</div><div class="word-reading">${esc(w.spelling&&w.spelling!==w.reading?w.reading:"")}</div>${lastOnline&&tags(w)?`<div class="moji-tags">${tags(w)}</div>`:''}${lastOnline?`<div class="word-def">${esc(w.definition)}</div>`:(definitionHtml(w.definition,esc)||`<div class="word-def">${esc(w.definition)}</div>`)}</article>`;}).join('')}</div>`:empty(text.noDefinition,
-     'word');
-    results.querySelectorAll('[data-moji-index]').forEach(card=>{const open=()=>openDetail(lastItems[Number(card.dataset.mojiIndex)]);card.onclick=open;card.onkeydown=e=>{
-     if(e.key==='Enter'||e.key===' '){e.preventDefault();open();}};});
+  /* 2026-11-15 results use the word page's layout (detail-collect.js mountEntries): headwords left, one row per entry, the current entry on
+     the right with its MOJi detail; click / ↑ ↓ switches, rows never move, the wheel scrolls the list */
+  let unmountEntries=()=>{},savedSet=null,wantedEntry='';
+  const loadSaved=()=>savedSet||(savedSet=api('vocabulary').then(rows=>new Set(rows.flatMap(r=>[r.spelling,r.reading]).filter(Boolean))).catch(()=>new Set()));
+  const renderList=async()=>{unmountEntries();unmountEntries=()=>{};
+    if(!lastItems.length){results.innerHTML=empty(text.noDefinition,'word');return;}
+    const request=ticket,[{mountEntries},saved]=await Promise.all([import('./detail-collect.js'),loadSaved()]);if(request!==ticket||!results.isConnected)return;
+    results.innerHTML='<div class="dict-entries"></div>';const box=results.firstElementChild,wanted=wantedEntry;wantedEntry='';
+    /* local text goes through formatDefinition: clean senses, no →英和 or (n,vs) tags, one sense per line */
+    const items=lastOnline?lastItems:lastItems.map(w=>({...w,definition:formatDefinition(w.definition).map(g=>g.glosses.join('；')).join('\n')||w.definition}));
+    unmountEntries=mountEntries(box,{items,source:lastOnline?onlineSource:'local',locale,esc,wanted,savedSpellings:saved,
+     loadDetail:lastOnline&&onlineSource==='moji'?async item=>{try{return await api('moji_word',{id:item.id});}catch(error){
+      if(String(error?.message||error).includes('MOJI_SESSION_EXPIRED')){toast(L.expiredSession);showStatus({});}throw error;}}:null,
+     onPlay:async item=>{try{const r=await api('moji_audio',{id:item.id});await new Audio(r.audio).play();}catch{toast(L.audioFail);}},
+     onSave:async item=>{try{const r=await api('reading_save_word',{key:item.spelling||item.reading,base:item.spelling||item.reading});
+      toast(`${{zh:'已加入单词本',ja:'単語帳に追加しました',en:'Added to your words'}[locale]} · ${r?.spelling||item.spelling}`);}catch(error){toast(errorMessage(error));throw error;}}});
   };
-  async function openDetail(item){
-    const scroller=document.scrollingElement,scroll=scroller.scrollTop,request=++ticket;results.innerHTML=loading();
-    let d;try{d=await api('moji_word',{id:item.id});}catch(error){if(request!==ticket)return;if(String(error?.message||error).includes('MOJI_SESSION_EXPIRED')){
-     toast(L.expiredSession);showStatus({});}else toast(L.detailFail);renderList();return;}
-    if(request!==ticket||!results.isConnected)return;
-    const head={...item,...Object.fromEntries(Object.entries(d).filter(([,v])=>Array.isArray(v)?v.length:v))};
-    const meanings=(d.meanings||[]).map(m=>`<li><div class="moji-meaning">${esc(m.zh||m.ja)}</div>${m.zh&&m.ja?`<div class="moji-meaning-ja" lang="ja">${esc(m.ja)}</div>`:''}${m.examples.length?`<details class="moji-ex"><summary>${L.examples} <b>${m.examples.length}</b></summary><ul class="moji-examples" aria-label="${L.examples}">${m.examples.map(x=>`<li><span lang="ja">${esc(x.ja)}</span>${x.zh?`<small>${esc(x.zh)}</small>`:''}</li>`).join('')}</ul></details>`:''}</li>`).join('')||`<li><div class="moji-meaning">${esc(d.excerpt||item.definition)}</div></li>`;
-    results.innerHTML=`<article class="moji-detail"><button type="button" class="text-button moji-back" data-moji-back>← ${L.back}</button><header><div class="moji-head-row"><div class="word-spelling">${esc(head.spelling)}</div><button type="button" class="moji-play" data-moji-play aria-label="${L.play}" title="${L.play}"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M4 9v6h4l5 4V5L8 9H4zm12.5 3a4.5 4.5 0 0 0-2.5-4v8a4.5 4.5 0 0 0 2.5-4zM14 3.2v2.1a7 7 0 0 1 0 13.4v2.1a9 9 0 0 0 0-17.6z"/></svg></button></div><div class="word-reading">${esc(head.reading||[head.pron,head.accent].filter(Boolean).join('  '))}</div>${tags(head)?`<div class="moji-tags">${tags(head)}</div>`:''}</header><ol class="moji-meanings">${meanings}</ol><section class="moji-notes"><h3>${L.notes}</h3>${(d.notes||[]).map(n=>`<div class="moji-note mine">${n.title?`<div class="moji-note-title">${esc(n.title)}</div>`:''}<div class="moji-note-body">${esc(n.content)}</div></div>`).join('')}${(d.comments||[]).map(c=>`<div class="moji-note"><div class="moji-note-meta"><span>${esc(c.author)}</span><small class="muted">${esc(c.date)} · ${c.likes} ${L.likes}</small></div><div class="moji-note-body" lang="ja">${esc(c.content)}</div>${c.replies.length?`<div class="moji-note-replies">${c.replies.map(r=>`<div><span>${esc(r.author)}</span>：${esc(r.content)}</div>`).join('')}</div>`:''}</div>`).join('')}${!(d.notes||[]).length&&!(d.comments||[]).length?`<p class="muted">${L.noNotes}</p>`:''}</section></article>`;
-    let audio=null;const play=results.querySelector('[data-moji-play]');
-    play.onclick=async()=>{if(play.disabled)return;play.disabled=true;try{if(!audio){const r=await api('moji_audio',{id:item.id});audio=new Audio(r.audio);}audio.currentTime=0;
-     await audio.play();}catch{toast(L.audioFail);}finally{play.disabled=false;}};
-    results.querySelector('[data-moji-back]').onclick=()=>{ticket++;renderList();scroller.scrollTop=scroll;};
-  }
   if(onlineSource==='jisho')account.hidden=true;else api('moji_status').then(state=>{if(account.isConnected&&!account.querySelector('.moji-qr-panel'))showStatus(state);}).catch(()=>showStatus({}));
   target.querySelector('#lookup-form').addEventListener('submit',async event=>{
     event.preventDefault();const query=target.querySelector('#lookup-input').value.trim();if(!query)return;
@@ -1081,8 +1078,7 @@ function dictionary(target){
       if(online&&used&&!items.length){const local=await api('dictionary',{query,source:'local',operationId}).catch(()=>[]);if(local.length){
        items=local;used=false;}}
       if(request!==ticket||!results.isConnected)return;
-      lastItems=items;lastOnline=used;renderList();
-      const exact=wanted&&used&&items.find(w=>w.id&&w.source!=='jisho'&&(w.spelling===query||w.reading===query));if(exact)openDetail(exact);
+      lastItems=items;lastOnline=used;wantedEntry=query;renderList();
       api('home').then(next=>{if(request===ticket&&results.isConnected)model=next;}).catch(()=>{});
     }catch(error){if(request===ticket&&results.isConnected)results.innerHTML=empty(online?L.fail:text.serviceFailed,'word');}
   });
