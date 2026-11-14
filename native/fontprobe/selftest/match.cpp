@@ -91,6 +91,46 @@ int main()
     Check(!cache && !m.Cached(), "no glyph cache: every line rasterised in full -> no cache report");
   }
   Check(PartOf(L"類たぐいまれな", L"類まれな"), "inline ruby reading skipped in a drawn string");
+  {
+    // Glyph dots: every matched draw says which line character it is (index into the line without blanks).
+    Matcher m;
+    m.Seed(D);
+    m.StopOnCache = false;
+    std::vector<std::string> got;
+    m.Report = [&](const std::string &r) { got.push_back(r); };
+    m.SetLine(L"吾輩は 猫である。", 0);
+    bool order = true;
+    const std::wstring line = L"吾輩は猫である。";
+    for (int i = 0; i < (int)line.size(); i++)
+    {
+      Served s;
+      order = order && m.Glyph(line[i], D, 10, true, "ggo", &s) && s.index == i && s.kind == 'd';
+      Served again; // the bitmap call after the size query: same character, same index
+      order = order && m.Glyph(line[i], D, 11, true, "ggo", &again) && again.index == i && again.kind == 'd';
+    }
+    Check(order, "dots: per-glyph walk serves index i, kind d, for both calls of a size-query/bitmap pair");
+    Served menu;
+    Check(!m.Glyph(L'猫', Ui, 20, true, "ggo", &menu) && menu.kind == 0, "dots: the same character in a menu size is not served");
+    std::vector<Served> sv;
+    Check(m.Text(L"猫である", D, 30, "text", &sv) && sv.size() == 4 && sv[0].index == 3 && sv[3].index == 6 && sv[1].kind == 'd', "dots: a whole string maps each character to its index in the line");
+    Check(m.Text(L"は　猫で", D, 31, "text", &sv) && sv.size() == 4 && sv[0].index == 2 && sv[1].kind == 0 && sv[2].index == 3, "dots: blanks inside a drawn string are not served");
+    m.SetLine(L"名前はまだ無い。", 100);
+    Check(m.Text(L"猫である", D, 110, "text", &sv) && sv[0].kind == 'p' && sv[0].index == 3, "dots: the previous line drawn just after the next was read: kind p, index into the previous line");
+    // a cached engine: reported as ToMe_GLYPHDOT cache, and dots go on
+    Matcher c;
+    c.Seed(D);
+    c.StopOnCache = false;
+    bool dotCache = false, hideCache = false;
+    c.Report = [&](const std::string &r) { dotCache = dotCache || r.rfind("ToMe_GLYPHDOT cache", 0) == 0; hideCache = hideCache || r.rfind("ToMe_GLYPHHIDE cache", 0) == 0; };
+    c.SetLine(L"あいうえおかきくけこ", 0);
+    Walk(c, L"あいうえおかきくけこ", D, 10);
+    c.SetLine(L"あいうえおさしすせそ", 100);
+    Walk(c, L"さしすせそ", D, 110);
+    c.SetLine(L"かきくけこたちつてと", 200);
+    Walk(c, L"たちつてと", D, 210);
+    c.SetLine(L"なにぬねの", 300);
+    Check(dotCache && !hideCache && !c.Cached() && c.Glyph(L'な', D, 310, true, "ggo"), "dots: a glyph cache is reported (ToMe_GLYPHDOT cache) and dots go on");
+  }
   printf(Failed ? "FAIL %d\n" : "PASS\n", Failed);
   return Failed ? 1 : 0;
 }

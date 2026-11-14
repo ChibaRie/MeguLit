@@ -7,6 +7,7 @@ would have drawn it. Three parts, each with its own section below:
    becomes a small dot with the original metrics, so layout, wrapping and pacing stay the game's own.
 2. **Capture compositor** (`feat/capture-compositor`): captures the game window, finds the dots, erases them, draws
    MeguLit's text at their positions and shows the result in MeguLit's own window.
+   Details: docs/text-architecture-compositor.md.
 3. **Non-dot paths** (`feat/text-paths`): engines that do not take glyphs from Windows (web, Unity, KiriKiri with
    prerendered fonts, Ren'Py) report character rectangles themselves.
 
@@ -14,15 +15,16 @@ Rules for all parts: generic code only (never per game), no OCR masking, no game
 
 ## Changes to this document
 
-The dot spec and protocol below are **stable** as of spec version 1 (MeguLitFont version 3). A change gets a new spec
+The dot spec and protocol below are **stable** as of spec version 2 (MeguLitFont version 3). A change gets a new spec
 version, a line in this log, and stays backward compatible where possible (new fields go at the end of a record).
 
 | Spec | Date       | Change |
 |------|------------|--------|
 | 1    | 2026-11-14 | First version: dot geometry, `ToMe_GLYPHDOT` records, `hookGlyphDots` events, `glyphMode` command. |
+| 2    | 2026-11-14 | Dot side grows with the cell: max(3, round(h/10)) from 12 px (was a fixed 3). Records unchanged. |
+| 2    | 2026-11-14 | Compatible addition: `MODE dot-blind` / `blind:true`, record kind `b`. |
 | 1    | 2026-11-14 | Compatible addition: `glyphMode` `all:true` (write-back streams on dots too).                    |
 | 1    | 2026-11-14 | Compatible addition: in dot mode `ToMe_GLYPHDOT line` is sent when the line is pushed, before any dot. |
-| ③ 1  | 2026-11-14 | Non-dot paths: `ToMe_CHARS` records, `hookCharRects` events, crash canary (`feat/text-paths`).    |
 
 ## ① Glyph dots
 
@@ -50,23 +52,27 @@ The same matcher as the glyph hide (E667) decides; dot mode changes only what a 
 |---------|----------------------------------|
 | `blank` | nothing: blank glyph with the same metrics, string left out (version 2 behaviour, the **default and fallback**) |
 | `dot`   | a dot glyph with the same metrics; strings get one dot per character |
+| `dot-blind` | as `dot`, plus every CJK/kana glyph under the dialogue font becomes a dot **without waiting for the line** (kind `b`, index −1) |
 
-Front end → bridge (stdin JSON): `{"type":"glyphMode","mode":"dot"}` or `"blank"`. `HookNative.setGlyphMode(mode)` sends
+Front end → bridge (stdin JSON): `{"type":"glyphMode","mode":"dot"}` or `"blank"`. Add `"blind":true` (or `MEGULIT_GLYPH_BLIND=1`) for `MODE dot-blind`: for engines whose stream text arrives after the glyphs (AdvHD, KiriKiri2 read-only streams). Scope is the dialogue font only (learned, `FONT` seed, or the probe's leading font); the dialogue window is not known at this layer, so a name or menu drawn in the same face and size is dotted too. `HookNative.setGlyphMode(mode)` sends
 it. `MEGULIT_GLYPH_MODE=dot` in HookBridge's environment starts in dot mode (tests). Bridge → DLL (control pipe
 `\\.\pipe\MeguLitFontCtl-<pid>`): `MODE dot` / `MODE blank`, sent on every connection and on every change.
 
 Scope today: dot mode covers the streams the glyph fallback covers, i.e. selected streams **without** write-back. A
 write-back (embed) stream still gets its text replaced in the game, so it never shows dots. To put such a stream on dots
-too, send `{"type":"glyphMode","mode":"dot","all":true}` (or `MEGULIT_GLYPH_ALL=1`): every selected stream then has its
-write-back switched off (the game draws its own line, which becomes dots) and its lines are pushed to the DLL.
+too, send `{"type":"glyphMode","mode":"dot","all":true}` (or `MEGULIT_GLYPH_ALL=1`): the selected write-back stream's
+embed callback then pushes the line to the DLL first and hands the text back unchanged, so the line is known before the
+game draws it (the plain text output arrives after the glyphs are drawn, e.g. BGI: ~180 ms late).
 
 In dot mode HookBridge does not switch the LunaHook GDI hide (`MeguLitGdiHide.h`) on for the stream: a string it left out
 would never reach the dots.
 
 ### Dot geometry (spec 1)
 
-- **Side** `s` = 3 px when the cell height (`tmHeight`, or the font's line height for GDI+/Direct2D) is 12 px or more,
-  else 2 px.
+- **Side** `s` (spec 2) = 2 px when the cell height (`tmHeight`, or the font's line height for GDI+/Direct2D) is below
+  12 px, else max(3, round(height / 10)) px — 3 px up to a 34 px cell, 4 px at 35–44 px, 14 px at 136 px. It grows with
+  the cell because some engines rasterise large and scale down (BGI draws its text at 136 px and shows it at ~28 px; a
+  fixed 3 px dot became sub-pixel). Spec 1 had a fixed 3 px; `s` is in every record, use it rather than a constant.
 - **Coverage**: full (opaque text colour), a solid square, no anti-aliasing. GDI glyph bitmaps: 1 (mono), 4 (GRAY2),
   16 (GRAY4), 64 (GRAY8). The game composites it exactly as it would composite its own glyph, so the dot carries the
   game's text colour, and the game's own effects: an engine that draws a shadow or an outline by drawing the glyph
@@ -93,6 +99,26 @@ would never reach the dots.
 - **Erase rule for ②**: everything inside a found dot square is the dot; nothing else of the game's text is drawn for a
   matched character (the rest of the cell shows the game's background).
 
+### Early injection (engines that fill a glyph cache before MeguLit attaches)
+
+HookBridge attaches about a second after the game starts. Engines that rasterise their glyph cache at start-up (YU-RIS)
+or once per character (Siglus, BGI) keep real glyphs for everything they cached before that. `MeguLitLaunch<bit>.exe`
+(native/, built by `native/fontprobe/build.cmd`, bitness must match the game) starts the game suspended, loads
+`MeguLitFont<bit>.dll` into it before the main thread runs, waits for the DLL's `MeguLitFontReady-<pid>` event and then
+resumes it; it prints the game's pid.
+
+```
+set MEGULIT_GLYPH_MODE=dot-blind          (or dot)
+set MEGULIT_GLYPH_FONT=<px> <face>        (the remembered dialogue font, data\glyph-hide\<exe>-<size>.json)
+MeguLitLaunch32.exe <path to MeguLitFont32.dll> <game.exe> [args]
+```
+
+The DLL reads both variables at start (no HookBridge yet) and serves dots from the first glyph. HookBridge attaches
+later as usual (the same DLL path is not loaded twice) and takes over with `MODE`/`LINE`. The late attach stays the
+fallback for every other launch path (Steam, Locale Emulator, shell open). The first launch of a game has no remembered
+font yet unless the line stream taught one; HookBridge stores the probe's dialogue font (`BlindSeed`) for the next one.
+Self-test: `run-dots.cmd` starts `earlyhost.exe` through the launcher (x86 and x64); its first glyph must be a dot.
+
 ### Reports (DLL → HookBridge, pipe `\\.\pipe\MeguLitFont-<pid>`, UTF-8 lines)
 
 ```
@@ -110,6 +136,9 @@ ToMe_GLYPHDOT cache seq=<n> missing=<a> of <b>
   - `s` nominal dot side (the drawn square may be clipped to a smaller black box),
   - `k` kind: `d` character of the current line, `c` drawn again after it was matched (index of its last placement),
     `p` character of the previous line (index into the previous line's text), `r` ruby kana over a matched draw (`i`=-1).
+  `b` blind dot (`MODE dot-blind`): drawn before its line arrived; it carries the seq of the last pushed line and belongs
+  to the line pushed next. Map blind dots to that line's characters by reading order. Blind records are deduplicated per
+  (character, height) within a seq, so repeated characters appear once in the records but as many times as drawn on screen.
 - Every (index, kind) is reported **once per line** (ruby: once per character and height), even when the game redraws the
   line every frame. Records are batched (at most 48 dots, flushed after 25 ms); one line may span several `dots` records.
 - `cache`: the engine reuses glyphs it rasterised earlier (two lines in a row left out at least three already matched
@@ -164,6 +193,31 @@ draw the dot in logical units (it scales with the transform).
   font). Same conclusion: ③ territory.
 - No other 64-bit GDI galgame is available on E: or in the owned Steam library (WITCH ON THE HOLY NIGHT: no license).
   The 64-bit GDI paths are covered by the x64 self-test host.
+
+#### Which engines in the E:\GAL import scan draw dialogue through GDI (2026-11-14)
+
+Importing GetGlyphOutline/TextOut is not enough: many engines call GDI only for metrics or menus. Measured live with the
+font probe (`ToMe_FONT` counts and the matcher's `placed`/`requested`):
+
+| Game (engine) | GDI calls during dialogue | Dots possible at ① |
+|---|---|---|
+| ダストマニア（BRUNS） | none: bitmap font sheets `fontf_*.bmp` | no → engine level |
+| THE SHELL HD（Artemis, x64） | none: own rasteriser | no → ③ |
+| ファタモルガーナの館（KiriKiri Z + addFont TTF） | only Segoe UI 12 px UI text | no → ③ |
+| サノバウィッチ（Yuzusoft KiriKiri Z） | GetGlyphOutline **metrics only** (SimSun 48, hundreds of chars placed, 0 rasterised) | no: glyphs rasterised elsewhere → ③ |
+| 沙耶の唄（Nitro+ 2003） | GDI rasterisation (ＭＳ Ｐゴシック 24), but each glyph once (cache) and LunaHook finds no dialogue stream | only with a stream; cached dots |
+| 素晴らしき日々（BGI） | TextOutA per character at 136 px, scaled to ~28 px; EmbedBGI stream | **yes, live** with spec 2 dots (14 px before scaling, visible after): first line 9/9 incl. 「」, name untouched; later lines reuse cached dots. The START path hangs in the opening movie with or without MeguLit (game side); tested through LOAD (live\bgi-dots.png) |
+| CLANNAD（SiglusEngine, Steam build） | GetGlyphOutline rasterisation, ~36 px (scaled to the window), **once per character** (glyph cache) | **yes, live** with `all:true` on the `EmbedSiglus` stream: every character rasterised during a pushed line became a dot with the game's own shadow, at the right cell, advance unchanged (shot H:\MeguLit-Work\glyph-dots\live\clannad-siglus-dots*.png). Characters already in Siglus' cache are drawn as before, and a dotted character stays a dot wherever it is reused (also outside the dialogue) |
+| ISLAND（CatSystem2） | GetGlyphOutline rasterisation (ＭＳ ゴシック 28), every line re-rasterised | **yes, live**: every character of every line on the page became a dot (`all:true`, embed stream; live\island-cs2-dots.png) |
+| サイコロジック・ラブコメディ（YU-RIS） | none: even with early injection (DLL in place before the main thread, hooks installed) the probe sees no GDI text and no GetGlyphOutline call for the whole run | no: its dialogue glyphs never pass through GDI in this process (likely prebuilt font data) → ③ / engine hook |
+| 月姫 PLUS+DISC（KiriKiri2, Chinese patch） | GDI rasterisation (宋体 22) | not with its stream: only a non-write-back `KiriKiri1` stream, whose text arrives after the glyphs are drawn (17 rasterised, 0 placed) |
+| 女装山脈 | — | did not start (launcher exits; probably needs a Japanese locale) |
+| いろとりどりのヒカリ（FAVORITE） | — | reached the title only; stopped because other sessions' game windows covered the screen |
+| Under The Moon（AdvHD / Will） | GetGlyphOutline rasterisation (MS Gothic 20); only read-only streams, text arrives after the glyphs | **yes, live with `MODE dot-blind`**: both dialogue lines fully dotted (kind `b`), name box untouched (live\advhd-blind-dots.png). Needed a probe fix: its fonts carry no face name in LOGFONT, now read with GetTextFaceW |
+| Not run: AIR (avg32), 涙 | TextOutA / GetGlyphOutline imports | candidates for the next live run |
+
+Rule seen live: dots need the line **before** the glyphs are rasterised, i.e. a write-back (embed) stream with `all:true`; a read-only stream is ~180 ms late. CatSystem2, Siglus and BGI show real dialogue dots (limited by its glyph cache; ② drew 16 of 17 CLANNAD lines on the game's cells from these dots). For caching engines dot mode must be on and the stream selected before the first dialogue glyph is rasterised (MODE dot at connect + the remembered stream pre-armed at start), otherwise the characters cached earlier stay real for the whole process; HookBridge does both: MODE is sent at connect, the dot passthrough remembers the stream, and with `all:true` a remembered stream is never displaced by another stream that speaks first (title menus). Verified on CLANNAD: fresh process, NEW GAME, the first line 一面、白い世界… = 8 records, 8 dots, no other ink (live\clannad-first-line-dots.png); the cases above are what decides ①'s reach. The x86/x64 self-test hosts
+remain the proof that every covered API produces exact dots.
 
 ## ③ Non-dot paths (engines that do not take glyphs from Windows)
 
