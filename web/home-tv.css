@@ -350,9 +350,9 @@
 .tv-h1{max-height:none;-webkit-line-clamp:3;line-clamp:3;text-overflow:clip}
 .tv-dialog .tv-line{max-width:min(44vw,720px);font-size:14px;color:color-mix(in srgb,var(--g-t1) 74%,transparent)}
 .tv-rail{bottom:calc(6vh + 2vh + 18px)}
-.tv-chip{width:64px;height:86px}
-.tv-chip.on{width:92px;height:124px}
-@media (max-width:1500px){.tv-chip{width:52px;height:70px}.tv-chip.on{width:76px;height:102px}}
+.tv-chip{width:68.5px;height:92px}
+.tv-chip.on{width:98.4px;height:132.7px}
+@media (max-width:1500px){.tv-chip{width:55.6px;height:74.9px}.tv-chip.on{width:81.3px;height:109.1px}}
 
 /* 2026-11-15 owner review: no numbers on the lines, script column apart from the cover, sensible title breaks, selected card never crosses the divider */
 .tv-sno{display:none!important}
@@ -360,7 +360,7 @@
 .tv-lines-edit{top:calc(59% + 34px)!important}
 .tv-seg{display:block;text-wrap:balance}
 .tv-chip:hover{transform:none;opacity:1}
-@media (max-height:800px){.tv-chip{width:46px;height:62px}.tv-chip.on{width:68px;height:92px}}
+@media (max-height:800px){.tv-chip{width:49.2px;height:66.3px}.tv-chip.on{width:72.8px;height:98.4px}}
 
 /* 2026-11-15 owner: title lower, "上次" note left of the bottom line, GSAP title transition (the old .in/translate rules no longer drive the title) */
 .tv-title{bottom:calc(8vh + 18px)}
@@ -384,3 +384,25 @@ html:not(#u):not(#v):not(#w):not(#x):not(#y) body .tv-home .tv-title{bottom:calc
 .tv-heat-card .tv-hot-news{margin:8px 0 0;max-width:none}
 .tv-heat-card .tv-hot-news+.tv-daily-pics{margin-top:8px}
 html:not(#u):not(#v):not(#w):not(#x):not(#y) body .tv-home .tv-heat-card .tv-hot-news{max-width:none!important;width:100%!important;margin:8px 0 0!important}
+/* 2026-11-15 (user chose design A) month heat map: a calendar of squares, gold tiers, the top tier red, today ringed, the month's totals beside it */
+.tv-heat-card .tv-heat,.tv-heat-card .tv-heatsum{display:none!important}
+.tv-heat-card.is-empty .tv-month{display:none}
+.tv-month{--c:22px;--gp:4px;display:flex;gap:22px;align-items:flex-end;justify-content:space-between}
+.tv-month-wd,.tv-month-days{display:grid;grid-template-columns:repeat(7,var(--c));gap:var(--gp)}
+.tv-month-wd{margin-bottom:6px;font:500 10px/1 var(--tv-mono,monospace);color:var(--g-t3);text-align:center}
+.tv-month-days{grid-auto-rows:var(--c)}
+.tv-month-days i{position:relative;display:block;pointer-events:auto}
+.tv-month-sum{display:grid;gap:12px;text-align:right;font:500 10px/1 var(--tv-mono,monospace);letter-spacing:.14em;color:var(--g-t3)}
+.tv-month-sum b{display:block;margin-bottom:3px;font:400 20px/1 var(--g-serif);letter-spacing:0;color:var(--g-t1);font-variant-numeric:tabular-nums}
+.heat-a .tv-month-days i{border-radius:4px;background:color-mix(in srgb,var(--g-t1) 7%,transparent);transition:transform .2s}
+.heat-a .tv-month-days i.later{background:color-mix(in srgb,var(--g-t1) 3%,transparent)}
+.heat-a .tv-month-days i.l1{background:color-mix(in srgb,var(--g-gold) 30%,transparent)}
+.heat-a .tv-month-days i.l2{background:color-mix(in srgb,var(--g-gold) 58%,transparent)}
+.heat-a .tv-month-days i.l3{background:var(--g-gold)}
+.heat-a .tv-month-days i.l4{background:#d23a45}
+.heat-a .tv-month-days i.today{box-shadow:0 0 0 1.5px var(--bg),0 0 0 3px #d23a45}
+.heat-a .tv-month-days i:hover{transform:scale(1.15)}
+/* the strip is a window: the track slides so the current card stays a little left of centre at every size */
+.tv-rail{left:42vw;right:5vw;width:auto;display:block;overflow:hidden;padding:12px 0 10px;margin-bottom:-10px;-webkit-mask-image:linear-gradient(90deg,transparent,#000 7%,#000 93%,transparent);mask-image:linear-gradient(90deg,transparent,#000 7%,#000 93%,transparent)}
+.tv-rail-in{display:flex;gap:10px;align-items:flex-end;width:max-content;transition:transform .5s cubic-bezier(.16,1,.3,1);will-change:transform}
+@media (prefers-reduced-motion:reduce){.tv-rail-in{transition:none}}

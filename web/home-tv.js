@@ -272,6 +272,13 @@ export function cardify(card){const face=card.querySelector('.tv-face');let pres
  card.addEventListener('pointerleave',()=>{pressed=false;last=null;card.classList.remove('touch');face.style.transition='transform .7s cubic-bezier(.2,1.6,.4,1)';
   face.style.transform='';});}
 
+/* 2026-11-15 (user: 热力图重新设计，只展示当月) this month as a calendar (Monday first, today marked, later days faint, four tiers of reading) with the month's totals beside it */
+function monthHTML(all,locale,esc,w,fmtNum,today=new Date()){const y=today.getFullYear(),m=today.getMonth(),pre=`${y}-${String(m+1).padStart(2,'0')}`,N=new Date(y,m+1,0).getDate(),first=(new Date(y,m,1).getDay()+6)%7,td=today.getDate();
+ const by=new Map(all.filter(c=>String(c.day).startsWith(pre)).map(c=>[+String(c.day).slice(8),c]));let run=0,best=0,chars=0,looks=0,active=0;const days=[];
+ for(let d=1;d<=N;d++){const c=by.get(d),lv=d>td?-1:(c?.level||0);if(d<=td){run=lv>0?run+1:0;best=Math.max(best,run);}chars+=c?.characters||0;looks+=c?.lookups||0;if(lv>0)active++;
+  days.push(`<i class="${d===td?'today ':''}${lv<0?'later':lv?'l'+lv:''}"${d===1?` style="grid-column:${first+1}"`:''} data-day="${pre}-${String(d).padStart(2,'0')}" data-min="${Math.round((c?.seconds||0)/60)}"></i>`);}
+ const wd=locale==='en'?'MTWTFSS':'一二三四五六日',lk={zh:'查词',ja:'辞書引き',en:'lookups'}[locale]||'查词';
+ return {active,month:m+1,html:`<div class="tv-month-cal"><div class="tv-month-wd">${[...wd].map(x=>`<span>${x}</span>`).join('')}</div><div class="tv-month-days">${days.join('')}</div></div><div class="tv-month-sum"><span><b>${fmtNum(chars)}</b>${esc(w.chars)}</span><span><b>${fmtNum(looks)}</b>${esc(lk)}</span><span><b>${best}</b>${esc(w.days)}${esc(w.streak)}</span></div>`};}
 export function stopHomeTV(){if(!live)return;live.tl?.kill();clearTimeout(live.timer);clearInterval(live.beat);clearInterval(live.typer);live.depth?.stop();live.hand?.stop();live=null;}
 
 export function homeTVSignature(model){return JSON.stringify([model.games.map(g=>[g.id,g.available,g.cover?.length,g.title,g.lastPlayedAt,g.readingSeconds,g.characters,
@@ -349,8 +356,10 @@ export function renderHomeTV(main,ctx){
   rail();
  }
  /* 2026-11-14 (user: "右边下面不是卡牌，是正常选的那种") the games are picked from the cover strip again (thumbnails, the current one wider with its timer bar); the card hand is gone */
- function rail(){const r=$('.tv-rail');r.innerHTML=list.map((g,i)=>`<button class="tv-chip${g===shown?' on':''}" data-i="${i}" title="${esc(g.title)}" aria-label="${esc(g.title)}" style="--dur:${DUR}ms">${g.cover?`<img src="${esc(g.cover)}" alt="">`:''}${setting.pinned.includes(g.id)?'<span class="pin"></span>':''}<span class="bar"></span></button>`).join('');
-  r.querySelectorAll('.tv-chip').forEach(b=>b.addEventListener('click',()=>{const i=+b.dataset.i;if(list[i]&&list[i]!==shown)paint(i,true,'fade');}));}
+ function rail(){const r=$('.tv-rail');r.innerHTML='<div class="tv-rail-in"></div>';const track=r.firstElementChild;track.innerHTML=list.map((g,i)=>`<button class="tv-chip${g===shown?' on':''}" data-i="${i}" title="${esc(g.title)}" aria-label="${esc(g.title)}" style="--dur:${DUR}ms">${g.cover?`<img src="${esc(g.cover)}" alt="">`:''}${setting.pinned.includes(g.id)?'<span class="pin"></span>':''}<span class="bar"></span></button>`).join('');
+  track.querySelectorAll('.tv-chip').forEach(b=>b.addEventListener('click',()=>{const i=+b.dataset.i;if(list[i]&&list[i]!==shown)paint(i,true,'fade');}));centerRail(r);}
+ /* 2026-11-15 (user: 展示的卡不管任何尺寸都要在下面牌的中心稍微偏左) the current card always sits at the same spot, a little left of the strip's centre; the strip slides under it */
+ function centerRail(r){const track=r.firstElementChild,on=track?.querySelector('.tv-chip.on');if(!on)return;const fresh=!track.dataset.set;track.dataset.set='1';if(fresh)track.style.transition='none';track.style.transform=`translateX(${(r.clientWidth*.46-(on.offsetLeft+on.offsetWidth/2)).toFixed(1)}px)`;if(fresh)requestAnimationFrame(()=>requestAnimationFrame(()=>{track.style.transition='';}));}
  function commit(){model.preferences.homeShowcase=setting;savePreferences({homeShowcase:setting});const id=shown?.id;list=showcaseGames(model.games,setting);
   paint(Math.max(0,list.findIndex(g=>g.id===id)),false);}
  /* 2026-11-13 (user: "不要全部作品 … 把＋卡移到最右边 不要是卡牌了 鼠标放上去再出来") the hand editor is a tab docked on the right edge that slides out
@@ -361,7 +370,7 @@ export function renderHomeTV(main,ctx){
     quietly and repaints only when the news really changed; flat one-colour pictures are never shown (user: "缩略图不要展示纯色图") */
   let dailySig='';const showDaily=(v,instant)=>{if(!live||live.root!==root)return;const sig=dailySignature(v);if(sig===dailySig)return;dailySig=sig;if(instant)root.classList.add('tv-instant');const n=(v?.news?.items||[]).find(x=>!x.flat)||v?.news?.items?.[0],h=v?.words?.words?.[0],t=$('.tv-daily-t'),dailyCat=(()=>{try{return localStorage.getItem('megulit-daily-cat')==='acg'?'acg':'gal';}catch{return 'gal';}})(),{top,small:pics}=pickHeadline(v?.news?.items,dailyCat),box=$('.tv-daily-pics');if(box){box.innerHTML=pics.map(x=>`<button type="button" class="tv-daily-pic${x.sensitive?' is-sensitive':''}" data-link="${esc(x.link)}" title="${esc(x.title)}" style="background-image:url(&quot;${x.image}&quot;)">${x.sensitive?`<span class="tv-sensitive">${esc(SENSITIVE_WORD())}</span>`:''}</button>`).join('');
   box.querySelectorAll('[data-link]').forEach(b=>b.addEventListener('click',()=>{try{sessionStorage.setItem('megulit-daily-focus',b.dataset.link);}catch{}navigate('daily');
-  }));}if(n){t.textContent=n.title;t.title=n.title+(n.source?' · '+n.source:'');}else if(h){t.textContent=h.term+(h.gloss?' · '+h.gloss:'');}/* 2026-11-13 (user: "左侧热力图卡片下面有第四张尺寸更大的第一头条", "左下角不要字") under the activity card the day's top story is a fourth,
+  }));}const lead=top||n;if(lead){t.textContent=lead.title;t.title=lead.title+(lead.source?' · '+lead.source:'');}else if(h){t.textContent=h.term+(h.gloss?' · '+h.gloss:'');}/* 2026-11-13 (user: "左侧热力图卡片下面有第四张尺寸更大的第一头条", "左下角不要字") under the activity card the day's top story is a fourth,
      larger picture, picture only; its title (in the UI language) labels it for the tooltip and screen readers. An adult one is blurred with a note */
   {const left=$('.tv-left'),card=left?.querySelector('.tv-heat-card');let big=left?.querySelector('.tv-hot-news');if(!top||!card){big?.remove();}else{
    if(!big){big=document.createElement('button');big.type='button';}if(box&&big.nextElementSibling!==box)box.before(big);/* 2026-11-15 (user: 大封面要和小封面连起来) the big cover sits in the same container as the three small ones, same width, same gaps */big.className='tv-hot-news'+(top.sensitive?' is-sensitive':'');
@@ -377,14 +386,15 @@ export function renderHomeTV(main,ctx){
   all.length-20*7);while(from>0&&all[from].weekday!==0)from--;const cells=all.slice(from),sum=activitySummary(cells,all),active=sum.active,card=$('.tv-heat-card'),none=$('.tv-heat-none');
   card?.classList.toggle('is-empty',sum.empty);if(none){none.hidden=!sum.empty;none.innerHTML=sum.empty?emptyActivityHTML(locale,esc):'';}$('.tv-heat').innerHTML=cells.map((c,
   i)=>`<i style="grid-row:${c.weekday+1};grid-column:${Math.floor(i/7)+1}" class="${i===cells.length-1?'today':c.level?'l'+Math.min(3,c.level):''}" data-day="${esc(c.day)}" data-min="${Math.round((c.seconds||0)/60)}"></i>`).join('');
-  $('.tv-heatlink').textContent=sum.empty?`${w.activity} →`:`${w.activity} · ${active} ${w.days} →`;const best=sum.best,secs=sum.secs;$('.tv-heatsum').innerHTML=`<span><b>${active}</b>${w.days}</span><span><b>${esc(duration(secs))}</b>${w.total}</span><span><b>${best}</b>${w.streak}</span>`;
+  {const mo=monthHTML(all,locale,esc,w,v=>number(Math.round(v)));let box=$('.tv-month');if(!box){box=document.createElement('div');box.className='tv-month';$('.tv-heat').before(box);}box.innerHTML=mo.html;card?.classList.add('heat-a');
+   $('.tv-heatlink').textContent=sum.empty?`${w.activity} →`:`${w.activity} · ${mo.month}${locale==='en'?'':'月'} · ${mo.active} ${w.days} →`;}const best=sum.best,secs=sum.secs;$('.tv-heatsum').innerHTML=`<span><b>${active}</b>${w.days}</span><span><b>${esc(duration(secs))}</b>${w.total}</span><span><b>${best}</b>${w.streak}</span>`;
   fitLeft(root);};
  {let actSig=JSON.stringify(cachedActivity()||null);if(cachedActivity())showActivity(cachedActivity());api('learning_activity',{range:'year'}).then(r=>{rememberActivity(r);const n=JSON.stringify(r||null);if(n!==actSig){actSig=n;showActivity(r);}}).catch(()=>{});}
  const canvas=$('.tv-canvas'),planes=[...root.querySelectorAll('.tv-plane')],reduced=matchMedia('(prefers-reduced-motion:reduce)').matches;
  /* 2026-11-13 (user) every layer has its own depth: the far headline picture drifts against the pointer, near ones (cards, figures, rail, bottom bar) lead it */
  {const L=(sel,z)=>{const el=$(sel);return el?{el,z}:null;};live.depth=createDepth(root,{canvas,planes,layers:[L('.tv-left',7),L('.tv-figs',8),
   L('.tv-rail',24),L('.tv-dialog',5),L('.tv-title',9),L('.tv-marks',3),L('.tv-cshadow',-22)].filter(Boolean)});}
- const onResize=()=>{if(live&&live.root===root){fitLeft(root);}else removeEventListener('resize',onResize);};addEventListener('resize',onResize);
+ const onResize=()=>{if(live&&live.root===root){fitLeft(root);const rr=root.querySelector('.tv-rail');if(rr)centerRail(rr);}else removeEventListener('resize',onResize);};addEventListener('resize',onResize);
  root.querySelectorAll('.tv-cover,.tv-heat-card').forEach(cardify);
  const coverEl=$('.tv-cover');let clickTimer=0,pressAt=0,pressXY=[0,0];coverEl.setAttribute('aria-label',w.coverHint);const pop=document.createElement('div');pop.className='tv-pop';
   pop.innerHTML=`<p><i class="m1"></i><b>${w.tipClick}</b><span>${w.tipDetail}</span></p><p><i class="m2"></i><b>${w.tipDbl}</b><span>${w.tipDraw}</span></p>`;root.appendChild(pop);
