@@ -21,8 +21,26 @@ function modded(exe){const dir=path.dirname(exe);return ['winhttp.dll','doorstop
 /* PE machine: 0x14c x86, 0x8664 x64 */
 function bits(exe){try{const fd=fs.openSync(exe,'r');try{const b=Buffer.alloc(4096);fs.readSync(fd,b,0,4096,0);const pe=b.readUInt32LE(0x3c);const m=b.readUInt16LE(pe+4);return m===0x8664?64:m===0x14c?32:0;}finally{fs.closeSync(fd);}}catch{return 0;}}
 
-function linkFile(from,to){try{fs.linkSync(from,to);return "link";}catch{fs.copyFileSync(from,to);const s=fs.statSync(from);fs.utimesSync(to,s.atime,s.mtime);return "copy";}}
+function linkFile(from,to,linkOnly=false){try{fs.linkSync(from,to);return "link";}catch(e){if(linkOnly)throw e;fs.copyFileSync(from,to);const s=fs.statSync(from);fs.utimesSync(to,s.atime,s.mtime);return "copy";}}
 function linkDir(from,to){fs.symlinkSync(from,to,'junction');}
+/* Mirror the game folder into shadow: every folder a junction, every file a hard link (a copy when the volume differs,
+   unless linkOnly: then a failed link throws). Entries gone from the game are removed from the shadow (never anything
+   inside a junction); names in OURS are left alone. */
+function mirror(dir,shadow,{linkOnly=false,ours=OURS}={}){
+ fs.mkdirSync(shadow,{recursive:true});
+ /* entries that no longer exist in the game are removed from the shadow */
+ const want=new Set(fs.readdirSync(dir).map(n=>n.toLowerCase()));
+ /* never a recursive delete here: a junction removed that way would take the game's own files with it. A stale
+    junction is removed as a link only (rmdir of the reparse point); a stale file is unlinked. */
+ const stats={links:0,copies:0,junctions:0};
+ const lst=p=>{try{return fs.lstatSync(p);}catch{return null;}};
+ const drop=(p,t)=>{if(t.isSymbolicLink())fs.rmdirSync(p);else if(t.isFile())fs.unlinkSync(p);};
+ for(const n of fs.readdirSync(shadow)){if(ours.has(n.toLowerCase())||want.has(n.toLowerCase()))continue;const p=path.join(shadow,n),t=lst(p);if(t)drop(p,t);}
+ for(const n of fs.readdirSync(dir)){if(ours.has(n.toLowerCase()))continue;const from=path.join(dir,n),to=path.join(shadow,n),st=fs.statSync(from),t=lst(to);
+  if(t){if(st.isDirectory()&&t.isSymbolicLink())continue;if(st.isFile()&&t.isFile()&&t.size===st.size&&Math.floor(t.mtimeMs/1000)===Math.floor(st.mtimeMs/1000))continue;if(t.isSymbolicLink()||t.isFile())drop(to,t);else continue;}
+  if(st.isDirectory()){linkDir(from,to);stats.junctions++;}else if(st.isFile()){linkFile(from,to,linkOnly)==='link'?stats.links++:stats.copies++;}}
+ return stats;
+}
 /* (Re)build the shadow folder for one game. pack: the unpacked "unity-text" pack folder holding x86\ and x64\
    (each: winhttp.dll, doorstop_config.ini, BepInEx\core\...) and MeguLitUnityText.dll. Returns the shadow program. */
 function makeShadow({exe,shadowRoot,pack,port,steamAppId=null}){
@@ -32,18 +50,7 @@ function makeShadow({exe,shadowRoot,pack,port,steamAppId=null}){
  const flavour=kind==='il2cpp'?'il2cpp-'+arch:arch,pluginFile=kind==='il2cpp'?'MeguLitUnityText.IL2CPP.dll':'MeguLitUnityText.dll';
  if(!fs.existsSync(path.join(pack,flavour))||!fs.existsSync(path.join(pack,pluginFile)))throw Error('UNITY_PACK_MISSING '+flavour);if(modded(exe))throw Error('UNITY_ALREADY_MODDED');
  const key=path.basename(exe).replace(/[^A-Za-z0-9._-]/g,'_')+'-'+fs.statSync(exe).size,shadow=path.join(shadowRoot,key);
- fs.mkdirSync(shadow,{recursive:true});
- /* mirror: entries that no longer exist in the game are removed from the shadow (never anything inside a junction) */
- const want=new Set(fs.readdirSync(dir).map(n=>n.toLowerCase()));
- /* never a recursive delete here: a junction removed that way would take the game's own files with it. A stale
-    junction is removed as a link only (rmdir of the reparse point); a stale file is unlinked. */
- const lst=p=>{try{return fs.lstatSync(p);}catch{return null;}};
- const drop=(p,t)=>{if(t.isSymbolicLink())fs.rmdirSync(p);else if(t.isFile())fs.unlinkSync(p);};
- for(const n of fs.readdirSync(shadow)){if(OURS.has(n.toLowerCase())||want.has(n.toLowerCase()))continue;const p=path.join(shadow,n),t=lst(p);if(t)drop(p,t);}
- const stats={links:0,copies:0,junctions:0};
- for(const n of fs.readdirSync(dir)){if(OURS.has(n.toLowerCase()))continue;const from=path.join(dir,n),to=path.join(shadow,n),st=fs.statSync(from),t=lst(to);
-  if(t){if(st.isDirectory()&&t.isSymbolicLink())continue;if(st.isFile()&&t.isFile()&&t.size===st.size&&Math.floor(t.mtimeMs/1000)===Math.floor(st.mtimeMs/1000))continue;if(t.isSymbolicLink()||t.isFile())drop(to,t);else continue;}
-  if(st.isDirectory()){linkDir(from,to);stats.junctions++;}else if(st.isFile()){linkFile(from,to)==='link'?stats.links++:stats.copies++;}}
+ const stats=mirror(dir,shadow);
  /* ours: doorstop + BepInEx (real files in the shadow) */
  const src=path.join(pack,flavour);
  for(const f of ['winhttp.dll','doorstop_config.ini'])fs.copyFileSync(path.join(src,f),path.join(shadow,f));
@@ -80,4 +87,4 @@ class UnityTextPath{
  stop(){try{this.sock?.end('HIDE 0\n');}catch{}try{this.server?.close();}catch{}}
 }
 
-module.exports={unityGame,modded,bits,makeShadow,UnityTextPath,formatChars};
+module.exports={unityGame,modded,bits,mirror,makeShadow,UnityTextPath,formatChars};

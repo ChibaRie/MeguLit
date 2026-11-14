@@ -179,7 +179,7 @@ MeguLitLaunch32.exe <path to MeguLitFont32.dll> <game.exe> [args]
 
 In MeguLit (core/glyph-dots.cjs) this is automatic when 文字显示 is `compositor` (gal-preferences.json `textRenderer`):
 the library's 启动 starts a plain-process game through the launcher with the remembered font, and HookBridge starts with
-`MEGULIT_GLYPH_MODE=dot`, `MEGULIT_GLYPH_ALL=1`, `MEGULIT_GLYPH_BLIND=1`. Steam, Locale Emulator and shell-open launches keep the late attach.
+`MEGULIT_GLYPH_MODE=dot`, `MEGULIT_GLYPH_ALL=1`, `MEGULIT_GLYPH_BLIND=1`. Steam starts go direct in compositor mode (`steamDirect`, shadow + `steam_appid.txt` when needed); Locale Emulator and shell-open launches keep the late attach.
 Live (2026-11-14): CLANNAD started from MeguLit's launch service went through MeguLitLaunch32; its first line was 8/8 dots from the first glyph (game window only, live\clannad-app-launch-dots.png).
 
 The DLL reads both variables at start (no HookBridge yet) and serves dots from the first glyph. HookBridge attaches
@@ -327,9 +327,10 @@ Rules shared by all four (the same as ① and the older layers):
 - **Only while MeguLit is there.** Every path follows HookBridge's replacement switch, and the game side drops hiding by
   itself when the connection to MeguLit goes away (pipe / socket / DevTools closed).
 - **Crash canary.** `data/text-paths/<exe name>-<exe size>.json` (the key of the stream memory). A path is armed the
-  first time it hides, stays armed while the game runs, and is cleared after 20 s or a clean exit (code 0). A game that
-  exits with another code while armed, or is found still armed at the next start, gets that path **off** for the game
-  (`off.<path>.reason`); switching it on again is the user's call (`Canary.reset`). C#: `native/TextPathCanary.cs`
+  first time it hides, stays armed while the game runs, and is cleared after 20 s or when the game exits. Only an
+  **exception exit code** (NTSTATUS ≥ 0xC0000000, e.g. 0xC0000005, not 0xFFFFFFFF) while armed turns that path **off**
+  for the game (`off.<path>.reason`); a kill (taskkill /F = exit 1), a normal quit, or an arm still there at the next
+  start (nobody saw the exit) is not a crash and is only cleared; switching it on again is the user's call (`Canary.reset`). C#: `native/TextPathCanary.cs`
   (krkr, renpy, in HookBridge); node: `core/text-paths.cjs Canary` (web, unity, at launch).
 
 ### Record (spec 1 of ③)
@@ -495,10 +496,15 @@ start, the dialogue drawn as one dot per character over two rows; the game ran n
 
 **In the normal launch** (services/bridge.cjs, `core/text-paths-launch.cjs fontDot`): whenever ① starts a game through
 MeguLitLaunch (文字显示 = compositor), `MeguLitFontDot<bit>.dll` is added to `MEGULIT_LAUNCH_EXTRA`; the launcher loads
-every DLL listed there right after MeguLitFont, still suspended (the DLL installs its hooks inside LoadLibrary). Steam,
+every DLL listed there right after MeguLitFont, still suspended (the DLL installs its hooks inside LoadLibrary).
 Locale Emulator and shell-open starts keep the late attach and get no dot font (fonts are read before an attach).
-**Crash canary** `fontdot`: armed at launch; the launcher exits at once, so the game's own process is watched: gone
-within 20 s = died with it, the path is off for this game from the next launch (MEGULIT_FONTDOT_OFF=1 for all).
+**Steam games** in compositor mode are started directly too (`steamDirect`): SteamAppId/SteamGameId in the environment;
+when the game folder has no `steam_appid.txt`, the program runs from a shadow `<volume>\MeguLit-Shadow\<exe>-<size>`
+(folders as junctions, files as hard links only, plus `steam_appid.txt`), because some games still restart through
+Steam from the real folder without our DLLs (THE SHELL HD). The game folder is never written; a failed link drops the
+shadow and keeps the `steam://` launch.
+**Crash canary** `fontdot`: armed at launch, cleared after the game ran 20 s; HookBridge writes the game's exit code into
+the same file, and only an exception code turns it off for this game (MEGULIT_FONTDOT_OFF=1 for all).
 **Compositor heartbeat** (the same `Local\MeguLitCompositorBeat-<pid>` gate as ①): dots for 20 s from load before any
 heartbeat, then only while the compositor presents with a tick at most 1 s old. When the gate closes every font patched
 in memory gets its original bytes back (kept once per font, the 256 most recent buffers remembered) and file reads are

@@ -56,8 +56,32 @@ function fontDot(root,exe,early,trace=()=>{}){
   /* the launcher exits at once, so the game's own process is watched: gone within 20 s = died with the dot font */
   watch(pid,{alive=p=>{try{process.kill(p,0);return true;}catch{return false;}},every=1000,until=21000}={}){
    const t0=Date.now();if(!Number.isInteger(Number(pid))){canary.exited('fontdot',0);return;}
-   const w=setInterval(()=>{if(!alive(Number(pid))){clearInterval(w);canary.exited('fontdot',-1);trace('fontdot-canary',{died:Date.now()-t0});return;}
+   const w=setInterval(()=>{if(!alive(Number(pid))){clearInterval(w);trace('fontdot-gone',{after:Date.now()-t0});return;}
     if(Date.now()-t0>=until){clearInterval(w);canary.alive('fontdot');canary.exited('fontdot',0);}},every);w.unref?.();}};
 }
 
-module.exports={prepare,attach,unityPack,fontDot};
+/* A Steam game started directly (not through steam://), so the early launcher (glyph dots, dot font) can load before
+   the game's first glyph. SteamAppId in the environment is enough for many games; some still call
+   SteamAPI_RestartAppIfNecessary and Steam restarts them from the real folder without our DLLs (live: THE SHELL HD).
+   steam_appid.txt next to the program stops that, but the game folder is never written, so the game is started from a
+   shadow folder on the same volume (<volume>\MeguLit-Shadow\<exe>-<size>): folders as junctions, files as hard links
+   only (no copies: a failed link drops the shadow and the launch stays as before). A game folder that already holds
+   steam_appid.txt is started in place. Returns {exe,cwd,env,shadow} or null. */
+function steamDirect({exe,appid,shadowRoot=null,trace=()=>{}}){
+ const fs=require('node:fs');appid=String(appid||'');if(!/^\d+$/.test(appid)||!exe||!fs.existsSync(exe))return null;
+ const env={SteamAppId:appid,SteamGameId:appid,SteamOverlayGameId:appid},dir=path.dirname(exe);
+ if(fs.existsSync(path.join(dir,'steam_appid.txt'))){trace('steam-direct',{shadow:false});return {exe,cwd:dir,env,shadow:null};}
+ const key=path.basename(exe).replace(/[^A-Za-z0-9._-]/g,'_')+'-'+fs.statSync(exe).size;
+ const shadow=path.join(shadowRoot||path.join(path.parse(path.resolve(exe)).root,'MeguLit-Shadow'),key);
+ let stats;try{stats=U.mirror(dir,shadow,{linkOnly:true,ours:new Set(['steam_appid.txt','megulit-shadow.json'])});}
+ catch(e){trace('steam-direct-skipped',{error:String(e?.code||e?.message||e).slice(0,80)});
+  /* links only, never a recursive delete (junctions inside) */
+  try{for(const n of fs.readdirSync(shadow)){const p=path.join(shadow,n),t=fs.lstatSync(p);if(t.isSymbolicLink())fs.rmdirSync(p);else if(t.isFile())fs.unlinkSync(p);}fs.rmdirSync(shadow);}catch{}
+  return null;}
+ fs.writeFileSync(path.join(shadow,'steam_appid.txt'),appid);
+ fs.writeFileSync(path.join(shadow,'megulit-shadow.json'),JSON.stringify({game:dir,exe:path.basename(exe),steam:appid,at:Date.now(),...stats}));
+ trace('steam-direct',{shadow,links:stats.links,junctions:stats.junctions});
+ return {exe:path.join(shadow,path.basename(exe)),cwd:shadow,env,shadow};
+}
+
+module.exports={prepare,attach,unityPack,fontDot,steamDirect};

@@ -34,12 +34,13 @@ test('hidden: the latest record of a line decides; a path that never confirms st
  g.report({line:2,hidden:false});g.report({line:3,hidden:false});assert.equal(g.confirmed,false);
 });
 
-test('crash canary: armed, died within 20 s -> off next launch; 20 s alive or a clean quit -> stays on',()=>{
+test('crash canary: only an exception exit code turns a path off; kill, clean quit or unseen exit stay on',()=>{
  const dir=tmp(),exe=path.join(dir,'Game.exe');fs.writeFileSync(exe,'MZ');let now=1e6;const mk=()=>new TP.Canary(dir,exe,{now:()=>now});
  assert.equal(path.basename(mk().file),'Game.exe-2.json','same key as HookBridge MemoryPath (name-size)');
  let c=mk();c.settle();c.arm('web');now+=4000;c.alive('web');
- c=mk();assert.ok(c.settle().web,'left armed 4 s in');assert.equal(c.allowed('web'),false);
- c.reset('web');assert.equal(c.allowed('web'),true);
+ c=mk();c.settle();assert.equal(c.allowed('web'),true,'left armed 4 s in, exit unseen (force kill): not a crash');assert.equal(c.read().armed.web,undefined);
+ c.arm('web');c.exited('web',1);assert.equal(c.allowed('web'),true,'taskkill /F exit 1');c.arm('web');c.exited('web',-1);assert.equal(c.allowed('web'),true,'unknown');
+ c.arm('web');c.exited('web',-1073741819);c.reset('web');assert.equal(c.allowed('web'),true);
  c.arm('unity');now+=21000;c.alive('unity');c=mk();c.settle();assert.equal(c.allowed('unity'),true);
  c.arm('unity');c.exited('unity',0);assert.equal(c.allowed('unity'),true);
  c.arm('unity');c.exited('unity',-1073741819);assert.equal(c.allowed('unity'),false);assert.match(c.read().off.unity.reason,/-1073741819/);
@@ -166,7 +167,7 @@ test('launch: off unless switched on; web gets switches, Unity a shadow program;
  const hook={charRects(){},trace(){},attachTextPath(s){this.textPath=s;}};L.attach(p,hook);assert.equal(hook.textPath,p.session);
  assert.ok(require('../core/hook-native.cjs').HookNative.prototype.attachTextPath,'hook reader takes a text path');
  const src=read('core/hook-native.cjs');assert.ok(src.includes("send(v){if(v&&(v.type==='enable'||v.type==='disable'))try{this.textPath?.hide(v.type==='enable');}catch{}"));assert.ok(src.includes('try{this.textPath?.want(text);}catch{}'));
- const b=read('services/bridge.cjs');assert.ok(b.includes('enabled:prefs.ownTextOutput===true'));assert.ok(b.includes('const steam=steamApp&&!companion&&!textPath;'),'never a restart through Steam on this path');
+ const b=read('services/bridge.cjs');assert.ok(b.includes('enabled:prefs.ownTextOutput===true'));assert.ok(b.includes('const steam=steamApp&&!companion&&!textPath&&!steamDirect;'),'never a restart through Steam on this path');
  assert.ok(b.includes('textPath.session.exited(child.exit.code??-1)'),'exit code to the canary');
  assert.equal(require('../core/runtime-packs.cjs').MARKERS['unity-text'],'runtime/unity-text/MeguLitUnityText.dll');
  fs.rmSync(base,{recursive:true,force:true});
@@ -204,9 +205,10 @@ test('dot font in the normal launch: rides along MeguLitLaunch, crash canary, co
  fs.writeFileSync(path.join(base,'native','MeguLitFontDot64.dll'),'x');
  const fd=L.fontDot(base,exe,early);assert.ok(fd);assert.equal(early.env.MEGULIT_LAUNCH_EXTRA,path.join(base,'native','MeguLitFontDot64.dll'));
  assert.ok(fd.canary.read().armed.fontdot,'armed at launch');
- /* the game dies at once: off for this game next time */
+ /* the game vanishes at once (a kill looks the same): stays on; HookBridge records a real crash code */
  let alive=false;fd.watch(123,{alive:()=>alive,every:1,until:50});
  return new Promise(r=>setTimeout(r,30)).then(()=>{
+  assert.equal(fd.canary.allowed('fontdot'),true);fd.canary.exited('fontdot',-1073741819);
   assert.equal(fd.canary.allowed('fontdot'),false);
   const e2={...early,env:{}};assert.equal(L.fontDot(base,exe,e2),null,'canary keeps it off');assert.equal(e2.env.MEGULIT_LAUNCH_EXTRA,undefined);
   const b=read('services/bridge.cjs');assert.ok(b.includes("const fontDot=early&&!textPath?require('../core/text-paths-launch.cjs').fontDot(root,game.executable,early,trace):null;"));
@@ -222,4 +224,18 @@ test('dot font in the normal launch: rides along MeguLitLaunch, crash canary, co
   assert.match(read('native/native-builds.json'),/"name":"fontdot"/);
   fs.rmSync(base,{recursive:true,force:true});
  });
+});
+
+test('Steam direct start for the early launcher: shadow of hard links + steam_appid.txt, game folder untouched',()=>{
+ const L=require('../core/text-paths-launch.cjs'),base=tmp(),game=path.join(base,'steamapps','common','G');
+ fs.mkdirSync(path.join(game,'data'),{recursive:true});fs.writeFileSync(path.join(game,'G.exe'),'MZ');fs.writeFileSync(path.join(game,'data','a.pfs'),'x');
+ const shadows=path.join(base,'MeguLit-Shadow');
+ assert.equal(L.steamDirect({exe:path.join(game,'G.exe'),appid:'x'}),null);
+ const d=L.steamDirect({exe:path.join(game,'G.exe'),appid:'2258770',shadowRoot:shadows});
+ assert.equal(d.exe,path.join(shadows,'G.exe-2','G.exe'));assert.equal(d.env.SteamAppId,'2258770');
+ assert.equal(fs.readFileSync(path.join(d.cwd,'steam_appid.txt'),'utf8'),'2258770');assert.ok(fs.lstatSync(path.join(d.cwd,'data')).isSymbolicLink());
+ assert.equal(fs.readFileSync(path.join(d.cwd,'data','a.pfs'),'utf8'),'x');assert.equal(fs.existsSync(path.join(game,'steam_appid.txt')),false,'game folder never written');
+ fs.writeFileSync(path.join(game,'steam_appid.txt'),'2258770');const p=L.steamDirect({exe:path.join(game,'G.exe'),appid:'2258770',shadowRoot:shadows});assert.equal(p.shadow,null);assert.equal(p.exe,path.join(game,'G.exe'));
+ const b=read('services/bridge.cjs');assert.ok(b.includes('const steam=steamApp&&!companion&&!textPath&&!steamDirect;'));assert.ok(b.includes('earlyStart(root,launchExe,'));
+ fs.rmdirSync(path.join(shadows,'G.exe-2','data'));fs.rmSync(base,{recursive:true,force:true});
 });

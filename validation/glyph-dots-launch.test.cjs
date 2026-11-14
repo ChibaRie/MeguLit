@@ -31,9 +31,9 @@ test('glyph-dots: off by default; compositor setting turns on the launcher and t
 
 test('launch flow: direct starts use the launcher (helper, not indirect); Steam and ③ shadow starts keep their own path; HookBridge gets the dot env', () => {
   const b = read('services/bridge.cjs');
-  assert.ok(b.includes("const early=steam||textPath?null:require('../core/glyph-dots.cjs').earlyStart(root,game.executable,companion?companionArgs:[],require('../core/locale-emulator.cjs').x86(game.executable),directEnv||process.env);"));
-  assert.ok(b.includes("startProcess(early?early.file:steam?'explorer.exe':game.executable,early?early.args:"));
+  assert.ok(b.includes("const early=steam||textPath?null:require('../core/glyph-dots.cjs').earlyStart(root,launchExe,companion?companionArgs:[],require('../core/locale-emulator.cjs').x86(game.executable),directEnv||process.env);"));
+  assert.ok(b.includes("startProcess(early?early.file:steam?'explorer.exe':launchExe,early?early.args:"));
   assert.ok(b.includes('{helper:steam||!!early,indirect:steam,'), 'the launcher exiting is not the game exiting; a game that quits at once is still seen');
   assert.ok(read('core/hook-native.cjs').includes("env:{...process.env,...require('./glyph-dots.cjs').bridgeEnv(path.join(this.folder,'..')),"));
-  assert.match(read('docs/text-architecture.md'), /Steam, Locale Emulator and shell-open launches keep the late attach/);
+  assert.match(read('docs/text-architecture.md'), /Locale Emulator and shell-open launches keep the late attach/);
 });
