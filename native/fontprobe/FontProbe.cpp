@@ -160,8 +160,9 @@ void BlankGlyph(UINT format, void *buffer, DWORD size) {
 }
 
 // ---- glyph dots (docs/text-architecture.md) ---------------------------------------------------------------------------
-// Dot side in pixels: 3 for a cell of 12 px or more, else 2; clipped to the glyph's black box.
-int DotSide(int cellHeight) { return cellHeight >= 12 ? 3 : 2; }
+// Dot side in pixels (spec 2): 2 below a 12 px cell, else max(3, round(cell / 10)), clipped to the glyph's black box.
+// Grows with the cell so a dot survives engines that rasterise large and scale down (BGI: 136 px drawn at ~28 px).
+int DotSide(int cellHeight) { return cellHeight < 12 ? 2 : (std::max)(3, (cellHeight + 5) / 10); }
 struct Dot { int i; wchar_t ch; int h, b, a, x, y, s; char k; };
 SRWLOCK DotLock = SRWLOCK_INIT; long DotSeq = -1, DotAnnounced = -1; std::set<unsigned long long> DotSeen; std::string DotBuf, DotPath; DWORD DotFirst; int DotCount;
 void DotFlushLocked() { if (!DotBuf.empty()) Send("ToMe_GLYPHDOT dots seq=" + std::to_string(DotSeq) + " path=" + DotPath + " list=" + DotBuf); DotBuf.clear(); DotCount = 0; }

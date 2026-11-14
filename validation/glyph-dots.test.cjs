@@ -11,14 +11,14 @@ const read=f=>fs.readFileSync(path.join(__dirname,'..',f),'utf8');
 test('spec: docs/text-architecture.md publishes the dot geometry, records, events and a change log',()=>{
  const d=read('docs/text-architecture.md');
  for(const s of ['## ① Glyph dots','## Changes to this document','| 1    | 2026-11-14 |','ToMe_GLYPHDOT line seq=<n> text=<line>','ToMe_GLYPHDOT dots seq=<n> path=<ggo|text|gdip|d2d|run> list=<dot>;<dot>;...','`<dot>` = `i:u:h:b:a:x:y:s:k`','ToMe_GLYPHDOT cache seq=<n>','"type":"hookGlyphDots"','{"type":"glyphMode","mode":"dot"}','"all":true','MEGULIT_GLYPH_ALL=1','MEGULIT_GLYPH_MODE=dot','run-dots.cmd'])assert.ok(d.includes(s),s);
- assert.match(d,/\*\*Side\*\* `s` = 3 px when the cell height .* 12 px or more,\s*else 2 px/);});
+ assert.match(d,/\*\*Side\*\* `s` \(spec 2\) = 2 px when the cell height/);});
 
 test('DLL: dot mode keeps metrics, draws one square per character, reports every dot; blank mode unchanged',()=>{
  const c=read('native/fontprobe/FontProbe.cpp');
  assert.match(c,/#define MEGULIT_FONT_VERSION 3/);assert.ok(c.includes('MeguLitFontVersionTag[] = "MeguLitFont version=3"'));
  assert.ok(c.includes('else if (l == "MODE dot" || l == "MODE blank") { bool dot = l == "MODE dot"; Hide.StopOnCache = !dot; InterlockedExchange(&DotMode, dot ? 1 : 0); }'),'MODE command; cache stops only blank mode');
  assert.ok(c.includes('" modes=blank,dot"'),'ready answers the modes');
- assert.ok(c.includes('int DotSide(int cellHeight) { return cellHeight >= 12 ? 3 : 2; }'),'dot side as in the spec');
+ assert.ok(c.includes('int DotSide(int cellHeight) { return cellHeight < 12 ? 2 : (std::max)(3, (cellHeight + 5) / 10); }'),'dot side as in the spec (2)');
  assert.match(c,/if \(!b \|\| !n \|\| \(f & 0x0f\) == GGO_METRICS\) return r;/,'size queries and metrics untouched in dot mode');
  assert.match(c,/BYTE full = kind == GGO_GRAY2_BITMAP \? 4 : kind == GGO_GRAY4_BITMAP \? 16 : 64;/,'full coverage per gray format');
  assert.match(c,/h->dwType = TT_POLYGON_TYPE; h->pfxStart = pt\(x0, y0\);/,'outline: square contour from the black box top-left');
