@@ -268,6 +268,12 @@ static HRESULT WINAPI HPresent(IDirect3DDevice9 *d, const RECT *a, const RECT *b
  { Guard g; Frame++; LastPresent = GetTickCount(); Dev &v = *DevOf(d); Learner.Frame(LastPresent, v.bbW, v.bbH); }
  return o(d, a, b, w, r);
 }
+// Engines that present through an IDirect3DSwapChain9 (minori's eden*) never call the device's Present: same frame tick.
+static HRESULT WINAPI HSwapPresent(IDirect3DSwapChain9 *sc, const RECT *a, const RECT *b, HWND w, const RGNDATA *r, DWORD f) {
+ auto o = (HRESULT(WINAPI *)(IDirect3DSwapChain9 *, const RECT *, const RECT *, HWND, const RGNDATA *, DWORD))CurOrig;
+ IDirect3DDevice9 *d = NULL; if (SUCCEEDED(sc->GetDevice(&d)) && d) { { Guard g; Frame++; LastPresent = GetTickCount(); Dev &v = *DevOf(d); Learner.Frame(LastPresent, v.bbW, v.bbH); } d->Release(); }
+ return o(sc, a, b, w, r, f);
+}
 static HRESULT WINAPI HReset(IDirect3DDevice9 *d, D3DPRESENT_PARAMETERS *p) {
  HRESULT hr = ORIG(HRESULT(WINAPI *)(IDirect3DDevice9 *, D3DPRESENT_PARAMETERS *), d, 16)(d, p);
  if (SUCCEEDED(hr) && p) { Guard g; Dev &v = *DevOf(d); v.bbW = v.rtW = p->BackBufferWidth; v.bbH = v.rtH = p->BackBufferHeight; v.rtTex = NULL; v.rtIsBack = true; v.vp.X = v.vp.Y = 0; v.vp.Width = v.bbW; v.vp.Height = v.bbH; v.vp.MaxZ = 1; Buffers.clear(); Textures.clear(); }
@@ -369,6 +375,7 @@ static int Install(HMODULE d3d9) {
    devices++; void **vt = *(void ***)dev;
    Hook<16>(vt[16], HReset); Hook<17>(vt[17], HPresent); Hook<37>(vt[37], HSetRenderTarget); Hook<44>(vt[44], HSetTransform); Hook<47>(vt[47], HSetViewport);
    Hook<65>(vt[65], HSetTexture); Hook<81>(vt[81], HDrawPrimitive); Hook<82>(vt[82], HDrawIndexedPrimitive); Hook<83>(vt[83], HDrawPrimitiveUP); Hook<84>(vt[84], HDrawIndexedPrimitiveUP);
+   { IDirect3DSwapChain9 *sc = NULL; if (SUCCEEDED(dev->GetSwapChain(0, &sc)) && sc) { Hook<703>((*(void ***)sc)[3], HSwapPresent); sc->Release(); } }
    Hook<87>(vt[87], HSetVertexDeclaration); Hook<89>(vt[89], HSetFVF); Hook<92>(vt[92], HSetVertexShader); Hook<100>(vt[100], HSetStreamSource); Hook<104>(vt[104], HSetIndices);
    struct { UINT usage; D3DPOOL pool; } kinds[] = { { D3DUSAGE_DYNAMIC | D3DUSAGE_WRITEONLY, D3DPOOL_DEFAULT }, { D3DUSAGE_WRITEONLY, D3DPOOL_DEFAULT }, { 0, D3DPOOL_MANAGED }, { 0, D3DPOOL_SYSTEMMEM }, { D3DUSAGE_DYNAMIC, D3DPOOL_DEFAULT } };
    for (auto &k : kinds) {

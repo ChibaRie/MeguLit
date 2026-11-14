@@ -29,7 +29,7 @@ for a glyph, so layer 3 sees nothing.
   the device in globals: WHITE ALBUM2 crashed at its first scene when the throwaway devices went through it) (software / hardware / pure / mixed vertex processing, with and without
   `D3DCREATE_MULTITHREADED`). This also covers devices created before the DLL arrived. Hooked: `Present`, `Reset`,
   `SetRenderTarget`, `SetTransform`, `SetViewport`, `SetTexture`, `SetFVF`, `SetVertexDeclaration`, `SetVertexShader`,
-  `SetStreamSource`, `SetIndices`, the four `Draw*Primitive*` calls, and `Lock` / `Unlock` of vertex and index buffers
+  `SetStreamSource`, `SetIndices`, `IDirect3DSwapChain9::Present`, the four `Draw*Primitive*` calls, and `Lock` / `Unlock` of vertex and index buffers
   (read-only shadow copies of what the game wrote, taken at `Unlock`).
 - **Direct3D 11.** `D3D11CreateDeviceAndSwapChain` in the game's own `d3d11.dll` (never imported by the DLL, so a
   Direct3D 9 game does not load it) gives the functions behind `ID3D11DeviceContext::Draw` / `DrawIndexed` / `Map` /
@@ -126,6 +126,19 @@ line is drawn again. Built and run by `Build.ps1` and CI through `native/native-
 `MeguLitGpu version=1`, checked by `tools/native-stale.cjs` and `Release.ps1`).
 
 ### Live checks (2026-11-14)
+
+- **STEINS;GATE 0 (MAGES, D3D9, Steam): works** (8- and 18-character lines, rectangles, `hidden=1`). The ring-shaped wait
+  cursor is a cell of the font atlas at glyph height, so it is hidden with the line.
+- **Aoi Tori (CMVS / Purple software, D3D11, Steam English): works.** It draws a blank glyph quad for every space except
+  one where the line wraps; the learner walks the line in reading order and drops the blank positions (21 characters,
+  24 quads). Its text box is a 9-slice of 28 × 28 tiles from a UI atlas under the text: the first build learned that atlas
+  and hid the frame. Now an atlas is learned only when ≥ 60 % of its quads in the area line up with a glyph, groups are
+  per texture (two atlases of the same size never mix), per-line sheets must be new and line-sized (not powers of two),
+  and only quads of the learned glyph height (± 20 %) are hidden. Frame, corners, cursor and top bar stay.
+- eden* (minori, D3D9): presents through `IDirect3DSwapChain9::Present` (now hooked as a frame tick too); its text is
+  inside 256-pixel layer tiles, no glyph draws: not hidden.
+- Not run: Summer Pockets REFLECTION BLUE (the 64-bit exe exits; the game is SiglusEngine_Steam.exe, Siglus has other
+  paths), Danganronpa 1 / 2 (OpenGL: this layer has no OpenGL side yet).
 
 - **CHAOS;CHILD (MAGES, 32-bit, Direct3D 9, Steam): works.** DXT5 atlas pages of 3072 × 4096 and 3072 × 1536, one
   `DrawPrimitiveUP` triangle fan per character, vertex declaration + vertex shader. With the visible page pushed (32
