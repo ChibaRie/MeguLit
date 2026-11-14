@@ -52,7 +52,8 @@ test('HookBridge loads the layer, arms it for glyph-fallback streams and treats 
  assert.match(l,/type="hookChars",line=s/,'ToMe_CHARS passed on like the engine paths');
  assert.match(l,/if\(!GpuCanaryArm\(\)\)return;/,'crash canary checked before the DLL is loaded');
  assert.match(l,/if\(code>=0xC0000000u\)\{e\["off"\]=true;/,'an exception exit turns layer 4 off for that game');
- assert.match(l,/public static void GpuCanaryReset\(\)/,'turning it on again is the user\'s call');});
+ assert.match(l,/public static void GpuCanaryReset\(\)/,'turning it on again is the user\'s call');
+ assert.match(b,/if\(!GpuCanarySelfTest\(\)\)\{Console\.Error\.WriteLine\("FAIL gpu hide crash canary"\);return 3;\}/,'canary file logic runs in HookBridge --self-test (arm, crash 0xC0000005 refuses, reset)');});
 
 test('built, self-tested and shipped like every native binary',()=>{
  const nb=JSON.parse(read('native/native-builds.json')).find(e=>e.name==='gpuhide');
