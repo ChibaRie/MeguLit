@@ -54,7 +54,8 @@ namespace {
 HMODULE Self; CRITICAL_SECTION Gate; HANDLE Wake; std::deque<std::string> Out; wchar_t Dir[1024];
 
 std::string Utf8(const std::wstring &w) { if (w.empty()) return ""; int n = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), NULL, 0, NULL, NULL); std::string s(n, 0); WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), &s[0], n, NULL, NULL); return s; }
-std::wstring Wide(const std::string &s) { if (s.empty()) return L""; int n = MultiByteToWideChar(CP_UTF8, 0, s.data(), (int)s.size(), NULL, 0); std::wstring w(n > 0 ? n : 0, 0); if (n > 0) MultiByteToWideChar(CP_UTF8, 0, s.data(), (int)s.size(), &w[0], n); return w; }
+__declspec(thread) int InConv; // set while MeguLit converts text itself: the conversion source leaves it alone
+std::wstring Wide(const std::string &s) { InConv++; struct G { ~G() { InConv--; } } g; if (s.empty()) return L""; int n = MultiByteToWideChar(CP_UTF8, 0, s.data(), (int)s.size(), NULL, 0); std::wstring w(n > 0 ? n : 0, 0); if (n > 0) MultiByteToWideChar(CP_UTF8, 0, s.data(), (int)s.size(), &w[0], n); return w; }
 void Send(const std::string &line) { EnterCriticalSection(&Gate); if (Out.size() < 256) Out.push_back(line); LeaveCriticalSection(&Gate); SetEvent(Wake); }
 // A game's ANSI face name is in its own code page: Japanese games use 932 whatever the system code page is.
 std::wstring Ansi(const char *s, int len = -1) {
@@ -93,7 +94,7 @@ Face FaceOf(HDC dc) {
 SRWLOCK HideLock = SRWLOCK_INIT; GlyphHide::Matcher Hide; volatile LONG HideOn = 0, DotMode = 0, BlindMode = 0;
 struct IndexMap { HFONT font = NULL; long seq = -1; std::map<WORD, wchar_t> map; } Indexes;
 GlyphHide::Key KeyOf(const Face &f) { GlyphHide::Key k; k.face = f.name; k.size = f.size; return k; }
-void AnnounceLine(long seq, const std::wstring &text);
+void AnnounceLine(long seq, const std::wstring &text); void ConvLineEnded(bool hadDots);
 void Command(std::string l) {
  while (!l.empty() && (l.back() == '\r' || l.back() == '\n')) l.pop_back();
  AcquireSRWLockExclusive(&HideLock);
@@ -177,7 +178,7 @@ void DotFlushLocked() { if (!DotBuf.empty()) Send("ToMe_GLYPHDOT dots seq=" + st
 void ServeDot(long seq, const char *path, const Dot &d) {
  if (!d.k) return;
  AcquireSRWLockExclusive(&DotLock);
- if (seq != DotSeq) { DotFlushLocked(); DotSeq = seq; DotSeen.clear(); }
+ if (seq != DotSeq) { DotFlushLocked(); if (DotSeq >= 0) ConvLineEnded(!DotSeen.empty()); DotSeq = seq; DotSeen.clear(); }
  if (seq != DotAnnounced) { std::wstring text; AcquireSRWLockShared(&HideLock); bool same = Hide.Sequence() == seq; if (same) text = Hide.Current(); ReleaseSRWLockShared(&HideLock);
   if (same) { DotAnnounced = seq; Send("ToMe_GLYPHDOT line seq=" + std::to_string(seq) + " text=" + Utf8(text)); } }
  unsigned long long key = ((unsigned long long)(unsigned char)d.k << 48) | (d.i >= 0 ? (unsigned long long)d.i : (0x100000000ull | ((unsigned long long)d.ch << 12) | (unsigned)(d.h & 0xfff)));
@@ -188,7 +189,7 @@ void ServeDot(long seq, const char *path, const Dot &d) {
  ReleaseSRWLockExclusive(&DotLock);
 }
 void AnnounceLine(long seq, const std::wstring &text) {
- AcquireSRWLockExclusive(&DotLock); if (seq != DotSeq) { DotFlushLocked(); DotSeq = seq; DotSeen.clear(); }
+ AcquireSRWLockExclusive(&DotLock); if (seq != DotSeq) { DotFlushLocked(); if (DotSeq >= 0) ConvLineEnded(!DotSeen.empty()); DotSeq = seq; DotSeen.clear(); }
  if (seq != DotAnnounced) { DotAnnounced = seq; Send("ToMe_GLYPHDOT line seq=" + std::to_string(seq) + " text=" + Utf8(text)); }
  ReleaseSRWLockExclusive(&DotLock);
 }
@@ -555,6 +556,48 @@ void STDMETHODCALLTYPE HDrawGlyphRun(ID2D1RenderTarget *rt, D2D1_POINT_2F at, co
  ODrawGlyphRun(rt, at, run, brush, mm);
 }
 
+
+// ---- Conversion source (spec ③-conv). Idea from UniversalInjectorFramework's MultiByteToWideChar hook (AtomCrafty, no
+// licence: idea only, own code). Engines that keep their script in Shift-JIS/UTF-8 and rasterise with their own font code
+// (FreeType, prebuilt atlases) convert each line to UTF-16 first. Where that converted text is the current dialogue line
+// (or continues it character by character), every visible character becomes U+30FB '・', so the game's own rasteriser draws
+// a dot with the same count, in the game's colour; control codes and blanks stay. Reports path=conv, cell unknown (h=0):
+// ② maps the dots by reading order. Only in dot mode, only while HookBridge is connected (OFF on pipe loss = heartbeat).
+// Probe: switched on by itself after two pushed lines got no dot from any GDI/GDI+/D2D path; remembered per game in
+// <cache>\source.txt ("conv"). Canary: "conv-trial" is written when it switches on; a start that finds "conv-trial"
+// (never confirmed, e.g. the game crashed) writes "conv-off" and never switches it on again.
+volatile LONG ConvOn = 0; long ConvSeq = -1, ConvNext = 0, ConvMarked = 0, ConvLastDotSeq = -1; int ConvMiss = 0; bool ConvConfirmed = false;
+const wchar_t ConvMarkChar = 0x30fb;
+bool ConvChar(wchar_t c) { return c >= 0x3000 && !GlyphHide::Blank(c) && c != ConvMarkChar; }
+void ConvRemember(const char *v) { if (!Dir[0]) return; wchar_t f[1100]; swprintf_s(f, L"%ssource.txt", Dir); HANDLE h = CreateFileW(f, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, 0, NULL); if (h == INVALID_HANDLE_VALUE) return; DWORD n; WriteFile(h, v, (DWORD)strlen(v), &n, NULL); CloseHandle(h); }
+std::string ConvRecall() { if (!Dir[0]) return ""; wchar_t f[1100]; swprintf_s(f, L"%ssource.txt", Dir); HANDLE h = CreateFileW(f, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, NULL); if (h == INVALID_HANDLE_VALUE) return ""; char b[32] = {}; DWORD n = 0; ReadFile(h, b, 31, &n, NULL); CloseHandle(h); return std::string(b, n); }
+void ConvEnable(bool remembered) { if (InterlockedExchange(&ConvOn, 1)) return; if (!remembered) ConvRemember("conv-trial"); Send(std::string("ToMe_FONT status conv on") + (remembered ? " remembered" : " probe")); }
+// Called on every new line seq (under DotLock): counts lines that got no dot at all.
+void ConvLineEnded(bool hadDots) { if (ConvOn) return; ConvMiss = hadDots ? 0 : ConvMiss + 1; if (DotMode && ConvMiss >= 2) { std::string r = ConvRecall(); if (r != "conv-off") ConvEnable(false); } }
+void ConvMark(wchar_t *w, int r) {
+ int k = 0; for (int i = 0; i < r; i++) if (ConvChar(w[i])) k++; if (!k) return;
+ if (!TryAcquireSRWLockShared(&HideLock)) return; std::wstring line = Hide.Current(); long seq = Hide.Sequence(); ReleaseSRWLockShared(&HideLock);
+ if (line.empty()) return;
+ std::wstring vis; std::vector<int> at; { int idx = 0; for (wchar_t c : line) { if (GlyphHide::Blank(c)) continue; if (ConvChar(c)) { vis += c; at.push_back(idx); } idx++; } }
+ std::wstring got; for (int i = 0; i < r; i++) if (ConvChar(w[i])) got += w[i];
+ if (seq != ConvSeq) { ConvSeq = seq; ConvNext = 0; ConvMarked = 0; }
+ size_t pos = std::wstring::npos;
+ if (got.size() >= (std::min)((size_t)4, vis.size()) && got.size() >= 2) pos = vis.find(got);
+ else if (got.size() == 1 && ConvNext < (long)vis.size() && vis[ConvNext] == got[0]) pos = ConvNext; // typed out one character at a time
+ if (pos == std::wstring::npos) return;
+ std::vector<Dot> dots; size_t j = pos;
+ for (int i = 0; i < r && j < pos + got.size(); i++) if (ConvChar(w[i])) { dots.push_back(Dot{at[j], w[i], 0, 0, 0, 0, 0, 0, 'd'}); w[i] = ConvMarkChar; j++; }
+ ConvNext = (long)(pos + got.size()); ConvMarked += (long)got.size();
+ for (auto &d : dots) ServeDot(seq, "conv", d);
+ if (!ConvConfirmed && ConvMarked >= (long)vis.size() && vis.size() >= 2) { ConvConfirmed = true; ConvRemember("conv"); Send("ToMe_FONT status conv confirmed seq=" + std::to_string(seq)); }
+}
+typedef int(WINAPI *MBTWC)(UINT, DWORD, LPCCH, int, LPWSTR, int); MBTWC OMultiByteToWideChar;
+int WINAPI HMultiByteToWideChar(UINT cp, DWORD fl, LPCCH s, int n, LPWSTR w, int cw) {
+ int r = OMultiByteToWideChar(cp, fl, s, n, w, cw);
+ if (r < 1 || !w || cw <= 0 || !ConvOn || !DotMode || !HideOn || InConv) return r;
+ InConv++; ConvMark(w, r); InConv--; return r;
+}
+
 bool Hook(HMODULE m, const char *name, void *detour, void **orig) { if (!m) return false; void *fn = (void *)GetProcAddress(m, name); if (!fn) return false; if (MH_CreateHook(fn, detour, orig) != MH_OK) return false; return MH_EnableHook(fn) == MH_OK; }
 bool HookAt(void *fn, void *detour, void **orig) { MH_STATUS s = MH_CreateHook(fn, detour, orig); if (s == MH_ERROR_ALREADY_CREATED) return true; return s == MH_OK && MH_EnableHook(fn) == MH_OK; }
 bool GdipDone, DwriteDone, D2dDone;
@@ -629,6 +672,9 @@ DWORD WINAPI Run(void *) {
  n += Hook(gdi, "AddFontResourceExW", (void *)&HAddFontResourceExW, (void **)&OAddFontResourceExW);
  n += Hook(gdi, "AddFontResourceExA", (void *)&HAddFontResourceExA, (void **)&OAddFontResourceExA);
  Send("ToMe_FONT status gdi hooks " + std::to_string(n) + "/11");
+ { HMODULE kb = GetModuleHandleW(L"kernelbase.dll"); if (!kb) kb = GetModuleHandleW(L"kernel32.dll"); bool c = Hook(kb, "MultiByteToWideChar", (void *)&HMultiByteToWideChar, (void **)&OMultiByteToWideChar);
+  std::string r = ConvRecall(); if (r == "conv-trial") ConvRemember("conv-off"); else if (r == "conv" && c) ConvEnable(true);
+  Send(std::string("ToMe_FONT status conv ") + (c ? "hooked" : "not hooked") + (r.empty() ? "" : " was=" + r)); }
  // Early injection (MeguLitLaunch<bit>.exe, docs/text-architecture.md): the starting mode and dialogue font come from the
  // game's environment, since HookBridge connects only later; then the launcher is told the hooks are in place.
  { wchar_t v[128]; if (GetEnvironmentVariableW(L"MEGULIT_GLYPH_MODE", v, 128) && (!wcscmp(v, L"dot") || !wcscmp(v, L"dot-blind"))) Command(std::string("MODE ") + Utf8(v));
