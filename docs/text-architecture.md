@@ -1,12 +1,15 @@
 # Text architecture
 
-## Owner acceptance checklist (2026-11-14, check every screenshot against it)
+## Owner acceptance checklist (2026-11-15, replaces the 1–5 list; check every screenshot against it)
 
-1. The Japanese line is drawn in the original's place: same position, size, colour, outline/shadow, game font where known. Never missing in bilingual mode.
-2. Furigana above every kanji word, using the shared ruby rule: game ruby first, then context/dictionary reading, never tokenizer guesses for names.
-3. The translation goes beside or under the Japanese, with no plate or box behind it.
-4. No mark is ever visible: no dots, no 「・」, no leftover original glyphs.
-5. Name plates and choices look like the game's own.
+- (a) The Japanese is in its original place; font, size, colour and outline look like the game's own.
+- (b) Furigana above the right kanji (the game's own ruby first, then the shared rule).
+- (c) The Chinese translation beside or under the Japanese, with no plate or dark background.
+- (d) The game's original text and any dot or mark are completely invisible.
+- (e) Words can be clicked (word card opens); a click on empty space advances the game as usual.
+- (f) No flicker: a 60 fps, 5 s recording shows zero changed pixels in the text area.
+- (g) It keeps working for the whole game: after chapter changes, loading a save, opening/closing menus, scene changes.
+- (h) Name plates and choice text are handled the same way, (a)–(f).
 
 OCR (owner, 2026-11-14): only OCR masking (blurring or covering the game's text) is banned. OCR may read: text baked into
 images (titles, cards, image choices), checking what a frame actually draws when marks cannot all be matched, and the
@@ -539,41 +542,68 @@ stayed dots, as documented). Not yet run from the real app with the real composi
 Not covered yet: canvas web engines (RenJS / Phaser), KiriKiri games with their own message-layer class that use
 neither KAG `processCh` nor TextRender, Ren'Py text outside the say screen, YU-RIS and Artemis (see above).
 
-## Overlay placement (replaces the capture compositor as default, branch `feat/overlay-placement`, 2026-11-14)
+## Overlay placement (replaces the capture compositor as default, branch `feat/overlay-placement`, 2026-11-14/15)
 
 Owner decision after the live test of ②: the capture compositor stole clicks and focus and its marks showed. It stays in
 the code but is **off unless `MEGULIT_CAPTURE_COMPOSITOR=1`** (tests). 文字显示 = 画进游戏画面 now means: the game draws the
 line blank, the reader overlay draws MeguLit's text at the sources' character boxes.
 
-Done (commit ffb28ea and this note):
-- `core/overlay-placement.cjs`: ③ `hookCharRects` (hidden lines only, one rect per character) → client px →
-  `{"type":"textPlace",id,text,rects,client}` / `{"type":"textPlace","clear":true}` / `{"type":"textPlaceMode","on"}` to the reader.
-  Wired in `core/gal-native.cjs`; `hooks.ownTextFn` turns replacement (= ③ hiding) on while placement is wanted.
-- `web/reader/modules/text-place.js`: lays the hook reader's own `.sentence-text` (tokens, ruby bases, translation row) on
-  those boxes. Tokens stay the reader's, so word card, drag-select and hit regions (click-through elsewhere) are the usual
-  ones; ruby is the shared rule (gal.js paint) measured on the placed boxes; translation under the last row, no plate;
-  translation-only (`tomoyo-gal-zh-only`) puts it in the Japanese's place at the Japanese size. Size = median CJK box width.
-- No marks by default: glyph mode `blank` for the early launcher and HookBridge (`MEGULIT_GLYPH_MODE=blank`,
-  `MEGULIT_GLYPH_ALL=1`); the front end sends `glyphMode blank` with `all:true` when placement is on, and HookBridge's
-  write-back pass-through now works with `all` in blank mode too (was dot only), so the game lays out the real text and
-  draws it blank. Dot font (`fontDot`) and ④ text marks only with the capture compositor.
-- Tests: `validation/overlay-placement.test.cjs` (new); compositor / glyph-dots / text-paths tests run with
-  `MEGULIT_CAPTURE_COMPOSITOR=1`. Pre-existing failure on feat/text-arch, not from this branch: glyph-dots.test 3
-  expects `DotsOwn` without `&&!MarksMode`.
+### Messages (core/overlay-placement.cjs → reader)
+- `{"type":"textPlaceMode","on"}`: placement wanted and a game bound.
+- `{"type":"textPlace",id,engine,text,rects,client}`: one box per character of `text` (blanks may be left out by the
+  source), in game-client px (`client` = its size). A box may be `null`: not drawn yet (typing) - that character waits.
+  `approx:true` = boxes estimated from an anchor, not reported by the source.
+- `{"type":"textPlace",fallback:true,id,text}`: the game drew the line blank but no position is known; the reader keeps
+  its own place and drops its plate (no plate, original still invisible).
+- `{"type":"textPlace","clear":true}`: the game draws the line itself again.
 
-Not done / not verified live (the owner came back before the screen slot was free; nothing was run on screen):
-- No game has been checked against the acceptance list (a)–(g) yet. Rig ready: portable `H:\MeguLit-Work\portable-op`
-  (hot-update serves only the changed reader files), `H:\MeguLit-Work\overlay-place\run.ps1` (start / launch / key /
-  click / shot, `shot <name> 300` = 60 fps 5 s flicker count), new HookBridge built there.
-- Glyph sources (CLANNAD, サイコロジック) have no positions in blank mode: asked glyph-dots for MeguLitFont v4 records in blank
-  mode with the cell's DC position (`px:py`, `dc=WxH`). Until then glyph games get blank text but no placed line.
-  Siglus/YU-RIS cache glyphs: a blanked character stays blank wherever the engine reuses it.
-- Dot font → blank font: not done on purpose. The font patch changes every glyph of the font, not only the current
-  line, so a blank font would erase menus, names and the backlog too (the dots only worked because the compositor redrew
-  every frame). Ren'Py and Artemis need line-scoped hiding instead (③ renpy path; Artemis has none yet). Until then
-  they get no hiding in placement mode.
-- BRUNS: blank (U+3000) instead of 「・」 replacement and the per-character hook's line split are not done.
-- Font face/colour come from the reader's game style, not from the source; KiriKiri rects are advance × line height,
-  so vertical placement is centred in the line box (check live).
-- Heartbeat: blank mode is not gated by a MeguLit heartbeat (as before); a crashed MeguLit leaves ③ hiding to each path's
-  own pipe-closed rule.
+### Position sources, best first
+1. ③ `hookCharRects` (KiriKiri, Unity, Ren'Py, web): exact, hidden lines only, one rect per character.
+2. ① glyph records, spec 3 (MeguLitFont v4, `at:{x,y,space}`): `c` client px, `m<W>x<H>`/`t<W>x<H>` scaled to the
+   client; first kind-`d` record of an index wins; a character drawn from the engine's glyph cache (no record) is put one
+   advance after the previous one, as long as a later character was drawn. Same rule as `core/glyph-place.cjs` on
+   feat/glyph-dots, but it also places a line while it is being typed.
+3. Anchor estimate (`approx`): engines whose glyphs come from GetGlyphOutline (Siglus, AdvHD, ISLAND: `space -`).
+   The anchor is the dialogue area learned from the last exactly placed line of this game (left, top, row pitch, width,
+   size), else an engine position hook (`hookTextPos`, game-screen px), else an outside locator calling
+   `placement.anchor({x,y,size,width,pitch})` (e.g. OCR of the first character: reading only, never masking). Characters
+   advance by the records' median advance (half for ASCII/half-width), wrap at the width; only drawn characters show.
+4. Fallback: no anchor at all → `fallback` (above).
+
+### Reader (web/reader/modules/text-place.js)
+Lays the hook reader's own `.sentence-text` (tokens, ruby bases, translation row) on the boxes. Tokens stay the reader's,
+so word card, drag-select and hit regions (click-through elsewhere) are unchanged; ruby bases sit on the union of their
+tokens (shared rule, gal.js paint); translation under the last row, no plate; translation-only puts the Chinese in the
+Japanese's place at its size. Size = median CJK box width. Boxes are game-client px → reader CSS px through
+`galLayoutInfo()` (client origin and size in the reader surface, physical px / devicePixelRatio). The reader text is
+found inside the record text (a record may start with a speaker or 「), so a leading name is skipped.
+
+### Tests (offline, no game)
+- `validation/overlay-placement.test.cjs`: ③ rects, glyph spec 3 (client / memory surface / cache gap / g, -), anchor
+  estimate with wrap and typing, fallback, hook-native keeps `at`.
+- `validation/text-place-dom.test.cjs` (headless Edge via playwright-core; skipped without it): tokens on boxes, ruby union,
+  translation under the line with no plate, translation-only, surface offset + scale, undrawn characters hidden,
+  fallback keeps the reader's place without a plate, off restores everything.
+- Compositor / glyph-dots / text-paths tests run with `MEGULIT_CAPTURE_COMPOSITOR=1`. Pre-existing failure on
+  feat/text-arch: glyph-dots.test 3 expects `DotsOwn` without `&&!MarksMode`.
+
+### Background live rig (for runs while the owner is away; never steals focus or the mouse)
+`H:MeguLit-Workoverlay-placeig`: `node rig.cjs <worktree>` starts the real service with `rig/root` (data copied on H:,
+runtime linked read-only) and the reader page in headless Edge (no window). `root/native/GalWindowBridge.exe` is
+`RigBridge.exe`: reports bound/layout, keeps the game at HWND_BOTTOM (on every show and every 2 s, SWP_NOACTIVATE),
+writes `FOCUS-ALARM.txt` if the game ever becomes foreground; it never moves, shows or activates anything. The service
+starts games through `NoAct.exe` (SW_SHOWNOACTIVATE, `preload.cjs`). Input: PostMessage only (HidDesk key/click); word
+clicks go to the headless page. Shots: PrintWindow of the game + transparent reader shot composited; `FrameDiff.exe`
+= 300 PrintWindow frames at 60 fps. Control: `http://127.0.0.1:47930` /launch?id= /status /shot?name= /key /click
+/pageclick /frames /quit. Not yet run with a game. The older `overlay-placeun.ps1` moves the real cursor: do not use.
+
+### Not done / not verified
+- No game checked live against (a)–(h); owner test list: `H:MeguLit-Workchecklistsoverlay-placement.md`.
+- (h) Name plates and choices: a speaker inside the record text is skipped; the reader's own name/choice display is
+  unchanged and not placed on the game's name plate or choice buttons yet.
+- Siglus/YU-RIS glyph cache: a blanked character stays blank wherever the engine reuses it (menus, backlog).
+- Dot font → blank font: not done on purpose (the font patch changes every glyph of the font: menus, names, backlog
+  would vanish). Ren'Py/Artemis need line-scoped hiding (③ renpy; Artemis none yet).
+- BRUNS: blank (U+3000) instead of 「・」 and the per-character hook's line split are not done.
+- 魔法少女ノ魔女裁判 is Unity IL2CPP: the ③ unity path needs the BepInEx 6 IL2CPP pack (runtime/unity-text), not installed.
+- Font face/colour come from the reader's game style, not from the source.

@@ -22,6 +22,9 @@
     'body.megulit-placed .megulit-place-window .megulit-ruby-base{position:absolute!important;display:block!important;margin:0!important;padding:0!important}',
     'body.megulit-placed .megulit-place-window .char-token{position:absolute!important;display:block!important;margin:0!important;padding:0!important;text-align:center!important;white-space:pre!important;letter-spacing:0!important;text-indent:0!important;pointer-events:auto}',
     'body.megulit-placed .megulit-place-window .char-token.megulit-unplaced{display:none!important}',
+    /* fallback (the game drew its line blank but said nowhere where): the reader keeps its own place, without any plate */
+    'body.megulit-place-fallback .sentence-window.tomoyo-hook-reader,body.megulit-place-fallback .sentence-window.tomoyo-hook-reader .tomoyo-cn-row{background:none!important;border-color:transparent!important;box-shadow:none!important;backdrop-filter:none!important}',
+    'body.megulit-place-fallback .sentence-window.tomoyo-hook-reader::before,body.megulit-place-fallback .sentence-window.tomoyo-hook-reader::after,body.megulit-place-fallback .tome-box-deco{display:none!important}',
     'body.megulit-placed .megulit-place-window .tomoyo-cn-row{position:absolute!important;margin:0!important;padding:0!important;background:none!important;border:0!important;box-shadow:none!important;pointer-events:auto}'
   ].join('\n');
   document.head.append(style);
@@ -31,8 +34,9 @@
     const own = document.querySelector('.sentence-window.tomoyo-hook-reader');
     return own && own.isConnected ? own : document.querySelector('.sentence-window');
   }
-  function release() {
+  function release(fallback = false) {
     document.body.classList.remove('megulit-placed');
+    document.body.classList.toggle('megulit-place-fallback', fallback === true);
     for (const w of document.querySelectorAll('.megulit-place-window')) {
       w.classList.remove('megulit-place-window');
       for (const n of w.querySelectorAll('.char-token,.megulit-ruby-base,.tomoyo-cn-row')) { n.classList.remove('megulit-unplaced'); for (const p of ['left', 'top', 'width', 'height', 'font-size', 'line-height']) n.style.removeProperty(p); }
@@ -43,6 +47,7 @@
   function apply() {
     frame = 0;
     if (!on || !line) { release(); return; }
+    if (line.fallback) { release(true); return; }
     const win = target(), sentence = win?.querySelector('.sentence-text');
     if (!sentence) { release(); return; }
     const tokens = [...sentence.querySelectorAll('.char-token')].filter(t => !t.closest('.tome-page-lines'));
@@ -52,7 +57,7 @@
     const placeRects = [], chars = [...line.text];
     chars.forEach((c, i) => { if (!blank(c)) placeRects.push(line.rects[i]); });
     const at = readerText ? placeText.indexOf(readerText) : -1;
-    if (at < 0) { release(); return; }
+    if (at < 0) { release(true); return; }
     /* record px are game-client px; the reader surface may be larger than the game (galLayoutInfo: client origin and size
        in physical px), CSS px = physical / devicePixelRatio */
     const info = b.galLayoutInfo?.(), dpr = devicePixelRatio || 1, cw = line.client[0] || innerWidth, ch = line.client[1] || innerHeight;
@@ -61,6 +66,7 @@
     const boxes = shown.map((t, j) => { const r = placeRects[[...placeText.slice(0, at)].length + j]; return r && [ox + r[0] * k, oy + r[1] * ky, r[2] * k, r[3] * ky]; });
     const cjk = boxes.filter((r, j) => r && /[^\x00-\x7f｡-ﾟ]/.test(shown[j].textContent)).map(r => r[2]);
     const size = Math.max(6, median(cjk) || median(boxes.filter(Boolean).map(r => r[3])));
+    document.body.classList.remove('megulit-place-fallback');
     document.body.classList.add('megulit-placed');
     win.classList.add('megulit-place-window');
     for (const w of document.querySelectorAll('.megulit-place-window')) if (w !== win) w.classList.remove('megulit-place-window');
@@ -95,9 +101,9 @@
     if (key !== lastGeom) { lastGeom = key; dispatchEvent(new CustomEvent('megulit-reveal-progress', { detail: { typing: false } })); window.__tomoyoHitRegionsRefresh?.(true); }
   }
   const schedule = () => { if (!frame) frame = requestAnimationFrame(apply); };
-  b.textPlace = m => { if (m?.clear) line = null; else if (m && Array.isArray(m.rects) && m.text) line = { text: String(m.text), rects: m.rects, client: Array.isArray(m.client) ? m.client : [innerWidth, innerHeight] }; schedule(); };
+  b.textPlace = m => { if (m?.clear) line = null; else if (m?.fallback && m.text) line = { fallback: true, text: String(m.text) }; else if (m && Array.isArray(m.rects) && m.text) line = { text: String(m.text), rects: m.rects, client: Array.isArray(m.client) ? m.client : [innerWidth, innerHeight] }; schedule(); };
   b.textPlaceMode = m => { on = m?.on === true; if (!on) line = null; schedule(); };
-  b.textPlaceStatus = () => ({ on, line: line ? { text: line.text, n: line.rects.length } : null, placed: document.body.classList.contains('megulit-placed'), geom: lastGeom.split(';').length });
+  b.textPlaceStatus = () => ({ on, line: line ? { text: line.text, n: line.rects?.length || 0, fallback: !!line.fallback } : null, placed: document.body.classList.contains('megulit-placed'), geom: lastGeom.split(';').length });
   new MutationObserver(records => { if (on && line && records.some(r => !(r.target.closest?.('.tomoyo-cn-dialog')))) schedule(); }).observe(document.documentElement, { subtree: true, childList: true, characterData: true });
   addEventListener('resize', schedule);
 })();

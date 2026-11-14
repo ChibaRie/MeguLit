@@ -21,7 +21,17 @@ let gm = sent.shift();
 assert.deepStrictEqual(gm.rects, [[100, 500, 28, 30], [128, 500, 28, 30], [224, 1000, 56, 60]]);
 assert.strictEqual(gm.text, 'かきく');
 p.glyph({ seq: 8, text: 'さ', dots: [{ i: 0, ch: 'さ', h: 30, a: 28, k: 'd', at: { x: 1, y: 1, space: 'g' } }] });
-assert.strictEqual(sent.length, 0, 'no device position = not placeable');
+gm = sent.shift(); assert.strictEqual(gm.approx, true, 'no device position: laid out from the learned anchor');
+assert.deepStrictEqual(gm.rects, [[100, 500, 28, 30]], 'anchor = left/top of the last exact line');
+{ /* no anchor yet: fallback (reader keeps its own place, no plate); an outside locator gives one */
+  const out = [], q = new OverlayPlacement({ send: m => out.push(m) }); q.wanted = () => true;
+  q.configure({}, { bound: true, layout: { clientWidth: 1280, clientHeight: 720 } }); out.length = 0;
+  const t = { seq: 1, text: 'なにぬねの', dots: [0, 1, 2].map(i => ({ i, ch: 'なにぬねの'[i], h: 24, a: 24, k: 'd' })) };
+  q.glyph(t); let o = out.shift(); assert.strictEqual(o.fallback, true); assert.strictEqual(o.rects, undefined);
+  q.anchor({ x: 200, y: 560, size: 24, width: 50, pitch: 36 });
+  q.glyph({ ...t, seq: 2 }); o = out.shift(); assert.strictEqual(o.approx, true);
+  assert.deepStrictEqual(o.rects, [[200, 560, 24, 24], [224, 560, 24, 24], [200, 596, 24, 24], null, null], 'wraps at the anchor width; undrawn characters wait');
+}
 p.glyph({ seq: 9, text: 'たち', dots: [{ i: 0, ch: 'た', h: 30, a: 28, k: 'd', at: { x: 10, y: 10, space: 'c' } }] });
 gm = sent.shift(); assert.deepStrictEqual(gm.rects, [[10, 10, 28, 30], null], 'not yet drawn = not placed (typing)');
 const { HookNative } = require('../core/hook-native.cjs'), hn = Object.create(HookNative.prototype);
