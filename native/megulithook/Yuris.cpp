@@ -445,12 +445,22 @@ namespace Yuris6Embed
     }
     return false;
   }
-  static bool Blank(const std::string &t)
+  /* Text marks (docs/text-architecture.md, "Marks"): a reply made only of blanks and marks (「・」 / 「･」) is written in
+   * place the same way, every visible character becoming a mark of its own width, codes and markup bytes kept. */
+  static bool Blank(const std::string &t, bool *marks = nullptr)
   {
+    if (marks)
+      *marks = false;
     for (size_t i = 0; i < t.size();)
     {
       if (t[i] == ' ')
         i++;
+      else if (marks && (unsigned char)t[i] == 0xA5)
+        *marks = true, i++;
+      else if (marks && i + 1 < t.size() && (unsigned char)t[i] == 0x81 && (unsigned char)t[i + 1] == 0x45)
+        *marks = true, i += 2;
+      else if (marks && i + 2 < t.size() && (memcmp(t.data() + i, "\xE3\x83\xBB", 3) == 0 || memcmp(t.data() + i, "\xEF\xBD\xA5", 3) == 0))
+        *marks = true, i += 3;
       else if (i + 1 < t.size() && (unsigned char)t[i] == 0x81 && (unsigned char)t[i + 1] == 0x40)
         i += 2;
       else if (i + 2 < t.size() && memcmp(t.data() + i, "\xE3\x80\x80", 3) == 0)
@@ -460,7 +470,7 @@ namespace Yuris6Embed
     }
     return !t.empty();
   }
-  static std::string BlankInPlace(const char *s, size_t n, UINT cp)
+  static std::string BlankInPlace(const char *s, size_t n, UINT cp, bool mark = false)
   {
     std::string out;
     out.reserve(n);
@@ -477,8 +487,15 @@ namespace Yuris6Embed
       size_t step = cp == CP_UTF8 ? (c >= 0xf0 ? 4 : c >= 0xe0 ? 3 : c >= 0xc0 ? 2 : 1) : (IsDBCSLeadByteEx(932, c) ? 2 : 1);
       if (at + step > n)
         step = n - at;
+      bool space = (step == 1 && c == ' ') || (cp == CP_UTF8 && step == 3 && memcmp(s + at, "\xE3\x80\x80", 3) == 0) || (cp != CP_UTF8 && step == 2 && c == 0x81 && (unsigned char)s[at + 1] == 0x40);
       if (c < 0x20)
         out.append(s + at, step);
+      else if (mark && !space && cp != CP_UTF8 && step == 1)
+        out.push_back('\xA5');
+      else if (mark && !space && cp != CP_UTF8 && step == 2)
+        out.append("\x81\x45");
+      else if (mark && !space && cp == CP_UTF8 && step == 3)
+        out.append("\xE3\x83\xBB");
       else if (step == 1)
         out.push_back(' ');
       else if (cp == CP_UTF8 && step == 3)
@@ -502,11 +519,25 @@ namespace Yuris6Embed
     std::string source(src, n);
     if (HasConstructs(src, n, hp->codepage))
     {
-      if (!Blank(text))
+      bool marks = false;
+      if (!Blank(text, &marks))
+      {
+        static LONG refused = 0;
+        if (InterlockedIncrement(&refused) <= 3)
+        {
+          char hex[64] = {};
+          for (size_t i = 0; i < text.size() && i < 12; i++)
+            sprintf_s(hex + i * 2, 3, "%02X", (unsigned char)text[i]);
+          Msg::Log("YURIS6_EMBED refused (codes kept, reply not blanks/marks) bytes=%u reply=%s", (unsigned)text.size(), hex);
+        }
         return;
-      text = BlankInPlace(src, n, hp->codepage);
+      }
+      text = BlankInPlace(src, n, hp->codepage, marks);
       if (text.size() != n)
+      {
+        Msg::Log("YURIS6_EMBED in-place size %u != %u", (unsigned)text.size(), (unsigned)n);
         return;
+      }
     }
     Write(dest, n, text, hp->codepage);
     AcquireSRWLockExclusive(&lock);

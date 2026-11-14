@@ -3,6 +3,7 @@
 #include "veh_hook.h"
 #include "lunarpc.h"
 #include "MeguLitGdiHide.h"
+#include "MeguLitMarks.h"
 extern WinMutex viewMutex;
 
 // - Unnamed helpers -
@@ -373,7 +374,7 @@ void TextHook::Send(hook_context *context)
 
 		parsenewlineseperator(&buff);
 
-		bool canembed;
+		bool canembed = false; /* uninitialised it made a switched-on per-character stream wait for a reply (fix/bruns-embed 5e35f98) */
 		if (hp.type & EMBED_ABLE)
 		{
 			if (!checklengthembedable(hp, buff.size))
@@ -396,6 +397,9 @@ void TextHook::Send(hook_context *context)
 		/* MeguLit: a stream that cannot write back is hidden where the game draws it through GDI (MeguLitGdiHide.h) */
 		if (!(hp.type & EMBED_ABLE) && check_embed_able(tp))
 			MeguLitGdiHide::Feed(tp, hp, buff);
+		/* MeguLit: marks mode for a per-character argument (MeguLitMarks.h): the game draws 「・」 instead of the character */
+		if (!(hp.type & EMBED_ABLE) && check_embed_able(tp))
+			MeguLitMarks::Mark(hp, plpdatain);
 
 		if (canembed && (check_embed_able(tp)))
 		{
