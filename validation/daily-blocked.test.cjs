@@ -12,3 +12,9 @@ test('home headline pick skips My Hero Academia and fills from the next story',a
  assert.equal(r.top.title,'ギャルゲ 4');assert.equal(r.small.length,3);
  assert.ok([r.top,...r.small].every(x=>!/ヒーロー|ヒロアカ|Hero/i.test(x.title)));
 });
+test('home headline pick skips stories that show real people (cosplay, gravure)',async()=>{
+ const {pickHeadline}=await import('../web/home-today.js');
+ const pic=(t,i)=>({title:t,link:'https://x/'+i,image:'data:image/png;base64,AAAA',cat:'gal'});
+ const r=pickHeadline([pic('【コスプレ】メガネ×制服',1),pic('グラビア特集',2),...[3,4,5,6].map(i=>pic('新作ゲーム '+i,i))],'gal',3);
+ assert.equal(r.top.title,'新作ゲーム 3');assert.equal(r.small.length,3);
+});
