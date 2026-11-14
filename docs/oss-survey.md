@@ -48,3 +48,26 @@ turns every character into a dot. The earlier "0 calls" runs never got past the 
 | xclannad | repo holds only an APK + notes | — | — | nothing (no source) |
 | ONScripter (ogapee) | GPL-2.0-or-later | NScripter reimplementation | `ONScripter_text.cpp` `drawChar()` / `drawGlyph()`: one glyph per call at `FontInfo` x/y (SDL_ttf) | layout model for NScripter: pitch from `FontInfo`, line break in `checkLineBreak()` |
 | Kirikiroid2 / krkrsdl2 | BSD-3-Clause / MIT | KiriKiri Z reimplementations | `visual/LayerIntf.cpp` Layer.drawText → `tTVPFontRasterizer` (`GDIFontRasterizer.cpp` uses GetGlyphOutline, `FreeTypeFontRasterizer.cpp` FreeType); prerendered fonts (.tft) bypass both | explains 千恋＊万花: no GDI glyphs because it uses a prerendered font or FreeType. Hook point for ③: Layer.drawText (character + x/y per call) |
+
+## Live check of the conversion source (千恋＊万花, KiriKiri Z, 2026-11-14)
+
+It switched on by itself after two lines without dots and replaced 19 lines in memory (path=conv), yet the screen kept the
+real text: KiriKiri converts a copy of the line that it never draws. The DLL therefore no longer confirms on its own. It
+reports `conv covered`, and only the compositor decides by sending `CONV ok` (marks found on screen, remembered as `conv`)
+or `CONV off` (line still visible, remembered as `conv-off`). If neither arrives, the next start finds `conv-trial` and
+turns it off. **Open item for ②:** send `CONV ok` / `CONV off` over HookBridge's control pipe after the first conv line.
+For KiriKiri the real draw point is Layer.drawText (Kirikiroid2 `LayerIntf.cpp`), reachable through ③'s plugin path.
+
+## Danganronpa (DR1/DR2, PC, D3D9Ex): what an engine-level hook needs
+
+There is no open reimplementation of the engine. The open tools work on files only: Spiral, DRAT, and the community .lin
+documentation. They show that a line is text opcode 0x02 in a .lin script, with UTF-16 strings in the .pak next to it, and
+that the font is a sprite sheet (.spft: glyph code → x, y, w, h in the atlas). At run time the game draws each glyph as a
+textured quad and positions it through vertex shader constants, so layer 4 cannot read where each glyph lands.
+A generic hook needs:
+1. The glyph table: parse the loaded .spft (from the file read or the texture upload) to map atlas rectangles to characters.
+2. The draw: hook IDirect3DDevice9::SetVertexShaderConstantF + DrawPrimitive while the font texture is bound, and read the
+   constant registers that carry position and UV (learned once per engine build by matching the UV against the .spft
+   rectangles: an automatic learner, not a per-game table).
+3. Hiding: on a matched glyph draw, set the UV to a single texel of the glyph (a dot) instead of skipping the draw.
+Not built tonight.
