@@ -99,6 +99,13 @@ int main()
     Check(m.DialogueKey(Name) && !m.DialogueKey(Dialogue), "seed only: the seeded size is the dialogue key");
     m.Leader(Dialogue);
     Check(m.DialogueKey(Dialogue) && !m.DialogueKey(Name), "probe leader known: it replaces a stale seed");
+    Matcher n;
+    n.Report = [](const std::string &) {};
+    n.Seed(Name);
+    n.SetLine(L"アーシェ", 0);
+    for (wchar_t c : std::wstring(L"アーシェ")) n.Glyph(c, Name, 10, true, "ggo"); // the name box is learned first
+    n.Leader(Dialogue);
+    Check(n.BlindKey(Dialogue) && n.BlindKey(Name), "blind: a learned name size does not keep the leading dialogue size out");
   }
   {
     // Glyph dots: every matched draw says which line character it is (index into the line without blanks).

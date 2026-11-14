@@ -151,7 +151,7 @@ class HookNative{
  charRects(raw){const tp=require('./text-paths.cjs'),rec=tp.parseChars(raw);if(!rec)return;const gate=this.charGates||(this.charGates=new Map());if(!gate.has(rec.engine))gate.set(rec.engine,new tp.HiddenGate());rec.hidden=gate.get(rec.engine).report(rec)&&rec.hidden;rec.at=this.now();this.emit(rec);}
  /* Front end -> bridge: MODE dot or blank for the glyph fallback (the compositor switches dots on while it runs). */
  setGlyphMode(mode){this.send({type:'glyphMode',mode:mode==='dot'?'dot':'blank'});}
- glyphDots(m){if(!m||!['line','dots','cached'].includes(m.state))return;const cur=this.state.hookGlyphDots;
+ glyphDots(m){if(m?.state==='status'&&['paused','live','needs-relaunch'].includes(m.status)){this.trace('glyph dots '+m.status);this.notify({hookGlyphDotsStatus:m.status});this.emit(m);return;}if(!m||!['line','dots','cached'].includes(m.state))return;const cur=this.state.hookGlyphDots;
   if(m.state==='cached'){if(cur)this.notify({hookGlyphDots:{...cur,cached:true}});this.emit(m);return;}
   if(!Number.isSafeInteger(m.seq))return;
   let next=cur&&cur.seq===m.seq?{...cur}:{seq:m.seq,text:'',dots:[],cached:cur?.cached===true};
