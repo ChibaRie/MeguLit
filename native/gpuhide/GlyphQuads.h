@@ -113,13 +113,13 @@ struct GlyphLearner {
     freshKey = (int)(ps->second.firstAt - since) >= 0; }
    // learned atlas on the learned target; or, for engines that build a small glyph sheet per line (a new texture every
    // line), any glyph quad of the learned glyph height on a target of the learned size (effect buffers drawn twice)
-   bool sameAtlas = rtW == areaW && rtH == areaH && atlases.count(AtlasKey(NULL, tex)), sheet = freshKey && LineSized(tw, th) && (x.y1 - x.y0) >= glyphH * 0.6f && (x.y1 - x.y0) <= glyphH * 1.8f; /* a sheet redrawn with the whole page holds older lines too: only glyphs new to this line */
+   bool sameAtlas = rtW == areaW && rtH == areaH && atlases.count(AtlasKey(NULL, tex)), sheet = freshKey && LineSized(tw, th); /* P0 (user: never any blur / mosaic left over): every pass of the new line's glyphs, whatever its size */ /* a sheet redrawn with the whole page holds older lines too: only glyphs new to this line */
    /* 2026-11-15 (沙耶の唄 NVL, user: half-hidden lines with streaks): a glyph sheet made for the current line belongs to that line
       wherever the page puts it (rows below the learned area) and whatever pass draws it (outline / shadow buffers of another
       size, slightly larger cells): no area, target-size or tight height test for it. Older lines' sheets are not fresh. */
    // glyph height only: a wait cursor or icon drawn from the same sheet inside the area stays
    bool glyphSize = std::fabs((x.y1 - x.y0) - glyphH) <= glyphH * 0.2f;
-   bool pageLine = sameAtlas && freshKey && (x.y1 - x.y0) >= glyphH * 0.6f && (x.y1 - x.y0) <= glyphH * 2.0f;
+   bool pageLine = sameAtlas && freshKey;
    if (learned && armed && !readOnly && ((glyphSize && sameAtlas) || sheet || pageLine)) {
     float cx = (x.x0 + x.x1) / 2, cy = (x.y0 + x.y1) / 2;
     if (sheet || pageLine || (cx >= area.x0 && cx <= area.x1 && cy >= area.y0 && cy <= area.y1)) { drop.push_back((int)i); hiddenQuads++; if (log && hiddenQuads < 60) log("drop %s tex=%p %ux%u [%.0f,%.0f %.0fx%.0f uv %.3f,%.3f %.3fx%.3f]", sameAtlas ? "atlas" : "sheet", tex, tw, th, x.x0, x.y0, x.x1 - x.x0, x.y1 - x.y0, x.u0, x.v0, x.u1 - x.u0, x.v1 - x.v0); }
