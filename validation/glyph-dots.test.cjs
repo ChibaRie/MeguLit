@@ -84,3 +84,12 @@ test('heartbeat gate status reaches the player: needs-relaunch sets the hook mes
  h.glyphDots({type:'hookGlyphDots',state:'status',status:'live'});assert.equal(h.state.hookGlyphRelaunch,false);
  assert.match(require('fs').readFileSync(require('path').join(__dirname,'..','native','HookBridge.cs'),'utf8'),/\^status \(paused\|needs-relaunch\|live\)/);
 });
+
+test('compositor mode: a write-back stream whose lines get no glyph dots is switched to text marks', () => {
+ const {HookNative}=require('../core/hook-native.cjs');
+ const make=()=>{const sent=[];const h=new HookNative({native:'x',hook:'y'},()=>{},()=>({}));h.process={stdin:{write(){},destroyed:false}};h.send=m=>sent.push(m);h.compositedFn=()=>true;h.state.hookThreads=[{id:'a',selected:true,embeddable:true}];return [h,sent];};
+ const [h,sent]=make();for(let i=1;i<=3;i++)h.glyphDots({type:'hookGlyphDots',state:'line',seq:i,text:'テスト'});
+ assert.deepEqual(sent.filter(m=>m.type==='textMarks'),[{type:'textMarks',on:true}]);
+ const [g,sent2]=make();for(let i=1;i<=3;i++){g.glyphDots({type:'hookGlyphDots',state:'line',seq:i,text:'テスト'});g.glyphDots({type:'hookGlyphDots',state:'dots',seq:i,dots:[{i:0,ch:'テ',h:20,b:18,a:20,x:0,y:0,s:3,k:'d'}]});}
+ assert.equal(sent2.filter(m=>m.type==='textMarks').length,0,'lines that get dots stay on dots');
+});
