@@ -119,11 +119,12 @@ function manifestPath(gameDir){return path.join(gameDir,BACKUP_DIR,'manifest.jso
 function readManifest(gameDir){try{return JSON.parse(fs.readFileSync(manifestPath(gameDir),'utf8'));}catch{return null;}}
 
 /* E525 multi-language releases (KiriKiri / Unity / Steam language): switch the game's own language setting */
-const langSwitch=()=>require('./game-language-switch.cjs');
+const langSwitch=()=>require('./game-language-switch.cjs'),artemis=()=>require('./artemis-language.cjs');
 function detect(gameDir,options={}){
  gameDir=path.resolve(String(gameDir||''));if(!fs.existsSync(gameDir))return {state:'missing'};
  const manifest=readManifest(gameDir);
  if(manifest?.adapter==='language-switch')return langSwitch().detect(gameDir,options);
+ if(manifest?.adapter==='artemis-pfs')return artemis().detect(gameDir);
  if(manifest?.adapter==='yuris-update')return {state:'applied',adapter:'yuris-update',files:manifest.files.length,cells:0,pending:0,manifest:{at:manifest.at,files:manifest.files.length}};
  const yuris=yurisPlan(gameDir);if(yuris&&yuris.updates.length)return {state:'restorable',adapter:'yuris-update',files:yuris.updates.length,cells:0,pending:yuris.updates.length,manifest:null};
  const siglus=siglusPlan(gameDir);
@@ -137,6 +138,8 @@ function detect(gameDir,options={}){
  if(siglus&&!siglus.japaneseTables)return {state:'none',adapter:'siglus-dbs',reason:'NO_JAPANESE_TEXT'};
  if(siglus)return {state:'already',adapter:'siglus-dbs'};
  {const ls=langSwitch().detect(gameDir,options);if(ls.state!=='none')return ls;}
+ /* E591 Artemis multi-language: an added archive picks the Japanese text (core/artemis-language.cjs) */
+ {const ar=artemis().detect(gameDir);if(ar.state!=='none')return ar;}
  const names=fs.readdirSync(gameDir);
  const localeSets=names.filter(n=>/^(scene|gameexe)(jp|ja|en|zh|cn|tw)?\.(pck|dat)$/i.test(n)||/_(jp|ja)\.(xp3|pck|arc|dat)$/i.test(n));
  if(localeSets.length)return {state:'unsupported',reason:'LOCALE_FILE_SET',files:localeSets};
@@ -155,22 +158,28 @@ function gameRunning(gameDir){
  /* both checks failed: writing over files the game may hold open is not safe, so say so instead of "not running" */
  throw Error('PROCESS_QUERY_FAILED');
 }
-function writeAtomic(file,data){const tmp=file+'.megulit-tmp';fs.writeFileSync(tmp,data);fs.renameSync(tmp,file);}
+/* E590 a rename can fail for a moment on Windows (antivirus / indexer holding the file, EPERM/EBUSY): wait and retry;
+   on a final failure the temp file is removed so nothing half-written stays in the game folder */
+function writeAtomic(file,data){const tmp=file+'.megulit-tmp';fs.writeFileSync(tmp,data);
+ for(let i=0;;i++){try{fs.renameSync(tmp,file);return;}catch(error){if(i>=8||!['EPERM','EBUSY','EACCES'].includes(error.code)){try{fs.rmSync(tmp,{force:true});}catch{}throw error;}Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,150*(i+1));}}}
 
 function apply(gameDir,options={}){
  gameDir=path.resolve(String(gameDir||''));if(gameRunning(gameDir))throw Error('GAME_RUNNING');
  {const y=readManifest(gameDir)?null:yurisPlan(gameDir);if(y&&y.updates.length)return yurisApply(gameDir,y);}
- const plan=siglusPlan(gameDir);if(!plan||!plan.changes.length){if(!readManifest(gameDir)&&langSwitch().detect(gameDir,options).state==='restorable')return langSwitch().apply(gameDir,options);throw Error('NOTHING_TO_RESTORE');}
+ const plan=siglusPlan(gameDir);if(!plan||!plan.changes.length){if(!readManifest(gameDir)&&langSwitch().detect(gameDir,options).state==='restorable')return langSwitch().apply(gameDir,options);if(!readManifest(gameDir)&&artemis().detect(gameDir).state==='restorable')return artemis().apply(gameDir);throw Error('NOTHING_TO_RESTORE');}
  const backup=path.join(gameDir,BACKUP_DIR,'dat');fs.mkdirSync(backup,{recursive:true});
  const prior=readManifest(gameDir),entries=prior?prior.files:[],built=[];
  for(const c of plan.changes){ // build and verify every file before any write
   const raw=rebuild(c.decoded.raw,c.decoded.marker,c.table,c.next),enc=encrypt(c.decoded.marker,raw),back=decrypt(enc),check=parse(back.raw,back.marker);
   if(back.marker!==c.decoded.marker||!back.raw.equals(raw)||check.rows!==c.table.rows||check.cols!==c.table.cols)throw Error('ROUNDTRIP_FAILED '+c.name);
   built.push({c,enc});}
+ const written=[];
  for(const {c,enc} of built){
   const keep=path.join(backup,c.name),old=entries.find(e=>e.file===c.name);
   if(!old&&!fs.existsSync(keep))fs.writeFileSync(keep,c.file);
-  writeAtomic(path.join(plan.dir,c.name),enc);
+  /* E590 a write that fails part-way puts back the files already written (no manifest exists yet to undo them) */
+  try{writeAtomic(path.join(plan.dir,c.name),enc);}catch(error){for(const w of written){try{writeAtomic(path.join(plan.dir,w.name),w.file);}catch{}}if(!prior)fs.rmSync(path.join(gameDir,BACKUP_DIR),{recursive:true,force:true});throw error;}
+  written.push(c);
   const entry={file:c.name,originalSha256:old?old.originalSha256:sha(c.file),patchedSha256:sha(enc),kind:c.kind,changed:c.changed};
   if(old)Object.assign(old,entry);else entries.push(entry);}
  const manifest={version:1,adapter:'siglus-dbs',at:new Date().toISOString(),japaneseColumn:plan.japaneseColumn,targetColumns:plan.targetColumns,files:entries};
@@ -180,7 +189,7 @@ function apply(gameDir,options={}){
 
 function restore(gameDir,options={}){
  gameDir=path.resolve(String(gameDir||''));if(gameRunning(gameDir))throw Error('GAME_RUNNING');
- const manifest=readManifest(gameDir);if(!manifest)throw Error('NOT_APPLIED');if(manifest.adapter==='yuris-update')return yurisRestore(gameDir,manifest);if(manifest.adapter==='language-switch')return langSwitch().restore(gameDir,options);
+ const manifest=readManifest(gameDir);if(!manifest)throw Error('NOT_APPLIED');if(manifest.adapter==='yuris-update')return yurisRestore(gameDir,manifest);if(manifest.adapter==='language-switch')return langSwitch().restore(gameDir,options);if(manifest.adapter==='artemis-pfs')return artemis().restore(gameDir);
  const dat=path.join(gameDir,'dat'),backup=path.join(gameDir,BACKUP_DIR,'dat'),skipped=[];let restored=0;
  for(const e of manifest.files){const target=path.join(dat,e.file),keep=path.join(backup,e.file);
   if(!fs.existsSync(keep)){skipped.push(e.file);continue;}
@@ -203,4 +212,4 @@ function repairShared(gameDir){
  const undone=restore(gameDir);if(undone.skipped.length)return {repaired:false,skipped:undone.skipped};
  const done=apply(gameDir);return {repaired:true,applied:done.applied};
 }
-module.exports={repairShared,detect,apply,restore,_internal:{siglusPlan,shownJapanese,isIdent,yurisPlan,gameRunning,decrypt,encrypt,parse,rebuild,lzss,literal,languageColumns}};
+module.exports={repairShared,detect,apply,restore,_internal:{sharedPool,readManifest,siglusPlan,shownJapanese,isIdent,yurisPlan,gameRunning,decrypt,encrypt,parse,rebuild,lzss,literal,languageColumns}};
