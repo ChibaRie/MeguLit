@@ -15,6 +15,7 @@ export function syncMainKids(main){
   const ws=main.closest('.workspace'),frame=main.closest('.app-frame'),cls=main.className;
   for(const el of [ws,document.body])if(el&&el.getAttribute('data-main-kids')!==kids)el.setAttribute('data-main-kids',kids);
   if(frame&&frame.getAttribute('data-main-class')!==cls)frame.setAttribute('data-main-class',cls);
+  syncSearch();
 }
 function watch(main){
   if(main.__kidsWatch)return;main.__kidsWatch=true;
@@ -28,3 +29,12 @@ if(typeof document!=='undefined'){
   const app=document.getElementById('app');
   if(app)new MutationObserver(find).observe(app,{childList:true});
 }
+/* The library search: body[data-search-active] while #game-search has focus or text (replaces body:has(#game-search:focus),
+   body:has(#game-search:not(:placeholder-shown)) in grimoire.css, which re-checked the whole page on every change). */
+export function searchActive(input,focused){return !!input&&(focused||String(input.value||'')!=='');}
+export function syncSearch(){
+  if(typeof document==='undefined'||!document.body)return;
+  const input=document.getElementById('game-search'),on=searchActive(input,!!input&&document.activeElement===input);
+  if(document.body.hasAttribute('data-search-active')!==on)document.body.toggleAttribute('data-search-active',on);
+}
+if(typeof document!=='undefined')for(const type of ['focusin','focusout','input','change'])document.addEventListener(type,e=>{if(e.target&&e.target.id==='game-search')queueMicrotask(syncSearch);},true);

@@ -166,7 +166,7 @@ test('E358 wiring: the reader checks the game glyphs before writing back; the br
 });
 
 test('E358 real data: WoH\'s Japanese font cannot draw the reported line; every line it can draw has all its glyphs',t=>{
- const dir='E:\\Steam\\steamapps\\common\\WITCH ON THE HOLY NIGHT';if(!fs.existsSync(dir)){t.skip('WoH not installed');return;}
+ const dir='E:\\Steam\\steamapps\\common\\WITCH ON THE HOLY NIGHT';/* an uninstalled Steam game leaves its folder (UserData) behind: the game data are the .hfa archives */if(!fs.existsSync(dir)||!fs.readdirSync(dir).some(f=>/.hfa$/i.test(f))){t.skip('WoH not installed');return;}
  const h=require('../services/original-engines/hunex.cjs'),g=h.glyphs(dir,'ja');assert.ok(g&&g.size>2000,'the Japanese body font');
  const zc=h.tableLines(h.tables(dir).zc),line=h.clean(zc.find(x=>/河川/.test(x)&&/莫大/.test(x)));
  assert.deepEqual([...line].filter(c=>!g.has(c)),[...'虽许满但那丽还给这记忆乡样'],'exactly the blanks the user saw');
@@ -200,7 +200,7 @@ test('E410: a flow line carries its page start, row and script line; a flow page
 });
 
 test('E410 real data: WoH pages match the game (prologue pages start at lines 0, 2, 6, 10; 「数分後。」 and the next line share a row)',t=>{
- const dir='E:\\Steam\\steamapps\\common\\WITCH ON THE HOLY NIGHT';if(!fs.existsSync(dir)){t.skip('WoH not installed');return;}
+ const dir='E:\\Steam\\steamapps\\common\\WITCH ON THE HOLY NIGHT';/* an uninstalled Steam game leaves its folder (UserData) behind: the game data are the .hfa archives */if(!fs.existsSync(dir)||!fs.readdirSync(dir).some(f=>/.hfa$/i.test(f))){t.skip('WoH not installed');return;}
  const P=require('../services/original-engines/hunex.cjs').pages(dir);
  for(const i of [0,2,6,10])assert.ok(P.starts.has(i),'page start '+i);for(const i of [1,3,4,5,7,11])assert.ok(!P.starts.has(i),'same page '+i);
  assert.ok(P.cont.has(20)&&!P.cont.has(19));assert.ok(P.known.size>23000);
@@ -275,7 +275,7 @@ test('E422: the skip key reaches the bridge once per change',t=>{
 });
 
 test('E422 real data: no WoH group shown without a click is long enough to count as a skip',t=>{
- const dir='E:\\Steam\\steamapps\\common\\WITCH ON THE HOLY NIGHT';if(!fs.existsSync(dir)){t.skip('WoH not installed');return;}
+ const dir='E:\\Steam\\steamapps\\common\\WITCH ON THE HOLY NIGHT';/* an uninstalled Steam game leaves its folder (UserData) behind: the game data are the .hfa archives */if(!fs.existsSync(dir)||!fs.readdirSync(dir).some(f=>/.hfa$/i.test(f))){t.skip('WoH not installed');return;}
  const h=require('../services/original-engines/hunex.cjs');let max=0;
  for(const f of fs.readdirSync(dir).filter(f=>/\.hfa$/i.test(f))){const l=h.hfaList(path.join(dir,f));if(!l)continue;for(const e of l){if(!/\.chs$/i.test(e.name))continue;
   const x=h.lenzu(h.hfaRead(path.join(dir,f),e)),n=x.length>>2,w=i=>x.readUInt32LE(i*4);let run=0;
