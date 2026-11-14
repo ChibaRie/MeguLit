@@ -15,12 +15,13 @@ Rules for all parts: generic code only (never per game), no OCR masking, no game
 
 ## Changes to this document
 
-The dot spec and protocol below are **stable** as of spec version 1 (MeguLitFont version 3). A change gets a new spec
+The dot spec and protocol below are **stable** as of spec version 2 (MeguLitFont version 3). A change gets a new spec
 version, a line in this log, and stays backward compatible where possible (new fields go at the end of a record).
 
 | Spec | Date       | Change |
 |------|------------|--------|
 | 1    | 2026-11-14 | First version: dot geometry, `ToMe_GLYPHDOT` records, `hookGlyphDots` events, `glyphMode` command. |
+| 2    | 2026-11-14 | Dot side grows with the cell: max(3, round(h/10)) from 12 px (was a fixed 3). Records unchanged. |
 | 1    | 2026-11-14 | Compatible addition: `glyphMode` `all:true` (write-back streams on dots too).                    |
 | 1    | 2026-11-14 | Compatible addition: in dot mode `ToMe_GLYPHDOT line` is sent when the line is pushed, before any dot. |
 
@@ -66,8 +67,10 @@ would never reach the dots.
 
 ### Dot geometry (spec 1)
 
-- **Side** `s` = 3 px when the cell height (`tmHeight`, or the font's line height for GDI+/Direct2D) is 12 px or more,
-  else 2 px.
+- **Side** `s` (spec 2) = 2 px when the cell height (`tmHeight`, or the font's line height for GDI+/Direct2D) is below
+  12 px, else max(3, round(height / 10)) px — 3 px up to a 34 px cell, 4 px at 35–44 px, 14 px at 136 px. It grows with
+  the cell because some engines rasterise large and scale down (BGI draws its text at 136 px and shows it at ~28 px; a
+  fixed 3 px dot became sub-pixel). Spec 1 had a fixed 3 px; `s` is in every record, use it rather than a constant.
 - **Coverage**: full (opaque text colour), a solid square, no anti-aliasing. GDI glyph bitmaps: 1 (mono), 4 (GRAY2),
   16 (GRAY4), 64 (GRAY8). The game composites it exactly as it would composite its own glyph, so the dot carries the
   game's text colour, and the game's own effects: an engine that draws a shadow or an outline by drawing the glyph
