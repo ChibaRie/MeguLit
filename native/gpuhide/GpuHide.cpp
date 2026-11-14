@@ -69,8 +69,8 @@ template <int S, int K, typename F> static bool Inst(void *target, F hook) {
  typedef Thunk<S, K, F> T; T::hook = hook; if (MH_CreateHook(target, (void *)&T::Run, &T::tramp) != MH_OK) return false; if (MH_EnableHook(target) != MH_OK) return false; HookCount++; return true;
 }
 template <int S, typename F> static void Hook(void *target, F hook) {
- if (!target) return; auto &v = Hooked[S]; for (void *t : v) if (t == target) return; if (v.size() >= 4) return;
- bool ok = false; switch (v.size()) { case 0: ok = Inst<S, 0>(target, hook); break; case 1: ok = Inst<S, 1>(target, hook); break; case 2: ok = Inst<S, 2>(target, hook); break; default: ok = Inst<S, 3>(target, hook); }
+ if (!target) return; auto &v = Hooked[S]; for (void *t : v) if (t == target) return; if (v.size() >= 8) { Log("hook slot %d full", S); return; }
+ bool ok = false; switch (v.size()) { case 0: ok = Inst<S, 0>(target, hook); break; case 1: ok = Inst<S, 1>(target, hook); break; case 2: ok = Inst<S, 2>(target, hook); break; case 3: ok = Inst<S, 3>(target, hook); break; case 4: ok = Inst<S, 4>(target, hook); break; case 5: ok = Inst<S, 5>(target, hook); break; case 6: ok = Inst<S, 6>(target, hook); break; default: ok = Inst<S, 7>(target, hook); }
  if (ok) v.push_back(target);
 }
 // ----------------------------------------------------------------------------------------------------------- device state
@@ -176,8 +176,22 @@ static std::vector<int> Decide(Dev &v, std::vector<Quad> &q) {
  if (v.rtIsBack && ti.rt) { Learner.Composite(v.tex0, q); return drop; }
  return Learner.Draw(v.tex0, ti.w, ti.h, v.rtIsBack ? NULL : v.rtTex, v.rtW, v.rtH, v.bbW, v.bbH, q, GetTickCount());
 }
+// The device's own getters at every draw: state the game set before the DLL arrived (a declaration set once at start,
+// DR1) counts too. A pure device refuses Get* calls; then the hooked setters' view stays.
+static void NoteTexture(void *t);
+static void Refresh9(IDirect3DDevice9 *d) {
+ IDirect3DVertexDeclaration9 *x = NULL; DWORD fvf = 0; IDirect3DVertexShader9 *vs = NULL; IDirect3DBaseTexture9 *t = NULL; IDirect3DVertexBuffer9 *vb = NULL; UINT off = 0, st = 0; IDirect3DIndexBuffer9 *ib = NULL;
+ bool hx = SUCCEEDED(d->GetVertexDeclaration(&x)), hf = SUCCEEDED(d->GetFVF(&fvf)), hv = SUCCEEDED(d->GetVertexShader(&vs)), ht = SUCCEEDED(d->GetTexture(0, &t)), hs = SUCCEEDED(d->GetStreamSource(0, &vb, &off, &st)), hi = SUCCEEDED(d->GetIndices(&ib));
+ bool known = true; if (x) { Guard g; known = Decls.count(x) > 0; } DeclInfo info = {}; if (x && !known) info = ParseDecl(x);
+ { Guard g; Dev &v = *DevOf(d);
+  if (x && !known) { if (Decls.size() > 4096) Decls.clear(); Decls[x] = info; }
+  if (hx) { v.decl = x != NULL; v.declPtr = x; } if (hf && !x) v.fvf = fvf; if (hv) v.vs = vs != NULL;
+  if (ht && t != v.tex0) { v.tex0 = t; if (t && !Textures.count(t)) NoteTexture(t); }
+  if (hs) { v.vb = vb; v.vbOff = off; v.vbStride = st; } if (hi) v.ib = ib; }
+ if (x) x->Release(); if (vs) vs->Release(); if (t) t->Release(); if (vb) vb->Release(); if (ib) ib->Release();
+}
 static HRESULT WINAPI HDrawPrimitive(IDirect3DDevice9 *d, D3DPRIMITIVETYPE pt, UINT start, UINT prims) {
- DrawP o = ORIG(DrawP, d, 81); std::vector<int> drop; std::vector<Quad> q;
+ DrawP o = ORIG(DrawP, d, 81); Refresh9(d); std::vector<int> drop; std::vector<Quad> q;
  { Guard g; Dev &v = *DevOf(d); auto it = Buffers.find(v.vb); bool ok = false;
   if (it != Buffers.end() && v.vbStride) { const Shadow &s = it->second; ok = Quads(v, pt, prims, [&](UINT i) -> const unsigned char * { size_t at = v.vbOff + (size_t)(start + i) * v.vbStride; return at + v.vbStride <= s.data.size() ? &s.data[at] : NULL; }, q); }
   if (Diag) DiagDraw(v, "DP", pt, prims, q, ok); if (ok) drop = Decide(v, q); }
@@ -188,7 +202,7 @@ static HRESULT WINAPI HDrawPrimitive(IDirect3DDevice9 *d, D3DPRIMITIVETYPE pt, U
  return hr;
 }
 static HRESULT WINAPI HDrawIndexedPrimitive(IDirect3DDevice9 *d, D3DPRIMITIVETYPE pt, INT base, UINT minIdx, UINT nv, UINT startIdx, UINT prims) {
- DrawIP o = ORIG(DrawIP, d, 82); std::vector<int> drop; std::vector<Quad> q;
+ DrawIP o = ORIG(DrawIP, d, 82); Refresh9(d); std::vector<int> drop; std::vector<Quad> q;
  { Guard g; Dev &v = *DevOf(d); auto vb = Buffers.find(v.vb), ib = Buffers.find(v.ib); bool ok = false;
   if (vb != Buffers.end() && ib != Buffers.end() && v.vbStride) { const Shadow &s = vb->second, &x = ib->second;
    ok = Quads(v, pt, prims, [&](UINT i) -> const unsigned char * { size_t ia = (size_t)(startIdx + i) * (x.i32 ? 4 : 2); if (ia + (x.i32 ? 4 : 2) > x.data.size()) return NULL; UINT idx = x.i32 ? *(const UINT *)&x.data[ia] : *(const USHORT *)&x.data[ia]; size_t at = v.vbOff + ((size_t)base + idx) * v.vbStride; return at + v.vbStride <= s.data.size() ? &s.data[at] : NULL; }, q); }
@@ -199,7 +213,7 @@ static HRESULT WINAPI HDrawIndexedPrimitive(IDirect3DDevice9 *d, D3DPRIMITIVETYP
  return hr;
 }
 static HRESULT WINAPI HDrawPrimitiveUP(IDirect3DDevice9 *d, D3DPRIMITIVETYPE pt, UINT prims, const void *data, UINT stride) {
- DrawUP o = ORIG(DrawUP, d, 83); std::vector<int> drop; std::vector<Quad> q; const unsigned char *b = (const unsigned char *)data;
+ DrawUP o = ORIG(DrawUP, d, 83); Refresh9(d); std::vector<int> drop; std::vector<Quad> q; const unsigned char *b = (const unsigned char *)data;
  { Guard g; Dev &v = *DevOf(d); UINT verts = pt == D3DPT_TRIANGLELIST ? prims * 3 : prims + 2; bool ok = false;
   if (data && stride) { Layout9 L; if (LayoutOf(v, L) && L.stride <= stride) ok = Quads(v, pt, prims, [&](UINT i) -> const unsigned char * { return i < verts ? b + (size_t)i * stride : NULL; }, q); }
   if (Diag) DiagDraw(v, "UP", pt, prims, q, ok); if (ok) drop = Decide(v, q); }
@@ -210,7 +224,7 @@ static HRESULT WINAPI HDrawPrimitiveUP(IDirect3DDevice9 *d, D3DPRIMITIVETYPE pt,
  return hr;
 }
 static HRESULT WINAPI HDrawIndexedPrimitiveUP(IDirect3DDevice9 *d, D3DPRIMITIVETYPE pt, UINT minIdx, UINT nv, UINT prims, const void *idx, D3DFORMAT fmt, const void *data, UINT stride) {
- DrawIUP o = ORIG(DrawIUP, d, 84); std::vector<int> drop; std::vector<Quad> q; const unsigned char *b = (const unsigned char *)data; bool i32 = fmt == D3DFMT_INDEX32;
+ DrawIUP o = ORIG(DrawIUP, d, 84); Refresh9(d); std::vector<int> drop; std::vector<Quad> q; const unsigned char *b = (const unsigned char *)data; bool i32 = fmt == D3DFMT_INDEX32;
  { Guard g; Dev &v = *DevOf(d); UINT n = pt == D3DPT_TRIANGLELIST ? prims * 3 : prims + 2; bool ok = false;
   if (data && idx && stride) { Layout9 L; if (LayoutOf(v, L) && L.stride <= stride) ok = Quads(v, pt, prims, [&](UINT i) -> const unsigned char * { if (i >= n) return NULL; UINT k = i32 ? ((const UINT *)idx)[i] : ((const USHORT *)idx)[i]; return k < minIdx + nv ? b + (size_t)k * stride : NULL; }, q); }
   if (Diag) DiagDraw(v, "IUP", pt, prims, q, ok); if (ok) drop = Decide(v, q); }
@@ -273,6 +287,12 @@ static HRESULT WINAPI HSwapPresent(IDirect3DSwapChain9 *sc, const RECT *a, const
  auto o = (HRESULT(WINAPI *)(IDirect3DSwapChain9 *, const RECT *, const RECT *, HWND, const RGNDATA *, DWORD))CurOrig;
  IDirect3DDevice9 *d = NULL; if (SUCCEEDED(sc->GetDevice(&d)) && d) { { Guard g; Frame++; LastPresent = GetTickCount(); Dev &v = *DevOf(d); Learner.Frame(LastPresent, v.bbW, v.bbH); } d->Release(); }
  return o(sc, a, b, w, r, f);
+}
+// Direct3D 9Ex devices (DR1) present through PresentEx.
+static HRESULT WINAPI HPresentEx(IDirect3DDevice9Ex *d, const RECT *a, const RECT *b, HWND w, const RGNDATA *r, DWORD f) {
+ auto o = (HRESULT(WINAPI *)(IDirect3DDevice9Ex *, const RECT *, const RECT *, HWND, const RGNDATA *, DWORD))CurOrig;
+ { Guard g; Frame++; LastPresent = GetTickCount(); Dev &v = *DevOf(d); Learner.Frame(LastPresent, v.bbW, v.bbH); }
+ return o(d, a, b, w, r, f);
 }
 static HRESULT WINAPI HReset(IDirect3DDevice9 *d, D3DPRESENT_PARAMETERS *p) {
  HRESULT hr = ORIG(HRESULT(WINAPI *)(IDirect3DDevice9 *, D3DPRESENT_PARAMETERS *), d, 16)(d, p);
@@ -359,6 +379,18 @@ static int InstallGdi() {
 // GDI engines have no Present: a frame is whatever was drawn in the last 33 ms.
 static DWORD WINAPI GdiTicker(void *) { while (!Quit) { Sleep(33); if (!GdiSeen) continue; unsigned now = GetTickCount(); Guard g; if (now - LastPresent > 300) Learner.Frame(now, GdiW, GdiH); } return 0; }
 // ------------------------------------------------------------------------------------------------------------- install
+static void HookDevice(IDirect3DDevice9 *dev) {
+   void **vt = *(void ***)dev;
+   Hook<16>(vt[16], HReset); Hook<17>(vt[17], HPresent); Hook<37>(vt[37], HSetRenderTarget); Hook<44>(vt[44], HSetTransform); Hook<47>(vt[47], HSetViewport);
+   Hook<65>(vt[65], HSetTexture); Hook<81>(vt[81], HDrawPrimitive); Hook<82>(vt[82], HDrawIndexedPrimitive); Hook<83>(vt[83], HDrawPrimitiveUP); Hook<84>(vt[84], HDrawIndexedPrimitiveUP);
+   { IDirect3DSwapChain9 *sc = NULL; if (SUCCEEDED(dev->GetSwapChain(0, &sc)) && sc) { Hook<703>((*(void ***)sc)[3], HSwapPresent); sc->Release(); } }
+   Hook<87>(vt[87], HSetVertexDeclaration); Hook<89>(vt[89], HSetFVF); Hook<92>(vt[92], HSetVertexShader); Hook<100>(vt[100], HSetStreamSource); Hook<104>(vt[104], HSetIndices);
+   struct { UINT usage; D3DPOOL pool; } kinds[] = { { D3DUSAGE_DYNAMIC | D3DUSAGE_WRITEONLY, D3DPOOL_DEFAULT }, { D3DUSAGE_WRITEONLY, D3DPOOL_DEFAULT }, { 0, D3DPOOL_MANAGED }, { 0, D3DPOOL_SYSTEMMEM }, { D3DUSAGE_DYNAMIC, D3DPOOL_DEFAULT } };
+   for (auto &k : kinds) {
+    IDirect3DVertexBuffer9 *vb = NULL; if (SUCCEEDED(dev->CreateVertexBuffer(96, k.usage, D3DFVF_XYZRHW | D3DFVF_TEX1, k.pool, &vb, NULL)) && vb) { void **bt = *(void ***)vb; Hook<211>(bt[11], HBufLock); Hook<212>(bt[12], HVbUnlock); vb->Release(); }
+    IDirect3DIndexBuffer9 *ib = NULL; if (SUCCEEDED(dev->CreateIndexBuffer(96, k.usage, D3DFMT_INDEX16, k.pool, &ib, NULL)) && ib) { void **bt = *(void ***)ib; Hook<311>(bt[11], HBufLock); Hook<312>(bt[12], HIbUnlock); ib->Release(); }
+   }
+}
 static LRESULT CALLBACK DummyProc(HWND h, UINT m, WPARAM w, LPARAM l) { return DefWindowProcW(h, m, w, l); }
 static int Install(HMODULE d3d9) {
  typedef IDirect3D9 *(WINAPI *Create9)(UINT); Create9 create = (Create9)GetProcAddress(d3d9, "Direct3DCreate9"); if (!create) return 0;
@@ -372,19 +404,20 @@ static int Install(HMODULE d3d9) {
   for (int mt = 0; mt < 2; mt++) for (DWORD flags : flagsList) {
    D3DPRESENT_PARAMETERS pp = {}; pp.Windowed = TRUE; pp.SwapEffect = D3DSWAPEFFECT_DISCARD; pp.hDeviceWindow = w; pp.BackBufferWidth = 8; pp.BackBufferHeight = 8; pp.BackBufferFormat = D3DFMT_UNKNOWN;
    IDirect3DDevice9 *dev = NULL; if (FAILED(d->CreateDevice(D3DADAPTER_DEFAULT, D3DDEVTYPE_HAL, w, flags | (mt ? D3DCREATE_MULTITHREADED : 0), &pp, &dev)) || !dev) continue;
-   devices++; void **vt = *(void ***)dev;
-   Hook<16>(vt[16], HReset); Hook<17>(vt[17], HPresent); Hook<37>(vt[37], HSetRenderTarget); Hook<44>(vt[44], HSetTransform); Hook<47>(vt[47], HSetViewport);
-   Hook<65>(vt[65], HSetTexture); Hook<81>(vt[81], HDrawPrimitive); Hook<82>(vt[82], HDrawIndexedPrimitive); Hook<83>(vt[83], HDrawPrimitiveUP); Hook<84>(vt[84], HDrawIndexedPrimitiveUP);
-   { IDirect3DSwapChain9 *sc = NULL; if (SUCCEEDED(dev->GetSwapChain(0, &sc)) && sc) { Hook<703>((*(void ***)sc)[3], HSwapPresent); sc->Release(); } }
-   Hook<87>(vt[87], HSetVertexDeclaration); Hook<89>(vt[89], HSetFVF); Hook<92>(vt[92], HSetVertexShader); Hook<100>(vt[100], HSetStreamSource); Hook<104>(vt[104], HSetIndices);
-   struct { UINT usage; D3DPOOL pool; } kinds[] = { { D3DUSAGE_DYNAMIC | D3DUSAGE_WRITEONLY, D3DPOOL_DEFAULT }, { D3DUSAGE_WRITEONLY, D3DPOOL_DEFAULT }, { 0, D3DPOOL_MANAGED }, { 0, D3DPOOL_SYSTEMMEM }, { D3DUSAGE_DYNAMIC, D3DPOOL_DEFAULT } };
-   for (auto &k : kinds) {
-    IDirect3DVertexBuffer9 *vb = NULL; if (SUCCEEDED(dev->CreateVertexBuffer(96, k.usage, D3DFVF_XYZRHW | D3DFVF_TEX1, k.pool, &vb, NULL)) && vb) { void **bt = *(void ***)vb; Hook<211>(bt[11], HBufLock); Hook<212>(bt[12], HVbUnlock); vb->Release(); }
-    IDirect3DIndexBuffer9 *ib = NULL; if (SUCCEEDED(dev->CreateIndexBuffer(96, k.usage, D3DFMT_INDEX16, k.pool, &ib, NULL)) && ib) { void **bt = *(void ***)ib; Hook<311>(bt[11], HBufLock); Hook<312>(bt[12], HIbUnlock); ib->Release(); }
-   }
+   devices++; HookDevice(dev);
    dev->Release();
   }
   d->Release();
+ }
+ // Direct3D 9Ex: its own device classes (and PresentEx)
+ typedef HRESULT(WINAPI *Create9Ex)(UINT, IDirect3D9Ex **); Create9Ex createEx = (Create9Ex)GetProcAddress(d3d9, "Direct3DCreate9Ex"); IDirect3D9Ex *dx = NULL;
+ if (createEx && SUCCEEDED(createEx(D3D_SDK_VERSION, &dx)) && dx) {
+  for (int mt = 0; mt < 2; mt++) for (DWORD flags : { (DWORD)D3DCREATE_HARDWARE_VERTEXPROCESSING, (DWORD)D3DCREATE_SOFTWARE_VERTEXPROCESSING }) {
+   D3DPRESENT_PARAMETERS pp = {}; pp.Windowed = TRUE; pp.SwapEffect = D3DSWAPEFFECT_DISCARD; pp.hDeviceWindow = w; pp.BackBufferWidth = 8; pp.BackBufferHeight = 8; pp.BackBufferFormat = D3DFMT_UNKNOWN;
+   IDirect3DDevice9Ex *dev = NULL; if (FAILED(dx->CreateDeviceEx(D3DADAPTER_DEFAULT, D3DDEVTYPE_HAL, w, flags | (mt ? D3DCREATE_MULTITHREADED : 0), &pp, NULL, &dev)) || !dev) continue;
+   devices++; HookDevice(dev); Hook<121>((*(void ***)dev)[121], HPresentEx); dev->Release();
+  }
+  dx->Release();
  }
  DestroyWindow(w); UnregisterClassW(wc.lpszClassName, wc.hInstance);
  return devices;

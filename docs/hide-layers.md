@@ -51,6 +51,10 @@ for a glyph, so layer 3 sees nothing.
 - **GDI blits.** `BitBlt`, `StretchBlt`, `GdiTransparentBlt`, `GdiAlphaBlend`, `StretchDIBits`, `SetDIBitsToDevice`. The
   source bitmap (or DIB memory) is the atlas, the destination bitmap the render target; a back-buffer bitmap copied to
   the window maps its glyphs to the screen.
+- **State set before the DLL arrived (D3D9).** At every draw the device's own getters (`GetVertexDeclaration`, `GetFVF`,
+  `GetVertexShader`, `GetTexture(0)`, `GetStreamSource(0)`, `GetIndices`) refresh the view of the hooked setters, so a
+  declaration or buffer bound once at start counts (a pure device refuses getters; then the setters' view stays).
+  Direct3D 9Ex devices are covered with their own throwaway devices (`Direct3DCreate9Ex`) and `PresentEx`.
 - **Vertex declarations and shaders (D3D9).** The declaration's `POSITION` / `POSITIONT` and `TEXCOORD0` of stream 0 are
   read with `GetDeclaration` when it is set. With a vertex shader the transform is the shader's: positions that all lie in
   [-1, 1] are read as normalised device coordinates through the viewport, others as pixels.
@@ -146,8 +150,14 @@ line is drawn again. Built and run by `Build.ps1` and CI through `native/native-
   and only quads of the learned glyph height (± 20 %) are hidden. Frame, corners, cursor and top bar stay.
 - eden* (minori, D3D9): presents through `IDirect3DSwapChain9::Present` (now hooked as a frame tick too); its text is
   inside 256-pixel layer tiles, no glyph draws: not hidden.
+- Danganronpa: Trigger Happy Havoc (Steam): imports OpenGL but renders with Direct3D 9Ex (`PresentEx`, now hooked);
+  every sprite is the same static unit quad placed by vertex-shader constants, so the vertices carry no position and the
+  layer cannot decode its text (not hidden). Its decoded state needed the getter refresh above (declaration set at start).
+- Regression after these changes: STEINS;GATE 0 hides the first line again (`hidden=1`, rectangles) and now keeps the
+  ring wait cursor.
 - Not run: Summer Pockets REFLECTION BLUE (the 64-bit exe exits; the game is SiglusEngine_Steam.exe, Siglus has other
-  paths), Danganronpa 1 / 2 (OpenGL: this layer has no OpenGL side yet).
+  paths). No game on E: or in the owned Steam library was found that renders its dialogue through OpenGL glyph quads; the
+  OpenGL side is covered by the self-test only.
 
 - **CHAOS;CHILD (MAGES, 32-bit, Direct3D 9, Steam): works.** DXT5 atlas pages of 3072 × 4096 and 3072 × 1536, one
   `DrawPrimitiveUP` triangle fan per character, vertex declaration + vertex shader. With the visible page pushed (32
