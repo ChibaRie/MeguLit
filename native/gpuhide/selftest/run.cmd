@@ -21,7 +21,7 @@ cl %FLAGS% /Fo"%OUT%\host64.obj" host.cpp /Fe:"%OUT%\host64.exe" /link d3d9.lib 
 cl %FLAGS% /Fo"%OUT%\fontdots64.obj" fontdotshost.cpp /Fe:"%OUT%\fontdots64.exe" >nul || exit /b 1
 endlocal
 set FAIL=0
-for %%m in (d3d9-up d3d9-vb d3d9-ivb d3d9-decl d3d11 gl gl-ff gdi) do (
+for %%m in (d3d9-up d3d9-vb d3d9-ivb d3d9-quad4 d3d9-decl d3d11 gl gl-ff gdi) do (
  "%OUT%\host32.exe" "%DLLS%\MeguLitGpu32.dll" %%m || set FAIL=1
  "%OUT%\host64.exe" "%DLLS%\MeguLitGpu64.dll" %%m || set FAIL=1
 )

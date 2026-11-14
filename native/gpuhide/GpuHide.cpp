@@ -85,6 +85,7 @@ static std::map<void *, TexInfo> Textures;
 struct Dev {
  IDirect3DDevice9 *d; void *tex0; void *rtTex; UINT rtW, rtH; void *vb; UINT vbOff, vbStride; void *ib; DWORD fvf; bool decl, vs; void *declPtr;
  D3DMATRIX m[3]; bool mSet[3]; D3DVIEWPORT9 vp; UINT bbW, bbH; bool rtIsBack;
+ float vsc[32 * 4]; unsigned vscSet; // vertex-shader constants c0..c31 as the game set them (pure devices cannot be read back)
 };
 static Dev Devs[4]; static int DevCount;
 static Dev *DevOf(IDirect3DDevice9 *d) {
@@ -196,12 +197,11 @@ static void Refresh9(IDirect3DDevice9 *d) {
 // shader constants: Danganronpa, Artemis). Logs the buffer's first vertices (read-only lock) and the first vertex-shader
 // constants, so a constant layout can be studied. Never runs without the diag file.
 static void DiagSprite(IDirect3DDevice9 *d, Dev &v, UINT prims) {
- static unsigned last; if (!Diag || prims != 2 || Frame == last || Frame % 120) return; last = Frame;
- char b[1500]; int n = _snprintf_s(b, sizeof b, _TRUNCATE, "SPRITE F%u tex=%p stride=%u off=%u", Frame, v.tex0, v.vbStride, v.vbOff);
- IDirect3DVertexBuffer9 *vb = (IDirect3DVertexBuffer9 *)v.vb; D3DVERTEXBUFFER_DESC dd;
- if (vb && v.vbStride && SUCCEEDED(vb->GetDesc(&dd)) && dd.Pool != D3DPOOL_DEFAULT) { void *p = NULL; if (SUCCEEDED(vb->Lock(0, 0, &p, D3DLOCK_READONLY)) && p) { const float *f = (const float *)((char *)p + v.vbOff); unsigned fl = v.vbStride / 4; n += _snprintf_s(b + n, sizeof b - n, _TRUNCATE, " vb:"); for (unsigned i = 0; i < 4 * fl && i < 32 && (i + 1) * 4 <= dd.Size; i++) n += _snprintf_s(b + n, sizeof b - n, _TRUNCATE, " %.3g", f[i]); vb->Unlock(); } }
- else n += _snprintf_s(b + n, sizeof b - n, _TRUNCATE, " vb:default-pool");
- float c[4 * 12] = {}; if (SUCCEEDED(d->GetVertexShaderConstantF(0, c, 12))) { n += _snprintf_s(b + n, sizeof b - n, _TRUNCATE, " c:"); for (int i = 0; i < 48 && n < 1400; i++) n += _snprintf_s(b + n, sizeof b - n, _TRUNCATE, "%s%.4g", i % 4 ? "," : " |", c[i]); }
+ static unsigned lastFrame, inFrame; if (!Diag || prims != 2 || Frame % 60) return; if (Frame != lastFrame) { lastFrame = Frame; inFrame = 0; } if (++inFrame > 400) return;
+ TexInfo ti = TexOf(v.tex0); char b[1800]; int n = _snprintf_s(b, sizeof b, _TRUNCATE, "SPRITE F%u tex=%p(%ux%u f%d) rt=%ux%u stride=%u off=%u vscSet=%08x", Frame, v.tex0, ti.w, ti.h, (int)ti.fmt, v.rtW, v.rtH, v.vbStride, v.vbOff, v.vscSet);
+ auto it = Buffers.find(v.vb); if (it != Buffers.end() && v.vbStride) { const Shadow &sh = it->second; n += _snprintf_s(b + n, sizeof b - n, _TRUNCATE, " vb:"); for (size_t i = 0; i < 4 * (size_t)v.vbStride / 4 && i < 32; i++) { size_t at = v.vbOff + i * 4; if (at + 4 > sh.data.size()) break; n += _snprintf_s(b + n, sizeof b - n, _TRUNCATE, " %.3g", *(const float *)&sh.data[at]); } }
+ else n += _snprintf_s(b + n, sizeof b - n, _TRUNCATE, " vb:none");
+ n += _snprintf_s(b + n, sizeof b - n, _TRUNCATE, " c:"); for (int i = 0; i < 48 && n < 1700; i++) n += _snprintf_s(b + n, sizeof b - n, _TRUNCATE, "%s%.5g", i % 4 ? "," : " |", v.vsc[i]);
  Log("%s", b);
 }
 static HRESULT WINAPI HDrawPrimitive(IDirect3DDevice9 *d, D3DPRIMITIVETYPE pt, UINT start, UINT prims) {
@@ -220,6 +220,11 @@ static HRESULT WINAPI HDrawIndexedPrimitive(IDirect3DDevice9 *d, D3DPRIMITIVETYP
  { Guard g; Dev &v = *DevOf(d); auto vb = Buffers.find(v.vb), ib = Buffers.find(v.ib); bool ok = false;
   if (vb != Buffers.end() && ib != Buffers.end() && v.vbStride) { const Shadow &s = vb->second, &x = ib->second;
    ok = Quads(v, pt, prims, [&](UINT i) -> const unsigned char * { size_t ia = (size_t)(startIdx + i) * (x.i32 ? 4 : 2); if (ia + (x.i32 ? 4 : 2) > x.data.size()) return NULL; UINT idx = x.i32 ? *(const UINT *)&x.data[ia] : *(const USHORT *)&x.data[ia]; size_t at = v.vbOff + ((size_t)base + idx) * v.vbStride; return at + v.vbStride <= s.data.size() ? &s.data[at] : NULL; }, q); }
+  /* One quad over exactly four vertices (2 triangles, nv == 4): the four vertices are the quad whatever the indices say,
+     so a static index buffer filled before we arrived does not matter (Danganronpa: every glyph is such a draw from a
+     dynamic vertex buffer, positions in pixels). Quads() takes the bounding box of the vertices it is given. */
+  if (!ok && vb != Buffers.end() && ib == Buffers.end() && v.vbStride && pt == D3DPT_TRIANGLELIST && prims == 2 && nv == 4) { const Shadow &s = vb->second;
+   ok = Quads(v, pt, prims, [&](UINT i) -> const unsigned char * { size_t at = v.vbOff + ((size_t)base + minIdx + i % 4) * v.vbStride; return at + v.vbStride <= s.data.size() ? &s.data[at] : NULL; }, q); }
   if (Diag) DiagDraw(v, "DIP", pt, prims, q, ok); if (!ok && Diag) DiagSprite(d, v, prims); if (ok) drop = Decide(v, q); }
  if (drop.empty()) return o(d, pt, base, minIdx, nv, startIdx, prims);
  HRESULT hr = D3D_OK; size_t k = 0; UINT qn = (UINT)q.size(); UINT i = 0;
@@ -283,6 +288,10 @@ static HRESULT WINAPI HSetVertexDeclaration(IDirect3DDevice9 *d, IDirect3DVertex
 }
 static HRESULT WINAPI HSetVertexShader(IDirect3DDevice9 *d, IDirect3DVertexShader9 *x) {
  HRESULT hr = ORIG(HRESULT(WINAPI *)(IDirect3DDevice9 *, IDirect3DVertexShader9 *), d, 92)(d, x); if (SUCCEEDED(hr)) { Guard g; DevOf(d)->vs = x != NULL; } return hr;
+}
+static HRESULT WINAPI HSetVSConstF(IDirect3DDevice9 *d, UINT start, const float *c, UINT n) {
+ HRESULT hr = ORIG(HRESULT(WINAPI *)(IDirect3DDevice9 *, UINT, const float *, UINT), d, 94)(d, start, c, n);
+ if (SUCCEEDED(hr) && c && start < 32) { Guard g; Dev &v = *DevOf(d); UINT k = (std::min)(n, 32 - start); memcpy(&v.vsc[start * 4], c, k * 16); for (UINT i = start; i < start + k; i++) v.vscSet |= 1u << i; } return hr;
 }
 static HRESULT WINAPI HSetTransform(IDirect3DDevice9 *d, D3DTRANSFORMSTATETYPE s, const D3DMATRIX *m) {
  HRESULT hr = ORIG(HRESULT(WINAPI *)(IDirect3DDevice9 *, D3DTRANSFORMSTATETYPE, const D3DMATRIX *), d, 44)(d, s, m);
@@ -398,7 +407,7 @@ static void HookDevice(IDirect3DDevice9 *dev) {
    Hook<16>(vt[16], HReset); Hook<17>(vt[17], HPresent); Hook<37>(vt[37], HSetRenderTarget); Hook<44>(vt[44], HSetTransform); Hook<47>(vt[47], HSetViewport);
    Hook<65>(vt[65], HSetTexture); Hook<81>(vt[81], HDrawPrimitive); Hook<82>(vt[82], HDrawIndexedPrimitive); Hook<83>(vt[83], HDrawPrimitiveUP); Hook<84>(vt[84], HDrawIndexedPrimitiveUP);
    { IDirect3DSwapChain9 *sc = NULL; if (SUCCEEDED(dev->GetSwapChain(0, &sc)) && sc) { Hook<703>((*(void ***)sc)[3], HSwapPresent); sc->Release(); } }
-   Hook<87>(vt[87], HSetVertexDeclaration); Hook<89>(vt[89], HSetFVF); Hook<92>(vt[92], HSetVertexShader); Hook<100>(vt[100], HSetStreamSource); Hook<104>(vt[104], HSetIndices);
+   Hook<87>(vt[87], HSetVertexDeclaration); Hook<89>(vt[89], HSetFVF); Hook<92>(vt[92], HSetVertexShader); Hook<94>(vt[94], HSetVSConstF); Hook<100>(vt[100], HSetStreamSource); Hook<104>(vt[104], HSetIndices);
    struct { UINT usage; D3DPOOL pool; } kinds[] = { { D3DUSAGE_DYNAMIC | D3DUSAGE_WRITEONLY, D3DPOOL_DEFAULT }, { D3DUSAGE_WRITEONLY, D3DPOOL_DEFAULT }, { 0, D3DPOOL_MANAGED }, { 0, D3DPOOL_SYSTEMMEM }, { D3DUSAGE_DYNAMIC, D3DPOOL_DEFAULT } };
    for (auto &k : kinds) {
     IDirect3DVertexBuffer9 *vb = NULL; if (SUCCEEDED(dev->CreateVertexBuffer(96, k.usage, D3DFVF_XYZRHW | D3DFVF_TEX1, k.pool, &vb, NULL)) && vb) { void **bt = *(void ***)vb; Hook<211>(bt[11], HBufLock); Hook<212>(bt[12], HVbUnlock); vb->Release(); }

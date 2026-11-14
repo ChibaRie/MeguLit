@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Self-test for MeguLitGpu32/64.dll (hide layer 4). Usage: host.exe <dll> <d3d9-up|d3d9-vb|d3d9-ivb|d3d9-decl|d3d11|gl|gl-ff|gdi> [png prefix]
+// Self-test for MeguLitGpu32/64.dll (hide layer 4). Usage: host.exe <dll> <d3d9-up|d3d9-vb|d3d9-ivb|d3d9-quad4|d3d9-decl|d3d11|gl|gl-ff|gdi> [png prefix]
 // The host plays the game and HookBridge at once: it renders a scene (one full-screen quad), a "name" (3 glyph quads
 // above the text box) and an 8-character dialogue line (8 glyph quads in a row) from one glyph atlas, loads the DLL
 // after its device exists (like a late injection), and talks to it over the real pipes.
@@ -32,7 +32,7 @@ static int TextX(int i) { return GX + i * GA; }
 // --------------------------------------------------------------------------------------------------------------- D3D9
 struct V { float x, y, z, w, u, v; };
 struct V3 { float x, y, z, u, v; };
-static IDirect3DDevice9 *Dev; static IDirect3DTexture9 *Atlas, *Scene, *Ui; static IDirect3DVertexBuffer9 *Vb; static IDirect3DIndexBuffer9 *Ib; static std::string Mode;
+static IDirect3DDevice9 *Dev; static IDirect3DTexture9 *Atlas, *Scene, *Ui; static IDirect3DVertexBuffer9 *Vb; static IDirect3DIndexBuffer9 *Ib; static IDirect3DIndexBuffer9 *Ib4; static std::string Mode;
 static void Cell(int c, float &u0, float &v0, float &u1, float &v1) { int cx = c % 8, cy = c / 8; u0 = cx * 32 / 256.f; v0 = cy * 32 / 256.f; u1 = u0 + 32 / 256.f; v1 = v0 + 32 / 256.f; }
 static void QuadList(std::vector<V> &out, float x, float y, float s, int cell) { float u0, v0, u1, v1; Cell(cell, u0, v0, u1, v1); V a = { x, y, 0, 1, u0, v0 }, b = { x + s, y, 0, 1, u1, v0 }, c = { x, y + s, 0, 1, u0, v1 }, d = { x + s, y + s, 0, 1, u1, v1 }; out.insert(out.end(), { a, b, c, b, d, c }); }
 static void Glyphs(std::vector<V> &q, int first) { for (int i = 0; i < 3; i++) QuadList(q, (float)NameX(i), (float)NY, GS, 40 + i); for (int i = 0; i < 8; i++) QuadList(q, (float)TextX(i), (float)GY, GS, first + i); }
@@ -56,7 +56,9 @@ static void FrameD3D(int first, DWORD *pixels) {
   // 4 vertices + 6 indices per quad
   std::vector<V> v; std::vector<USHORT> ix; for (size_t i = 0; i < q.size(); i += 6) { USHORT b = (USHORT)v.size(); v.push_back(q[i]); v.push_back(q[i + 1]); v.push_back(q[i + 2]); v.push_back(q[i + 4]); ix.insert(ix.end(), { b, (USHORT)(b + 1), (USHORT)(b + 2), (USHORT)(b + 1), (USHORT)(b + 3), (USHORT)(b + 2) }); }
   void *p; Vb->Lock(0, (UINT)(v.size() * sizeof(V)), &p, D3DLOCK_DISCARD); memcpy(p, v.data(), v.size() * sizeof(V)); Vb->Unlock(); Ib->Lock(0, (UINT)(ix.size() * 2), &p, D3DLOCK_DISCARD); memcpy(p, ix.data(), ix.size() * 2); Ib->Unlock();
-  Dev->SetStreamSource(0, Vb, 0, sizeof(V)); Dev->SetIndices(Ib); Dev->DrawIndexedPrimitive(D3DPT_TRIANGLELIST, 0, 0, (UINT)v.size(), 0, (UINT)ix.size() / 3);
+  if (Mode == "d3d9-quad4") { // one draw per glyph: 2 triangles over 4 vertices (base vertex 4 i), indices from a static buffer filled before the DLL
+   Dev->SetStreamSource(0, Vb, 0, sizeof(V)); Dev->SetIndices(Ib4); for (UINT i = 0; i < (UINT)v.size() / 4; i++) Dev->DrawIndexedPrimitive(D3DPT_TRIANGLELIST, 4 * i, 0, 4, 0, 2);
+  } else { Dev->SetStreamSource(0, Vb, 0, sizeof(V)); Dev->SetIndices(Ib); Dev->DrawIndexedPrimitive(D3DPT_TRIANGLELIST, 0, 0, (UINT)v.size(), 0, (UINT)ix.size() / 3); }
  }
  Dev->EndScene();
  if (pixels) { IDirect3DSurface9 *bb, *sys; Dev->GetBackBuffer(0, 0, D3DBACKBUFFER_TYPE_MONO, &bb); D3DSURFACE_DESC d; bb->GetDesc(&d); Dev->CreateOffscreenPlainSurface(W, H, d.Format, D3DPOOL_SYSTEMMEM, &sys, NULL); Dev->GetRenderTargetData(bb, sys); D3DLOCKED_RECT r; sys->LockRect(&r, NULL, D3DLOCK_READONLY); for (int y = 0; y < H; y++) memcpy(pixels + y * W, (char *)r.pBits + y * r.Pitch, W * 4); sys->UnlockRect(); sys->Release(); bb->Release(); }
@@ -203,7 +205,7 @@ static bool White(DWORD c) { return (c & 0xFFFFFF) == 0xFFFFFF; }
 static bool Blue(DWORD c) { return (c & 0xFFFFFF) == 0x000080; }
 static void Pixels(int first, bool textShown, const char *label) {
  std::vector<DWORD> px(W * H); Frame(first, px.data()); int text = 0, name = 0; for (int i = 0; i < 8; i++) text += White(px[(GY + GS / 2) * W + TextX(i) + GS / 2]); for (int i = 0; i < 3; i++) name += White(px[(NY + GS / 2) * W + NameX(i) + GS / 2]);
- bool framed = Mode == "d3d9-up" || Mode == "d3d9-vb" || Mode == "d3d9-ivb";
+ bool framed = Mode == "d3d9-up" || Mode == "d3d9-vb" || Mode == "d3d9-ivb" || Mode == "d3d9-quad4";
  bool scene = Blue(px[5 * W + 5]) && (framed ? ((px[(GY + GS / 2) * W + TextX(0) - 4] & 0xFFFFFF) == 0x00A000 && (px[(GY + 1) * W + TextX(3) + GS / 2] & 0xFFFFFF) == 0x00A000) : Blue(px[(GY + GS / 2) * W + TextX(0) - 4])); char b[200];
  snprintf(b, sizeof b, "%s: dialogue glyphs %s (%d/8 white), name kept (%d/3), scene and box frame kept", label, textShown ? "drawn" : "left out", text, name); Check((textShown ? text == 8 : text == 0) && name == 3 && scene, b);
 }
@@ -214,7 +216,7 @@ static bool RectsOk(const std::string &r) {
  return ok == 8;
 }
 int wmain(int argc, wchar_t **argv) {
- if (argc < 3) { printf("usage: host <dll> <d3d9-up|d3d9-vb|d3d9-ivb|d3d9-decl|d3d11|gl|gl-ff|gdi>\n"); return 2; }
+ if (argc < 3) { printf("usage: host <dll> <d3d9-up|d3d9-vb|d3d9-ivb|d3d9-quad4|d3d9-decl|d3d11|gl|gl-ff|gdi>\n"); return 2; }
  char m[32]; WideCharToMultiByte(CP_UTF8, 0, argv[2], -1, m, sizeof m, NULL, NULL); Mode = m; printf("mode %s (%d-bit)\n", m, (int)sizeof(void *) * 8);
  WNDCLASSW wc = {}; wc.lpfnWndProc = DefWindowProcW; wc.hInstance = GetModuleHandleW(NULL); wc.lpszClassName = L"GpuHideTest"; RegisterClassW(&wc);
  Win = CreateWindowExW(WS_EX_TOOLWINDOW, wc.lpszClassName, L"gpu hide test", WS_POPUP, -32000, -32000, W, H, NULL, NULL, wc.hInstance, NULL); // never shown
@@ -227,6 +229,7 @@ int wmain(int argc, wchar_t **argv) {
   Atlas = MakeTex(256, true); Scene = MakeTex(64, false);
   { Dev->CreateTexture(256, 256, 1, 0, D3DFMT_A8R8G8B8, D3DPOOL_MANAGED, &Ui, NULL); D3DLOCKED_RECT r; Ui->LockRect(0, &r, NULL, 0); for (int y = 0; y < 256; y++) for (int x = 0; x < 256; x++) ((DWORD *)((char *)r.pBits + y * r.Pitch))[x] = 0xFF00A000; Ui->UnlockRect(0); }
   Dev->CreateVertexBuffer(64 * 6 * sizeof(V), D3DUSAGE_DYNAMIC | D3DUSAGE_WRITEONLY, 0, D3DPOOL_DEFAULT, &Vb, NULL); Dev->CreateIndexBuffer(64 * 6 * 2, D3DUSAGE_DYNAMIC | D3DUSAGE_WRITEONLY, D3DFMT_INDEX16, D3DPOOL_DEFAULT, &Ib, NULL);
+  { Dev->CreateIndexBuffer(6 * 2, 0, D3DFMT_INDEX16, D3DPOOL_MANAGED, &Ib4, NULL); USHORT q6[6] = { 0, 1, 2, 1, 3, 2 }; void *p; Ib4->Lock(0, 12, &p, 0); memcpy(p, q6, 12); Ib4->Unlock(); }
   Dev->SetSamplerState(0, D3DSAMP_MINFILTER, D3DTEXF_POINT); Dev->SetSamplerState(0, D3DSAMP_MAGFILTER, D3DTEXF_POINT);
   if (Mode == "d3d9-decl" && !InitDecl()) { printf("SKIP no vertex shader support\n"); return 0; }
  }

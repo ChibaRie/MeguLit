@@ -177,9 +177,15 @@ line is drawn again. Built and run by `Build.ps1` and CI through `native/native-
   and only quads of the learned glyph height (± 20 %) are hidden. Frame, corners, cursor and top bar stay.
 - eden* (minori, D3D9): presents through `IDirect3DSwapChain9::Present` (now hooked as a frame tick too); its text is
   inside 256-pixel layer tiles, no glyph draws: not hidden.
-- Danganronpa: Trigger Happy Havoc (Steam): imports OpenGL but renders with Direct3D 9Ex (`PresentEx`, now hooked);
-  every sprite is the same static unit quad placed by vertex-shader constants, so the vertices carry no position and the
-  layer cannot decode its text (not hidden). Its decoded state needed the getter refresh above (declaration set at start).
+- Danganronpa: Trigger Happy Havoc (Steam): imports OpenGL but renders with Direct3D 9Ex (`PresentEx`, now hooked).
+  **Corrected 2026-11-14** (diag in dialogue, vertex-shader constants shadowed through a `SetVertexShaderConstantF` hook,
+  since its device cannot read them back): the constants are all 0; each glyph is its own `DrawIndexedPrimitive` of 2
+  triangles over 4 vertices (`nv = 4`, base vertex per glyph) from a dynamic vertex buffer with pixel positions and UVs into
+  a 2048 × 2048 atlas, the line drawn into a 1920 × 1088 target. It only looked undecodable because its index buffer is
+  static and was filled before injection (no shadow). Generic fix: a 2-triangle draw over exactly 4 vertices is decoded
+  from the vertices alone (the bounding box of the 4 is the quad whatever the indices). Self-test mode `d3d9-quad4`
+  (static index buffer filled before the DLL, one draw per glyph): fails with the previous DLL, passes now. Live check in
+  the game pending (screen given to the compositor matrix).
 - **The Song of Saya / 沙耶の唄 (Nitro+, D3D11, Steam, Chinese text): works.** Same engine family as みにくいモジカの子:
   a page-sized glyph sheet (329 × 360) and one quad per character, drawn twice (a shadow / outline buffer and the page).
   93 glyphs on an NVL page learned 93 = 93 (count-only test: the visible text was partly mojibake, so the pushed line
@@ -191,8 +197,7 @@ line is drawn again. Built and run by `Build.ps1` and CI through `native/native-
   only one draw kind (an indexed 4-vertex strip from a static buffer), so its text could not be checked.
 - 女装山脈 (YU-RIS, D3D9; needs an English path, tested from a copy on H:): the whole frame is composed on the CPU and
   drawn as one full-screen quad (like BRUNS): not hidden.
-- Danganronpa: every sprite is one static unit quad placed and cut by vertex-shader constants, so vertices carry no
-  position or atlas cell; reading the constants would need the engine's constant layout (not generic): not hidden.
+- Danganronpa: see the corrected note above (4-vertex quads with pixel positions; no shader-constant layout needed).
 - Regression after these changes: STEINS;GATE 0 hides the first line again (`hidden=1`, rectangles) and now keeps the
   ring wait cursor.
 - Not run: Summer Pockets REFLECTION BLUE (the 64-bit exe exits; the game is SiglusEngine_Steam.exe, Siglus has other
