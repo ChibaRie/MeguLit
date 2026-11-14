@@ -343,3 +343,13 @@
 .tv-home.lay-c .tv-cover,.tv-home.lay-c .tv-pile{left:calc(75% - 19vmin);top:17%;width:38vmin}
 .tv-home.lay-c .tv-script{left:43%;top:26%;height:40%}
 .tv-home.lay-c .tv-figs{grid-auto-flow:column;gap:3.4vw;top:7vh;right:auto;left:44vw;align-items:end}.tv-home.lay-c .tv-more{display:none}
+
+/* 2026-11-15 (user: 标题往下放，主页下面的线也往下放，手牌的卡放大，最左下角只要随机一句话，标题最多三行且完整) */
+.tv-dialog{bottom:2vh;height:6vh;min-height:44px}
+.tv-title{bottom:calc(6vh + 2vh + 18px);max-width:min(44vw,calc(55% - 5vw - 3vmin))}
+.tv-h1{max-height:none;-webkit-line-clamp:3;line-clamp:3;text-overflow:clip}
+.tv-dialog .tv-line{max-width:min(44vw,720px);font-size:14px;color:color-mix(in srgb,var(--g-t1) 74%,transparent)}
+.tv-rail{bottom:calc(6vh + 2vh + 18px)}
+.tv-chip{width:64px;height:86px}
+.tv-chip.on{width:92px;height:124px}
+@media (max-width:1500px){.tv-chip{width:52px;height:70px}.tv-chip.on{width:76px;height:102px}}

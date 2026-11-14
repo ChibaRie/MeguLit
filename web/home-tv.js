@@ -215,7 +215,10 @@ export const DRAW_NAMES=Object.keys(DRAWS);
 /* 2026-11-13 judges round 2: a title like "English (日本語)" shows the first part big and the bracketed name as a line under it; the big title stays at two lines at most and no larger than ~5vw */
 function splitTitle(t){const m=String(t||'').match(/^(.+?)\s*[（(]([^（）()]+)[）)]\s*$/u);return m&&m[1].trim().length>1?[m[1].trim(),m[2].trim()]:[String(t||''),''];}
 /* 2026-11-13 (user: "不要左侧这么大一个作品名了") the game name is only the fallback when there is no daily headline, and it stays mid-sized */
-function fitTitle(h){const max=Math.min(76,Math.max(36,innerWidth*.04));let size=max;h.style.fontSize=size+'px';const limit=()=>h.scrollHeight>size*1.12*2+size*.3||h.scrollWidth>h.clientWidth+2;
+/* 2026-11-15 (user: 最左下角只要作品的随机一句话，不要和背景的句子同步，单独随机) the bottom-left line is its own random pick from every line the game has, never tied to the background script */
+function randomLine(d,background){const all=[...new Set([...(d?.sentences||[]).map(s=>String(s.text||'').trim()),...(d?.recentLines||[]).map(s=>String(s.text||'').trim()),...(Array.isArray(d?.homeAuto)?d.homeAuto:[]).map(t=>String(t||'').trim())].filter(Boolean).map(t=>t.replace(/\[[^\]]*\]/g,'').trim()).filter(t=>t.length>=6&&t.length<=56&&storyLine(t)))];
+ const free=all.filter(t=>!background.slice(0,1).includes(t)),pool=free.length?free:all;return pool.length?pool[Math.floor(Math.random()*pool.length)]:'';}
+function fitTitle(h){const max=Math.min(76,Math.max(36,innerWidth*.04));let size=max;h.style.fontSize=size+'px';const limit=()=>h.scrollHeight>size*1.18*3+size*.3||h.scrollWidth>h.clientWidth+2;
  while(limit()&&size>28){size-=4;h.style.fontSize=size+'px';}}
 
 function tweenFig(el,to,fmt){if(!el)return;const from=+el.dataset.v||0;el.dataset.v=to;cancelAnimationFrame(+el.dataset.raf||0);if(matchMedia('(prefers-reduced-motion:reduce)').matches||from===to){
@@ -325,7 +328,7 @@ export function renderHomeTV(main,ctx){
    if(live&&live.root===root)fitLeft(root);},900);},flash?Math.max(0,reveal-(performance.now()-started)):0);
   tweenFig($('[data-fig="time"]'),g.readingSeconds||0,v=>mins(v));tweenFig($('[data-fig="chars"]'),g.characters||0,v=>number(Math.round(v)));tweenFig($('[data-fig="words"]'),
    g.learnedWords||0,v=>number(Math.round(v)));
-  nameIn(g);type(sentences[0]||'');
+  nameIn(g);type(randomLine(d,sentences));
   
   rail();
  }
