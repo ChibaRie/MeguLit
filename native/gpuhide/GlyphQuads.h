@@ -87,7 +87,7 @@ struct GlyphLearner {
   std::vector<int> drop; bbW = backW; bbH = backH;
   long long gk = GroupKey(rt, tex); Group *g = nullptr; bool armed = Armed(now);
   // a texture first used for this line (per-line glyph sheets); UI sheets in use before the line never count as sheets
-  bool freshTex = false; { auto ft = texFirst.find(tex); if (ft == texFirst.end()) { if (texFirst.size() > 8192) texFirst.clear(); texFirst[tex] = now; ft = texFirst.find(tex); } freshTex = (int)(ft->second - (lineAt - 3000)) >= 0; }
+  bool freshTex = false; { auto ft = texFirst.find(tex); if (ft == texFirst.end()) { if (texFirst.size() > 8192) texFirst.clear(); texFirst[tex] = now; ft = texFirst.find(tex); } freshTex = (int)(ft->second - (lineAt - 500)) >= 0; }
   for (size_t i = 0; i < q.size(); i++) {
    const Quad &x = q[i]; if (!GlyphLike(x, tw, th)) continue;
    if (!g) { g = &groups[gk]; g->rt = rt; g->tex = tex; g->tw = tw; g->th = th; g->rtW = rtW; g->rtH = rtH; if (groups.size() > 64) { groups.clear(); g = &groups[gk]; g->rt = rt; g->tex = tex; g->tw = tw; g->th = th; g->rtW = rtW; g->rtH = rtH; } }
@@ -98,12 +98,15 @@ struct GlyphLearner {
    auto it = g->keys.find(k); if (it == g->keys.end()) { if (g->keys.size() > 20000) g->keys.clear(); g->keys[k] = Seen{ r, now, frameNo }; } else it->second.lastFrame = frameNo;
    // learned atlas on the learned target; or, for engines that build a small glyph sheet per line (a new texture every
    // line), any glyph quad of the learned glyph height on a target of the learned size (effect buffers drawn twice)
-   bool sameAtlas = rtW == areaW && rtH == areaH && atlases.count(AtlasKey(NULL, tex)), sheet = freshTex && LineSized(tw, th) && rtW == areaW && rtH == areaH && std::fabs((x.y1 - x.y0) - glyphH) <= glyphH * 0.25f;
+   bool sameAtlas = rtW == areaW && rtH == areaH && atlases.count(AtlasKey(NULL, tex)), sheet = freshTex && LineSized(tw, th) && (x.y1 - x.y0) >= glyphH * 0.6f && (x.y1 - x.y0) <= glyphH * 1.8f;
+   /* 2026-11-15 (沙耶の唄 NVL, user: half-hidden lines with streaks): a glyph sheet made for the current line belongs to that line
+      wherever the page puts it (rows below the learned area) and whatever pass draws it (outline / shadow buffers of another
+      size, slightly larger cells): no area, target-size or tight height test for it. Older lines' sheets are not fresh. */
    // glyph height only: a wait cursor or icon drawn from the same sheet inside the area stays
    bool glyphSize = std::fabs((x.y1 - x.y0) - glyphH) <= glyphH * 0.2f;
-   if (learned && armed && !readOnly && glyphSize && (sameAtlas || sheet)) {
+   if (learned && armed && !readOnly && ((glyphSize && sameAtlas) || sheet)) {
     float cx = (x.x0 + x.x1) / 2, cy = (x.y0 + x.y1) / 2;
-    if (cx >= area.x0 && cx <= area.x1 && cy >= area.y0 && cy <= area.y1) { drop.push_back((int)i); hiddenQuads++; if (log && hiddenQuads < 60) log("drop %s tex=%p %ux%u [%.0f,%.0f %.0fx%.0f uv %.3f,%.3f %.3fx%.3f]", sameAtlas ? "atlas" : "sheet", tex, tw, th, x.x0, x.y0, x.x1 - x.x0, x.y1 - x.y0, x.u0, x.v0, x.u1 - x.u0, x.v1 - x.v0); }
+    if (sheet || (cx >= area.x0 && cx <= area.x1 && cy >= area.y0 && cy <= area.y1)) { drop.push_back((int)i); hiddenQuads++; if (log && hiddenQuads < 60) log("drop %s tex=%p %ux%u [%.0f,%.0f %.0fx%.0f uv %.3f,%.3f %.3fx%.3f]", sameAtlas ? "atlas" : "sheet", tex, tw, th, x.x0, x.y0, x.x1 - x.x0, x.y1 - x.y0, x.u0, x.v0, x.u1 - x.u0, x.v1 - x.v0); }
    }
   }
   if (!drop.empty() && !hitSent) { hitSent = true; char b[128]; snprintf(b, sizeof b, "ToMe_GPUHIDE hit seq=%u quads=%u chars=%u", seq, (unsigned)drop.size(), n); if (emit) emit(b); }

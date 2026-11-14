@@ -13,8 +13,8 @@ test('learner is API-independent, generic and hides only after learning, inside 
  assert.match(g,/armedUntil = now \+ 60000/,'a line stays armed 60 s after the last push');
  assert.match(g,/sameAtlas = rtW == areaW && rtH == areaH && atlases\.count\(AtlasKey\(NULL, tex\)\)/,'learned atlas (by texture) on every target of the learned size (pages drawn twice into a shadow buffer)');
  assert.match(g,/sheet = freshTex && LineSized\(tw, th\)/,'per-line glyph sheets: new and sized to the line only');
- assert.match(g,/if \(learned && armed && !readOnly && glyphSize && \(sameAtlas \|\| sheet\)\)/,'hides only after learning, while armed, at glyph height');
- assert.match(g,/cx >= area\.x0 && cx <= area\.x1 && cy >= area\.y0 && cy <= area\.y1/,'only inside the text area');
+ assert.match(g,/if \(learned && armed && !readOnly && \(\(glyphSize && sameAtlas\) \|\| sheet\)\)/,'hides only after learning, while armed; learned atlas at glyph height, or the current line\'s own fresh sheet');
+ assert.match(g,/if \(sheet \|\| \(cx >= area\.x0 && cx <= area\.x1 && cy >= area\.y0 && cy <= area\.y1\)\)/,'learned atlas only inside the text area; the current line\'s fresh sheet wherever the page puts it');
  assert.match(g,/on >= 1 && on \* 10 >= in \* 6/,'an atlas is learned only when its quads line up with the glyphs (never a UI sheet under the text)');
  assert.match(g,/if \(a\.size\(\) == n\) return &a; if \(b\.size\(\) == n\) return &b;/,'learns only when the glyph count equals the characters');
  assert.match(g,/bool Blanks\(const std::vector<Rect> &r, std::vector<Rect> &keep\) const/,'blank glyphs drawn for spaces are matched and dropped from the rects');

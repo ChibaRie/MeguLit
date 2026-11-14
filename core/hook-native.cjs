@@ -28,7 +28,8 @@ function splitSpeaker(raw,known){const s=String(raw||'');const t=s.replace(/^[\s
  return {name:'',text:s};}
 function scriptSource(text){
  // Script VM syntax left in a hooked string (variable references, ％Ａ/＊Ｂ commands); "50％OFF" is ordinary text (E215).
- const marker=/[【《\[][\$＄]|[%％*＊][A-ZＡ-Ｚ](?![A-Za-zＡ-Ｚａ-ｚ])|[\$＄][\p{L}_＿]/u.exec(text);
+ /* 2026-11-15 (沙耶の唄 「青海$ｰャン」 was cut at the $): a $ before half-width katakana is the line's own text, not a variable */
+ const marker=/[【《\[][\$＄]|[%％*＊][A-ZＡ-Ｚ](?![A-Za-zＡ-Ｚａ-ｚ])|[\$＄](?![\uff61-\uff9f])[\p{L}_＿]/u.exec(text);
  return marker?text.slice(0,marker.index).trimEnd():text;
 }
 const IslandSource=require('./island-source.js');
@@ -281,7 +282,8 @@ class HookNative{
  auxText(m){/* 2026-11-15 (沙耶の唄, user: 「ocr遮挡又出来了」): the dialogue hook sends each line on two thread contexts; the one not selected
     came here as aux text, went to the art path and its translation was drawn over the game's own line. A line from the same hook
     as the dialogue stream is dialogue, never art text. */
-  if(!(m.sourceName&&this.dialogueHook&&String(m.sourceName)===this.dialogueHook))this.artCandidate(m.text);const C=this.choice||(this.choice=this.newChoiceCapture());const added=C.add(m.text,this.lastSource,this.speaker?.text);
+  if(m.sourceName&&this.dialogueHook&&String(m.sourceName)===this.dialogueHook)return;/* nor choice text (user: 「不是选项」) */
+  this.artCandidate(m.text);const C=this.choice||(this.choice=this.newChoiceCapture());const added=C.add(m.text,this.lastSource,this.speaker?.text);
   this.trace('choice aux '+String(m.sourceName||'').slice(0,40)+' role='+(m.role??'')+' added='+JSON.stringify(added)+' text='+JSON.stringify(String(m.text).slice(0,80)));
   if(!added.length)return;clearTimeout(this.choiceTimer);this.choiceTimer=setTimeout(()=>this.requestChoices(0),450);this.choiceTimer.unref?.();}
  requestChoices(round){const options=round>0&&this.choiceOptions?this.choiceOptions:this.choice?.options();
@@ -347,7 +349,9 @@ class HookNative{
      Chinese too). On a stream already known as readable Japanese (two kana lines, StreamCodepage 'native') such a line is the
      script's text: delivered, hidden, redrawn in place and translated like every other line. Only replacement characters
      and code-page mojibake stay unreadable there. */
-  const scriptNoise=typeof m.text==='string'&&this.codepage?.mode(name||m.sourceCode||m.sourceName||'')==='native'&&/[\u3041-\u309f\u30a1-\u30fa]/.test(m.text)&&!/\ufffd/.test(m.text)&&!require('./text-sanity.cjs').repairShiftJisAsGbk(m.text);
+  /* user: 「按照剧本来上遮罩防止误杀」 - a line the game's own script holds exactly is its text, whatever it looks like */
+  let scripted=false;if(typeof m.text==='string'&&this.originalText){try{const r=this.resolveSource(String(m.text).trim());scripted=!!r&&r.status==='exact';}catch{}}
+  const scriptNoise=scripted||typeof m.text==='string'&&this.codepage?.mode(name||m.sourceCode||m.sourceName||'')==='native'&&/[\u3041-\u309f\u30a1-\u30fa]/.test(m.text)&&!/\ufffd/.test(m.text)&&!require('./text-sanity.cjs').repairShiftJisAsGbk(m.text);
   if(scriptNoise)this.trace('script noise line kept '+JSON.stringify(String(m.text).slice(0,20)));
   if(!scriptNoise&&require('./text-sanity.cjs').garbledSource(m.text,{controls:false})){this.trace('source dropped unreadable '+JSON.stringify(String(m.text).slice(0,20)));if(!this.lineUnreadable){this.lineUnreadable=true;this.notify({hookLineUnreadable:true});}return;}
   // Multilingual containers keep only the Japanese track (E243); streams that deliver every line several times (or every character doubled) are learned and undone per stream (E215).
