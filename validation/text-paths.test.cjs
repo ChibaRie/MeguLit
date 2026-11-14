@@ -239,3 +239,9 @@ test('Steam direct start for the early launcher: shadow of hard links + steam_ap
  const b=read('services/bridge.cjs');assert.ok(b.includes('const steam=steamApp&&!companion&&!textPath&&!steamDirect;'));assert.ok(b.includes('earlyStart(root,launchExe,'));
  fs.rmdirSync(path.join(shadows,'G.exe-2','data'));fs.rmSync(base,{recursive:true,force:true});
 });
+
+test('dot font under 日文环境: the LE early launcher carries it too, fallback clears the arm',()=>{
+ const lc=read('core/locale-emulator.cjs');
+ assert.ok(lc.includes("const fontDot=early?require('./text-paths-launch.cjs').fontDot(this.root,launchExe,early,trace):null;"));
+ assert.ok(lc.includes('if(fontDot)fontDot.watch(result.pid);'));assert.ok(lc.includes("if(fontDot)fontDot.canary.exited('fontdot',0);"));
+});
