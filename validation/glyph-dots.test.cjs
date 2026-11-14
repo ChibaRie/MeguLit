@@ -24,7 +24,7 @@ test('DLL: dot mode keeps metrics, draws one square per character, reports every
  assert.match(c,/h->dwType = TT_POLYGON_TYPE; h->pfxStart = pt\(x0, y0\);/,'outline: square contour from the black box top-left');
  assert.ok(c.includes('return DotMode ? Dotted(dc, x, y, o, r, text, glyphs, n, dx, sv, seq) : Skipped(dc, x, y, o, r, text, glyphs, n);'),'strings: dots or left out');
  assert.ok(c.includes('if (lf.lfEscapement || lf.lfOrientation || lf.lfFaceName[0] == L\'@\''),'vertical fonts fall back to blank');
- assert.ok(c.includes('run = HookAt(vt[29], (void *)&HDrawGlyphRun, (void **)&ODrawGlyphRun);'),'ID2D1RenderTarget::DrawGlyphRun hooked');
+ assert.ok(/run = HookAt\(vt\[29\], \(void \*\)&?HDrawGlyphRun, \(void \*\*\)&ODrawGlyphRun\);/.test(c),'ID2D1RenderTarget::DrawGlyphRun hooked');
  assert.ok(c.includes('Gp.SetSmoothing(g, 3 /* SmoothingModeNone */);'),'GDI+ dots are crisp squares');
  assert.ok(c.includes('l == "MODE dot-blind"')&&c.includes('if (!r && BlindMode && BlindChar(ch) && (ch || index) && Hide.BlindKey(KeyOf(f))) { r = true; if (sv) *sv = GlyphHide::Served{-1, \'b\'}; }'),'blind dots: dialogue font only, kind b');
  assert.ok(c.includes('rt->SetAntialiasMode(D2D1_ANTIALIAS_MODE_ALIASED);'),'Direct2D dots are crisp squares');
