@@ -471,16 +471,21 @@ function renderGames(){
   const orbit=host.classList.contains('field-orbit'),wall=!!plane&&!orbit&&!host.querySelector('.field-feature'),filtered=!!search.trim();
   const cells=plane?[...plane.children].filter(c=>!c.hasAttribute('data-parked')):[];
   if(!animate||!cells.length||!((wall&&filtered)||(orbit&&!filtered&&libraryView()!=='tracks')))return renderGamesNow();
+  /* 2026-11-15 (user: 取消搜索后的过渡直接没了) clearing a search: no fly-out first; the orbit covers glide straight to their wall places while the rest of the wall fades in around them (renderGamesNow 'unorbit') */
+  if(orbit&&!filtered)return renderGamesNow('unorbit');
+  /* entering a search: the covers that match stay put and glide onto the orbit; only the others fade out where they are */
+  let keep=null;if(wall&&filtered){try{const e=libraryEntries(model,search,false);keep={games:new Set(e.games.map(g=>g.id)),series:new Set(e.series.map(x=>x.id))};}catch{keep=null;}}
+  const isKept=c=>!!keep&&((c.querySelector('[data-member-id]')||c).dataset?.memberId&&keep.games.has((c.querySelector('[data-member-id]')||c).dataset.memberId)||(c.querySelector('[data-series-drop]')||c).dataset?.seriesDrop&&keep.series.has((c.querySelector('[data-series-drop]')||c).dataset.seriesDrop));
   const b=host.getBoundingClientRect(),cx=b.left+b.width/2,cy=b.top+b.height/2;
   const dist=cells.map(c=>{const r=c.getBoundingClientRect();return Math.hypot(r.left+r.width/2-cx,r.top+r.height/2-cy);}),max=Math.max(1,...dist);
   /* E272: leaving the orbit, covers fall back into the capsule (reverse of their entrance) */
-  const runs=cells.map((c,i)=>{const n=c.firstElementChild||c;if(wall)return n.animate([{opacity:1,transform:'none'},{opacity:0,transform:'scale(.9)'}],{duration:260,
-   delay:dist[i]/max*360,easing:'ease-in',fill:'forwards'});const r=c.getBoundingClientRect(),ox=r.left+r.width/2-cx,oy=r.top+r.height/2-cy,ol=Math.hypot(ox,oy)||1,
-   push=Math.max(innerWidth,innerHeight)*.35;return n.animate([{opacity:1,transform:'none'},{opacity:0,transform:`translate(${ox/ol*push}px,${oy/ol*push}px) scale(1.04)`}],
+  const runs=cells.flatMap((c,i)=>{if(isKept(c))return [];if(wall)return animateCard(c,[{opacity:1,transform:'none'},{opacity:0,transform:'scale(.9)'}],{duration:220,
+   delay:dist[i]/max*160,easing:'ease-in',fill:'forwards'});const r=c.getBoundingClientRect(),ox=r.left+r.width/2-cx,oy=r.top+r.height/2-cy,ol=Math.hypot(ox,oy)||1,
+   push=Math.max(innerWidth,innerHeight)*.35;return animateCard(c,[{opacity:1,transform:'none'},{opacity:0,transform:`translate(${ox/ol*push}px,${oy/ol*push}px) scale(1.04)`}],
    {duration:380,delay:dist[i]/max*80,easing:'cubic-bezier(.55,0,.8,.3)',fill:'forwards'});}); /* E273 (user): clearing the search, orbit covers fly outward, never into the capsule */
-  let done=false;const finish=()=>{if(done)return;done=true;gameTransition=null;renderGamesNow(orbit&&!filtered?'domino':'fresh');};
+  let done=false;const finish=()=>{if(done)return;done=true;gameTransition=null;renderGamesNow(orbit&&!filtered?'domino':keep?'enter':'fresh');};
   gameTransition={cancel(){runs.forEach(r=>r.cancel());done=true;}};
-  Promise.all(runs.map(r=>r.finished)).then(finish,()=>{});setTimeout(finish,wall?(260+360)*.82:300); /* E271 overlap: no blank frame between out and in */
+  Promise.all(runs.map(r=>r.finished)).then(finish,()=>{});setTimeout(finish,wall?(220+160)*.85:300); /* E271 overlap: no blank frame between out and in */
 }
 function renderGamesNow(mode=''){
   const host=document.querySelector('#library-results');
@@ -505,13 +510,13 @@ function renderGamesNow(mode=''){
        the centre outward, mirroring the wall that just left. The orbit keeps its own entrance. */
     if(host.classList.contains('field-orbit'))return;
     const cards=[...host.querySelectorAll('.field-plane > [data-member-id]:not([data-parked]), .field-plane > :not([data-parked]) > [data-member-id], .field-feature > [data-member-id]')];if(!cards.length)return;
-    const inners=cards.map(c=>c.firstElementChild||c);inners.forEach(n=>{n.style.opacity='0';});
+    const inners=cards.flatMap(c=>visuals(c));inners.forEach(n=>{n.style.opacity='0';});
     const imgs=[...host.querySelectorAll('img')].slice(0,80);
     Promise.race([Promise.all(imgs.map(i=>i.decode?.().catch(()=>{}))),new Promise(r=>setTimeout(r,160))]).then(()=>requestAnimationFrame(()=>{
       const b=host.getBoundingClientRect(),cx=b.left+b.width/2,cy=b.top+b.height/2;
       const dist=cards.map(c=>{const r=c.getBoundingClientRect();return Math.hypot(r.left+r.width/2-cx,r.top+r.height/2-cy);}),max=Math.max(1,...dist);
-      inners.forEach((n,i)=>{n.style.opacity='';n.animate([{opacity:0,transform:'scale(.88)'},{opacity:1,transform:'none'}],{duration:420,delay:dist[i]/max*320,
-       easing:'cubic-bezier(.22,.72,.24,1)',fill:'backwards'});});
+      cards.forEach((c,i)=>visuals(c).forEach(n=>{n.style.opacity='';n.animate([{opacity:0,transform:'scale(.88)'},{opacity:1,transform:'none'}],{duration:420,delay:dist[i]/max*320,
+       easing:'cubic-bezier(.22,.72,.24,1)',fill:'backwards'});}));
     }));
     return;
   }
@@ -531,21 +536,24 @@ function renderGamesNow(mode=''){
     for(const card of host.querySelectorAll('.field-plane > [data-member-id]:not([data-parked]), .field-plane > :not([data-parked]) > [data-member-id]')){const from=matching(card.dataset.memberId,before);if(from){kept.add(from.card);
      flyInner(card,from.rect);continue;}
       /* E276 (user): a cover that comes back into the results flies in from outside onto the orbit */
-      const inner=card.firstElementChild;if(!inner)continue;const r=card.getBoundingClientRect(),dx=r.left+r.width/2-cx0,dy=r.top+r.height/2-cy0,l=Math.hypot(dx,
+      const r=card.getBoundingClientRect(),dx=r.left+r.width/2-cx0,dy=r.top+r.height/2-cy0,l=Math.hypot(dx,
        dy)||1;
-      inner.animate([{transform:`translate(${dx/l*far0}px,${dy/l*far0}px) scale(1.05)`,opacity:0},{transform:'none',opacity:1}],{duration:640,delay:Math.min(240,
+      animateCard(card,[{transform:`translate(${dx/l*far0}px,${dy/l*far0}px) scale(1.05)`,opacity:0},{transform:'none',opacity:1}],{duration:640,delay:Math.min(240,
        fresh++*45),easing:'cubic-bezier(.16,.84,.3,1)',fill:'backwards'});}
     /* E276 (user): covers that drop out of a narrowing search fly outward off the window */
     if(wasOrbit)scatterGhosts(before.filter(x=>!kept.has(x.card)),bounds);
   }else if(wasOrbit&&!search.trim()){
     // leaving the orbit: orbit covers fly out, then the wall returns from the edges inwards like dominoes
-    dominoIn(host,bounds);
+    dominoIn(host,bounds,wallCards);
   }else if(oldSingle){
     const match=matching(oldSingle.dataset.memberId,[...host.querySelectorAll('.field-plane > [data-member-id]:not([data-parked]), .field-plane > :not([data-parked]) > [data-member-id]')].map(card=>({card,rect:card.getBoundingClientRect()})));
     if(match)animateFeatureCard(match.card,oldRect,bounds);
     else host.querySelector('.field-plane')?.animate([{opacity:.35},{opacity:1}],{duration:250,easing:'ease-out'});
   }
 }
+/* 2026-11-15 (user: 无限墙取消搜索后的过渡直接没了) every card now starts with the invisible selection badge (.bp-sel), so animating card.firstElementChild moved nothing visible; the visible parts are all children except the badge */
+const visuals=card=>{const k=[...card.children].filter(x=>!/(^|\s)bp-/.test(String(x.className||'')));return k.length?k:[card];};
+const animateCard=(card,keyframes,options)=>visuals(card).map(n=>n.animate(keyframes,options));
 function scatterGhosts(cards,bounds){
   if(!cards.length)return;const layer=document.createElement('div');layer.style.cssText='position:fixed;inset:0;pointer-events:none;z-index:9999;overflow:hidden';
    layer.style.clipPath=`inset(${Math.max(0,bounds.top)}px ${Math.max(0,innerWidth-bounds.right)}px ${Math.max(0,innerHeight-bounds.bottom)}px ${Math.max(0,bounds.left)}px)`;
@@ -557,20 +565,21 @@ function scatterGhosts(cards,bounds){
    g.animate([{transform:'none',opacity:1},{transform:`translate(${dx/len*push}px,${dy/len*push}px) scale(.85)`,opacity:0}],{duration:460+Math.random()*120,easing:'cubic-bezier(.55,0,.8,.3)',
     fill:'forwards'}).onfinish=()=>{if(++done>=Math.min(80,cards.length))layer.remove();};}
 }
-function dominoIn(host,bounds){
+function dominoIn(host,bounds,before){
+  const was=new Map((before||[]).map(x=>[x.card.dataset.memberId,x.rect]));
   const cx=bounds.left+bounds.width/2,cy=bounds.top+bounds.height/2,cards=[...host.querySelectorAll('.field-plane > [data-member-id]:not([data-parked]), .field-plane > :not([data-parked]) > [data-member-id]')].map(card=>{
    const r=card.getBoundingClientRect(),dx=r.left+r.width/2-cx,dy=r.top+r.height/2-cy;return {card,dx,dy,d:Math.hypot(dx,dy)};});
   const max=Math.max(1,...cards.map(c=>c.d));
-  for(const {card,dx,dy,d} of cards){const inner=card.firstElementChild;if(!inner)continue;const len=d||1,out=Math.max(innerWidth,innerHeight)*.5;
-   /* E272: a short settle from just outside instead of a long flight, no idle lead-in */const k=Math.min(70,out*.12);inner.animate([{transform:`translate(${dx/len*k}px,${dy/len*k}px) scale(.9)`,
+  for(const {card,dx,dy,d} of cards){const from=was.get(card.dataset.memberId);if(from&&from.width){flyInner(card,from);continue;}const len=d||1,out=Math.max(innerWidth,innerHeight)*.5;
+   /* E272: a short settle from just outside instead of a long flight, no idle lead-in */const k=Math.min(70,out*.12);animateCard(card,[{transform:`translate(${dx/len*k}px,${dy/len*k}px) scale(.9)`,
     opacity:0},{transform:'none',opacity:1}],{duration:560,delay:(1-d/max)*380,easing:'cubic-bezier(.16,.84,.3,1)',fill:'backwards'});}
 }
 function flyInner(card,from){
-  const inner=card.firstElementChild;if(!inner)return;const to=card.getBoundingClientRect();
-  if(!from||!to.width){inner.animate([{opacity:0,transform:'scale(.7)'},{opacity:1,transform:'none'}],{duration:420,easing:'cubic-bezier(.22,.72,.24,1)'});return;
+  const to=card.getBoundingClientRect();
+  if(!from||!to.width){animateCard(card,[{opacity:0,transform:'scale(.7)'},{opacity:1,transform:'none'}],{duration:420,easing:'cubic-bezier(.22,.72,.24,1)'});return;
    }
   const x=from.left+from.width/2-to.left-to.width/2,y=from.top+from.height/2-to.top-to.height/2,k=from.width/to.width;
-  inner.animate([{transform:`translate(${x}px,${y}px) scale(${k})`},{transform:'none'}],{duration:560,easing:'cubic-bezier(.22,.72,.24,1)'});
+  animateCard(card,[{transform:`translate(${x}px,${y}px) scale(${k})`},{transform:'none'}],{duration:560,easing:'cubic-bezier(.22,.72,.24,1)'});
 }
 function animateFeatureCard(card,from,bounds){
   const to=card.getBoundingClientRect(),base=getComputedStyle(card).transform;
