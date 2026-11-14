@@ -152,7 +152,11 @@ class HookNative{
   if(m.state==='cached'){if(cur)this.notify({hookGlyphDots:{...cur,cached:true}});this.emit(m);return;}
   if(!Number.isSafeInteger(m.seq))return;
   let next=cur&&cur.seq===m.seq?{...cur}:{seq:m.seq,text:'',dots:[],cached:cur?.cached===true};
-  if(m.state==='line'&&typeof m.text==='string')next.text=m.text.slice(0,2048);
+  /* blind dots (kind b) were drawn before their line arrived: they carry the previous seq and belong to the next line,
+     mapped here by reading order (the n-th blind dot of a character = its n-th occurrence after the previous one). */
+  const pending=cur&&cur.seq!==m.seq?(cur.dots||[]).filter(d=>d.k==='b'&&d.i<0):[];
+  if(m.state==='line'&&typeof m.text==='string'){next.text=m.text.slice(0,2048);if(pending.length){let at=0;const mapped=[];for(const d of pending){const j=next.text.indexOf(d.ch,at);if(j<0)continue;mapped.push({...d,i:j});at=j+1;}next.dots=[...next.dots,...mapped];}}
+  else if(pending.length)next.dots=[...pending];
   if(m.state==='dots'&&Array.isArray(m.dots)){const dots=[...next.dots];for(const d of m.dots.slice(0,1024))if(d&&Number.isInteger(d.i)&&typeof d.ch==='string'&&/^[dcprb]$/.test(d.k)&&!dots.some(o=>o.i===d.i&&o.k===d.k&&(d.i>=0||o.ch===d.ch&&o.h===d.h)))dots.push({i:d.i,ch:d.ch.slice(0,2),h:d.h|0,b:d.b|0,a:d.a|0,x:d.x|0,y:d.y|0,s:d.s|0,k:d.k,path:String(m.path||'').slice(0,8)});next.dots=dots.slice(0,2048);}
   this.state={...this.state,hookGlyphDots:next};this.emit(m);}
  glyphHide(m){if(!m||!['ready','hit','key','cached'].includes(m.state))return;const v={hookGlyphHide:m.state==='key'||m.state==='ready'?(this.state.hookGlyphHide||'learning'):m.state};if(m.state==='ready'&&Number.isFinite(m.version))v.hookGlyphVersion=Number(m.version);if(m.state==='hit'&&typeof m.path==='string')v.hookGlyphPath=m.path.slice(0,16);if(m.state==='key'&&typeof m.face==='string'&&Number.isFinite(m.size))v.hookGlyphFont={face:m.face.slice(0,64),size:Number(m.size)};this.trace('glyph hide '+m.state+(m.path?' '+String(m.path).slice(0,16):'')+(m.size?' '+Number(m.size)+'px':''));this.notify(v);}

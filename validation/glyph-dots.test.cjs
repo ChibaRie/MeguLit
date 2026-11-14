@@ -67,4 +67,7 @@ test('front end: hookGlyphDots builds the current line table per seq and is re-e
  h.glyphDots({type:'hookGlyphDots',state:'cached'});assert.equal(h.state.hookGlyphDots.cached,true);
  h.glyphDots({type:'hookGlyphDots',state:'dots',seq:4,dots:[{i:'x',ch:1,k:'z'}]});assert.equal(h.state.hookGlyphDots.dots.length,1,'malformed dots ignored');
  assert.equal(out.filter(m=>m.type==='hookGlyphDots').length,6,'every event re-emitted');
+ h.glyphDots({type:'hookGlyphDots',state:'dots',seq:4,path:'ggo',dots:[{i:-1,ch:'雨',h:28,b:24,a:28,x:0,y:0,s:3,k:'b'},{i:-1,ch:'だ',h:28,b:24,a:28,x:0,y:0,s:3,k:'b'}]});
+ h.glyphDots({type:'hookGlyphDots',state:'line',seq:5,text:'今日は雨だ'});
+ assert.deepEqual(h.state.hookGlyphDots.dots.filter(d=>d.k==='b').map(d=>[d.i,d.ch]),[[3,'雨'],[4,'だ']],'blind dots of the previous seq mapped to the next line by reading order');
  h.setGlyphMode('dot');h.setGlyphMode('weird');assert.deepEqual(sent,[{type:'glyphMode',mode:'dot'},{type:'glyphMode',mode:'blank'}]);});
