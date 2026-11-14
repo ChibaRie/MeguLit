@@ -149,7 +149,7 @@ static void FinishEmbed(long id,string trans,bool hide=false){PendingEmbed p;loc
  static bool DialogueLike(string text){return text!=null&&text.Length<=600&&System.Text.RegularExpressions.Regex.IsMatch(text,"[぀-ヿ]")&&System.Text.RegularExpressions.Regex.Matches(text,"[぀-ヿ一-鿿]").Count>=8;}
  /* glyph dots (all): the remembered stream must stay selected from the first line on (caching engines), so a
     stream that happens to speak first (title menus) never displaces it */
- static bool StaleMemory(){return FromMemory&&!ReceivedText&&!(GlyphMode=="dot"&&GlyphAll);}
+ static bool StaleMemory(){return FromMemory&&!ReceivedText&&!(Reports()&&GlyphAll);}
  static void SaveSelection(Candidate c){try{File.WriteAllText(Under("cache","hook-session.json"),Json.Serialize(new{pid=Pid,started=ProcessStarted,code=c.code,addr=c.tp.addr.ToString("x"),ctx=c.tp.ctx.ToString("x"),ctx2=c.tp.ctx2.ToString("x"),name=c.name,embeddable=c.embed}));}catch{}}
  static bool InitialReplacement(string[] args){return !(args.Length==5&&args[4]=="--read-only");}
  static bool TryIslandThread(bool known,uint pid,ulong address,string code,out ThreadParam tp){
@@ -207,7 +207,7 @@ static volatile bool SkipHeld;static int BurstRun;const int BurstSkipLines=8;sta
  static string LastTwinText="";static readonly HashSet<string> TwinEmbed=new HashSet<string>();
  static bool ForeignTwin(string text){if(String.IsNullOrWhiteSpace(text)||text.Length<24||text.Length>600)return false;if(System.Text.RegularExpressions.Regex.IsMatch(text,"[\u3040-\u30ff\u4e00-\u9fff]"))return false;return System.Text.RegularExpressions.Regex.IsMatch(text,"\\p{L}{2,}[,;]?[ \\t]+\\p{L}{2,}[,;]?[ \\t]+\\p{L}{2,}");}
  static void OnEmbed(string text,ThreadParam tp){
-  if(GlyphMode=="dot"&&GlyphAll&&Selected!=""&&tp.Key()==Selected){GlyphLine(text);Thread.Sleep(8);try{Luna_EmbedCallback(tp,text,text);}catch(Exception e){Diagnostic("glyph dots embed passthrough failed "+e.Message);return;}lock(Gate){ReceivedText=true;ReplacementCallback=true;}RememberStream();/* the next launch pre-selects this stream before the first line, so caching engines never rasterise a real dialogue glyph */return;}
+  if(Reports()&&GlyphAll&&Selected!=""&&tp.Key()==Selected){GlyphLine(text);Thread.Sleep(8);try{Luna_EmbedCallback(tp,text,text);}catch(Exception e){Diagnostic("glyph dots embed passthrough failed "+e.Message);return;}lock(Gate){ReceivedText=true;ReplacementCallback=true;}RememberStream();/* the next launch pre-selects this stream before the first line, so caching engines never rasterise a real dialogue glyph */return;}
   lock(Gate){
    Candidate candidate;
    /* 2026-11-13 (9-nine in English: the Japanese came from the multi-language container stream, the game drew the English
@@ -400,7 +400,7 @@ static void Deactivate(string reason){if(WaitHook!=null)WaitHook.Disable();lock(
  static void GlyphControl(){try{GlyphFile=MemoryPath();if(GlyphFile!="")GlyphFile=Path.Combine(Path.GetDirectoryName(Path.GetDirectoryName(GlyphFile)),"glyph-hide",Path.GetFileName(GlyphFile));if(GlyphFile!=""&&File.Exists(GlyphFile)){var d=Json.Deserialize<Dictionary<string,object>>(File.ReadAllText(GlyphFile));object v;if(d.TryGetValue("cached",out v)&&Convert.ToBoolean(v)){GlyphCached=true;Diagnostic("glyph hide off for this game: it reuses rasterised glyphs (learned)");}else if(d.TryGetValue("face",out v)){string face=Convert.ToString(v);int size=Convert.ToInt32(d["size"]);if(face.Length>0&&face.Length<=64&&size>0&&size<1000)GlyphSeed="FONT "+size+" "+face;}}}catch(Exception e){Diagnostic("glyph hide memory "+e.Message);}
   new Thread(()=>{while(!Quit){try{using(var pipe=new System.IO.Pipes.NamedPipeServerStream("MeguLitFontCtl-"+Pid,System.IO.Pipes.PipeDirection.Out,1)){pipe.WaitForConnection();var w=new StreamWriter(pipe,new System.Text.UTF8Encoding(false)){AutoFlush=true,NewLine="\n"};lock(GlyphGate){GlyphCtl=w;GlyphSent=false;w.WriteLine(GlyphModeLine());if(GlyphSeed!=null)w.WriteLine(GlyphSeed);}Diagnostic("glyph hide connected"+(GlyphSeed!=null?" ("+GlyphSeed+")":""));while(!Quit){lock(GlyphGate){if(GlyphCtl!=w)break;}Thread.Sleep(500);}}}catch(Exception e){lock(GlyphGate){GlyphCtl=null;}Diagnostic("glyph control "+e.Message);Thread.Sleep(1000);}}}){IsBackground=true}.Start();}
  static void GlyphSend(string line){lock(GlyphGate){if(GlyphCtl==null)return;try{GlyphCtl.WriteLine(line);}catch{GlyphCtl=null;}}}
- static bool GlyphWanted(){lock(Gate){Candidate c;return !GlyphCached&&Enabled&&(ReplacementEnabled||ProbeWanted)&&Selected!=""&&Candidates.TryGetValue(Selected,out c)&&(c.gdiProbe||GlyphMode=="dot"&&GlyphAll);}}
+ static bool GlyphWanted(){lock(Gate){Candidate c;return !GlyphCached&&Enabled&&(ReplacementEnabled||ProbeWanted)&&Selected!=""&&Candidates.TryGetValue(Selected,out c)&&(c.gdiProbe||Reports()&&GlyphAll);}}
  /* Called with every line of the selected stream; line breaks do not matter to the DLL (it ignores blanks). */
  static void GlyphLine(string text){if(GlyphWanted()){lock(GlyphGate){GlyphSent=true;}GlyphSend("LINE "+System.Text.RegularExpressions.Regex.Replace(text??"",@"[\r\n\u2028\u2029]+"," "));}else GlyphOff();}
  static void GlyphOff(){bool was;lock(GlyphGate){was=GlyphSent;GlyphSent=false;}if(was)GlyphSend("OFF");}
@@ -409,7 +409,11 @@ static void Deactivate(string reason){if(WaitHook!=null)WaitHook.Disable();lock(
     version 2 behaviour and stays the default. Chosen by the front end ({"type":"glyphMode","mode":"dot"|"blank"}) or
     MEGULIT_GLYPH_MODE=dot for tests. In dot mode the LunaHook GDI hide (MeguLitGdiHide.h) is not switched on for the
     stream, because a string it leaves out would never reach the dots. Every dot is forwarded as a hookGlyphDots event. */
- static string GlyphMode=Environment.GetEnvironmentVariable("MEGULIT_GLYPH_MODE")=="dot"?"dot":"blank";
+ static string GlyphMode=GlyphModeName(Environment.GetEnvironmentVariable("MEGULIT_GLYPH_MODE"));
+ /* place: blank glyphs (same metrics, no coverage) plus the same per-character records, each with its cell origin on screen,
+    for the reader overlay that draws MeguLit's text where the game's would be. dot and place both report (Reports()). */
+ static string GlyphModeName(string m){return m=="dot"||m=="place"?m:"blank";}
+ static bool Reports(){string m=GlyphMode;return m=="dot"||m=="place";}
  static volatile bool GlyphAll=Environment.GetEnvironmentVariable("MEGULIT_GLYPH_ALL")=="1";
  /* blind: dots for every glyph under the dialogue font without waiting for the line (streams whose text arrives after
     the glyphs are drawn, e.g. AdvHD); the line still follows and the front end maps dots to it by reading order. */
@@ -417,15 +421,15 @@ static void Deactivate(string reason){if(WaitHook!=null)WaitHook.Disable();lock(
  /* blind dots need the dialogue font before the first glyph (caching engines draw every character once): the font the
     probe reports as leading is remembered per game (glyph-hide memory, the same file the hide's learned key uses) and
     seeds the next launch at connect. */
- static void BlindSeed(string line){if(GlyphMode!="dot"||!GlyphBlind)return;var m=System.Text.RegularExpressions.Regex.Match(line??"",@"^ToMe_FONT src=gdi size=(\d{1,4}) weight=\d{1,4} chars=\d+ face=(.{1,64})$");if(!m.Success)return;string next="FONT "+m.Groups[1].Value+" "+m.Groups[2].Value;if(next==GlyphSeed)return;/* the probe re-reports when another font overtakes the leader (AdvHD: the 17 px name box first, the 20 px dialogue after): the latest leader is remembered */GlyphSeed=next;GlyphSend(GlyphSeed);GlyphSave(new Dictionary<string,object>{{"face",m.Groups[2].Value},{"size",Int32.Parse(m.Groups[1].Value)},{"at",DateTime.UtcNow.ToString("o")},{"from","probe"}});Diagnostic("glyph dots: dialogue font seeded from the probe ("+GlyphSeed+")");}
- static string GlyphModeLine(){return GlyphMode=="dot"&&GlyphBlind?"MODE dot-blind":"MODE "+GlyphMode;}
+ static void BlindSeed(string line){if(!Reports()||!GlyphBlind)return;var m=System.Text.RegularExpressions.Regex.Match(line??"",@"^ToMe_FONT src=gdi size=(\d{1,4}) weight=\d{1,4} chars=\d+ face=(.{1,64})$");if(!m.Success)return;string next="FONT "+m.Groups[1].Value+" "+m.Groups[2].Value;if(next==GlyphSeed)return;/* the probe re-reports when another font overtakes the leader (AdvHD: the 17 px name box first, the 20 px dialogue after): the latest leader is remembered */GlyphSeed=next;GlyphSend(GlyphSeed);GlyphSave(new Dictionary<string,object>{{"face",m.Groups[2].Value},{"size",Int32.Parse(m.Groups[1].Value)},{"at",DateTime.UtcNow.ToString("o")},{"from","probe"}});Diagnostic("glyph dots: dialogue font seeded from the probe ("+GlyphSeed+")");}
+ static string GlyphModeLine(){return Reports()&&GlyphBlind?"MODE "+GlyphMode+"-blind":"MODE "+GlyphMode;}
  /* all: write-back streams too. Their embed callback stays on, but in dot mode it pushes the line to the DLL first and then
     hands the text back unchanged, so the line is known before the game draws it (the text output arrives too late for that). */
- static bool DotsOwn(Candidate c){return GlyphMode=="dot"&&c!=null&&c.gdiProbe;}
- static void GlyphModeSet(string mode,bool force=false){mode=mode=="dot"?"dot":"blank";if(mode==GlyphMode&&!force)return;GlyphMode=mode;GlyphSend(GlyphModeLine());Diagnostic("glyph mode "+mode);string id;lock(Gate){id=Enabled?Selected:"";}if(id!="")Select(id);}
+ static bool DotsOwn(Candidate c){return Reports()&&c!=null&&c.gdiProbe;}
+ static void GlyphModeSet(string mode,bool force=false){mode=GlyphModeName(mode);if(mode==GlyphMode&&!force)return;GlyphMode=mode;GlyphSend(GlyphModeLine());Diagnostic("glyph mode "+mode);string id;lock(Gate){id=Enabled?Selected:"";}if(id!="")Select(id);}
  static void GlyphDots(string s){
   var line=System.Text.RegularExpressions.Regex.Match(s,@"^line seq=(\d{1,9}) text=(.*)$");if(line.Success){Emit(new{type="hookGlyphDots",state="line",seq=Int64.Parse(line.Groups[1].Value),text=line.Groups[2].Value});return;}
-  var dots=System.Text.RegularExpressions.Regex.Match(s,@"^dots seq=(\d{1,9}) path=(\w{1,8}) list=(.*)$");if(dots.Success){var list=new List<object>();foreach(string e in dots.Groups[3].Value.Split(';')){var f=e.Split(':');int i,h,b,a,x,y,sd,cp;if(f.Length!=9||f[8].Length!=1||!Int32.TryParse(f[0],out i)||!Int32.TryParse(f[1],System.Globalization.NumberStyles.HexNumber,null,out cp)||!Int32.TryParse(f[2],out h)||!Int32.TryParse(f[3],out b)||!Int32.TryParse(f[4],out a)||!Int32.TryParse(f[5],out x)||!Int32.TryParse(f[6],out y)||!Int32.TryParse(f[7],out sd)||cp<1||cp>0xffff)continue;list.Add(new{i=i,ch=((char)cp).ToString(),h=h,b=b,a=a,x=x,y=y,s=sd,k=f[8]});}
+  var dots=System.Text.RegularExpressions.Regex.Match(s,@"^dots seq=(\d{1,9}) path=(\w{1,8}) list=(.*)$");if(dots.Success){var list=new List<object>();foreach(string e in dots.Groups[3].Value.Split(';')){var f=e.Split(':');int i,h,b,a,x,y,sd,cp,px=0,py=0;if(f.Length!=9&&f.Length!=12||f[8].Length!=1||f.Length==12&&(!Int32.TryParse(f[9],out px)||!Int32.TryParse(f[10],out py)||!System.Text.RegularExpressions.Regex.IsMatch(f[11],@"^(-|c|g|[mt]\d{1,5}x\d{1,5})$"))||!Int32.TryParse(f[0],out i)||!Int32.TryParse(f[1],System.Globalization.NumberStyles.HexNumber,null,out cp)||!Int32.TryParse(f[2],out h)||!Int32.TryParse(f[3],out b)||!Int32.TryParse(f[4],out a)||!Int32.TryParse(f[5],out x)||!Int32.TryParse(f[6],out y)||!Int32.TryParse(f[7],out sd)||cp<1||cp>0xffff)continue;if(f.Length==12&&f[11]!="-")list.Add(new{i=i,ch=((char)cp).ToString(),h=h,b=b,a=a,x=x,y=y,s=sd,k=f[8],at=new{x=px,y=py,space=f[11]}});else list.Add(new{i=i,ch=((char)cp).ToString(),h=h,b=b,a=a,x=x,y=y,s=sd,k=f[8]});}
    Emit(new{type="hookGlyphDots",state="dots",seq=Int64.Parse(dots.Groups[1].Value),path=dots.Groups[2].Value,dots=list});return;}
   if(s.StartsWith("cache ",StringComparison.Ordinal)){Diagnostic("glyph dots: the engine reuses rasterised glyphs ("+s.Substring(6)+"); dots go on");Emit(new{type="hookGlyphDots",state="cached"});return;}
   /* compositor heartbeat gate (docs/text-architecture.md): paused | live | needs-relaunch served=<n> */

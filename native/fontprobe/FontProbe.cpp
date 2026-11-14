@@ -90,7 +90,11 @@ Face FaceOf(HDC dc) {
 }
 
 // ---- glyph hide state: GlyphMatch.h decides, HideLock guards it (never taken while holding Gate) ------------------------
-SRWLOCK HideLock = SRWLOCK_INIT; GlyphHide::Matcher Hide; volatile LONG HideOn = 0, DotMode = 0, BlindMode = 0;
+// DotMode: per-character records are reported (MODE dot*, MODE place*). PaintDots: matched glyphs become dots (MODE dot*);
+// 0 with DotMode = MODE place*: blank glyphs (same metrics, no coverage) plus records with the on-screen cell origin, for
+// the reader overlay that draws MeguLit's text where the game's would be (docs/text-architecture.md, "Placement").
+SRWLOCK HideLock = SRWLOCK_INIT; GlyphHide::Matcher Hide; volatile LONG HideOn = 0, DotMode = 0, BlindMode = 0, PaintDots = 0, CtlConnected = 0;
+bool BlindAllowed();
 struct IndexMap { HFONT font = NULL; long seq = -1; std::map<WORD, wchar_t> map; } Indexes;
 GlyphHide::Key KeyOf(const Face &f) { GlyphHide::Key k; k.face = f.name; k.size = f.size; return k; }
 void AnnounceLine(long seq, const std::wstring &text);
@@ -100,7 +104,9 @@ void Command(std::string l) {
  long announce = -1; std::wstring text;
  if (l.rfind("LINE ", 0) == 0) { long before = Hide.Sequence(); Hide.SetLine(Wide(l.substr(5)), GetTickCount()); InterlockedExchange(&HideOn, Hide.Cached() ? 0 : 1); if (DotMode && Hide.Sequence() != before) { announce = Hide.Sequence(); text = Hide.Current(); } }
  else if (l == "OFF") { Hide.Off(); InterlockedExchange(&HideOn, 0); }
- else if (l == "MODE dot" || l == "MODE blank" || l == "MODE dot-blind") { bool dot = l != "MODE blank", blind = l == "MODE dot-blind"; Hide.StopOnCache = !dot; InterlockedExchange(&DotMode, dot ? 1 : 0); InterlockedExchange(&BlindMode, blind ? 1 : 0); if (blind) InterlockedExchange(&HideOn, 1); }
+ else if (l == "MODE dot" || l == "MODE blank" || l == "MODE dot-blind" || l == "MODE place" || l == "MODE place-blind") {
+  bool report = l != "MODE blank", paint = l.rfind("MODE dot", 0) == 0, blind = l == "MODE dot-blind" || l == "MODE place-blind";
+  Hide.StopOnCache = !report; InterlockedExchange(&PaintDots, paint ? 1 : 0); InterlockedExchange(&DotMode, report ? 1 : 0); InterlockedExchange(&BlindMode, blind ? 1 : 0); if (blind) InterlockedExchange(&HideOn, 1); }
  else if (l.rfind("FONT ", 0) == 0) { size_t sp = l.find(' ', 5); if (sp != std::string::npos) { GlyphHide::Key k; k.size = atoi(l.substr(5, sp - 5).c_str()); k.face = Clean(Wide(l.substr(sp + 1))); Hide.Seed(k); } }
  ReleaseSRWLockExclusive(&HideLock);
  if (announce >= 0) AnnounceLine(announce, text); // dot mode: the line (and how many dots to expect) before the game draws it
@@ -109,10 +115,10 @@ DWORD WINAPI Control(void *) {
  wchar_t name[64]; swprintf_s(name, L"\\\\.\\pipe\\MeguLitFontCtl-%lu", GetCurrentProcessId());
  for (;;) {
   HANDLE p = CreateFileW(name, GENERIC_READ, 0, NULL, OPEN_EXISTING, 0, NULL); if (p == INVALID_HANDLE_VALUE) { Sleep(1000); continue; }
-  Send("ToMe_GLYPHHIDE ready version=" + std::to_string(MEGULIT_FONT_VERSION) + " modes=blank,dot");
+  Send("ToMe_GLYPHHIDE ready version=" + std::to_string(MEGULIT_FONT_VERSION) + " modes=blank,dot,place"); InterlockedExchange(&CtlConnected, 1);
   std::string buf; char chunk[4096]; DWORD n = 0;
   while (ReadFile(p, chunk, sizeof chunk, &n, NULL) && n) { buf.append(chunk, n); size_t e; while ((e = buf.find('\n')) != std::string::npos) { Command(buf.substr(0, e)); buf.erase(0, e + 1); } if (buf.size() > 65536) buf.clear(); }
-  CloseHandle(p); Command("OFF"); Sleep(500); // HookBridge gone: nothing stays hidden
+  CloseHandle(p); InterlockedExchange(&CtlConnected, 0); Command("OFF"); Sleep(500); // HookBridge gone: nothing stays hidden
  }
 }
 // Glyph index -> character of the current or previous line under the font selected in dc. Called under HideLock.
@@ -138,14 +144,14 @@ bool HideGlyph(HDC dc, UINT c, bool index, const Face &f, bool render, GlyphHide
  AcquireSRWLockExclusive(&HideLock);
  wchar_t ch = index ? FromIndex(dc, c) : (wchar_t)c;
  bool r = ch && Hide.Glyph(ch, KeyOf(f), GetTickCount(), render, "ggo", sv); AfterDecision();
- if (!r && BlindMode && BlindChar(ch) && (ch || index) && Hide.BlindKey(KeyOf(f))) { r = true; if (sv) *sv = GlyphHide::Served{-1, 'b'}; }
+ if (!r && BlindMode && BlindChar(ch) && (ch || index) && Hide.BlindKey(KeyOf(f)) && BlindAllowed()) { r = true; if (sv) *sv = GlyphHide::Served{-1, 'b'}; }
  if (seq) *seq = Hide.Sequence(); if (chOut) *chOut = ch;
  ReleaseSRWLockExclusive(&HideLock); return r;
 }
 bool HideText(const std::wstring &s, const Face &f, const char *path, std::vector<GlyphHide::Served> *sv = NULL, long *seq = NULL) {
  if (s.empty() || DotsBlocked()) return false;
  AcquireSRWLockExclusive(&HideLock); bool r = Hide.Text(s, KeyOf(f), GetTickCount(), path, sv); AfterDecision();
- if (!r && BlindMode && Hide.BlindKey(KeyOf(f))) { bool any = false; for (wchar_t c : s) any = any || (c && BlindChar(c)); if (any) { r = true; if (sv) { sv->assign(s.size(), GlyphHide::Served{}); for (size_t i = 0; i < s.size(); i++) if (s[i] && BlindChar(s[i])) (*sv)[i] = GlyphHide::Served{-1, 'b'}; } } } if (seq) *seq = Hide.Sequence(); ReleaseSRWLockExclusive(&HideLock); return r;
+ if (!r && BlindMode && Hide.BlindKey(KeyOf(f)) && BlindAllowed()) { bool any = false; for (wchar_t c : s) any = any || (c && BlindChar(c)); if (any) { r = true; if (sv) { sv->assign(s.size(), GlyphHide::Served{}); for (size_t i = 0; i < s.size(); i++) if (s[i] && BlindChar(s[i])) (*sv)[i] = GlyphHide::Served{-1, 'b'}; } } } if (seq) *seq = Hide.Sequence(); ReleaseSRWLockExclusive(&HideLock); return r;
 }
 std::wstring FromIndices(HDC dc, const WORD *g, UINT n) {
  std::wstring w; if (!g || !n || n > 4096) return w;
@@ -172,7 +178,20 @@ void BlankGlyph(UINT format, void *buffer, DWORD size) {
 // Dot side in pixels (spec 2): 2 below a 12 px cell, else max(3, round(cell / 10)), clipped to the glyph's black box.
 // Grows with the cell so a dot survives engines that rasterise large and scale down (BGI: 136 px drawn at ~28 px).
 int DotSide(int cellHeight) { return cellHeight < 12 ? 2 : (std::max)(3, (cellHeight + 5) / 10); }
-struct Dot { int i; wchar_t ch; int h, b, a, x, y, s; char k; };
+// Where: the cell's top-left (pen position, top of the line cell) in space sp: "c" = client area of the game's top-level
+// window, "m<W>x<H>" = a memory surface of that size (the game blits it later), "g" = GDI+ world units, "t<W>x<H>" =
+// a Direct2D target of that pixel size, "-" = not known (GetGlyphOutline).
+struct Where { int x = 0, y = 0; char sp[24] = "-"; };
+struct Dot { int i; wchar_t ch; int h, b, a, x, y, s; char k; Where at; };
+// A device point of dc to Where: window DCs go through the DC origin to the top-level window's client area.
+Where PlaceDevice(HDC dc, POINT p) {
+ Where w; w.x = p.x; w.y = p.y; HWND win = dc ? WindowFromDC(dc) : NULL; POINT org{};
+ if (win && GetDCOrgEx(dc, &org)) { POINT s{org.x + p.x, org.y + p.y}; HWND root = GetAncestor(win, GA_ROOT); if (!root) root = win; if (ScreenToClient(root, &s)) { w.x = s.x; w.y = s.y; strcpy_s(w.sp, "c"); return w; } }
+ BITMAP bm{}; HGDIOBJ b = dc ? GetCurrentObject(dc, OBJ_BITMAP) : NULL;
+ if (b && GetObjectW(b, sizeof bm, &bm) && bm.bmWidth > 1 && bm.bmHeight > 1) sprintf_s(w.sp, "m%dx%d", (int)bm.bmWidth, (int)bm.bmHeight);
+ return w;
+}
+Where PlaceLogical(HDC dc, int x, int y) { POINT p{x, y}; if (dc) LPtoDP(dc, &p, 1); return PlaceDevice(dc, p); }
 SRWLOCK DotLock = SRWLOCK_INIT; long DotSeq = -1, DotAnnounced = -1; std::set<unsigned long long> DotSeen; std::string DotBuf, DotPath; DWORD DotFirst; int DotCount;
 void DotFlushLocked() { if (!DotBuf.empty()) Send("ToMe_GLYPHDOT dots seq=" + std::to_string(DotSeq) + " path=" + DotPath + " list=" + DotBuf); DotBuf.clear(); DotCount = 0; }
 // One served dot glyph; reported once per line and (index, kind) (ruby: per character and height). Never called under HideLock.
@@ -187,7 +206,7 @@ void ServeDot(long seq, const char *path, const Dot &d) {
  unsigned long long key = ((unsigned long long)(unsigned char)d.k << 48) | (d.i >= 0 ? (unsigned long long)d.i : (0x100000000ull | ((unsigned long long)d.ch << 12) | (unsigned)(d.h & 0xfff)));
  if (DotSeen.size() < 1024 && DotSeen.insert(key).second) {
   if (DotBuf.empty()) { DotFirst = GetTickCount(); DotPath = path; } else if (DotPath != path) { DotFlushLocked(); DotFirst = GetTickCount(); DotPath = path; }
-  char e[96]; sprintf_s(e, "%s%d:%04x:%d:%d:%d:%d:%d:%d:%c", DotBuf.empty() ? "" : ";", d.i, (unsigned)d.ch, d.h, d.b, d.a, d.x, d.y, d.s, d.k); DotBuf += e;
+  char e[160]; sprintf_s(e, "%s%d:%04x:%d:%d:%d:%d:%d:%d:%c:%d:%d:%s", DotBuf.empty() ? "" : ";", d.i, (unsigned)d.ch, d.h, d.b, d.a, d.x, d.y, d.s, d.k, d.at.x, d.at.y, d.at.sp); DotBuf += e;
   if (++DotCount >= 48) DotFlushLocked(); }
  ReleaseSRWLockExclusive(&DotLock);
 }
@@ -223,9 +242,12 @@ bool DotsLive() {
  return now - LoadedAt <= BeatGrace; // never seen: early-injection grace
 }
 // Dot mode answers "not matched" while the heartbeat says the player would see the marks.
-bool DotsBlocked() { return DotMode && !DotsLive(); }
+bool DotsBlocked() { return DotMode && PaintDots && !DotsLive(); }
+// Placement (blank glyphs): blind blanks only while HookBridge is connected, or in the first 20 s after load (early
+// injection runs before HookBridge connects); a game left alone never keeps hidden text.
+bool BlindAllowed() { return PaintDots || CtlConnected || GetTickCount64() - LoadedAt <= BeatGrace; }
 DWORD WINAPI BeatWatch(void *) {
- for (;;) { Sleep(250); if (!DotMode) continue; bool live = DotsLive();
+ for (;;) { Sleep(250); if (!DotMode || !PaintDots) continue; bool live = DotsLive();
   if (!live && !InterlockedExchange(&BeatLapsed, 1)) { if (DotsServedCount) Send("ToMe_GLYPHDOT status needs-relaunch served=" + std::to_string(DotsServedCount)); else Send("ToMe_GLYPHDOT status paused"); }
   if (live && BeatLapsed) { InterlockedExchange(&BeatLapsed, 0); Send("ToMe_GLYPHDOT status live"); } }
 }
@@ -339,14 +361,14 @@ BOOL Dotted(HDC dc, int x, int y, UINT o, const RECT *r, const std::wstring &tex
  UINT align = GetTextAlign(dc); bool update = (align & TA_UPDATECP) != 0; if (update) { POINT p{}; GetCurrentPositionEx(dc, &p); x = p.x; y = p.y; }
  int left = x; if ((align & TA_CENTER) == TA_CENTER) left = x - total / 2; else if ((align & TA_CENTER) == TA_RIGHT) left = x - total;
  int top = y; if ((align & TA_BASELINE) == TA_BASELINE) top = y - tm.tmAscent; else if ((align & TA_BASELINE) == TA_BOTTOM) top = y - tm.tmHeight;
- int side = DotSide(tm.tmHeight); COLORREF old = SetBkColor(dc, GetTextColor(dc)); MAT2 id = {{0, 1}, {0, 0}, {0, 0}, {0, 1}}; int pen = left, rise = 0;
+ bool paint = PaintDots != 0; int side = paint ? DotSide(tm.tmHeight) : 0; COLORREF old = SetBkColor(dc, GetTextColor(dc)); MAT2 id = {{0, 1}, {0, 0}, {0, 0}, {0, 1}}; int pen = left, rise = 0;
  for (UINT i = 0; i < count; i++) {
   if (sv[i].kind) {
    GLYPHMETRICS gm{}; DWORD g = OGetGlyphOutlineW(dc, glyphs ? glyphs[i] : text[i], GGO_METRICS | (glyphs ? GGO_GLYPH_INDEX : 0), &gm, 0, NULL, &id);
    int ox = 0, oy = 0, bx = adv[i], by = tm.tmHeight; if (g != GDI_ERROR) { ox = gm.gmptGlyphOrigin.x; oy = tm.tmAscent - gm.gmptGlyphOrigin.y; bx = (int)gm.gmBlackBoxX; by = (int)gm.gmBlackBoxY; }
    RECT d = {pen + ox, top - rise + oy, pen + ox + (std::min)(side, bx), top - rise + oy + (std::min)(side, by)};
-   if (!(o & ETO_CLIPPED) || !r || IntersectRect(&d, &d, r)) OExtTextOutW(dc, 0, 0, ETO_OPAQUE, &d, L"", 0, NULL);
-   ServeDot(seq, "text", Dot{sv[i].index, text[i], (int)tm.tmHeight, (int)tm.tmAscent, adv[i], ox, oy, side, sv[i].kind}); }
+   if (paint && (!(o & ETO_CLIPPED) || !r || IntersectRect(&d, &d, r))) OExtTextOutW(dc, 0, 0, ETO_OPAQUE, &d, L"", 0, NULL);
+   ServeDot(seq, "text", Dot{sv[i].index, text[i], (int)tm.tmHeight, (int)tm.tmAscent, adv[i], ox, oy, side, sv[i].kind, PlaceLogical(dc, pen, top - rise)}); }
   pen += adv[i]; if (pdy) rise += dx[2 * i + 1];
  }
  SetBkColor(dc, old);
@@ -383,9 +405,9 @@ BOOL WINAPI HTextOutA(HDC dc, int x, int y, LPCSTR s, int n) {
 // A matched glyph: MODE blank zeroes its pixels (outlines collapse to a point); MODE dot serves the dot glyph and
 // reports it. Size queries and GGO_METRICS calls are returned unchanged in both modes.
 DWORD ServeGlyph(HDC dc, UINT f, const GLYPHMETRICS *gm, LPVOID b, DWORD n, DWORD r, const GlyphHide::Served &sv, long seq, wchar_t ch) {
- if (!DotMode || !gm) { if (b && n) BlankGlyph(f, b, r < n ? r : n); return r; }
+ if (!DotMode || !gm || !PaintDots) { if (b && n) BlankGlyph(f, b, r < n ? r : n); if (!DotMode || !gm || !b || !n || (f & 0x0f) == GGO_METRICS) return r; }
  if (!b || !n || (f & 0x0f) == GGO_METRICS) return r;
- TEXTMETRICW tm{}; Cell(dc, tm); int side = DotSide(tm.tmHeight); DWORD out = DotGlyph(f, *gm, b, n, r, side);
+ TEXTMETRICW tm{}; Cell(dc, tm); int side = PaintDots ? DotSide(tm.tmHeight) : 0; DWORD out = PaintDots ? DotGlyph(f, *gm, b, n, r, side) : r;
  ServeDot(seq, "ggo", Dot{sv.index, ch, (int)tm.tmHeight, (int)tm.tmAscent, (int)gm->gmCellIncX, (int)gm->gmptGlyphOrigin.x, (int)tm.tmAscent - (int)gm->gmptGlyphOrigin.y, side, sv.kind});
  return out;
 }
@@ -468,18 +490,19 @@ void GdipDots(void *g, const WCHAR *s, int len, void *font, const GpRectF *rc, c
  void *format = NULL; if (fmt) Gp.CloneFormat((void *)fmt, &format); else { void *generic = NULL; if (!Gp.GenericDefault(&generic) && generic) Gp.CloneFormat(generic, &format); }
  if (!format) return;
  GpRectF layout = rc ? *rc : GpRectF{0, 0, 0, 0}; if (layout.Width <= 0) layout.Width = 1e6f; if (layout.Height <= 0) layout.Height = 1e6f;
- int h = 0, b = 0; GdipCell(g, font, h, b); int side = DotSide(h), smoothing = 0; Gp.GetSmoothing(g, &smoothing); Gp.SetSmoothing(g, 3 /* SmoothingModeNone */);
+ bool paint = PaintDots != 0; int h = 0, b = 0; GdipCell(g, font, h, b); int side = paint ? DotSide(h) : 0, smoothing = 0; Gp.GetSmoothing(g, &smoothing); if (paint) Gp.SetSmoothing(g, 3 /* SmoothingModeNone */);
  std::vector<int> which; for (int i = 0; i < len; i++) if (sv[i].kind) which.push_back(i);
  for (size_t at = 0; at < which.size(); at += 32) {
   size_t k = (std::min)((size_t)32, which.size() - at); std::vector<GpRange> ranges(k); std::vector<void *> regions(k, NULL);
   for (size_t j = 0; j < k; j++) { ranges[j] = {which[at + j], 1}; Gp.CreateRegion(&regions[j]); }
   if (!Gp.SetRanges(format, (INT)k, ranges.data()) && !Gp.Measure(g, s, len, font, &layout, format, (INT)k, regions.data()))
    for (size_t j = 0; j < k; j++) { GpRectF box{}; int i = which[at + j]; if (!regions[j] || Gp.GetRegionBounds(regions[j], g, &box) || box.Width <= 0) continue;
-    float x = (float)(int)(box.X + .5f), y = (float)(int)(box.Y + .5f); Gp.FillRectangle(g, (void *)brush, x, y, (float)side, (float)side);
-    ServeDot(seq, "gdip", Dot{sv[i].index, s[i], h, b, (int)(box.Width + .5f), 0, 0, side, sv[i].kind}); }
+    float x = (float)(int)(box.X + .5f), y = (float)(int)(box.Y + .5f); if (paint) Gp.FillRectangle(g, (void *)brush, x, y, (float)side, (float)side);
+    Where at; at.x = (int)x; at.y = (int)y; strcpy_s(at.sp, "g");
+    ServeDot(seq, "gdip", Dot{sv[i].index, s[i], h, b, (int)(box.Width + .5f), 0, 0, side, sv[i].kind, at}); }
   for (void *r : regions) if (r) Gp.DeleteRegion(r);
  }
- Gp.SetSmoothing(g, smoothing); Gp.DeleteFormat(format);
+ if (paint) Gp.SetSmoothing(g, smoothing); Gp.DeleteFormat(format);
 }
 int WINAPI HGdipDrawString(void *g, const WCHAR *s, INT n, void *font, const void *rc, const void *fmt, const void *br) {
  int len = n < 0 && s ? (int)wcsnlen(s, 4096) : n, k = CountW(s, len); Face face; bool known = (k || HideOn) && GdipFace(font, face);
@@ -494,10 +517,11 @@ int WINAPI HGdipDrawDriverString(void *g, const UINT16 *s, INT n, const void *fo
  if (HideOn && s && (flags & 1)) { int len = n < 0 ? (int)wcsnlen((const wchar_t *)s, 4096) : n; Face face; std::vector<GlyphHide::Served> sv; long seq = 0;
   if (len > 0 && len <= 4096 && GdipFace(font, face) && HideText(std::wstring((const wchar_t *)s, len), face, "gdip", &sv, &seq)) {
    if (DotMode && Gp.ok && pos && !(flags & 12) && (int)sv.size() == len) {
-    const float *p = (const float *)pos; int h = 0, b = 0; GdipCell(g, font, h, b); int side = DotSide(h), smoothing = 0; Gp.GetSmoothing(g, &smoothing); Gp.SetSmoothing(g, 3);
-    for (int i = 0; i < len; i++) if (sv[i].kind) { float x = (float)(int)(p[2 * i] + .5f), y = (float)(int)(p[2 * i + 1] - b + .5f); Gp.FillRectangle(g, (void *)br, x, y, (float)side, (float)side);
-     ServeDot(seq, "gdip", Dot{sv[i].index, (wchar_t)s[i], h, b, i + 1 < len ? (int)(p[2 * i + 2] - p[2 * i] + .5f) : 0, 0, 0, side, sv[i].kind}); }
-    Gp.SetSmoothing(g, smoothing); }
+    bool paint = PaintDots != 0; const float *p = (const float *)pos; int h = 0, b = 0; GdipCell(g, font, h, b); int side = paint ? DotSide(h) : 0, smoothing = 0; Gp.GetSmoothing(g, &smoothing); if (paint) Gp.SetSmoothing(g, 3);
+    for (int i = 0; i < len; i++) if (sv[i].kind) { float x = (float)(int)(p[2 * i] + .5f), y = (float)(int)(p[2 * i + 1] - b + .5f); if (paint) Gp.FillRectangle(g, (void *)br, x, y, (float)side, (float)side);
+     Where at; at.x = (int)x; at.y = (int)y; strcpy_s(at.sp, "g");
+     ServeDot(seq, "gdip", Dot{sv[i].index, (wchar_t)s[i], h, b, i + 1 < len ? (int)(p[2 * i + 2] - p[2 * i] + .5f) : 0, 0, 0, side, sv[i].kind, at}); }
+    if (paint) Gp.SetSmoothing(g, smoothing); }
    return 0; } }
  return OGdipDrawDriverString(g, s, n, font, br, pos, flags, m);
 }
@@ -533,6 +557,17 @@ IDWriteFactory *Factory() {
  if (create && SUCCEEDED(create(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory), (IUnknown **)&f))) DotFactory = f; return DotFactory;
 }
 float Snap(float dip, float dpi) { return (float)(int)(dip * dpi / 96.f + .5f) * 96.f / dpi; }
+// A point in DIPs drawn on rt to Where: the target's transform and DPI give target pixels; a window render target's
+// pixels are its window's client area, mapped to the top-level window's; other targets report "t<W>x<H>".
+Where PlaceTarget(ID2D1RenderTarget *rt, float x, float y) {
+ Where w; D2D1_MATRIX_3X2_F m; rt->GetTransform(&m); FLOAT dx = 96, dy = 96; rt->GetDpi(&dx, &dy); if (dx <= 0) dx = 96; if (dy <= 0) dy = 96;
+ float tx = x * m._11 + y * m._21 + m._31, ty = x * m._12 + y * m._22 + m._32; w.x = (int)floorf(tx * dx / 96.f + .5f); w.y = (int)floorf(ty * dy / 96.f + .5f);
+ ID2D1HwndRenderTarget *h = NULL;
+ if (SUCCEEDED(rt->QueryInterface(__uuidof(ID2D1HwndRenderTarget), (void **)&h)) && h) {
+  HWND win = h->GetHwnd(); h->Release(); HWND root = win ? GetAncestor(win, GA_ROOT) : NULL; POINT p{w.x, w.y};
+  if (win && root) { if (root != win) MapWindowPoints(win, root, &p, 1); w.x = p.x; w.y = p.y; strcpy_s(w.sp, "c"); return w; } }
+ D2D1_SIZE_U px = rt->GetPixelSize(); sprintf_s(w.sp, "t%ux%u", px.width, px.height); return w;
+}
 void LayoutDots(ID2D1RenderTarget *rt, D2D1_POINT_2F at, IDWriteTextLayout *layout, ID2D1Brush *brush, const std::wstring &text, const std::vector<GlyphHide::Served> &sv, long seq) {
  if (!layout || sv.size() != text.size()) return;
  FLOAT dx = 96, dy = 96; rt->GetDpi(&dx, &dy); if (dx <= 0) dx = 96; if (dy <= 0) dy = 96;
@@ -541,9 +576,9 @@ void LayoutDots(ID2D1RenderTarget *rt, D2D1_POINT_2F at, IDWriteTextLayout *layo
  for (UINT32 i = 0; i < (UINT32)text.size(); i++) {
   if (!sv[i].kind) continue; FLOAT px = 0, py = 0; DWRITE_HIT_TEST_METRICS ht{}; if (FAILED(layout->HitTestTextPosition(i, FALSE, &px, &py, &ht))) continue;
   float base = ht.height * .8f, top = 0; for (UINT32 l = 0; l < lines; l++) { if (ht.top < top + lm[l].height - .01f) { base = lm[l].baseline; break; } top += lm[l].height; }
-  int h = (int)(ht.height * dy / 96.f + .5f), side = DotSide(h); float x = Snap(at.x + ht.left, dx), y = Snap(at.y + ht.top, dy);
-  rt->FillRectangle(D2D1::RectF(x, y, x + side * 96.f / dx, y + side * 96.f / dy), brush);
-  ServeDot(seq, "d2d", Dot{sv[i].index, text[i], h, (int)(base * dy / 96.f + .5f), (int)(ht.width * dx / 96.f + .5f), 0, 0, side, sv[i].kind}); }
+  int h = (int)(ht.height * dy / 96.f + .5f), side = PaintDots ? DotSide(h) : 0; float x = Snap(at.x + ht.left, dx), y = Snap(at.y + ht.top, dy);
+  if (side) rt->FillRectangle(D2D1::RectF(x, y, x + side * 96.f / dx, y + side * 96.f / dy), brush);
+  ServeDot(seq, "d2d", Dot{sv[i].index, text[i], h, (int)(base * dy / 96.f + .5f), (int)(ht.width * dx / 96.f + .5f), 0, 0, side, sv[i].kind, PlaceTarget(rt, at.x + ht.left, at.y + ht.top)}); }
  rt->SetAntialiasMode(mode);
 }
 void STDMETHODCALLTYPE HDrawText(ID2D1RenderTarget *rt, const WCHAR *s, UINT32 n, IDWriteTextFormat *format, const D2D1_RECT_F *rc, ID2D1Brush *brush, D2D1_DRAW_TEXT_OPTIONS o, DWRITE_MEASURING_MODE mm) {
@@ -580,11 +615,11 @@ void STDMETHODCALLTYPE HDrawGlyphRun(ID2D1RenderTarget *rt, D2D1_POINT_2F at, co
   if (!text.empty() && HideText(text, Face{L"", (int)(run->fontEmSize + .5f), 400}, "run", &sv, &seq)) {
    if (DotMode && run->glyphAdvances && !(run->bidiLevel & 1) && !run->isSideways && sv.size() == text.size()) {
     DWRITE_FONT_METRICS fm{}; run->fontFace->GetMetrics(&fm); float em = fm.designUnitsPerEm ? run->fontEmSize / fm.designUnitsPerEm : 0, asc = fm.ascent * em, desc = fm.descent * em;
-    FLOAT dx = 96, dy = 96; rt->GetDpi(&dx, &dy); if (dx <= 0) dx = 96; if (dy <= 0) dy = 96; int h = (int)((asc + desc) * dy / 96.f + .5f), side = DotSide(h); float pen = at.x;
+    FLOAT dx = 96, dy = 96; rt->GetDpi(&dx, &dy); if (dx <= 0) dx = 96; if (dy <= 0) dy = 96; int h = (int)((asc + desc) * dy / 96.f + .5f), side = PaintDots ? DotSide(h) : 0; float pen = at.x;
     D2D1_ANTIALIAS_MODE mode = rt->GetAntialiasMode(); rt->SetAntialiasMode(D2D1_ANTIALIAS_MODE_ALIASED);
     for (UINT32 i = 0; i < run->glyphCount; i++) { if (sv[i].kind) { float ox = run->glyphOffsets ? run->glyphOffsets[i].advanceOffset : 0, oy = run->glyphOffsets ? run->glyphOffsets[i].ascenderOffset : 0;
-      float x = Snap(pen + ox, dx), y = Snap(at.y - asc - oy, dy); rt->FillRectangle(D2D1::RectF(x, y, x + side * 96.f / dx, y + side * 96.f / dy), brush);
-      ServeDot(seq, "run", Dot{sv[i].index, text[i], h, (int)(asc * dy / 96.f + .5f), (int)(run->glyphAdvances[i] * dx / 96.f + .5f), 0, 0, side, sv[i].kind}); }
+      float x = Snap(pen + ox, dx), y = Snap(at.y - asc - oy, dy); if (side) rt->FillRectangle(D2D1::RectF(x, y, x + side * 96.f / dx, y + side * 96.f / dy), brush);
+      ServeDot(seq, "run", Dot{sv[i].index, text[i], h, (int)(asc * dy / 96.f + .5f), (int)(run->glyphAdvances[i] * dx / 96.f + .5f), 0, 0, side, sv[i].kind, PlaceTarget(rt, pen + ox, at.y - asc - oy)}); }
      pen += run->glyphAdvances[i]; }
     rt->SetAntialiasMode(mode); }
    return; } }
@@ -668,7 +703,7 @@ DWORD WINAPI Run(void *) {
  Send("ToMe_FONT status gdi hooks " + std::to_string(n) + "/11");
  // Early injection (MeguLitLaunch<bit>.exe, docs/text-architecture.md): the starting mode and dialogue font come from the
  // game's environment, since HookBridge connects only later; then the launcher is told the hooks are in place.
- { wchar_t v[128]; if (GetEnvironmentVariableW(L"MEGULIT_GLYPH_MODE", v, 128) && (!wcscmp(v, L"dot") || !wcscmp(v, L"dot-blind"))) Command(std::string("MODE ") + Utf8(v));
+ { wchar_t v[128]; if (GetEnvironmentVariableW(L"MEGULIT_GLYPH_MODE", v, 128) && (!wcscmp(v, L"dot") || !wcscmp(v, L"dot-blind") || !wcscmp(v, L"place") || !wcscmp(v, L"place-blind"))) Command(std::string("MODE ") + Utf8(v));
   if (GetEnvironmentVariableW(L"MEGULIT_GLYPH_FONT", v, 128) && v[0]) Command("FONT " + Utf8(v));
   wchar_t ready[64]; swprintf_s(ready, L"MeguLitFontReady-%lu", GetCurrentProcessId()); HANDLE e = OpenEventW(EVENT_MODIFY_STATE, FALSE, ready); if (e) { SetEvent(e); CloseHandle(e); } }
  HANDLE ctl = CreateThread(NULL, 0, Control, NULL, 0, NULL); if (ctl) CloseHandle(ctl); // after the hooks: a pushed line always meets them

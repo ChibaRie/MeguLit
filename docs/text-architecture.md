@@ -7,7 +7,9 @@ would have drawn it. Three parts, each with its own section below:
    becomes a small dot with the original metrics, so layout, wrapping and pacing stay the game's own.
 2. **Capture compositor** (`feat/capture-compositor`): captures the game window, finds the dots, erases them, draws
    MeguLit's text at their positions and shows the result in MeguLit's own window.
-   Details: docs/text-architecture-compositor.md.
+   Details: docs/text-architecture-compositor.md. **Abandoned 2026-11-14** (it stole clicks and exposed marks). Its
+   successor is the **reader overlay placement** (`feat/overlay-placement`): the game draws blank glyphs (`MODE place`)
+   and MeguLit's reader overlay draws its text at the cell origins the sources report (see "Placement" below).
 3. **Non-dot paths** (`feat/text-paths`): engines that do not take glyphs from Windows (web, Unity, KiriKiri with
    prerendered fonts, Ren'Py) report character rectangles themselves.
 
@@ -20,6 +22,7 @@ version, a line in this log, and stays backward compatible where possible (new f
 
 | Spec | Date       | Change |
 |------|------------|--------|
+| 3    | 2026-11-14 | `MODE place` / `place-blind` (blank glyphs + records), the default for MeguLit's launch flow. Compatible addition at the end of every dot record: `:px:py:space`, the cell's top-left on screen; `hookGlyphDots` dots carry `at`. `ready ... modes=blank,dot,place`. Dots stay available on request. |
 | 1    | 2026-11-14 | First version: dot geometry, `ToMe_GLYPHDOT` records, `hookGlyphDots` events, `glyphMode` command. |
 | 2    | 2026-11-14 | Dot side grows with the cell: max(3, round(h/10)) from 12 px (was a fixed 3). Records unchanged. |
 | 2    | 2026-11-14 | Compositor heartbeat gate (dot mode), `status needs-relaunch / paused / live` records. |
@@ -54,6 +57,8 @@ The same matcher as the glyph hide (E667) decides; dot mode changes only what a 
 | `blank` | nothing: blank glyph with the same metrics, string left out (version 2 behaviour, the **default and fallback**) |
 | `dot`   | a dot glyph with the same metrics; strings get one dot per character |
 | `dot-blind` | as `dot`, plus every CJK/kana glyph under the dialogue font becomes a dot **without waiting for the line** (kind `b`, index −1) |
+| `place` | blank glyph / string left out, as `blank`, **and** every matched character is reported as in `dot` (records with `s` = 0) with its cell origin on screen (spec 3, "Placement") |
+| `place-blind` | as `place`, with the blind rule of `dot-blind` (kind `b`); blind blanks only while HookBridge is connected or in the first 20 s after load |
 
 Front end → bridge (stdin JSON): `{"type":"glyphMode","mode":"dot"}` or `"blank"`. Add `"blind":true` (or `MEGULIT_GLYPH_BLIND=1`) for `MODE dot-blind`: for engines whose stream text arrives after the glyphs (AdvHD, KiriKiri2 read-only streams). Scope is the dialogue font only (learned, `FONT` seed, or the probe's leading font); the dialogue window is not known at this layer, so a name or menu drawn in the same face and size is dotted too. `HookNative.setGlyphMode(mode)` sends
 it. `MEGULIT_GLYPH_MODE=dot` in HookBridge's environment starts in dot mode (tests). Bridge → DLL (control pipe
@@ -130,6 +135,42 @@ fallback for every other launch path (Steam, Locale Emulator, shell open). The f
 font yet unless the line stream taught one; HookBridge stores the probe's dialogue font (`BlindSeed`) for the next one.
 Self-test: `run-dots.cmd` starts `earlyhost.exe` through the launcher (x86 and x64); its first glyph must be a dot.
 
+### Placement (`MODE place`, spec 3)
+
+For the reader overlay (feat/overlay-placement), which draws MeguLit's text over the game window where the game's own
+text would be. A matched glyph or string is **blank** (same metrics, no coverage: GetGlyphOutline bitmaps zeroed,
+outlines collapsed to a point, strings left out with the opaque background and current position kept), and every matched
+character is still reported once per line with `ToMe_GLYPHDOT line` / `dots`, exactly as in dot mode, with `s` = 0 and
+the cell origin appended (`px:py:space`, see Reports).
+
+- **Cell origin** = the top-left of the character's line cell: pen position (left edge of its advance) and the top of
+  the cell (baseline − ascent). `h`, `b` and `a` give the cell height, the ascent and the advance in the same pixels.
+- **Spaces**:
+  - `c`: client area of the game's top-level window, in pixels. GDI strings drawn on a window DC (WindowFromDC): the
+    logical point goes through `LPtoDP` and the DC origin (`GetDCOrgEx`) to the screen and `ScreenToClient` of the
+    window's root (`GetAncestor(GA_ROOT)`). Direct2D window render targets: target pixels mapped from the target's
+    window to its root.
+  - `m<W>x<H>`: device pixels of a memory surface of that size (the selected bitmap of a memory DC). Most engines draw
+    text into a back buffer and blit it later; when `W x H` equals the game's client size the point is already in client
+    pixels, otherwise the overlay scales by client/W, client/H.
+  - `t<W>x<H>`: pixels of a Direct2D render target that is not a window target (DC, bitmap, DXGI), after the target's
+    transform and DPI; scale as for `m`.
+  - `g`: GDI+ world units of the game's `Graphics` (layout box or driver-string position); no device mapping known.
+  - `-`: not known. GetGlyphOutline returns a glyph bitmap and never says where the engine puts it; the record still
+    gives the character, cell height, ascent and advance.
+- APIs with origins: TextOut / ExtTextOut (all alignments, `TA_UPDATECP`, `lpDx` incl. `ETO_PDY`, `ETO_GLYPH_INDEX`),
+  DrawText (via ExtTextOut), GDI+ DrawString / DrawDriverString (`g`), Direct2D DrawText / DrawTextLayout (hit-test
+  boxes) and DrawGlyphRun (run origin + advances + offsets).
+- No heartbeat gate: blank glyphs are not marks. A closed control pipe (HookBridge gone) or `OFF` restores real glyphs
+  for everything rasterised afterwards, as in `blank`.
+- In MeguLit (core/glyph-dots.cjs) `place` is the mode of the launch flow when 文字显示 places text over the game
+  (`textRenderer` `placed`, or the older `compositor` value): the launcher starts with `MEGULIT_GLYPH_MODE=place-blind`,
+  HookBridge with `MEGULIT_GLYPH_MODE=place`. `dot` stays available with `MEGULIT_GLYPH_MODE=dot`.
+- Self-test (`run-dots.cmd`, x86/x64): TextOut, ExtTextOut with `lpDx`, baseline alignment, GetGlyphOutline and
+  DrawGlyphRun leave no ink; every character is reported once with the expected origin in `m1000x90`, in `c` (a
+  hidden, never shown window whose child at (50,30) must map to client (50+x, 30+y) of the top-level window), in
+  `t1000x90`, and `-` for GetGlyphOutline; `place-blind` leaves no ink either.
+
 ### Compositor heartbeat (dot mode only)
 
 Owner rule: the player never sees marks. MeguLitFont serves dots only while the capture compositor presents this game:
@@ -153,14 +194,16 @@ ToMe_GLYPHDOT cache seq=<n> missing=<a> of <b>
 
 - `seq` increases with every new line the bridge pushes; in dot mode `line` is sent as soon as the line is pushed (before the game draws it), so the dot count is known in advance. `text` is that line **with all blanks removed** (U+0000–U+0020,
   U+3000, U+200B, U+FEFF). Character indices below index into this text. `line` comes before the first `dots` of its seq.
-- `<dot>` = `i:u:h:b:a:x:y:s:k`
+- `<dot>` = `i:u:h:b:a:x:y:s:k:px:py:space` (spec 3; spec 1–2 records end after `k`, readers accept both)
   - `i` index into the line text (`-1` unknown), `u` the character as hex UTF-16 code unit,
   - `h` cell height px, `b` ascent px (baseline from the cell top), `a` advance px,
   - `x`,`y` offset of the dot's top-left from the cell's top-left (cell top-left = dot − (x, y)); 0,0 for GDI+/Direct2D,
   - `s` nominal dot side (the drawn square may be clipped to a smaller black box),
   - `k` kind: `d` character of the current line, `c` drawn again after it was matched (index of its last placement),
     `p` character of the previous line (index into the previous line's text), `r` ruby kana over a matched draw (`i`=-1).
-  `b` blind dot (`MODE dot-blind`): drawn before its line arrived; it carries the seq of the last pushed line and belongs
+  - `px`,`py`,`space` the cell's top-left and the space it is in (`c`, `m<W>x<H>`, `t<W>x<H>`, `g`, `-`; see
+    "Placement"). Reported in every mode that reports, dots included; `s` = 0 in `place` mode (no dot drawn).
+  `b` blind dot (`MODE dot-blind`, `MODE place-blind`): drawn before its line arrived; it carries the seq of the last pushed line and belongs
   to the line pushed next. Map blind dots to that line's characters by reading order. Blind records are deduplicated per
   (character, height) within a seq, so repeated characters appear once in the records but as many times as drawn on screen.
 - Every (index, kind) is reported **once per line** (ruby: once per character and height), even when the game redraws the
@@ -170,15 +213,18 @@ ToMe_GLYPHDOT cache seq=<n> missing=<a> of <b>
   report: it shows up as a dot for which no record arrived in this line. ② may map such dots by reading order
   (dots in order = non-blank characters of the line in order) or treat them as unknown.
 - The existing `ToMe_GLYPHHIDE ready|key|hit|line` records are unchanged; `ready` now reads
-  `ready version=3 modes=blank,dot`.
+  `ready version=3 modes=blank,dot,place`.
 
 ### Events (HookBridge → front end, stdout JSON)
 
 ```
 {"type":"hookGlyphDots","state":"line","seq":7,"text":"吾輩は猫である。"}
 {"type":"hookGlyphDots","state":"dots","seq":7,"path":"ggo","dots":[{"i":0,"ch":"吾","h":28,"b":24,"a":28,"x":1,"y":2,"s":3,"k":"d"}, ...]}
+{"type":"hookGlyphDots","state":"dots","seq":8,"path":"text","dots":[{"i":0,"ch":"次","h":28,"b":24,"a":28,"x":0,"y":0,"s":0,"k":"d","at":{"x":120,"y":440,"space":"c"}}, ...]}
 {"type":"hookGlyphDots","state":"cached"}
 ```
+
+`at` is present when the source knows the cell origin (`space` other than `-`); `core/hook-native.cjs` keeps it.
 
 `core/hook-native.cjs` re-emits them unchanged and keeps the current line's table in `state.hookGlyphDots`
 (`{seq, text, dots:[...], cached}`, merged per seq, without a UI broadcast).
