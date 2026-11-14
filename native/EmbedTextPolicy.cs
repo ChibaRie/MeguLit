@@ -115,6 +115,11 @@ internal static class EmbedTextPolicy {
         }
         return v.Replace(UnityVeilOpen, "");
     }
+    // Text marks (docs/text-architecture.md, "Marks"): the same rules as Hide, but every visible character becomes a mark
+    // the game draws itself, 「・」 (U+30FB) for a full-width character and 「･」 (U+FF65) for a half-width one, so the count,
+    // the constructs, blanks and line breaks stay exactly as they were. The capture compositor finds the marks.
+    [ThreadStatic] static bool Marking;
+    public static string Mark(string value) { Marking = true; try { return Hide(value); } finally { Marking = false; } }
     public static string Hide(string value) {
         // An empty reply tells LunaHook to skip writeback entirely, including its own re-encoding.
         // E560 (月に寄りそう乙女の作法, Unity UI.Text): rich-text tags (<size=36>…</size>, small-size ruby) are layout, not script
@@ -137,7 +142,7 @@ internal static class EmbedTextPolicy {
         foreach (Match m in constructs) { output.Append(Blank(value.Substring(at, m.Index - at))).Append(m.Value); at = m.Index + m.Length; }
         return output.Append(Blank(value.Substring(at))).ToString();
     }
-    static string Blank(string text) { return Glyph.Replace(text, m => m.Value[0] <= 0x7f ? " " : "　"); }
+    static string Blank(string text) { if (Marking) return Glyph.Replace(text, m => m.Value[0] <= 0x7f || (m.Value[0] >= 0xFF61 && m.Value[0] <= 0xFF9F) ? "\uFF65" : "\u30FB"); return Glyph.Replace(text, m => m.Value[0] <= 0x7f ? " " : "　"); }
 
     // E352 (user: "perfect original-style embed, solved for every game"): the game draws the translation itself, so it
     // lands in the game's own layout, font and effects. The written-back string keeps what the engine needs from the
