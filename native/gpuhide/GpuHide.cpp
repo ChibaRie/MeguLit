@@ -190,6 +190,18 @@ static void Refresh9(IDirect3DDevice9 *d) {
   if (hs) { v.vb = vb; v.vbOff = off; v.vbStride = st; } if (hi) v.ib = ib; }
  if (x) x->Release(); if (vs) vs->Release(); if (t) t->Release(); if (vb) vb->Release(); if (ib) ib->Release();
 }
+// Diagnostics only (MeguLitGpu.diag present): an undecoded indexed draw of one quad from a static buffer (sprites placed by
+// shader constants: Danganronpa, Artemis). Logs the buffer's first vertices (read-only lock) and the first vertex-shader
+// constants, so a constant layout can be studied. Never runs without the diag file.
+static void DiagSprite(IDirect3DDevice9 *d, Dev &v, UINT prims) {
+ static unsigned last; if (!Diag || prims != 2 || Frame == last || Frame % 120) return; last = Frame;
+ char b[1500]; int n = _snprintf_s(b, sizeof b, _TRUNCATE, "SPRITE F%u tex=%p stride=%u off=%u", Frame, v.tex0, v.vbStride, v.vbOff);
+ IDirect3DVertexBuffer9 *vb = (IDirect3DVertexBuffer9 *)v.vb; D3DVERTEXBUFFER_DESC dd;
+ if (vb && v.vbStride && SUCCEEDED(vb->GetDesc(&dd)) && dd.Pool != D3DPOOL_DEFAULT) { void *p = NULL; if (SUCCEEDED(vb->Lock(0, 0, &p, D3DLOCK_READONLY)) && p) { const float *f = (const float *)((char *)p + v.vbOff); unsigned fl = v.vbStride / 4; n += _snprintf_s(b + n, sizeof b - n, _TRUNCATE, " vb:"); for (unsigned i = 0; i < 4 * fl && i < 32 && (i + 1) * 4 <= dd.Size; i++) n += _snprintf_s(b + n, sizeof b - n, _TRUNCATE, " %.3g", f[i]); vb->Unlock(); } }
+ else n += _snprintf_s(b + n, sizeof b - n, _TRUNCATE, " vb:default-pool");
+ float c[4 * 12] = {}; if (SUCCEEDED(d->GetVertexShaderConstantF(0, c, 12))) { n += _snprintf_s(b + n, sizeof b - n, _TRUNCATE, " c:"); for (int i = 0; i < 48 && n < 1400; i++) n += _snprintf_s(b + n, sizeof b - n, _TRUNCATE, "%s%.4g", i % 4 ? "," : " |", c[i]); }
+ Log("%s", b);
+}
 static HRESULT WINAPI HDrawPrimitive(IDirect3DDevice9 *d, D3DPRIMITIVETYPE pt, UINT start, UINT prims) {
  DrawP o = ORIG(DrawP, d, 81); Refresh9(d); std::vector<int> drop; std::vector<Quad> q;
  { Guard g; Dev &v = *DevOf(d); auto it = Buffers.find(v.vb); bool ok = false;
@@ -206,7 +218,7 @@ static HRESULT WINAPI HDrawIndexedPrimitive(IDirect3DDevice9 *d, D3DPRIMITIVETYP
  { Guard g; Dev &v = *DevOf(d); auto vb = Buffers.find(v.vb), ib = Buffers.find(v.ib); bool ok = false;
   if (vb != Buffers.end() && ib != Buffers.end() && v.vbStride) { const Shadow &s = vb->second, &x = ib->second;
    ok = Quads(v, pt, prims, [&](UINT i) -> const unsigned char * { size_t ia = (size_t)(startIdx + i) * (x.i32 ? 4 : 2); if (ia + (x.i32 ? 4 : 2) > x.data.size()) return NULL; UINT idx = x.i32 ? *(const UINT *)&x.data[ia] : *(const USHORT *)&x.data[ia]; size_t at = v.vbOff + ((size_t)base + idx) * v.vbStride; return at + v.vbStride <= s.data.size() ? &s.data[at] : NULL; }, q); }
-  if (Diag) DiagDraw(v, "DIP", pt, prims, q, ok); if (ok) drop = Decide(v, q); }
+  if (Diag) DiagDraw(v, "DIP", pt, prims, q, ok); if (!ok && Diag) DiagSprite(d, v, prims); if (ok) drop = Decide(v, q); }
  if (drop.empty()) return o(d, pt, base, minIdx, nv, startIdx, prims);
  HRESULT hr = D3D_OK; size_t k = 0; UINT qn = (UINT)q.size(); UINT i = 0;
  while (i < qn) { if (k < drop.size() && (UINT)drop[k] == i) { k++; i++; continue; } UINT j = i; while (j < qn && !(k < drop.size() && (UINT)drop[k] == j)) j++; hr = o(d, pt, base, minIdx, nv, startIdx + i * 6, (j - i) * 2); i = j; }

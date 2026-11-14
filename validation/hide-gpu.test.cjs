@@ -11,7 +11,7 @@ test('learner is API-independent, generic and hides only after learning, inside 
  assert.doesNotMatch(g,/#include <windows\.h>|d3d9/i,'no Windows / Direct3D in the decision core');
  assert.doesNotMatch(g,/kirikiri|krkr|siglus|bgi|yuris|bruns|unity|renpy|leaf|clannad|dustmania/i,'no engine or game names');
  assert.match(g,/armedUntil = now \+ 60000/,'a line stays armed 60 s after the last push');
- assert.match(g,/sameAtlas = rt == areaRt && atlases\.count\(AtlasKey\(rt, tex\)\)/,'learned atlas (by texture, not size) on the learned target');
+ assert.match(g,/sameAtlas = rtW == areaW && rtH == areaH && atlases\.count\(AtlasKey\(NULL, tex\)\)/,'learned atlas (by texture) on every target of the learned size (pages drawn twice into a shadow buffer)');
  assert.match(g,/sheet = freshTex && LineSized\(tw, th\)/,'per-line glyph sheets: new and sized to the line only');
  assert.match(g,/if \(learned && armed && !readOnly && glyphSize && \(sameAtlas \|\| sheet\)\)/,'hides only after learning, while armed, at glyph height');
  assert.match(g,/cx >= area\.x0 && cx <= area\.x1 && cy >= area\.y0 && cy <= area\.y1/,'only inside the text area');
