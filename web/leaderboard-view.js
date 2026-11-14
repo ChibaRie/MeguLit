@@ -17,10 +17,10 @@ import {cardify} from './home-tv.js';
 import {mountForum,forumWords,forumSubRow} from './forum-view.js';
 export const leaderboardLabel={zh:'排行榜',ja:'ランキング',en:'Leaderboard'};
 const W={
- zh:{title:'排行榜',week:'本周',month:'本月',all:'全部',characters:'阅读字数',seconds:'阅读时长',words:'新收录单词',reviews:'复习次数',kana:'假名练习',study:'学习练习',streak:'连续天数',games:'按游戏',
+ zh:{title:'排行榜',week:'本周',month:'本月',all:'全部',characters:'阅读字数',seconds:'阅读时长',words:'新收录单词',reviews:'复习次数',kana:'假名练习',study:'学习',streak:'连续天数',games:'按游戏',
   notReady:'联网服务还在准备中',notReadyText:'排行榜上线后会显示在这里。下面是只在本机计算的个人数据，不会上传',
   mine:'我的数据',currentStreak:'当前连续',days:'天',unitChars:'字',unitWords:'个',unitReviews:'次',unitKana:'题',totalWords:'共收录单词',hours:'小时',minutes:'分钟',
-  joinTitle:'参加排行榜',joinText:'参加后只会上传阅读字数、时长、收录单词数、复习次数、学习练习题数（假名、语法、Anki 和其他练习分项）与学习时长、连续天数的汇总，以及本周查词的词条和次数（不含原句和游戏进度），不读取硬件信息。参加要先用邮箱登录 MeguLit 账号，几台电脑会合并成一行；邮箱只用来登录，不会出现在榜上。随时可以在 设置 › 个人主页 退出，退出时会删除服务器上的记录',loginStep:'第 1 步：用邮箱登录',loginText:'输入邮箱，收到 6 位验证码后填进来就登录好了，不用设密码。已经在 设置 › 账号 登录过的话会直接跳到下一步',joinStep:'第 2 步：起个昵称',ACCOUNT_REQUIRED:'请先用邮箱登录',
+  joinTitle:'参加排行榜',joinText:'参加后只会上传阅读字数、时长、收录单词数、复习次数、学习题数（假名、语法、Anki 和其他练习分项）与学习时长、连续天数的汇总，以及本周查词的词条和次数（不含原句和游戏进度），不读取硬件信息。参加要先用邮箱登录 MeguLit 账号，几台电脑会合并成一行；邮箱只用来登录，不会出现在榜上。随时可以在 设置 › 个人主页 退出，退出时会删除服务器上的记录',loginStep:'第 1 步：用邮箱登录',loginText:'输入邮箱，收到 6 位验证码后填进来就登录好了，不用设密码。已经在 设置 › 账号 登录过的话会直接跳到下一步',joinStep:'第 2 步：起个昵称',ACCOUNT_REQUIRED:'请先用邮箱登录',
   nickname:'昵称',nicknameHint:'2–16 个字',shareGames:'同时公开我读过的游戏（用于“按游戏”排行）',consent:'我同意上传上述汇总数据',join:'参加',
   joinedAs:'以 {name} 参加',leave:'退出排行榜',leaveConfirm:'再点一次确认退出（会删除服务器上的记录）',left:'已退出排行榜',
   me:'我的排名',rank:'第 {n} 名',empty:'还没有人上榜',offline:'暂时连不上联网服务',retry:'重试',readers:'{n} 人在读',top:'榜首',back:'返回游戏列表',
@@ -29,10 +29,10 @@ const W={
   hotPending:'本周热词会在周一 00:00（北京时间）揭晓',hotEmpty:'这一周还没有达到上榜门槛的词',hotEmptyOf:'这一周还没有足够的{cat}',hotRule:'至少 3 位读者查过才会上榜，只统计参加排行榜的读者',
   lookedUp:'{users} 人查过 · {n} 次',times:'{n} 次',aiGuess:'AI 推测',participants:'{n} 位读者参与',
   NAME_REQUIRED:'请填写昵称',NAME_LENGTH:'昵称需要 2–16 个字',NAME_INVALID:'昵称不能包含网址、引号或特殊字符',NAME_BLOCKED:'这个昵称不能使用，换一个吧',NAME_TAKEN:'这个昵称已经有人在用了，换一个吧',CONSENT_REQUIRED:'请先勾选同意',BIO_LENGTH:'签名最多 60 字',BIO_INVALID:'签名不能包含网址或特殊字符',BIO_BLOCKED:'签名里有不能使用的内容',NOT_JOINED:'请先参加排行榜',INVALID_FAVORITES:'最喜欢的游戏有误'},
- ja:{title:'ランキング',week:'今週',month:'今月',all:'全期間',characters:'読んだ文字数',seconds:'読書時間',words:'新しく登録した単語',reviews:'復習回数',kana:'かな練習',study:'学習練習',streak:'連続日数',games:'ゲーム別',
+ ja:{title:'ランキング',week:'今週',month:'今月',all:'全期間',characters:'読んだ文字数',seconds:'読書時間',words:'新しく登録した単語',reviews:'復習回数',kana:'かな練習',study:'学習',streak:'連続日数',games:'ゲーム別',
   notReady:'オンラインサービスは準備中です',notReadyText:'公開後、ランキングはここに表示されます。下はこの PC だけで計算した個人の記録で、送信されません',
   mine:'自分の記録',currentStreak:'現在の連続',days:'日',unitChars:'字',unitWords:'語',unitReviews:'回',unitKana:'問',totalWords:'登録単語の合計',hours:'時間',minutes:'分',
-  joinTitle:'ランキングに参加',joinText:'参加すると、読んだ文字数・時間・登録単語数・復習回数・学習練習の問題数（かな・文法・Anki・その他の内訳）と学習時間・連続日数の合計と、今週調べた語とその回数（原文やゲームの進行状況は含みません）だけを送ります。ハードウェア情報は読みません。参加にはメールアドレスで MeguLit アカウントにログインする必要があり、複数の PC が 1 行にまとまります。メールアドレスはログインにのみ使い、ランキングには表示されません。設定 › プロフィール でいつでも退出でき、そのときサーバーの記録も削除します',loginStep:'ステップ 1：メールアドレスでログイン',loginText:'メールアドレスを入力し、届いた 6 桁の確認コードを入れるだけでログインできます。パスワードは不要です。設定 › アカウント でログイン済みなら次のステップから始まります',joinStep:'ステップ 2：ニックネームを決める',ACCOUNT_REQUIRED:'先にメールアドレスでログインしてください',
+  joinTitle:'ランキングに参加',joinText:'参加すると、読んだ文字数・時間・登録単語数・復習回数・学習の問題数（かな・文法・Anki・その他の内訳）と学習時間・連続日数の合計と、今週調べた語とその回数（原文やゲームの進行状況は含みません）だけを送ります。ハードウェア情報は読みません。参加にはメールアドレスで MeguLit アカウントにログインする必要があり、複数の PC が 1 行にまとまります。メールアドレスはログインにのみ使い、ランキングには表示されません。設定 › プロフィール でいつでも退出でき、そのときサーバーの記録も削除します',loginStep:'ステップ 1：メールアドレスでログイン',loginText:'メールアドレスを入力し、届いた 6 桁の確認コードを入れるだけでログインできます。パスワードは不要です。設定 › アカウント でログイン済みなら次のステップから始まります',joinStep:'ステップ 2：ニックネームを決める',ACCOUNT_REQUIRED:'先にメールアドレスでログインしてください',
   nickname:'ニックネーム',nicknameHint:'2〜16 文字',shareGames:'読んだゲームも公開する（ゲーム別ランキング用）',consent:'上記の合計データの送信に同意します',join:'参加する',
   joinedAs:'{name} として参加中',leave:'ランキングから退出',leaveConfirm:'もう一度押すと退出します（サーバーの記録を削除）',left:'ランキングから退出しました',
   me:'自分の順位',rank:'{n} 位',empty:'まだ誰も載っていません',offline:'オンラインサービスに接続できません',retry:'再試行',readers:'{n} 人が読書中',top:'1 位',back:'ゲーム一覧に戻る',
@@ -41,7 +41,7 @@ const W={
   hotPending:'今週の注目語は月曜 0:00（UTC+8）に発表されます',hotEmpty:'この週は掲載基準に達した語がありません',hotEmptyOf:'この週は掲載基準に達した{cat}がありません',hotRule:'3 人以上が調べた語だけを掲載します。ランキング参加者のみ集計',
   lookedUp:'{users} 人が {n} 回調べました',times:'{n} 回',aiGuess:'AI の推測',participants:'{n} 人が参加',
   NAME_REQUIRED:'ニックネームを入力してください',NAME_LENGTH:'ニックネームは 2〜16 文字です',NAME_INVALID:'URL・引用符・特殊文字は使えません',NAME_BLOCKED:'このニックネームは使えません',NAME_TAKEN:'このニックネームはすでに使われています。別の名前にしてください',CONSENT_REQUIRED:'同意にチェックしてください',BIO_LENGTH:'ひとことは 60 文字までです',BIO_INVALID:'URL や特殊文字は使えません',BIO_BLOCKED:'使えない内容が含まれています',NOT_JOINED:'先にランキングに参加してください',INVALID_FAVORITES:'好きなゲームの指定が正しくありません'},
- en:{title:'Leaderboard',week:'This week',month:'This month',all:'All time',characters:'Characters read',seconds:'Reading time',words:'New words saved',reviews:'Reviews',kana:'Kana practice',study:'Study practice',streak:'Streak days',games:'By game',
+ en:{title:'Leaderboard',week:'This week',month:'This month',all:'All time',characters:'Characters read',seconds:'Reading time',words:'New words saved',reviews:'Reviews',kana:'Kana practice',study:'Study',streak:'Streak days',games:'By game',
   notReady:'Online services are still being set up',notReadyText:'The leaderboard will appear here once it is live. Below are your own numbers, computed on this PC and not uploaded',
   mine:'My numbers',currentStreak:'Current streak',days:'days',unitChars:'chars',unitWords:'words',unitReviews:'reviews',unitKana:'questions',totalWords:'Words saved in all',hours:'h',minutes:'min',
   joinTitle:'Join the leaderboard',joinText:'Only totals are uploaded: characters read, reading time, words saved, reviews, study questions answered (kana, grammar, Anki and other practice, each counted) with study time, streak days, and this week\'s looked-up words with their counts (no sentences, no game progress, no hardware ids). Joining needs a MeguLit account signed in with your email, so your PCs share one row; the email is only used to sign in and never shows on the board. Leave any time in Settings › Profile, which also deletes your entry on the server',loginStep:'Step 1: sign in with your email',loginText:'Enter your email, then type the 6-digit code we send you. No password. If you already signed in under Settings › Account, you start at step 2',joinStep:'Step 2: pick a nickname',ACCOUNT_REQUIRED:'Sign in with your email first',
@@ -54,7 +54,7 @@ const W={
   lookedUp:'{users} readers · {n} lookups',times:'{n}×',aiGuess:'AI guess',participants:'{n} readers took part',
   NAME_REQUIRED:'Enter a nickname',NAME_LENGTH:'Nicknames are 2–16 characters',NAME_INVALID:'No links, quotes or special characters',NAME_BLOCKED:'That nickname is not allowed',NAME_TAKEN:'Someone already uses this name; pick another',CONSENT_REQUIRED:'Please tick the agreement first',BIO_LENGTH:'Signatures are up to 60 characters',BIO_INVALID:'No links or special characters',BIO_BLOCKED:'That signature is not allowed',NOT_JOINED:'Join the leaderboard first',INVALID_FAVORITES:'Those favourite games are not valid'}
 };
-/* 2026-11-15 (user) 假名练习 became 学习练习: every study practice in one board, ranked by questions */
+/* 2026-11-15 (user) 假名练习 became 学习练习, renamed 学习 (Study): every study practice in one board, ranked by questions */
 const PERIODS=['week','month','all'],METRICS=['seconds','characters','words','reviews','study','streak','games'],CATS=['word','phrase','sentence'];
 let view={tab:'board',period:'week',metric:'seconds',game:'',category:'word',week:''};
 export const setView=patch=>{view={...view,...patch};};
