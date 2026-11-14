@@ -13,6 +13,9 @@ const BACKUP_DIR='.megulit-japanese-import',STAGING_DIR='.megulit-japanese-stagi
 const ARCHIVE=/\.(zip|7z|rar)$/i;
 const SKIP_DIR=/^(save|savedata|saves|userdata|\.megulit.*)$/i;
 const SKIP_FILE=/\.(sav|ini|cfg|log|txt|url|lnk|md|html?|pdf)$/i;
+/* 2026-11-14 (月姬 Chinese builds): an NScripter script is plain text, 0.txt … 99.txt; it is the one .txt that is game data */
+const SCRIPT_TEXT=/^\d{1,2}\.txt$/i;
+const skipFile=n=>SKIP_FILE.test(n)&&!SCRIPT_TEXT.test(n);
 const DATA=/\.(xp3|ypf|pck|dat|npa|arc|pak|int|dbs|ybn|ks|rpa|rpyc|bin|pac|cpk|afs|lpk|mpk|med|gpk)$/i;
 const OVERRIDE=n=>/^patch\d*\.xp3$/i.test(n)||/^update\d*\.ypf$/i.test(n)||(DATA.test(n)&&(languageHint(n.replace(/\.[^.]+$/,'.exe'))==='zh'||/汉化|漢化|中文|(?:^|[_. -])(?:chs|cht|cn|sc|zh)(?=$|[_. -]|\d)/i.test(n.replace(/\.[^.]+$/,''))));
 const MAX_FILES=40000,MAX_ADDED=4*1024**3;
@@ -26,7 +29,7 @@ function walk(root,limit=MAX_FILES){const out=[],stack=[''];
  while(stack.length){const rel=stack.pop();let list;try{list=fs.readdirSync(path.join(root,rel),{withFileTypes:true});}catch{continue;}
   for(const e of list){const r=rel?path.join(rel,e.name):e.name;
    if(e.isDirectory()){if(!SKIP_DIR.test(e.name))stack.push(r);}
-   else if(e.isFile()&&!SKIP_FILE.test(e.name)){out.push(r);if(out.length>limit)throw Error('IMPORT_TOO_MANY_FILES');}}}
+   else if(e.isFile()&&!skipFile(e.name)){out.push(r);if(out.length>limit)throw Error('IMPORT_TOO_MANY_FILES');}}}
  return out;}
 
 // The folder inside the source that is this game: the one sharing the most top-level names with the game folder.

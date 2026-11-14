@@ -15,11 +15,14 @@ public static class HookTarget {
  [DllImport("kernel32.dll",SetLastError=true)] static extern bool GetProcessTimes(IntPtr process,out System.Runtime.InteropServices.ComTypes.FILETIME created,out System.Runtime.InteropServices.ComTypes.FILETIME exited,out System.Runtime.InteropServices.ComTypes.FILETIME kernel,out System.Runtime.InteropServices.ComTypes.FILETIME user);
  [DllImport("kernel32.dll")] static extern bool GetExitCodeProcess(IntPtr process,out uint code);
  [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr process);
+ /* the bound game's program file, reported so the service can choose the hook text code page (Chinese builds draw GBK) */
+ public static string ExePath="";
  public static void Validate(uint pid,string window,string name,string started){
   long hwnd;if(pid==0||pid==Process.GetCurrentProcess().Id||!Int64.TryParse(window,out hwnd)||hwnd==0||String.IsNullOrEmpty(name)||String.IsNullOrEmpty(started))throw new Exception("Missing explicitly bound game identity");
   IntPtr process=OpenProcess(0x1000,false,pid);if(process==IntPtr.Zero)throw new Exception("Unable to query the explicitly bound game");
   try{var path=new StringBuilder(32768);int size=path.Capacity;uint exit;System.Runtime.InteropServices.ComTypes.FILETIME created,exited,kernel,user;
    if(!QueryFullProcessImageName(process,0,path,ref size)||!GetProcessTimes(process,out created,out exited,out kernel,out user)||!GetExitCodeProcess(process,out exit))throw new Exception("Unable to verify bound game identity");
+   ExePath=path.ToString();
    long filetime=((long)created.dwHighDateTime<<32)|(uint)created.dwLowDateTime;
    if(exit!=259||!String.Equals(Path.GetFileNameWithoutExtension(path.ToString()),name,StringComparison.OrdinalIgnoreCase)||DateTime.FromFileTimeUtc(filetime).Ticks.ToString(CultureInfo.InvariantCulture)!=started)throw new Exception("Bound game process changed; bind the game again");
   }finally{CloseHandle(process);}
