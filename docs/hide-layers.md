@@ -109,6 +109,53 @@ Live (2026-11-14):
 - サイコロジック・ラブコメディ (YU-RIS): no font data exists in its archives (`*.ypf`: pngs and `ysbin` scripts) nor in
   the Chinese patch's Enigma Virtual Box file (`2030.xp`: pngs and `.ybn`), so there is nothing to dot at the source.
 
+### Glyph trace: where GetGlyphOutline glyphs are drawn (`native/gpuhide/GlyphTrace.h`, 2026-11-15)
+
+CLANNAD (Siglus), ISLAND (CatSystem2) and Under The Moon (AdvHD) rasterise each character with GetGlyphOutline and copy
+the bitmap into their own Direct3D texture with their own code, so ① (MeguLitFont) knows the character but not where it is
+drawn (records with space `-`). The layer follows the bitmap from GetGlyphOutline into the texture and from the texture to
+the screen. Generic, read-only, always on (it costs nothing while no GetGlyphOutline bitmap waits):
+
+1. **Glyph**: the DLL's own GetGlyphOutlineW/A hooks (after the call) queue every returned bitmap (GGO_BITMAP, GRAY2/4/8)
+   with its character (A: through the DC's charset; GGO_GLYPH_INDEX: unknown), box and cell height, for 1.5 s.
+2. **Write**: texture writes take queued glyphs: `IDirect3DTexture9::LockRect/UnlockRect` (level 0), the level-0
+   `IDirect3DSurface9::LockRect/UnlockRect` (also plain off-screen surfaces), `UpdateSurface` / `UpdateTexture` /
+   same-size `StretchRect` copies (cells move with the texels), D3D11 `UpdateSubresource` on a 2D texture and
+   `CopySubresourceRegion`.
+   - A write of one glyph's size (the box at least, the cell + max(8, h/2) at most) takes the oldest queued glyph that
+     fits; inside it the bitmap is located by content when it has ink, else the written rectangle is the cell.
+   - A bigger write (the whole atlas) is searched for each queued glyph: its strongest pixel as anchor, then the whole
+     box compared (mean difference at most 20 of 255, at most 10 % of the ink missing). A blank glyph (MeguLitFont blank
+     mode) is found by its **mark pixel**: coverage 1..48 at the box's top-left with an empty box after it (① writes
+     coverage 1 of 64 at index 0 of a blanked bitmap). The mark search is also the fallback for a glyph with ink, because
+     the DLL's hook may run inside MeguLitFont's (then it saw the real bitmap but the engine got the blank). Places taken
+     earlier in the same write are skipped.
+   - Texel formats read: A8R8G8B8 / A8B8G8R8 (alpha), X8R8G8B8 / X8B8G8R8 (brightest channel), A8, L8, A8L8, A4R4G4B4;
+     D3D11 R8G8B8A8 / B8G8R8A8 / B8G8R8X8 / A8 / R8. Not covered: D3D11 Map/Unmap of textures, OpenGL glTexSubImage2D,
+     engines that change the bitmap beyond a linear coverage scale (then only the one-glyph-upload path matches).
+3. **Draw**: a textured quad whose texel rectangle is centred on a known cell is that character; its rectangle goes
+   through the same render-target to back-buffer mapping as layer 4's glyph rects. After each `LINE`, the characters drawn
+   since are reported in draw order, shadow / outline copies (same character within 40 % of its height) once:
+   `ToMe_GLYPHPOS line=<seq> sw=<back W> sh=<back H> n=<k> list=<u hex>,<x>,<y>,<w>,<h>;...` (ink boxes in back-buffer
+   pixels, at most one record per 120 ms while it changes). Cached glyphs (no new GetGlyphOutline) are reported through
+   their cells like new ones. A previous line still drawn after LINE (fading out) is reported too; the join below
+   matches in text order.
+
+HookBridge passes it on as `{"type":"hookGlyphPos","line":...}`; `core/hook-native.cjs` keeps the parsed record in
+`state.hookGlyphPos` and emits `{type:'hookGlyphPos', line, sw, sh, glyphs:[{ch,x,y,w,h}]}`. `core/gpu-glyph-pos.cjs
+fillPlaces(table, pos)` fills ① records (state.hookGlyphDots) whose space is `-`: characters matched in order to the
+entries, `at` = (ink left, top of the entry's row) in space `m<sw>x<sh>` (the back buffer, scaled to the client by
+`core/glyph-place.cjs` like a GDI memory surface); a character without a ① record (cached glyph) gets one. A character
+left unmatched keeps the line unplaced (glyph-place returns null; no guessing).
+
+Self-test `selftest/run-trace.cmd` (also called by `run.cmd`), x86 and x64: `ggohost` rasterises 吾輩は猫である。 with
+GetGlyphOutlineW (MS Gothic 24, GRAY8) and uploads it as an engine would: per-glyph rect lock of a managed A8R8G8B8 atlas
+(`upload`), one whole lock of an A8 atlas (`whole`), a system-memory texture + UpdateTexture (`sysmem`), level-0 surface
+locks (`surface`), MeguLitFont blank mode simulated by its own inner GetGlyphOutlineW hook (`blank`: per-glyph upload, no
+ink; `marker`: mark pixel, whole lock). Each draws the line (shadow copy first) and must get all 8 characters in order at
+the drawn places (within 3 px); a second line drawn from the same cells without GetGlyphOutline must be reported too. All
+12 pass (2026-11-15). Not checked in a real game yet (owner rule 2026-11-15: no game launches; see the owner's checklist).
+
 ### Crash canary
 
 Layer 4 must never crash a game. HookBridge keeps `data/gpu-hide/<exe>-<size>.json` per game build (the key of the stream

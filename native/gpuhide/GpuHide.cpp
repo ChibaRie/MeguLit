@@ -37,6 +37,7 @@
 #include <algorithm>
 #include <cmath>
 #include "GlyphQuads.h"
+#include "GlyphTrace.h"
 #include "../scncapture/minhook/include/MinHook.h"
 
 static CRITICAL_SECTION Lock;
@@ -99,9 +100,11 @@ static Dev *DevOf(IDirect3DDevice9 *d) {
 
 // ------------------------------------------------------------------------------------------------------------ line state
 static GlyphLearner Learner;
+static GlyphTrace Trace; // GetGlyphOutline glyphs followed into textures and onto the screen (GlyphTrace.h)
 static unsigned Frame, LastPresent;
 /* Test rigs only: MEGULIT_GPU_FPS_CAP=<fps> sleeps before each present so a background test game does not take the GPU from
    the player's own game. Unset in MeguLit (no cap). */
+static void FramesTick(unsigned now, unsigned w, unsigned h) { Learner.Frame(now, w, h); Trace.Frame(now, w, h); }
 static void FpsCap() {
  static int cap = -1; static LARGE_INTEGER f, last; if (cap < 0) { wchar_t v[8] = {}; cap = GetEnvironmentVariableW(L"MEGULIT_GPU_FPS_CAP", v, 8) ? _wtoi(v) : 0; QueryPerformanceFrequency(&f); }
  if (cap <= 0) return; LARGE_INTEGER now; QueryPerformanceCounter(&now); double want = 1.0 / cap, got = last.QuadPart ? (double)(now.QuadPart - last.QuadPart) / f.QuadPart : want;
@@ -180,10 +183,17 @@ static void DiagDraw(Dev &v, const char *kind, D3DPRIMITIVETYPE pt, UINT prims, 
  Log("%s", b);
 }
 // Decides per quad; returns the quads to leave out (indices into q). Empty = draw as is.
+// Glyph trace (GlyphTrace.h): quads from a texture that holds traced GetGlyphOutline cells give those characters' places.
+static void TraceDraw(void *tex, unsigned tw, unsigned th, void *rt, unsigned rtW, unsigned rtH, const std::vector<Quad> &q) {
+ if (!Trace.seq || !Trace.Known(tex)) return; std::vector<GlyphTrace::Q> t; t.reserve(q.size());
+ for (auto &x : q) t.push_back(GlyphTrace::Q{ x.x0, x.y0, x.x1, x.y1, x.u0, x.v0, x.u1, x.v1 });
+ Trace.Draw(tex, tw, th, t, [&](float *r) { GlyphLearner::Rect rr{ r[0], r[1], r[2], r[3] }; if (!Learner.ToScreen(rt, rtW, rtH, rr)) return false; r[0] = rr.x0; r[1] = rr.y0; r[2] = rr.x1; r[3] = rr.y1; return true; }, GetTickCount());
+}
 static std::vector<int> Decide(Dev &v, std::vector<Quad> &q) {
  TexInfo ti = TexOf(v.tex0); std::vector<int> drop;
  if (!v.tex0 || ti.w == 0) return drop;
  if (v.rtIsBack && ti.rt) { Learner.Composite(v.tex0, q); return drop; }
+ TraceDraw(v.tex0, ti.w, ti.h, v.rtIsBack ? NULL : v.rtTex, v.rtW, v.rtH, q);
  return Learner.Draw(v.tex0, ti.w, ti.h, v.rtIsBack ? NULL : v.rtTex, v.rtW, v.rtH, v.bbW, v.bbH, q, GetTickCount());
 }
 // The device's own getters at every draw: state the game set before the DLL arrived (a declaration set once at start,
@@ -309,19 +319,19 @@ static HRESULT WINAPI HSetViewport(IDirect3DDevice9 *d, const D3DVIEWPORT9 *p) {
 }
 static HRESULT WINAPI HPresent(IDirect3DDevice9 *d, const RECT *a, const RECT *b, HWND w, const RGNDATA *r) {
  auto o = ORIG(HRESULT(WINAPI *)(IDirect3DDevice9 *, const RECT *, const RECT *, HWND, const RGNDATA *), d, 17);
- FpsCap(); { Guard g; Frame++; LastPresent = GetTickCount(); Dev &v = *DevOf(d); Learner.Frame(LastPresent, v.bbW, v.bbH); }
+ FpsCap(); { Guard g; Frame++; LastPresent = GetTickCount(); Dev &v = *DevOf(d); FramesTick(LastPresent, v.bbW, v.bbH); }
  return o(d, a, b, w, r);
 }
 // Engines that present through an IDirect3DSwapChain9 (minori's eden*) never call the device's Present: same frame tick.
 static HRESULT WINAPI HSwapPresent(IDirect3DSwapChain9 *sc, const RECT *a, const RECT *b, HWND w, const RGNDATA *r, DWORD f) {
  auto o = (HRESULT(WINAPI *)(IDirect3DSwapChain9 *, const RECT *, const RECT *, HWND, const RGNDATA *, DWORD))CurOrig;
- IDirect3DDevice9 *d = NULL; if (SUCCEEDED(sc->GetDevice(&d)) && d) { FpsCap(); { Guard g; Frame++; LastPresent = GetTickCount(); Dev &v = *DevOf(d); Learner.Frame(LastPresent, v.bbW, v.bbH); } d->Release(); }
+ IDirect3DDevice9 *d = NULL; if (SUCCEEDED(sc->GetDevice(&d)) && d) { FpsCap(); { Guard g; Frame++; LastPresent = GetTickCount(); Dev &v = *DevOf(d); FramesTick(LastPresent, v.bbW, v.bbH); } d->Release(); }
  return o(sc, a, b, w, r, f);
 }
 // Direct3D 9Ex devices (DR1) present through PresentEx.
 static HRESULT WINAPI HPresentEx(IDirect3DDevice9Ex *d, const RECT *a, const RECT *b, HWND w, const RGNDATA *r, DWORD f) {
  auto o = (HRESULT(WINAPI *)(IDirect3DDevice9Ex *, const RECT *, const RECT *, HWND, const RGNDATA *, DWORD))CurOrig;
- FpsCap(); { Guard g; Frame++; LastPresent = GetTickCount(); Dev &v = *DevOf(d); Learner.Frame(LastPresent, v.bbW, v.bbH); }
+ FpsCap(); { Guard g; Frame++; LastPresent = GetTickCount(); Dev &v = *DevOf(d); FramesTick(LastPresent, v.bbW, v.bbH); }
  return o(d, a, b, w, r, f);
 }
 static HRESULT WINAPI HReset(IDirect3DDevice9 *d, D3DPRESENT_PARAMETERS *p) {
@@ -330,6 +340,68 @@ static HRESULT WINAPI HReset(IDirect3DDevice9 *d, D3DPRESENT_PARAMETERS *p) {
  return hr;
 }
 // Buffers: Lock records where the game writes, Unlock copies what it wrote into the shadow.
+// ------------------------------------------------------------------------------------------------ glyph trace: textures
+// A texture level 0 locked for writing while GetGlyphOutline glyphs wait (GlyphTrace.h). Surfaces of a texture count as
+// the texture (level 0 only); other surfaces as themselves.
+struct TexLock { void *tex; UINT level; void *ptr; int pitch, x, y, w, h, fmt; bool whole; };
+static std::vector<TexLock> TexLocks;
+static void *SurfOwner(IDirect3DSurface9 *s, UINT &level) {
+ level = 0; IDirect3DTexture9 *t = NULL; if (SUCCEEDED(s->GetContainer(__uuidof(IDirect3DTexture9), (void **)&t)) && t) { IDirect3DSurface9 *s0 = NULL; void *owner = t; if (SUCCEEDED(t->GetSurfaceLevel(0, &s0)) && s0) { if (s0 != s) level = 1; s0->Release(); } t->Release(); return owner; }
+ return s;
+}
+static void TexLocked(void *tex, UINT level, const D3DLOCKED_RECT *lr, const RECT *r, UINT w, UINT h, D3DFORMAT fmt) {
+ if (level || !lr || !lr->pBits) return; Guard g; if (!Trace.Waiting()) return;
+ TexLock k{ tex, level, lr->pBits, lr->Pitch, r ? (int)r->left : 0, r ? (int)r->top : 0, r ? (int)(r->right - r->left) : (int)w, r ? (int)(r->bottom - r->top) : (int)h, (int)fmt, !r };
+ if (k.w <= 0 || k.h <= 0) return; for (auto &x : TexLocks) if (x.tex == tex && x.level == level) { x = k; return; } if (TexLocks.size() < 64) TexLocks.push_back(k);
+}
+static void TexUnlocking(void *tex, UINT level) {
+ Guard g; for (size_t i = 0; i < TexLocks.size(); i++) if (TexLocks[i].tex == tex && TexLocks[i].level == level) {
+  TexLock k = TexLocks[i]; TexLocks.erase(TexLocks.begin() + i); if (GtTexel((const unsigned char *)k.ptr, 0, k.fmt) < 0) return;
+  // pBits points at the locked rectangle's top-left: texel (x, y) of the texture is at (x - k.x, y - k.y) from it
+  auto read = [&](int x, int y) -> int { int lx = x - k.x, ly = y - k.y; if (lx < 0 || ly < 0 || lx >= k.w || ly >= k.h) return -1; return GtTexel((const unsigned char *)k.ptr + (size_t)ly * k.pitch, lx, k.fmt); };
+  Trace.Write(tex, k.x, k.y, k.w, k.h, k.whole, read, GetTickCount()); return; }
+}
+static HRESULT WINAPI HTexLock(IDirect3DTexture9 *t, UINT level, D3DLOCKED_RECT *lr, const RECT *r, DWORD f) {
+ HRESULT hr = ORIG(HRESULT(WINAPI *)(IDirect3DTexture9 *, UINT, D3DLOCKED_RECT *, const RECT *, DWORD), t, 19)(t, level, lr, r, f);
+ if (SUCCEEDED(hr) && !(f & D3DLOCK_READONLY) && !level) { D3DSURFACE_DESC d; if (SUCCEEDED(t->GetLevelDesc(0, &d))) TexLocked(t, level, lr, r, d.Width, d.Height, d.Format); }
+ return hr;
+}
+static HRESULT WINAPI HTexUnlock(IDirect3DTexture9 *t, UINT level) { TexUnlocking(t, level); return ORIG(HRESULT(WINAPI *)(IDirect3DTexture9 *, UINT), t, 20)(t, level); }
+static HRESULT WINAPI HSurfLock(IDirect3DSurface9 *s, D3DLOCKED_RECT *lr, const RECT *r, DWORD f) {
+ HRESULT hr = ORIG(HRESULT(WINAPI *)(IDirect3DSurface9 *, D3DLOCKED_RECT *, const RECT *, DWORD), s, 13)(s, lr, r, f);
+ if (SUCCEEDED(hr) && !(f & D3DLOCK_READONLY)) { bool wait; { Guard g; wait = Trace.Waiting(); } if (wait) { UINT level; void *owner = SurfOwner(s, level); D3DSURFACE_DESC d; if (SUCCEEDED(s->GetDesc(&d))) TexLocked(owner, level, lr, r, d.Width, d.Height, d.Format); } }
+ return hr;
+}
+static HRESULT WINAPI HSurfUnlock(IDirect3DSurface9 *s) { bool any; { Guard g; any = !TexLocks.empty(); } if (any) { UINT level; void *owner = SurfOwner(s, level); TexUnlocking(owner, level); } return ORIG(HRESULT(WINAPI *)(IDirect3DSurface9 *), s, 14)(s); }
+static HRESULT WINAPI HUpdateSurface(IDirect3DDevice9 *d, IDirect3DSurface9 *src, const RECT *sr, IDirect3DSurface9 *dst, const POINT *dp) {
+ HRESULT hr = ORIG(HRESULT(WINAPI *)(IDirect3DDevice9 *, IDirect3DSurface9 *, const RECT *, IDirect3DSurface9 *, const POINT *), d, 30)(d, src, sr, dst, dp);
+ if (SUCCEEDED(hr) && src && dst) { bool known; { Guard g; known = !Trace.cells.empty(); } if (known) { UINT l1, l2; void *a = SurfOwner(src, l1), *b = SurfOwner(dst, l2); D3DSURFACE_DESC sd; if (!l1 && !l2 && SUCCEEDED(src->GetDesc(&sd))) { RECT r = sr ? *sr : RECT{ 0, 0, (LONG)sd.Width, (LONG)sd.Height }; Guard g; Trace.Copy(a, b, r.left, r.top, r.right - r.left, r.bottom - r.top, dp ? dp->x : r.left, dp ? dp->y : r.top); } } }
+ return hr;
+}
+static HRESULT WINAPI HUpdateTexture(IDirect3DDevice9 *d, IDirect3DBaseTexture9 *src, IDirect3DBaseTexture9 *dst) {
+ HRESULT hr = ORIG(HRESULT(WINAPI *)(IDirect3DDevice9 *, IDirect3DBaseTexture9 *, IDirect3DBaseTexture9 *), d, 31)(d, src, dst);
+ if (SUCCEEDED(hr) && src && dst) { Guard g; Trace.Copy(src, dst, 0, 0, 1 << 15, 1 << 15, 0, 0); }
+ return hr;
+}
+static HRESULT WINAPI HStretchRect(IDirect3DDevice9 *d, IDirect3DSurface9 *src, const RECT *sr, IDirect3DSurface9 *dst, const RECT *dr, D3DTEXTUREFILTERTYPE f) {
+ HRESULT hr = ORIG(HRESULT(WINAPI *)(IDirect3DDevice9 *, IDirect3DSurface9 *, const RECT *, IDirect3DSurface9 *, const RECT *, D3DTEXTUREFILTERTYPE), d, 34)(d, src, sr, dst, dr, f);
+ if (SUCCEEDED(hr) && src && dst) { bool known; { Guard g; known = !Trace.cells.empty(); } if (known) { UINT l1, l2; void *a = SurfOwner(src, l1), *b = SurfOwner(dst, l2); D3DSURFACE_DESC sd; if (!l1 && !l2 && SUCCEEDED(src->GetDesc(&sd))) { RECT r = sr ? *sr : RECT{ 0, 0, (LONG)sd.Width, (LONG)sd.Height }, o = dr ? *dr : r; if (o.right - o.left == r.right - r.left && o.bottom - o.top == r.bottom - r.top) { Guard g; Trace.Copy(a, b, r.left, r.top, r.right - r.left, r.bottom - r.top, o.left, o.top); } } } }
+ return hr;
+}
+// ------------------------------------------------------------------------------------------ glyph trace: GetGlyphOutline
+typedef DWORD(WINAPI *GgoF)(HDC, UINT, UINT, LPGLYPHMETRICS, DWORD, LPVOID, const MAT2 *);
+static GgoF OGgoW, OGgoA;
+static void GgoSeen(HDC dc, uint32_t u, UINT fmt, const GLYPHMETRICS *gm, DWORD cb, const void *buf, DWORD r) {
+ if (r == GDI_ERROR || !r || !cb || !buf || !gm) return; UINT f = fmt & 0x0F; if (f != GGO_BITMAP && f != GGO_GRAY2_BITMAP && f != GGO_GRAY4_BITMAP && f != GGO_GRAY8_BITMAP) return;
+ if (fmt & GGO_GLYPH_INDEX) u = 0; std::vector<uint8_t> cov; if (!GtCoverage(f, (const unsigned char *)buf, (std::min)((unsigned)cb, (unsigned)r), (int)gm->gmBlackBoxX, (int)gm->gmBlackBoxY, cov)) return;
+ TEXTMETRICW tm = {}; GetTextMetricsW(dc, &tm); Guard g; Trace.Glyph(u, (int)gm->gmBlackBoxX, (int)gm->gmBlackBoxY, (int)(std::max)(tm.tmHeight, (LONG)gm->gmCellIncX), cov.data(), GetTickCount());
+}
+static DWORD WINAPI HGgoW(HDC dc, UINT ch, UINT fmt, LPGLYPHMETRICS gm, DWORD cb, LPVOID buf, const MAT2 *m) { DWORD r = OGgoW(dc, ch, fmt, gm, cb, buf, m); GgoSeen(dc, ch, fmt, gm, cb, buf, r); return r; }
+static DWORD WINAPI HGgoA(HDC dc, UINT ch, UINT fmt, LPGLYPHMETRICS gm, DWORD cb, LPVOID buf, const MAT2 *m) {
+ DWORD r = OGgoA(dc, ch, fmt, gm, cb, buf, m); if (r == GDI_ERROR || !cb || !buf) return r;
+ uint32_t u = ch; if (!(fmt & GGO_GLYPH_INDEX) && ch > 0x7F) { char mb[2]; int n = 0; if (ch > 0xFF) mb[n++] = (char)(ch >> 8); mb[n++] = (char)ch; CHARSETINFO ci = {}; UINT cp = TranslateCharsetInfo((DWORD *)(UINT_PTR)GetTextCharset(dc), &ci, TCI_SRCCHARSET) ? ci.ciACP : CP_ACP; wchar_t w[2] = {}; if (MultiByteToWideChar(cp, 0, mb, n, w, 2) == 1) u = w[0]; }
+ GgoSeen(dc, u, fmt, gm, cb, buf, r); return r;
+}
 static HRESULT WINAPI HBufLock(void *buf, UINT off, UINT size, void **pp, DWORD flags) {
  HRESULT hr = ORIG(HRESULT(WINAPI *)(void *, UINT, UINT, void **, DWORD), buf, 11)(buf, off, size, pp, flags);
  if (SUCCEEDED(hr) && pp && *pp && !(flags & D3DLOCK_READONLY)) { Guard g; for (auto &p : Pending) if (p.buf == buf) { p = PendingLock{ buf, off, size, *pp }; return hr; } if (Pending.size() < 64) Pending.push_back(PendingLock{ buf, off, size, *pp }); }
@@ -404,10 +476,11 @@ static int InstallGdi() {
  auto h = [&](const char *name, void *hook, void **orig) { void *t = GetProcAddress(g, name); if (t && MH_CreateHook(t, hook, orig) == MH_OK && MH_EnableHook(t) == MH_OK) n++; };
  h("BitBlt", (void *)HBitBlt, (void **)&OBitBlt); h("StretchBlt", (void *)HStretchBlt, (void **)&OStretchBlt); h("GdiTransparentBlt", (void *)HTransparentBlt, (void **)&OTransparentBlt); h("GdiAlphaBlend", (void *)HAlphaBlend, (void **)&OAlphaBlend);
  h("StretchDIBits", (void *)HStretchDIBits, (void **)&OStretchDIBits); h("SetDIBitsToDevice", (void *)HSetDIBitsToDevice, (void **)&OSetDIBitsToDevice);
+ { int before = n; h("GetGlyphOutlineW", (void *)HGgoW, (void **)&OGgoW); h("GetGlyphOutlineA", (void *)HGgoA, (void **)&OGgoA); Log("glyph trace: GetGlyphOutline hooks=%d", n - before); n = before; }
  return n;
 }
 // GDI engines have no Present: a frame is whatever was drawn in the last 33 ms.
-static DWORD WINAPI GdiTicker(void *) { while (!Quit) { Sleep(33); if (!GdiSeen) continue; unsigned now = GetTickCount(); Guard g; if (now - LastPresent > 300) Learner.Frame(now, GdiW, GdiH); } return 0; }
+static DWORD WINAPI GdiTicker(void *) { while (!Quit) { Sleep(33); if (!GdiSeen) continue; unsigned now = GetTickCount(); Guard g; if (now - LastPresent > 300) FramesTick(now, GdiW, GdiH); } return 0; }
 // ------------------------------------------------------------------------------------------------------------- install
 static void HookDevice(IDirect3DDevice9 *dev) {
    void **vt = *(void ***)dev;
@@ -415,6 +488,11 @@ static void HookDevice(IDirect3DDevice9 *dev) {
    Hook<65>(vt[65], HSetTexture); Hook<81>(vt[81], HDrawPrimitive); Hook<82>(vt[82], HDrawIndexedPrimitive); Hook<83>(vt[83], HDrawPrimitiveUP); Hook<84>(vt[84], HDrawIndexedPrimitiveUP);
    { IDirect3DSwapChain9 *sc = NULL; if (SUCCEEDED(dev->GetSwapChain(0, &sc)) && sc) { Hook<703>((*(void ***)sc)[3], HSwapPresent); sc->Release(); } }
    Hook<87>(vt[87], HSetVertexDeclaration); Hook<89>(vt[89], HSetFVF); Hook<92>(vt[92], HSetVertexShader); Hook<94>(vt[94], HSetVSConstF); Hook<100>(vt[100], HSetStreamSource); Hook<104>(vt[104], HSetIndices);
+   Hook<30>(vt[30], HUpdateSurface); Hook<31>(vt[31], HUpdateTexture); Hook<34>(vt[34], HStretchRect);
+   { struct { UINT usage; D3DPOOL pool; D3DFORMAT fmt; } tk[] = { { 0, D3DPOOL_MANAGED, D3DFMT_A8R8G8B8 }, { 0, D3DPOOL_SYSTEMMEM, D3DFMT_A8R8G8B8 }, { D3DUSAGE_DYNAMIC, D3DPOOL_DEFAULT, D3DFMT_A8R8G8B8 }, { 0, D3DPOOL_MANAGED, D3DFMT_A8 } };
+     for (auto &k : tk) { IDirect3DTexture9 *t = NULL; if (SUCCEEDED(dev->CreateTexture(16, 16, 1, k.usage, k.fmt, k.pool, &t, NULL)) && t) { void **tv = *(void ***)t; Hook<519>(tv[19], HTexLock); Hook<520>(tv[20], HTexUnlock);
+      IDirect3DSurface9 *sf = NULL; if (SUCCEEDED(t->GetSurfaceLevel(0, &sf)) && sf) { void **sv = *(void ***)sf; Hook<613>(sv[13], HSurfLock); Hook<614>(sv[14], HSurfUnlock); sf->Release(); } t->Release(); } }
+     IDirect3DSurface9 *op = NULL; if (SUCCEEDED(dev->CreateOffscreenPlainSurface(16, 16, D3DFMT_A8R8G8B8, D3DPOOL_SYSTEMMEM, &op, NULL)) && op) { void **sv = *(void ***)op; Hook<613>(sv[13], HSurfLock); Hook<614>(sv[14], HSurfUnlock); op->Release(); } }
    struct { UINT usage; D3DPOOL pool; } kinds[] = { { D3DUSAGE_DYNAMIC | D3DUSAGE_WRITEONLY, D3DPOOL_DEFAULT }, { D3DUSAGE_WRITEONLY, D3DPOOL_DEFAULT }, { 0, D3DPOOL_MANAGED }, { 0, D3DPOOL_SYSTEMMEM }, { D3DUSAGE_DYNAMIC, D3DPOOL_DEFAULT } };
    for (auto &k : kinds) {
     IDirect3DVertexBuffer9 *vb = NULL; if (SUCCEEDED(dev->CreateVertexBuffer(96, k.usage, D3DFVF_XYZRHW | D3DFVF_TEX1, k.pool, &vb, NULL)) && vb) { void **bt = *(void ***)vb; Hook<211>(bt[11], HBufLock); Hook<212>(bt[12], HVbUnlock); vb->Release(); }
@@ -468,8 +546,8 @@ static DWORD WINAPI Sender(void *) {
 }
 static void Command(const std::string &line) {
  Log("CTL %s", line.c_str());
- if (line.compare(0, 5, "LINE ") == 0) { int n = MultiByteToWideChar(CP_UTF8, 0, line.c_str() + 5, -1, NULL, 0); std::wstring w(n > 0 ? n - 1 : 0, 0); if (n > 1) MultiByteToWideChar(CP_UTF8, 0, line.c_str() + 5, -1, &w[0], n); Guard g; Learner.Line(w, GetTickCount()); }
- else if (line == "OFF") { Guard g; Learner.Off(); }
+ if (line.compare(0, 5, "LINE ") == 0) { int n = MultiByteToWideChar(CP_UTF8, 0, line.c_str() + 5, -1, NULL, 0); std::wstring w(n > 0 ? n - 1 : 0, 0); if (n > 1) MultiByteToWideChar(CP_UTF8, 0, line.c_str() + 5, -1, &w[0], n); Guard g; Learner.Line(w, GetTickCount()); Trace.Line(Learner.seq, GetTickCount()); }
+ else if (line == "OFF") { Guard g; Learner.Off(); Trace.Off(); }
  else if (line == "MODE read") { Guard g; Learner.readOnly = true; } else if (line == "MODE hide") { Guard g; Learner.readOnly = false; }
 }
 static DWORD WINAPI Control(void *) {
@@ -478,7 +556,7 @@ static DWORD WINAPI Control(void *) {
   HANDLE p = CreateFileW(name, GENERIC_READ, 0, NULL, OPEN_EXISTING, 0, NULL); if (p == INVALID_HANDLE_VALUE) { Sleep(1000); continue; }
   std::string buf; char b[4096]; DWORD got;
   while (ReadFile(p, b, sizeof b, &got, NULL) && got) { buf.append(b, got); size_t at; while ((at = buf.find('\n')) != std::string::npos) { std::string l = buf.substr(0, at); buf.erase(0, at + 1); if (!l.empty() && l.back() == '\r') l.pop_back(); if (l == "QUIT") { CloseHandle(p); return 0; } Command(l); } }
-  CloseHandle(p); { Guard g; Learner.Off(); } // MeguLit gone: stop hiding at once
+  CloseHandle(p); { Guard g; Learner.Off(); Trace.Off(); } // MeguLit gone: stop hiding at once
  }
  return 0;
 }
@@ -492,7 +570,7 @@ static HMODULE SystemModule(const wchar_t *name) { wchar_t path[MAX_PATH]; UINT 
 static DWORD WINAPI Start(void *module) {
  wchar_t path[MAX_PATH]; GetModuleFileNameW((HMODULE)module, path, MAX_PATH); wchar_t *slash = wcsrchr(path, L'\\'); if (slash) wcscpy_s(slash + 1, MAX_PATH - (slash + 1 - path), L"MeguLitGpu.diag");
  FILE *f = NULL; if (_wfopen_s(&f, path, L"r, ccs=UTF-8") == 0 && f) { wchar_t log[MAX_PATH] = {}; if (fgetws(log, MAX_PATH, f)) { size_t n = wcslen(log); while (n && (log[n - 1] == L'\n' || log[n - 1] == L'\r' || log[n - 1] == L' ')) log[--n] = 0; wchar_t full[MAX_PATH]; swprintf_s(full, L"%s.%lu.log", log, GetCurrentProcessId()); Diag = _wfsopen(full, L"w", _SH_DENYNO); } fclose(f); }
- Learner.emit = Emit; Learner.log = Diag ? Log : NULL;
+ Learner.emit = Emit; Learner.log = Diag ? Log : NULL; Trace.emit = Emit; Trace.log = Diag ? Log : NULL;
  CreateThread(NULL, 0, Sender, NULL, 0, NULL); CreateThread(NULL, 0, Control, NULL, 0, NULL);
  MH_Initialize();
  // Font dots at the source (FontDots.h): only with MEGULIT_FONT_DOTS=1 from the launcher that injects this DLL before the

@@ -170,7 +170,7 @@ static SwapBuffersF OSwapBuffers;
 static BOOL WINAPI HSwapBuffers(HDC dc) {
  FpsCap();
  HWND w = WindowFromDC(dc); RECT r = {}; if (w) GetClientRect(w, &r);
- { Guard g; GlBackW = r.right; GlBackH = r.bottom; Frame++; LastPresent = GetTickCount(); Learner.Frame(LastPresent, GlBackW, GlBackH); }
+ { Guard g; GlBackW = r.right; GlBackH = r.bottom; Frame++; LastPresent = GetTickCount(); FramesTick(LastPresent, GlBackW, GlBackH); }
  return OSwapBuffers(dc);
 }
 static int InstallGL(HMODULE gl) {

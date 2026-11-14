@@ -49,6 +49,7 @@ static std::vector<int> Decide11(std::vector<Quad> &q, const char *kind, UINT co
  std::vector<int> drop; if (!Ctx.tex0 || !ti.w) return drop;
  if (back && ti.rt) { Learner.Composite(Ctx.tex0, q); return drop; }
  if (!back && Ctx.rt) Textures[Ctx.rt] = rt;
+ TraceDraw(Ctx.tex0, ti.w, ti.h, back ? NULL : Ctx.rt, rt.w, rt.h, q);
  return Learner.Draw(Ctx.tex0, ti.w, ti.h, back ? NULL : Ctx.rt, rt.w, rt.h, BackW11, BackH11, q, GetTickCount());
 }
 
@@ -99,9 +100,19 @@ static void STDMETHODCALLTYPE HUnmap11(ID3D11DeviceContext *c, ID3D11Resource *r
 }
 static void STDMETHODCALLTYPE HUpdateSub11(ID3D11DeviceContext *c, ID3D11Resource *r, UINT sub, const D3D11_BOX *box, const void *src, UINT rp, UINT dp) {
  auto o = (void(STDMETHODCALLTYPE *)(ID3D11DeviceContext *, ID3D11Resource *, UINT, const D3D11_BOX *, const void *, UINT, UINT))CurOrig; o(c, r, sub, box, src, rp, dp);
- if (!r || !src) return; D3D11_RESOURCE_DIMENSION dim; r->GetType(&dim); if (dim != D3D11_RESOURCE_DIMENSION_BUFFER) return; D3D11_BUFFER_DESC d; ((ID3D11Buffer *)r)->GetDesc(&d);
+ if (!r || !src) return; D3D11_RESOURCE_DIMENSION dim; r->GetType(&dim);
+ if (dim == D3D11_RESOURCE_DIMENSION_TEXTURE2D && sub == 0) { bool wait; { Guard g; wait = Trace.Waiting(); } if (!wait) return; D3D11_TEXTURE2D_DESC td; ((ID3D11Texture2D *)r)->GetDesc(&td);
+  int fmt = td.Format == DXGI_FORMAT_R8G8B8A8_UNORM || td.Format == DXGI_FORMAT_B8G8R8A8_UNORM ? 21 : td.Format == DXGI_FORMAT_B8G8R8X8_UNORM ? 22 : td.Format == DXGI_FORMAT_A8_UNORM || td.Format == DXGI_FORMAT_R8_UNORM ? 28 : -1; if (fmt < 0) return;
+  int x = box ? (int)box->left : 0, y = box ? (int)box->top : 0, w = box ? (int)(box->right - box->left) : (int)td.Width, h = box ? (int)(box->bottom - box->top) : (int)td.Height; if (w <= 0 || h <= 0) return;
+  auto read = [&](int tx, int ty) -> int { int lx = tx - x, ly = ty - y; if (lx < 0 || ly < 0 || lx >= w || ly >= h) return -1; return GtTexel((const unsigned char *)src + (size_t)ly * rp, lx, fmt); };
+  Guard g; Trace.Write(r, x, y, w, h, !box, read, GetTickCount()); return; }
+ if (dim != D3D11_RESOURCE_DIMENSION_BUFFER) return; D3D11_BUFFER_DESC d; ((ID3D11Buffer *)r)->GetDesc(&d);
  if (!(d.BindFlags & (D3D11_BIND_VERTEX_BUFFER | D3D11_BIND_INDEX_BUFFER)) || d.ByteWidth > 8u << 20) return; UINT a = box ? box->left : 0, e = box ? box->right : d.ByteWidth; if (e > d.ByteWidth || a >= e) return;
  Guard g; Shadow &s = Buffers[r]; if (s.data.size() != d.ByteWidth) s.data.assign(d.ByteWidth, 0); if (!SafeCopy(&s.data[a], src, e - a)) Buffers.erase(r);
+}
+static void STDMETHODCALLTYPE HCopyRegion11(ID3D11DeviceContext *c, ID3D11Resource *dst, UINT ds, UINT dx, UINT dy, UINT dz, ID3D11Resource *src, UINT ss, const D3D11_BOX *box) {
+ auto o = (void(STDMETHODCALLTYPE *)(ID3D11DeviceContext *, ID3D11Resource *, UINT, UINT, UINT, UINT, ID3D11Resource *, UINT, const D3D11_BOX *))CurOrig; o(c, dst, ds, dx, dy, dz, src, ss, box);
+ if (!dst || !src || ds || ss) return; Guard g; if (!Trace.Known(src)) return; Trace.Copy(src, dst, box ? (int)box->left : 0, box ? (int)box->top : 0, box ? (int)(box->right - box->left) : 1 << 15, box ? (int)(box->bottom - box->top) : 1 << 15, (int)dx, (int)dy);
 }
 static HRESULT STDMETHODCALLTYPE HCreateInputLayout(ID3D11Device *dev, const D3D11_INPUT_ELEMENT_DESC *e, UINT n, const void *bc, SIZE_T len, ID3D11InputLayout **out) {
  auto o = (HRESULT(STDMETHODCALLTYPE *)(ID3D11Device *, const D3D11_INPUT_ELEMENT_DESC *, UINT, const void *, SIZE_T, ID3D11InputLayout **))CurOrig; HRESULT hr = o(dev, e, n, bc, len, out);
@@ -116,7 +127,7 @@ static HRESULT STDMETHODCALLTYPE HPresent11(IDXGISwapChain *sc, UINT sync, UINT 
  auto o = (HRESULT(STDMETHODCALLTYPE *)(IDXGISwapChain *, UINT, UINT))CurOrig;
  FpsCap();
  DXGI_SWAP_CHAIN_DESC d; if (SUCCEEDED(sc->GetDesc(&d))) { ID3D11Texture2D *bb = NULL; void *res = NULL; if (SUCCEEDED(sc->GetBuffer(0, __uuidof(ID3D11Texture2D), (void **)&bb)) && bb) { res = bb; bb->Release(); }
-  Guard g; BackW11 = d.BufferDesc.Width; BackH11 = d.BufferDesc.Height; BackRes11 = res; Frame++; LastPresent = GetTickCount(); Learner.Frame(LastPresent, BackW11, BackH11); }
+  Guard g; BackW11 = d.BufferDesc.Width; BackH11 = d.BufferDesc.Height; BackRes11 = res; Frame++; LastPresent = GetTickCount(); FramesTick(LastPresent, BackW11, BackH11); }
  return o(sc, sync, flags);
 }
 static int Install11(HMODULE d3d11) {
@@ -130,7 +141,7 @@ static int Install11(HMODULE d3d11) {
   IDXGISwapChain *sc = NULL; ID3D11Device *dev = NULL; ID3D11DeviceContext *ctx = NULL;
   if (FAILED(create(NULL, dt, NULL, 0, NULL, 0, D3D11_SDK_VERSION, &sd, &sc, &dev, NULL, &ctx)) || !sc || !dev || !ctx) continue;
   made++; void **cv = *(void ***)ctx, **dv = *(void ***)dev, **sv = *(void ***)sc;
-  Hook<412>(cv[12], HDrawIndexed11); Hook<413>(cv[13], HDraw11); Hook<414>(cv[14], HMap11); Hook<415>(cv[15], HUnmap11); Hook<448>(cv[48], HUpdateSub11); Hook<511>(dv[11], HCreateInputLayout); Hook<608>(sv[8], HPresent11);
+  Hook<412>(cv[12], HDrawIndexed11); Hook<413>(cv[13], HDraw11); Hook<414>(cv[14], HMap11); Hook<415>(cv[15], HUnmap11); Hook<448>(cv[48], HUpdateSub11); Hook<446>(cv[46], HCopyRegion11); Hook<511>(dv[11], HCreateInputLayout); Hook<608>(sv[8], HPresent11);
   ctx->Release(); dev->Release(); sc->Release();
  }
  DestroyWindow(w); UnregisterClassW(wc.lpszClassName, wc.hInstance); return made;
