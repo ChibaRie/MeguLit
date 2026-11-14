@@ -153,6 +153,13 @@ line is drawn again. Built and run by `Build.ps1` and CI through `native/native-
 - Danganronpa: Trigger Happy Havoc (Steam): imports OpenGL but renders with Direct3D 9Ex (`PresentEx`, now hooked);
   every sprite is the same static unit quad placed by vertex-shader constants, so the vertices carry no position and the
   layer cannot decode its text (not hidden). Its decoded state needed the getter refresh above (declaration set at start).
+- THE SHELL Part I (Artemis, **64-bit**, D3D11, Steam): the 64-bit DLL loads and hooks D3D11 and the game keeps running
+  (no crash); but the game stays black on this machine even fully visible and focused (glyph dots saw the same), with
+  only one draw kind (an indexed 4-vertex strip from a static buffer), so its text could not be checked.
+- 女装山脈 (YU-RIS, D3D9; needs an English path, tested from a copy on H:): the whole frame is composed on the CPU and
+  drawn as one full-screen quad (like BRUNS): not hidden.
+- Danganronpa: every sprite is one static unit quad placed and cut by vertex-shader constants, so vertices carry no
+  position or atlas cell; reading the constants would need the engine's constant layout (not generic): not hidden.
 - Regression after these changes: STEINS;GATE 0 hides the first line again (`hidden=1`, rectangles) and now keeps the
   ring wait cursor.
 - Not run: Summer Pockets REFLECTION BLUE (the 64-bit exe exits; the game is SiglusEngine_Steam.exe, Siglus has other
