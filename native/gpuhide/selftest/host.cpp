@@ -31,7 +31,7 @@ static int TextX(int i) { return GX + i * GA; }
 // --------------------------------------------------------------------------------------------------------------- D3D9
 struct V { float x, y, z, w, u, v; };
 struct V3 { float x, y, z, u, v; };
-static IDirect3DDevice9 *Dev; static IDirect3DTexture9 *Atlas, *Scene; static IDirect3DVertexBuffer9 *Vb; static IDirect3DIndexBuffer9 *Ib; static std::string Mode;
+static IDirect3DDevice9 *Dev; static IDirect3DTexture9 *Atlas, *Scene, *Ui; static IDirect3DVertexBuffer9 *Vb; static IDirect3DIndexBuffer9 *Ib; static std::string Mode;
 static void Cell(int c, float &u0, float &v0, float &u1, float &v1) { int cx = c % 8, cy = c / 8; u0 = cx * 32 / 256.f; v0 = cy * 32 / 256.f; u1 = u0 + 32 / 256.f; v1 = v0 + 32 / 256.f; }
 static void QuadList(std::vector<V> &out, float x, float y, float s, int cell) { float u0, v0, u1, v1; Cell(cell, u0, v0, u1, v1); V a = { x, y, 0, 1, u0, v0 }, b = { x + s, y, 0, 1, u1, v0 }, c = { x, y + s, 0, 1, u0, v1 }, d = { x + s, y + s, 0, 1, u1, v1 }; out.insert(out.end(), { a, b, c, b, d, c }); }
 static void Glyphs(std::vector<V> &q, int first) { for (int i = 0; i < 3; i++) QuadList(q, (float)NameX(i), (float)NY, GS, 40 + i); for (int i = 0; i < 8; i++) QuadList(q, (float)TextX(i), (float)GY, GS, first + i); }
@@ -40,6 +40,9 @@ static void FrameD3D(int first, DWORD *pixels) {
  Dev->SetRenderState(D3DRS_ALPHABLENDENABLE, TRUE); Dev->SetRenderState(D3DRS_SRCBLEND, D3DBLEND_SRCALPHA); Dev->SetRenderState(D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA); Dev->SetRenderState(D3DRS_LIGHTING, FALSE); Dev->SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE);
  Dev->SetFVF(D3DFVF_XYZRHW | D3DFVF_TEX1); Dev->SetTexture(0, Scene);
  V s[4] = { { 0, 0, 0, 1, 0, 0 }, { (float)W, 0, 0, 1, 1, 0 }, { 0, (float)H, 0, 1, 0, 1 }, { (float)W, (float)H, 0, 1, 1, 1 } }; Dev->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, 2, s, sizeof(V));
+ // the text box: a row of glyph-sized frame tiles from a UI atlas, under and around the line (must never be hidden)
+ { std::vector<V> f; for (int x = GX - 14; x < TextX(7) + GS + 14; x += 28) { V a = { (float)x, (float)GY - 2, 0, 1, 0, 0 }, b = { (float)x + 28, (float)GY - 2, 0, 1, 28 / 256.f, 0 }, c = { (float)x, (float)GY + 26, 0, 1, 0, 28 / 256.f }, d = { (float)x + 28, (float)GY + 26, 0, 1, 28 / 256.f, 28 / 256.f }; f.insert(f.end(), { a, b, c, b, d, c }); }
+   Dev->SetFVF(D3DFVF_XYZRHW | D3DFVF_TEX1); Dev->SetTexture(0, Ui); Dev->DrawPrimitiveUP(D3DPT_TRIANGLELIST, (UINT)f.size() / 3, f.data(), sizeof(V)); }
  std::vector<V> q; Glyphs(q, first); Dev->SetTexture(0, Atlas);
  if (Mode == "d3d9-up") Dev->DrawPrimitiveUP(D3DPT_TRIANGLELIST, (UINT)q.size() / 3, q.data(), sizeof(V));
  else if (Mode == "d3d9-vb") {
@@ -148,8 +151,9 @@ static bool White(DWORD c) { return (c & 0xFFFFFF) == 0xFFFFFF; }
 static bool Blue(DWORD c) { return (c & 0xFFFFFF) == 0x000080; }
 static void Pixels(int first, bool textShown, const char *label) {
  std::vector<DWORD> px(W * H); Frame(first, px.data()); int text = 0, name = 0; for (int i = 0; i < 8; i++) text += White(px[(GY + GS / 2) * W + TextX(i) + GS / 2]); for (int i = 0; i < 3; i++) name += White(px[(NY + GS / 2) * W + NameX(i) + GS / 2]);
- bool scene = Blue(px[5 * W + 5]) && Blue(px[(GY + GS / 2) * W + TextX(0) - 4]); char b[200];
- snprintf(b, sizeof b, "%s: dialogue glyphs %s (%d/8 white), name kept (%d/3), scene kept", label, textShown ? "drawn" : "left out", text, name); Check((textShown ? text == 8 : text == 0) && name == 3 && scene, b);
+ bool framed = Mode == "d3d9-up" || Mode == "d3d9-vb" || Mode == "d3d9-ivb";
+ bool scene = Blue(px[5 * W + 5]) && (framed ? ((px[(GY + GS / 2) * W + TextX(0) - 4] & 0xFFFFFF) == 0x00A000 && (px[(GY + 1) * W + TextX(3) + GS / 2] & 0xFFFFFF) == 0x00A000) : Blue(px[(GY + GS / 2) * W + TextX(0) - 4])); char b[200];
+ snprintf(b, sizeof b, "%s: dialogue glyphs %s (%d/8 white), name kept (%d/3), scene and box frame kept", label, textShown ? "drawn" : "left out", text, name); Check((textShown ? text == 8 : text == 0) && name == 3 && scene, b);
 }
 static bool WaitFor(const char *needle, int first, int frames, std::string *out = nullptr) { for (int i = 0; i < frames; i++) { if (Has(needle, out)) return true; Frame(first, nullptr); } return Has(needle, out); }
 static bool RectsOk(const std::string &r) {
@@ -168,6 +172,7 @@ int wmain(int argc, wchar_t **argv) {
   IDirect3D9 *d = Direct3DCreate9(D3D_SDK_VERSION); D3DPRESENT_PARAMETERS pp = {}; pp.Windowed = TRUE; pp.SwapEffect = D3DSWAPEFFECT_DISCARD; pp.hDeviceWindow = Win; pp.BackBufferWidth = W; pp.BackBufferHeight = H; pp.BackBufferFormat = D3DFMT_X8R8G8B8;
   if (!d || FAILED(d->CreateDevice(D3DADAPTER_DEFAULT, D3DDEVTYPE_HAL, Win, D3DCREATE_SOFTWARE_VERTEXPROCESSING, &pp, &Dev))) { printf("SKIP no Direct3D9 device on this machine (CI runner without a display adapter)\n"); return 0; }
   Atlas = MakeTex(256, true); Scene = MakeTex(64, false);
+  { Dev->CreateTexture(256, 256, 1, 0, D3DFMT_A8R8G8B8, D3DPOOL_MANAGED, &Ui, NULL); D3DLOCKED_RECT r; Ui->LockRect(0, &r, NULL, 0); for (int y = 0; y < 256; y++) for (int x = 0; x < 256; x++) ((DWORD *)((char *)r.pBits + y * r.Pitch))[x] = 0xFF00A000; Ui->UnlockRect(0); }
   Dev->CreateVertexBuffer(64 * 6 * sizeof(V), D3DUSAGE_DYNAMIC | D3DUSAGE_WRITEONLY, 0, D3DPOOL_DEFAULT, &Vb, NULL); Dev->CreateIndexBuffer(64 * 6 * 2, D3DUSAGE_DYNAMIC | D3DUSAGE_WRITEONLY, D3DFMT_INDEX16, D3DPOOL_DEFAULT, &Ib, NULL);
   Dev->SetSamplerState(0, D3DSAMP_MINFILTER, D3DTEXF_POINT); Dev->SetSamplerState(0, D3DSAMP_MAGFILTER, D3DTEXF_POINT);
   if (Mode == "d3d9-decl" && !InitDecl()) { printf("SKIP no vertex shader support\n"); return 0; }

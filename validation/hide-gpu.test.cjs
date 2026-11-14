@@ -11,10 +11,13 @@ test('learner is API-independent, generic and hides only after learning, inside 
  assert.doesNotMatch(g,/#include <windows\.h>|d3d9/i,'no Windows / Direct3D in the decision core');
  assert.doesNotMatch(g,/kirikiri|krkr|siglus|bgi|yuris|bruns|unity|renpy|leaf|clannad|dustmania/i,'no engine or game names');
  assert.match(g,/armedUntil = now \+ 60000/,'a line stays armed 60 s after the last push');
- assert.match(g,/bool sameAtlas = rt == areaRt && atlases\.count\(AtlasKey\(rt, tw, th\)\), sheet = rtW == areaW && rtH == areaH && std::fabs\(\(x\.y1 - x\.y0\) - glyphH\) <= glyphH \* 0\.25f;/,'learned atlas, or a per-line glyph sheet of the learned glyph height');
- assert.match(g,/if \(learned && armed && !readOnly && \(sameAtlas \|\| sheet\)\)/,'hides only after learning, while armed');
+ assert.match(g,/sameAtlas = rt == areaRt && atlases\.count\(AtlasKey\(rt, tex\)\)/,'learned atlas (by texture, not size) on the learned target');
+ assert.match(g,/sheet = freshTex && LineSized\(tw, th\)/,'per-line glyph sheets: new and sized to the line only');
+ assert.match(g,/if \(learned && armed && !readOnly && glyphSize && \(sameAtlas \|\| sheet\)\)/,'hides only after learning, while armed, at glyph height');
  assert.match(g,/cx >= area\.x0 && cx <= area\.x1 && cy >= area\.y0 && cy <= area\.y1/,'only inside the text area');
- assert.match(g,/a\.size\(\) == n \? &a : b\.size\(\) == n \? &b : nullptr/,'learns only when the glyph count equals the characters');
+ assert.match(g,/on >= 1 && on \* 10 >= in \* 6/,'an atlas is learned only when its quads line up with the glyphs (never a UI sheet under the text)');
+ assert.match(g,/if \(a\.size\(\) == n\) return &a; if \(b\.size\(\) == n\) return &b;/,'learns only when the glyph count equals the characters');
+ assert.match(g,/bool Blanks\(const std::vector<Rect> &r, std::vector<Rect> &keep\) const/,'blank glyphs drawn for spaces are matched and dropped from the rects');
  assert.match(g,/ToMe_CHARS engine=gpu line=/,'reports rectangles in the text-architecture record');});
 
 test('DLL never writes game data: dropped quads are draws not made, buffers are only read',()=>{
@@ -54,5 +57,5 @@ test('built, self-tested and shipped like every native binary',()=>{
  const r=read('Release.ps1');assert.match(r,/'native\/MeguLitGpu32\.dll','native\/MeguLitGpu64\.dll'/);assert.match(r,/'native\/MeguLitGpu64\.dll','MeguLitGpu version=1'/);
  const h=read('native/gpuhide/selftest/host.cpp');
  for(const m of ['d3d9-up','d3d9-vb','d3d9-ivb','d3d9-decl','d3d11','gdi'])assert.ok(read('native/gpuhide/selftest/run.cmd').includes(m),'self-test mode '+m);
- assert.match(h,/dialogue glyphs %s \(%d\/8 white\), name kept \(%d\/3\), scene kept/,'pixels: line gone, name and scene kept');
+ assert.match(h,/dialogue glyphs %s \(%d\/8 white\), name kept \(%d\/3\), scene and box frame kept/,'pixels: line gone, name and scene kept');
  assert.ok(read('docs/hide-layers.md').includes('GpuArm(string streamId, string line)'),'interface documented');});
