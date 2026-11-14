@@ -63,8 +63,8 @@ static void Draw(Canvas &cv, const Glyph &g, float dx, float dy, float s, Rgb c,
 
 // Spec-1 layout: the dot is the top-left of each glyph's black box, s = 3 (2 under 12 px); black boxes start at varying
 // offsets inside the cell, 。 and 、 sit low, thin glyphs (ー) clip the dot to 3x1.
-static std::vector<Glyph> Spec1Layout(int count, int em, int x0, int y0, int perRow, bool centred = false, int areaW = 0) {
-  std::vector<Glyph> g; const int s = em >= 12 ? 3 : 2; const int step = int(em * 1.45f);
+static std::vector<Glyph> Spec1Layout(int count, int em, int x0, int y0, int perRow, bool centred = false, int areaW = 0, int side = 0) {
+  std::vector<Glyph> g; const int s = side ? side : em >= 12 ? 3 : 2; const int step = int(em * 1.45f);
   for (int i = 0; i < count; ++i) {
     const int row = i / perRow, col = i % perRow, inRow = std::min(perRow, count - row * perRow);
     const int off = centred ? (areaW - inRow * em) / 2 : 0;
@@ -236,6 +236,11 @@ int main() {
       for (int k = 0; k < line; ++k) s.kept.push_back(L[k]);
       s.cur.assign(L[line].begin(), L[line].begin() + std::min<int>(int(L[line].size()), t + 1)); return s; },
       [](int f) { return f % 25 == 0 && f < 100 ? f / 25 + 1 : -1; }), .97, 3);
+  }
+  { // 19. Spec 2: side max(3, round(h/10)) → 42 px cells give 4 px dots (CLANNAD), shadow copy, clipped ー (4x1)
+    const auto g = Spec1Layout(30, 42, 220, 790, 30, false, 0, 4);
+    LineSpec b; b.expected = 30; b.colorKnown = true; b.color = white;
+    account(Scenario("spec2-4px-shadow", 40, adv, 42, white, b, [&](int f) { Step s; s.shadow = true; s.cur.assign(g.begin(), g.begin() + std::min<int>(30, f + 1)); return s; }, [](int f) { return f == 0 ? 1 : -1; }), .97, 4);
   }
   { // 18. Spec-1 dots on a 2-pixel dither box (ダストマニア): patch inpaint keeps the dither phase → near-zero error
     SceneSeed = 11;

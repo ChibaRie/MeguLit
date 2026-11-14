@@ -73,6 +73,9 @@ inline bool DotShaped(const Blob &b, int smin, int smax) {
   // Spec 1 (docs/text-architecture.md ①): a solid square of side 3 (2 under 12 px), clipped to the glyph's black box,
   // so thin glyphs (ー 一 、) give 3x1, 1x3, 2x1 ... blocks. Those are accepted when completely solid.
   if (w <= 3 && h <= 3 && w >= 1 && h >= 1) return b.area == w * h;
+  // Spec 2: the side follows the cell (max(3, h/10), 14 px for a 136 px cell), clipped to the black box like spec 1:
+  // any completely solid block up to smax counts when it is not a long thin line (thin only up to 6 px long).
+  if (b.area == w * h && w <= smax && h <= smax && (std::min(w, h) >= 2 || std::max(w, h) <= 6)) return true;
   if (w < smin || h < smin || w > smax || h > smax) return false;
   if (std::abs(w - h) > std::max(1, std::max(w, h) / 4)) return false;
   return b.area * 4 >= w * h * 3;
@@ -275,6 +278,7 @@ inline float DotAlpha(const Image &im, const Box &b, const Rgb &text) {
 // colours (①: "several dots per character"). The erase box grows over every pixel within 4 px of the dot that clearly
 // differs from the background ring at 6 px and is 8-connected to the dot or its copies.
 inline Box EraseBox(const Image &im, const Box &dot, int reach = 4) {
+  reach = std::max(reach, std::max(dot.w(), dot.h()));
   Box w{ dot.x0 - reach, dot.y0 - reach, dot.x1 + reach, dot.y1 + reach };
   if (w.x0 < 2 || w.y0 < 2 || w.x1 > im.w - 2 || w.y1 > im.h - 2) return dot;
   Rgb bg; { long r = 0, g = 0, b = 0, n = 0; for (int x = w.x0 - 2; x < w.x1 + 2; ++x) for (int y : { w.y0 - 2, w.y1 + 1 }) { const uint8_t *p = im.at(x, y); b += p[0]; g += p[1]; r += p[2]; ++n; }
@@ -317,6 +321,7 @@ inline bool HardEdged(const Image &im, const Box &b, const Rgb &text) {
 // colour. A fragment of a real glyph (a dakuten, the tip of a stroke) always has more of its glyph right next to it —
 // also when the game scales its frame and the dot loses its hard edge, so this replaces an edge test.
 inline bool Isolated(const Image &im, const Box &b, const Rgb &text, int tol, int reach = 7) {
+  reach = std::max(reach, 2 * std::max(b.w(), b.h())); // larger (spec 2) dots carry larger rims and shadow offsets
   int n = 0;
   for (int y = std::max(0, b.y0 - reach); y < std::min(im.h, b.y1 + reach); ++y)
     for (int x = std::max(0, b.x0 - reach); x < std::min(im.w, b.x1 + reach); ++x) {
