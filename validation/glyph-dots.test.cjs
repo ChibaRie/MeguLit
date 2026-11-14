@@ -41,6 +41,8 @@ test('DLL: dot mode keeps metrics, draws one square per character, reports every
  const h=read('native/fontprobe/selftest/dothost.cpp');
  for(const s of ['"ggo-gray8"','"ggo-native"','"ggo-bezier"','"ggo-mono"','Dots("textouta-sjis"','Dots("exttextoutw-glyphindex"','Dots("drawtextw"','Dots("gdip-drawstring"','Dots("gdip-drawdriverstring"','Dots("d2d-drawtext"','Dots("d2d-drawtextlayout"','Dots("d2d-drawglyphrun"','dot glyph keeps the original metrics and buffer size','nothing else','every index once','Dots("blind-ggo"','blind: the same text in another size is drawn normally'])assert.ok(h.includes(s),s);
  assert.doesNotMatch(h,/CreateWindow/,'self-test never opens a window');
+ assert.ok(c.includes('L"Local\\\\MeguLitCompositorBeat-%lu"')&&c.includes('BeatGrace = 20000, BeatFresh = 1000')&&c.includes('if (DotsBlocked()) return false;')&&c.includes('ToMe_GLYPHDOT status needs-relaunch served='),'heartbeat gate: grace, freshness, real glyphs on lapse, relaunch notice');
+ assert.ok(read('native/fontprobe/selftest/dothost.cpp').includes('heartbeat presenting=0: real glyph at once'));
  const l=read('native/fontprobe/Launch.cpp');assert.ok(l.includes('CREATE_SUSPENDED')&&l.includes('MeguLitFontReady-%lu')&&l.includes('ResumeThread(pi.hThread);'),'launcher: suspended start, waits for hooks, always resumes');
  assert.ok(c.includes('GetEnvironmentVariableW(L"MEGULIT_GLYPH_MODE"')&&c.includes('swprintf_s(ready, L"MeguLitFontReady-%lu"'),'DLL: starting mode from the environment, ready event');
  assert.ok(read('native/fontprobe/selftest/run-dots.cmd').includes('earlyhost.exe')||read('native/fontprobe/selftest/run-dots.cmd').includes('early.exe'),'early-injection self-test wired');
