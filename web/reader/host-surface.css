@@ -18,7 +18,7 @@ body.tomoyo-gal-bound #reader-base{pointer-events:auto;transition:opacity .14s e
 body.tomoyo-gal-bound:not(.megulit-dialog-hidden):not(.tome-box-dragging) #reader-host .sentence-text{pointer-events:auto}
 body.megulit-dialog-hidden #reader-base{opacity:0!important;pointer-events:none}
 /* The game's own LOG is open (E215.2): no MeguLit text over it. */
-body.megulit-native-log #reader-host,body.megulit-native-log .tome-island-page,body.megulit-native-log .tome-island-pair,body.megulit-native-log .tomoyo-selection-card,body.megulit-native-log .megulit-wait-marker{visibility:hidden!important;pointer-events:none!important}
+body.megulit-line-unreadable #reader-host,body.megulit-line-unreadable .tome-island-page,body.megulit-line-unreadable .tome-island-pair,body.megulit-line-unreadable .megulit-wait-marker,body.megulit-native-log #reader-host,body.megulit-native-log .tome-island-page,body.megulit-native-log .tome-island-pair,body.megulit-native-log .tomoyo-selection-card,body.megulit-native-log .megulit-wait-marker{visibility:hidden!important;pointer-events:none!important}
 @media(prefers-reduced-motion:reduce){body.tomoyo-gal-bound #reader-base{transition:none}}
 [data-megulit-ui-scan] small{display:block;margin:6px 0}
 [data-megulit-ui-scan] ol{max-height:14em;overflow:auto}

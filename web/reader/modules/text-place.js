@@ -11,7 +11,7 @@
   const b = window.__tomoyoChinese;
   if (!b || !document.body) { document.addEventListener('DOMContentLoaded', install, { once: true }); return; }
   if (b.textPlace) return;
-  let on = false, line = null, frame = 0, lastGeom = '';
+  let on = false, line = null, frame = 0, lastGeom = '', drawnByGame = '';
   const style = document.createElement('style');
   style.textContent = [
     'body.megulit-placed .sentence-window.megulit-place-window{left:0!important;top:0!important;right:auto!important;bottom:auto!important;width:100vw!important;height:100vh!important;max-height:none!important;margin:0!important;padding:0!important;background:none!important;border:0!important;box-shadow:none!important;outline:0!important;backdrop-filter:none!important;overflow:visible!important;transform:none!important;pointer-events:none}',
@@ -25,6 +25,9 @@
     /* fallback (the game drew its line blank but said nowhere where): the reader keeps its own place, without any plate */
     'body.megulit-place-fallback .sentence-window.tomoyo-hook-reader,body.megulit-place-fallback .sentence-window.tomoyo-hook-reader .tomoyo-cn-row{background:none!important;border-color:transparent!important;box-shadow:none!important;backdrop-filter:none!important}',
     'body.megulit-place-fallback .sentence-window.tomoyo-hook-reader::before,body.megulit-place-fallback .sentence-window.tomoyo-hook-reader::after,body.megulit-place-fallback .tome-box-deco{display:none!important}',
+    /* 2026-11-15 the game still draws this line itself (core/overlay-placement.cjs `visible`): no Japanese or ruby over it, the translation stays */
+    'body.megulit-place-game-drawn .sentence-window.tomoyo-hook-reader .sentence-text{visibility:hidden!important}',
+    'body.megulit-place-game-drawn .sentence-window.tomoyo-hook-reader .tomoyo-cn-row{visibility:visible!important}',
     '#megulit-place-extras{position:fixed;inset:0;pointer-events:none;z-index:2147483000;background:none}',
     'body.megulit-placed .megulit-place-window .tomoyo-cn-row{position:absolute!important;margin:0!important;padding:0!important;background:none!important;border:0!important;box-shadow:none!important;pointer-events:auto}'
   ].join('\n');
@@ -76,10 +79,21 @@
     window.__tomoyoHitRegionsRefresh?.(true);
   }
   function set(n, p, v) { if (n.style.getPropertyValue(p) !== v) n.style.setProperty(p, v, 'important'); }
+  /* the reader's current line, as the placement compares it (blanks out) */
+  function readerLine() {
+    const sentence = target()?.querySelector('.sentence-text');
+    return sentence ? [...sentence.querySelectorAll('.char-token')].filter(t => !t.closest('.tome-page-lines') && !t.hasAttribute('data-tomoyo-leading-space') && !blank(t.textContent)).map(t => t.textContent).join('') : '';
+  }
+  function gameDrawn() {
+    const text = on && drawnByGame ? readerLine() : '';
+    const drawn = !!text && drawnByGame.includes(text);
+    if (document.body.classList.contains('megulit-place-game-drawn') !== drawn) { document.body.classList.toggle('megulit-place-game-drawn', drawn); window.__tomoyoHitRegionsRefresh?.(true); }
+    return drawn;
+  }
   function apply() {
     frame = 0;
     drawExtras();
-    if (!on || !line) { release(); return; }
+    if (!on || !line) { release(); gameDrawn(); return; }
     if (line.fallback) { release(true); return; }
     const win = target(), sentence = win?.querySelector('.sentence-text');
     if (!sentence) { release(); return; }
@@ -90,7 +104,10 @@
     const placeRects = [], chars = [...line.text];
     chars.forEach((c, i) => { if (!blank(c)) placeRects.push(line.rects[i]); });
     const at = readerText ? placeText.indexOf(readerText) : -1;
-    if (at < 0) { release(true); return; }
+    /* a placement of another line (the current one is not placed yet): the game's own copy of this line may still be on
+       screen, so no plateless Japanese at the reader's place when the source said so */
+    if (at < 0) { if (gameDrawn()) release(); else release(true); return; }
+    if (document.body.classList.contains('megulit-place-game-drawn')) { document.body.classList.remove('megulit-place-game-drawn'); window.__tomoyoHitRegionsRefresh?.(true); }
     /* record px are game-client px; the reader surface may be larger than the game (galLayoutInfo: client origin and size
        in physical px), CSS px = physical / devicePixelRatio */
     const map = mapper(line.client);
@@ -132,10 +149,10 @@
     if (key !== lastGeom) { lastGeom = key; dispatchEvent(new CustomEvent('megulit-reveal-progress', { detail: { typing: false } })); window.__tomoyoHitRegionsRefresh?.(true); }
   }
   const schedule = () => { if (!frame) frame = requestAnimationFrame(apply); };
-  b.textPlace = m => { if (m?.clear) line = null; else if (m?.fallback && m.text) line = { fallback: true, text: String(m.text) }; else if (m && Array.isArray(m.rects) && m.text) line = { text: String(m.text), rects: m.rects, client: Array.isArray(m.client) ? m.client : [innerWidth, innerHeight] }; schedule(); };
+  b.textPlace = m => { if (m?.visible === true) { drawnByGame = [...String(m.text || '')].filter(c => !blank(c)).join(''); schedule(); return; } if (m && Array.isArray(m.rects) && m.text) drawnByGame = ''; if (m?.clear) line = null; else if (m?.fallback && m.text) line = { fallback: true, text: String(m.text) }; else if (m && Array.isArray(m.rects) && m.text) line = { text: String(m.text), rects: m.rects, client: Array.isArray(m.client) ? m.client : [innerWidth, innerHeight] }; schedule(); };
   b.textPlaceExtra = m => { extras = { items: Array.isArray(m?.items) ? m.items.filter(i => i && typeof i.text === 'string' && Array.isArray(i.rects)) : [], client: Array.isArray(m?.client) ? m.client : null }; schedule(); };
-  b.textPlaceMode = m => { on = m?.on === true; if (!on) line = null; schedule(); };
+  b.textPlaceMode = m => { on = m?.on === true; if (!on) { line = null; drawnByGame = ''; } schedule(); };
   b.textPlaceStatus = () => ({ on, line: line ? { text: line.text, n: line.rects?.length || 0, fallback: !!line.fallback } : null, placed: document.body.classList.contains('megulit-placed'), geom: lastGeom.split(';').length });
-  new MutationObserver(records => { if (on && line && records.some(r => !(r.target.closest?.('.tomoyo-cn-dialog,#megulit-place-extras')))) schedule(); }).observe(document.documentElement, { subtree: true, childList: true, characterData: true });
+  new MutationObserver(records => { if (on && (line || drawnByGame) && records.some(r => !(r.target.closest?.('.tomoyo-cn-dialog,#megulit-place-extras')))) schedule(); }).observe(document.documentElement, { subtree: true, childList: true, characterData: true });
   addEventListener('resize', schedule);
 })();

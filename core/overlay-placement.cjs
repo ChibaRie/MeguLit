@@ -44,7 +44,11 @@ class OverlayPlacement {
       const rects = rectsToClient(m, this.client[0], this.client[1]);
       if (rects.length !== flat.length) return; // one rect per character is the protocol; anything else is not placeable
       const id = String(m.engine || 'path') + ':' + (Number(m.line) || 0);
-      if (m.hidden !== true) { if (this.current?.id === id) this.clear(); return; }
+      /* 2026-11-15 (沙耶の唄: MeguLit's Japanese drawn a few px off the game's own, unhidden line): the source says the game
+         draws this line itself (not hidden yet, or never). The reader must not put its Japanese over it: it gets a
+         `visible` note for this text and shows only the translation until the line is placed. */
+      if (m.hidden !== true) { if (this.current?.id === id) this.clear(); const vis = flat.join(''); if (vis && vis !== this.visibleKey) { this.visibleKey = vis; this.send({ type: 'textPlace', visible: true, text: vis }); } return; }
+      this.visibleKey = '';
       const line = { id, engine: m.engine, text: flat.join(''), rects, client: this.client.slice() };
       this.learn(rects);
       const key = JSON.stringify(line);

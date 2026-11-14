@@ -13,6 +13,23 @@ game side confirmed a hidden draw (a "hit").
 | 3 | Windows glyph layer: GDI / GDI+ / Direct2D glyphs and strings (E578, E667) | `native/megulithook/MeguLitGdiHide.h`, `native/fontprobe` | `MeguLit_GDIHIDE hit`, `ToMe_GLYPHHIDE hit` |
 | 4 | "Fake GPU": glyph quads of Direct3D 9 / 11 and OpenGL draws and glyph blits of GDI software renderers | `native/gpuhide` (MeguLitGpu32/64.dll), `native/GpuHideLayer.cs` | `ToMe_GPUHIDE hit` |
 
+## Rules for every layer (2026-11-15, 沙耶の唄 report)
+
+- **Never write garbage into a game.** Every string HookBridge hands back to an engine (blank, mark, veil or translation)
+  goes through `EmbedTextPolicy.GuardWrite` (`SafeReply` in HookBridge): a hook that reads its string in a multi-byte code
+  page (LunaHook types A / B / S; the code page from `HS936#...` or the bridge's `Codepage`) only gets text that survives
+  that code page both ways; replacement characters, new control codes, a reply over 4x the original (or +64) or 3+ extra
+  rows are refused. A refused reply is written as nothing: the game keeps its own line and MeguLit only reads it
+  (`write-guard refused ...` in hook-diagnostics). The front end drops a translation with U+FFFD / control codes / mojibake
+  before it asks for a write (`embedTranslateRefused` in reader-host.log). Self-test: `EmbedTextPolicy.GuardSelfTest`, run by
+  `HookBridge.exe --self-test` (Build-HookBridge.ps1).
+- **Never hide a line no one can read.** `EmbedTextPolicy.Unreadable` (same rule as `core/text-sanity.cjs garbledSource`
+  with `controls:false`, minus Shift-JIS-read-as-GBK, which the front end repairs and draws): U+FFFD, half-width katakana
+  mixed with kanji, UTF-8 read as Latin-1, and game noise lines (half-width katakana glued to ASCII or kanji plus ASCII
+  wedged between wide characters, e.g. 沙耶の唄's monster speech 『二十Aﾅ像ナッテ初y(VQｳッテノハ…』). Such a line turns layers 3
+  and 4 off (`GlyphOff`, `unreadable line left to the game`) and goes back unchanged through layer 1. MeguLit has nothing
+  to draw for it, so the game must keep drawing it.
+
 ## Layer 4: fake GPU (`MeguLitGpu32.dll`, `MeguLitGpu64.dll`)
 
 For engines that rasterise their own text and draw it from a glyph atlas: bitmap font sheets, glyph textures, Unity
