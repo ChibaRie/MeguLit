@@ -9,13 +9,18 @@
    Steam, Locale Emulator and shell-open launches cannot be created suspended by MeguLit: they keep the late attach. */
 const fs = require('node:fs'), path = require('node:path');
 
+/* 2026-11-14 owner: the capture compositor is off (it stole clicks and focus, marks showed). The game draws the line
+   BLANK (same metrics) and the reader overlay draws MeguLit's text at the sources' positions. Dots only when the
+   compositor is switched on for tests with MEGULIT_CAPTURE_COMPOSITOR=1. */
+const capture = () => process.env.MEGULIT_CAPTURE_COMPOSITOR === '1';
 function wanted(root) {
   if (process.env.MEGULIT_GLYPH_MODE === 'dot') return true;
   try { return JSON.parse(fs.readFileSync(path.join(root, 'data', 'config', 'gal-preferences.json'), 'utf8')).textRenderer === 'compositor'; } catch { return false; }
 }
 /* Extra environment for HookBridge.exe. */
 function bridgeEnv(root) {
-  return wanted(root) ? {MEGULIT_GLYPH_MODE: 'dot', MEGULIT_GLYPH_ALL: '1', MEGULIT_GLYPH_BLIND: '1'} : {};
+  if (!wanted(root)) return {};
+  return capture() ? {MEGULIT_GLYPH_MODE: 'dot', MEGULIT_GLYPH_ALL: '1', MEGULIT_GLYPH_BLIND: '1'} : {MEGULIT_GLYPH_MODE: 'blank', MEGULIT_GLYPH_ALL: '1'};
 }
 /* The dialogue font HookBridge remembered for this exact program (data/glyph-hide/<name>-<size>.json, the name with
    the characters HookBridge's MemoryPath replaces turned into _), as "<px> <face>". */
@@ -33,7 +38,7 @@ function earlyStart(root, exe, args, x86, baseEnv = process.env) {
   if (!wanted(root)) return null;
   const bit = x86 ? '32' : '64', file = path.join(root, 'native', 'MeguLitLaunch' + bit + '.exe'), dll = path.join(root, 'native', 'MeguLitFont' + bit + '.dll');
   if (!fs.existsSync(file) || !fs.existsSync(dll)) return null;
-  const env = {...baseEnv, MEGULIT_GLYPH_MODE: 'dot-blind'}, font = seed(root, exe);
+  const env = {...baseEnv, MEGULIT_GLYPH_MODE: capture() ? 'dot-blind' : 'blank'}, font = seed(root, exe);
   if (font) env.MEGULIT_GLYPH_FONT = font; else delete env.MEGULIT_GLYPH_FONT;
   return {file, args: [dll, exe, ...args], env};
 }
@@ -50,4 +55,4 @@ function earlyLocale(root, leDir, exe, baseEnv = process.env) {
     return {file: copy, args: start.args, env: {...start.env, MEGULIT_LAUNCH_LE: leDir}};
   } catch { return null; }
 }
-module.exports = {wanted, bridgeEnv, seed, earlyStart, earlyLocale};
+module.exports = {capture, wanted, bridgeEnv, seed, earlyStart, earlyLocale};

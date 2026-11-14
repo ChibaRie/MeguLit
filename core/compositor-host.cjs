@@ -36,6 +36,9 @@ class CompositorHost {
   // 文字显示 is one choice for the whole app, not a per-game style: read from the global gal-preferences.json (the per-game
   // style profile merged into the reader's preferences would otherwise bring back the default).
   wanted(preferences) {
+    /* 2026-11-14 owner stopped the capture compositor (stole clicks/focus, marks showed): the reader overlay places the text
+       instead (core/overlay-placement.cjs). Kept for tests only: MEGULIT_CAPTURE_COMPOSITOR=1. */
+    if (process.env.MEGULIT_CAPTURE_COMPOSITOR !== '1') return false;
     if (this.root) try {
       const fs = require('node:fs'), file = path.join(this.root, 'data', 'config', 'gal-preferences.json'), t = fs.statSync(file).mtimeMs;
       if (t !== this.settingTime) { this.settingTime = t; this.setting = JSON.parse(fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, '')).textRenderer; }

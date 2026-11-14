@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 'use strict';
+/* the dot font rides along only with the capture compositor (off by default since 2026-11-14) */
+process.env.MEGULIT_CAPTURE_COMPOSITOR = '1';
 /* Text architecture ③ (docs/text-architecture.md): engines that do not take glyphs from Windows hide the current line
    themselves and report each character's box as ToMe_CHARS (core/text-paths.cjs). These tests cover the shared record,
    geometry, hidden confirmation and crash canary, the Ren'Py script against the stand-in Ren'Py, the KiriKiri script's

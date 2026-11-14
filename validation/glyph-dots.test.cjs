@@ -54,7 +54,7 @@ test('HookBridge: MODE on connect and on change, LunaHook GDI hide off for dot s
  assert.ok(b.includes('w.WriteLine(GlyphModeLine());')&&b.includes('static string GlyphModeLine(){return GlyphMode=="dot"&&GlyphBlind?"MODE dot-blind":"MODE "+GlyphMode;}'),'mode sent on every control connection');
  assert.ok(b.includes('static string GlyphMode=Environment.GetEnvironmentVariable("MEGULIT_GLYPH_MODE")=="dot"?"dot":"blank";'),'blank by default');
  assert.ok(b.includes('else if(type=="glyphMode"){object mv,av,bv;GlyphAll=d.TryGetValue("all",out av)&&Convert.ToBoolean(av);GlyphBlind=d.TryGetValue("blind",out bv)&&Convert.ToBoolean(bv);GlyphModeSet('));
- assert.ok(b.includes('static bool DotsOwn(Candidate c){return GlyphMode=="dot"&&c!=null&&c.gdiProbe;}')&&b.includes('if(GlyphMode=="dot"&&GlyphAll&&Selected!=""&&tp.Key()==Selected){GlyphLine(text);Thread.Sleep(8);try{Luna_EmbedCallback(tp,text,text);}')&&b.includes('lock(Gate){ReceivedText=true;ReplacementCallback=true;}RememberStream();'));
+ assert.ok(b.includes('static bool DotsOwn(Candidate c){return GlyphMode=="dot"&&c!=null&&c.gdiProbe;}')&&b.includes('if(GlyphAll&&Selected!=""&&tp.Key()==Selected){GlyphLine(text);Thread.Sleep(8);try{Luna_EmbedCallback(tp,text,text);}')&&b.includes('lock(Gate){ReceivedText=true;ReplacementCallback=true;}RememberStream();'));
  assert.ok(b.includes('on=(ReplacementEnabled||ProbeWanted)&&!DotsOwn(c);'),'probe never arms the GDI hide in dot mode');
  assert.ok(b.includes('&&!DotsOwn(Candidates[Selected]))Luna_UseEmbed(Candidates[Selected].tp,true);'),'nor does a reconnect');
  assert.ok(b.includes('else if(line.StartsWith("ToMe_GLYPHDOT ",StringComparison.Ordinal))GlyphDots(line.Substring(14));'));

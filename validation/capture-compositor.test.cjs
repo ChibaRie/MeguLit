@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 'use strict';
+/* these tests cover the capture compositor path, off by default since 2026-11-14 (overlay placement) */
+process.env.MEGULIT_CAPTURE_COMPOSITOR = '1';
 /* Text architecture part ② (owner, 2026-11-14: MeguLit draws all game text itself): the capture compositor.
    native/compositor/MeguLitCompositor.exe captures the game window (Windows.Graphics.Capture, from Magpie), finds part ①'s
    glyph dots (DotFinder.h), inpaints them, draws MeguLit's text with Direct2D/DirectWrite and presents in its own
@@ -142,7 +144,7 @@ test('owner rule: heartbeat for the glyph DLL, no mark handed back on a mismatch
   assert.match(c, /\\"bestFit\\":true/);
   assert.match(c, /menuMarks = \(!lastChoices\.ok && choiceUndot\) \? choiceTracker\.MenuMarks\(im\)/);
   assert.match(read('docs/text-architecture.md'), /### What still shows marks by design/);
-  assert.match(read('core/gal-native.cjs'), /message\.type==='hookTextMarks'\)this\.compositor\?\.hook\(/);
+  assert.match(read('core/gal-native.cjs'), /message\.type==='hookTextMarks'\)\{?this\.compositor\?\.hook\(/);
   assert.match(read('core/hook-native.cjs'), /m\.type==='hookFont'\|\|m\.type==='hookTextMarks'\)\{this\.emit\(m\);/, 'HookBridge text-mark lines reach the app');
   assert.match(c, /cur\.centered = j\["marks"\]\.str\(\) == "middle-dot"/, '④ marks: glyphs centred on the mark');
   assert.match(c, /if \(d\["h"\]\.num\(\) <= 0\) \{ l\.centered = true;/, 'conv records (no metrics) are centred marks');

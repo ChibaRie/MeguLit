@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 'use strict';
+/* these tests cover the capture compositor path, off by default since 2026-11-14 (overlay placement) */
+process.env.MEGULIT_CAPTURE_COMPOSITOR = '1';
 /* Text architecture ① in the normal launch flow (core/glyph-dots.cjs): with 文字显示 = compositor a game MeguLit starts
    as a plain process goes through MeguLitLaunch<bit>.exe (dots before the first glyph, dot-blind + the remembered dialogue
    font); HookBridge starts in dot mode; Steam / Locale Emulator / shell-open launches keep the late attach. */

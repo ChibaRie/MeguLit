@@ -1,0 +1,23 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+'use strict';
+const assert = require('node:assert');
+const { OverlayPlacement } = require('../core/overlay-placement.cjs');
+const sent = [], p = new OverlayPlacement({ send: m => sent.push(m) });
+p.wanted = () => true;
+p.configure({}, { bound: true, clientWidth: 1280, clientHeight: 720 });
+assert.deepStrictEqual(sent.shift(), { type: 'textPlaceMode', on: true });
+const rec = { type: 'hookCharRects', engine: 'krkr', line: 3, hidden: true, sw: 1280, sh: 720, viewport: [0, 0, 1280, 720], rects: [[10, 20, 30, 40], [40, 20, 30, 40], [10, 60, 30, 40]], text: 'あい\u001fう' };
+p.hook(rec);
+const m = sent.shift();
+assert.strictEqual(m.type, 'textPlace'); assert.strictEqual(m.text, 'あいう'); assert.deepStrictEqual(m.rects[2], [10, 60, 30, 40]);
+p.hook(rec); assert.strictEqual(sent.length, 0, 'same line twice is sent once');
+p.hook({ ...rec, rects: rec.rects.slice(0, 2) }); assert.strictEqual(sent.length, 0, 'rect count mismatch is not placeable');
+p.hook({ ...rec, hidden: false }); assert.deepStrictEqual(sent.shift(), { type: 'textPlace', clear: true });
+p.configure({}, { bound: false }); assert.deepStrictEqual(sent.pop(), { type: 'textPlaceMode', on: false });
+process.env.MEGULIT_CAPTURE_COMPOSITOR = '1';
+assert.strictEqual(new OverlayPlacement({}).wanted({ textRenderer: 'compositor' }), false);
+delete process.env.MEGULIT_CAPTURE_COMPOSITOR;
+assert.strictEqual(new OverlayPlacement({}).wanted({ textRenderer: 'compositor' }), true);
+const gd = require('../core/glyph-dots.cjs');
+assert.strictEqual(gd.capture(), false);
+console.log('PASS overlay placement');
