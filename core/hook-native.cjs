@@ -123,7 +123,7 @@ class HookNative{
    if(m.type==='hookTextPos'&&m.engine==='pal_sprite_v1'){this.palPosition(m);return;}
    /* 2026-11-12 the engine's own text window state (KiriKiri ToMe_DIALOG): a line arriving while it is hidden is art text */
    if(m.type==='hookDialog'&&typeof m.visible==='boolean'){this.engineDialog=m.visible;this.engineDialogAt=this.now();}
-   if(m.type==='hookTextPos'||m.type==='hookPage'||m.type==='hookDialog'||m.type==='hookGameUi'||m.type==='hookFont'){this.emit(m);if(m.type==='hookPage')this.islandPage(m);return;}
+   if(m.type==='hookTextPos'||m.type==='hookPage'||m.type==='hookDialog'||m.type==='hookGameUi'||m.type==='hookFont'||m.type==='hookTextMarks'){this.emit(m);if(m.type==='hookPage')this.islandPage(m);return;}
    /* Translation written back into the game: the bridge holds a dialogue line and asks for its translation. */
    if(m.type==='embedRequest'&&Number.isSafeInteger(m.id)&&typeof m.text==='string'&&m.text.length<=4000){this.emit({type:'hookEmbedRequest',id:m.id,text:m.text});return;}
    /* 2026-11-14 glyph hide (native/fontprobe/GlyphMatch.h): the engine-agnostic fallback hid the game's own drawing of the line (hit),
