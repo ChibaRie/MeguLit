@@ -12,7 +12,8 @@
 namespace MeguLitMarks
 {
   inline HANDLE Event = NULL;
-  inline DWORD LastHit = 0, LastMark = 0;
+  inline DWORD LastHit = 0, LastMark = 0, LastChar = 0;
+  inline bool InName = false;
   // Owner rule "the player never sees marks" (docs/text-architecture.md): marks only while MeguLit's capture compositor
   // presents this game. Heartbeat Local\MeguLitCompositorBeat-<pid> {magic 'MGCB', version 1, compositorPid, presenting,
   // tickMs, frames}: before any beat a 20 s grace from the DLL load (as ① dots); after one was seen, presenting == 1
@@ -93,6 +94,18 @@ namespace MeguLitMarks
     if (!slot || !(hp.type & CODEC_UTF16) || (hp.type & (DATA_INDIRECT | USING_STRING | EMBED_ABLE)) || hp.text_fun || hp.jittype != JITTYPE::PC || !On())
       return;
     wchar_t c = (wchar_t)(*slot & 0xffff);
+    // A name plate at the start of a line ([name], 【name】, ［name］) is the game's own: its frame, colour and place stay,
+    // so its characters are not marked (MeguLit takes over the dialogue after it). A new line = a pause of 150 ms+.
+    DWORD at = GetTickCount();
+    if (at - LastChar > 150)
+      InName = c == L'[' || c == 0x3010 || c == 0xFF3B;
+    LastChar = at;
+    if (InName)
+    {
+      if (c == L']' || c == 0x3011 || c == 0xFF3D)
+        InName = false;
+      return;
+    }
     if (!Visible(c))
       return;
     *slot = (*slot & ~(uintptr_t)0xffff) | 0x30FB;

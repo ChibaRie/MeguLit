@@ -11,6 +11,7 @@
    text is never doubled. Only a compositor that cannot capture ('fallback', or exit) gives the text back to the
    overlay; a game whose capture failed stays on the overlay until it restarts. */
 const path = require('node:path');
+const NAME_PLATE = /^\s*[\[【［][^\]】］]{1,16}[\]】］]\s*/;
 const { CaptureCompositor, strip } = require('../services/capture-compositor.cjs');
 
 /* ③ records: game-screen px → client px (engine viewport, else aspect fit centred), as core/text-paths.cjs does. */
@@ -98,7 +99,8 @@ class CompositorHost {
   charMarksLine(m) {
     // ASCII the game draws itself (a name's brackets) is kept and sent as "plain" so the compositor places, erases and
     // draws it next to its marked neighbour; an engine code ($X, \X) is dropped with its letter.
-    const src = [...String(m.text || '')], chars = [], plain = [];
+    // a leading name plate ([name], 【name】, ［name］) is not marked by the DLL: the game draws it, MeguLit leaves it
+    const src = [...String(m.text || '').replace(NAME_PLATE, '')], chars = [], plain = [];
     for (let i = 0; i < src.length; i++) {
       const c = src[i], u = c.codePointAt(0);
       if (c === '$' || c === '\\') { i++; continue; }
@@ -117,7 +119,7 @@ class CompositorHost {
     const s = strip(source).text; if (!s) return;
     let id = null;
     for (const [k, v] of [...this.lines.entries()].reverse()) if (v === s || v.includes(s) || (v && s.includes(v))) { id = k; break; }
-    if (id !== null) this.cc.annotate({ id, tl: translation });
+    if (id !== null) this.cc.annotate({ id, tl: this.charMarks && NAME_PLATE.test(String(source || '')) ? String(translation).replace(NAME_PLATE, '') : translation });
     // Menu items arrive as text only: their translations come through here like any line (before or after the menu).
     this.recent.set(s, translation); if (this.recent.size > 48) this.recent.delete(this.recent.keys().next().value);
     const item = this.choiceItems.find(x => !x.tl && strip(x.text).text === s);
