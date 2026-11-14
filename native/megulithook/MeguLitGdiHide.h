@@ -175,7 +175,7 @@ namespace MeguLitGdiHide
     return true;
   }
 
-  // Character blanking (E578 live, BRUNS: the dialogue is drawn from bitmap font atlases, no GDI text call carries it).
+  // Character blanking (E578 live: an engine that draws its dialogue from bitmap font atlases makes no GDI text call).
   // A per-character hook that reads its UTF-16 character straight from a stack argument hands the engine that very
   // character; when the host switched that stream on, the engine gets a blank of the same width instead, so it lays
   // the line out unchanged and draws nothing. ASCII stays (script markup such as ruby tags), controls stay.
