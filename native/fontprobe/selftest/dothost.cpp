@@ -5,7 +5,7 @@
 // square of at most DotSide x DotSide pixels at the expected position (the character's black box top-left for GDI, its
 // layout box top-left for GDI+ and Direct2D, +-1 px), and no other ink. Then checks the ToMe_GLYPHDOT report of every
 // case (index, character, kind) and that menu text and metrics stay untouched.
-// Placement (MODE place, MODE place-blind): the same lines leave no ink at all (blank glyphs, metrics kept) and every
+// Placement (MODE blank, MODE blank-blind; "place" is an alias): the same lines leave no ink at all (blank glyphs, metrics kept) and every
 // character is still reported once, with its cell top-left in the right space: a memory DIB (m<W>x<H>), a hidden
 // window's client area mapped to its top-level window (c), a Direct2D DC target (t<W>x<H>); GetGlyphOutline has none (-).
 // Usage: dothost.exe <MeguLitFont dll> [folder for the PNGs]   (spec: docs/text-architecture.md)
@@ -18,7 +18,8 @@
 #include <vector>
 #include <map>
 #include <algorithm>
-static std::string Got;
+static std::string Got; static SRWLOCK GotLock = SRWLOCK_INIT;
+static bool Has(const char *t) { AcquireSRWLockShared(&GotLock); bool r = Got.find(t) != std::string::npos; ReleaseSRWLockShared(&GotLock); return r; }
 static HANDLE Ctl = INVALID_HANDLE_VALUE;
 static int Failed = 0;
 static void Check(bool ok, const std::string &what) { printf("%s %s\n", ok ? "ok  " : "FAIL", what.c_str()); if (!ok) Failed++; }
@@ -26,7 +27,7 @@ DWORD WINAPI Listen(void *) {
  wchar_t name[64]; swprintf_s(name, L"\\\\.\\pipe\\MeguLitFont-%lu", GetCurrentProcessId());
  HANDLE p = CreateNamedPipeW(name, PIPE_ACCESS_INBOUND, PIPE_TYPE_BYTE, 1, 0, 65536, 0, NULL);
  if (p == INVALID_HANDLE_VALUE || !ConnectNamedPipe(p, NULL) && GetLastError() != ERROR_PIPE_CONNECTED) return 1;
- char buf[4096]; DWORD n; while (ReadFile(p, buf, sizeof buf, &n, NULL) && n) Got.append(buf, n);
+ char buf[4096]; DWORD n; while (ReadFile(p, buf, sizeof buf, &n, NULL) && n) { AcquireSRWLockExclusive(&GotLock); Got.append(buf, n); ReleaseSRWLockExclusive(&GotLock); }
  return 0;
 }
 static std::string Utf8(const std::wstring &w) { int n = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), NULL, 0, NULL, NULL); std::string s(n, 0); WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), &s[0], n, NULL, NULL); return s; }
@@ -96,7 +97,7 @@ static void DrawGgo(const std::wstring &s, UINT format, int x, int base, std::ve
 }
 static std::wstring A = L"吾輩は猫である。名前はまだ無い。", B = L"どこで生れたかとんと見当がつかぬ。";
 static int Seq = 0; static std::map<int, std::wstring> SeqText; static std::map<int, std::string> SeqPath;
-struct Place { std::vector<POINT> at; std::string sp; }; static std::map<int, Place> Placed; // seq -> expected cell origins (MODE place)
+struct Place { std::vector<POINT> at; std::string sp; }; static std::map<int, Place> Placed; // seq -> expected cell origins (MODE blank)
 // A live compositor heartbeat for the whole run (the DLL's 20 s no-heartbeat grace must not decide the dot cases on a
 // slow machine); the heartbeat case pauses the ticker and drives the beat by hand.
 struct Beat { DWORD magic, version, pid, presenting; unsigned long long tick, frames; }; static Beat *Bt; static volatile LONG Ticking = 1;
@@ -109,7 +110,7 @@ int wmain(int argc, wchar_t **argv) {
  ID2D1Factory *d2 = NULL; D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, &d2); IDWriteFactory *dw = NULL; DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory), (IUnknown **)&dw);
  CreateThread(NULL, 0, Listen, NULL, 0, NULL);
  { wchar_t bn[64]; swprintf_s(bn, L"Local\\MeguLitCompositorBeat-%lu", GetCurrentProcessId()); HANDLE bm = CreateFileMappingW(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE, 0, sizeof(Beat), bn);
-  Bt = bm ? (Beat *)MapViewOfFile(bm, FILE_MAP_WRITE, 0, 0, sizeof(Beat)) : NULL; if (Bt) { *Bt = {0x4243474D, 1, GetCurrentProcessId(), 1, GetTickCount64(), 1}; CreateThread(NULL, 0, Ticker, NULL, 0, NULL); } }
+  Bt = bm ? (Beat *)MapViewOfFile(bm, FILE_MAP_WRITE, 0, 0, sizeof(Beat)) : NULL; if (Bt) { *Bt = {0x4243474D, 1, GetCurrentProcessId(), 1, GetTickCount64(), 1}; { HANDLE tk = CreateThread(NULL, 0, Ticker, NULL, 0, NULL); if (tk) SetThreadPriority(tk, THREAD_PRIORITY_TIME_CRITICAL); } } }
  wchar_t name[64]; swprintf_s(name, L"\\\\.\\pipe\\MeguLitFontCtl-%lu", GetCurrentProcessId());
  Ctl = CreateNamedPipeW(name, PIPE_ACCESS_OUTBOUND, PIPE_TYPE_BYTE, 1, 65536, 0, 0, NULL);
  Sleep(100);
@@ -118,7 +119,10 @@ int wmain(int argc, wchar_t **argv) {
  Check(version >= 3, "exports MeguLitFontVersion >= 3 (glyph dots)"); printf("version %lu\n", version);
  if (version < 3) { printf("FAIL old DLL\n"); return 5; }
  if (!ConnectNamedPipe(Ctl, NULL) && GetLastError() != ERROR_PIPE_CONNECTED) { printf("control pipe not connected\n"); return 4; }
- Sleep(1500); // late hooks (GDI+, DirectWrite, Direct2D) run once a second
+ // Late hooks (GDI+, DirectWrite, Direct2D) are set up by the DLL once a second: wait until all three say so (a loaded
+ // machine can take many seconds), otherwise the GDI+/Direct2D cases would be drawn before their hooks exist.
+ for (int i = 0; i < 600 && !(Has("status gdiplus hooked") && Has("status dwrite hooked") && Has("status d2d1 hooked")); i++) Sleep(100);
+ Check(Has("status d2d1 hooked text run") && Has("status gdiplus hooked"), "late hooks in place (GDI+, Direct2D text and glyph runs)");
  BITMAPINFO bi{}; bi.bmiHeader = {sizeof(BITMAPINFOHEADER), W, -H, 1, 32, BI_RGB};
  Dc = CreateCompatibleDC(NULL); Bmp = CreateDIBSection(Dc, &bi, DIB_RGB_COLORS, (void **)&Bits, NULL, 0); SelectObject(Dc, Bmp);
  bool japanese = false;
@@ -192,8 +196,8 @@ int wmain(int argc, wchar_t **argv) {
    Push("MODE dot"); }
   else Check(false, "heartbeat mapping created"); }
 
- // Placement (MODE place): blank glyphs + per-character records with the cell origin (docs/text-architecture.md).
- { Push("MODE place");
+ // Placement (MODE blank): blank glyphs + per-character records with the cell origin (docs/text-architecture.md).
+ { Push("MODE blank");
   auto cells = [&](const std::wstring &l, int x, int y, const std::vector<int> *dx) { std::vector<POINT> e; int pen = x; for (size_t i = 0; i < l.size(); i++) { e.push_back({pen, y}); pen += dx ? (*dx)[i] : Metrics[l[i]].adv; } return e; };
   char mem[32]; sprintf_s(mem, "m%dx%d", W, H);
   { const std::wstring &l = Next("text"); Clear(); TextOutW(Dc, X0, Y0, l.c_str(), (int)l.size()); Save("place-textoutw"); Check(Ink() == 0, "place textoutw: no ink (blank glyphs)"); Placed[Seq] = {cells(l, X0, Y0, NULL), mem}; }
@@ -216,12 +220,12 @@ int wmain(int argc, wchar_t **argv) {
    Check(Ink() == 0, "place d2d drawglyphrun: no ink"); char t[32]; sprintf_s(t, "t%dx%d", W, H); Placed[Seq] = {e, t};
    brush->Release(); ff->Release(); f->Release(); fam->Release(); sys->Release(); rt->Release(); }
   // Blind placement: a line never pushed, dialogue font -> blank, kind b.
-  { Push("MODE place-blind"); const std::wstring blind = L"見知らぬ天井だった"; Measure(blind); Clear(); std::vector<POINT> e; bool same = true; DrawGgo(blind, GGO_GRAY8_BITMAP, X0, base, e, same); Check(Ink() == 0, "place-blind ggo: no ink"); }
+  { Push("MODE blank-blind"); const std::wstring blind = L"見知らぬ天井だった"; Measure(blind); Clear(); std::vector<POINT> e; bool same = true; DrawGgo(blind, GGO_GRAY8_BITMAP, X0, base, e, same); Check(Ink() == 0, "place-blind ggo: no ink"); }
   Push("MODE dot"); }
  Push("OFF"); Sleep(400);
  { Clear(); TextOutW(Dc, X0, Y0, A.c_str(), (int)A.size()); Save("after-off"); Check(Ink() > 500, "after OFF: the line is drawn in full again"); }
  printf("%s", Got.c_str());
- Check(Got.find("ToMe_GLYPHHIDE ready version=3 modes=blank,dot,place") != std::string::npos, "control connection answered with version 3 and the modes");
+ Check(Got.find("ToMe_GLYPHHIDE ready version=3 modes=blank,dot,place records=4") != std::string::npos, "control connection answered with version 3 and the modes");
  // Every case: one ToMe_GLYPHDOT line + its dots, each index of the line exactly once, the right character, kind d.
  for (auto &kv : SeqText) {
   int seq = kv.first; const std::wstring &l = kv.second; std::string tag = "seq=" + std::to_string(seq) + " ";

@@ -8,7 +8,7 @@ would have drawn it. Three parts, each with its own section below:
 2. **Capture compositor** (`feat/capture-compositor`): captures the game window, finds the dots, erases them, draws
    MeguLit's text at their positions and shows the result in MeguLit's own window.
    Details: docs/text-architecture-compositor.md. **Abandoned 2026-11-14** (it stole clicks and exposed marks). Its
-   successor is the **reader overlay placement** (`feat/overlay-placement`): the game draws blank glyphs (`MODE place`)
+   successor is the **reader overlay placement** (`feat/overlay-placement`): the game draws blank glyphs (`MODE blank`)
    and MeguLit's reader overlay draws its text at the cell origins the sources report (see "Placement" below).
 3. **Non-dot paths** (`feat/text-paths`): engines that do not take glyphs from Windows (web, Unity, KiriKiri with
    prerendered fonts, Ren'Py) report character rectangles themselves.
@@ -22,7 +22,7 @@ version, a line in this log, and stays backward compatible where possible (new f
 
 | Spec | Date       | Change |
 |------|------------|--------|
-| 3    | 2026-11-14 | `MODE place` / `place-blind` (blank glyphs + records), the default for MeguLit's launch flow. Compatible addition at the end of every dot record: `:px:py:space`, the cell's top-left on screen; `hookGlyphDots` dots carry `at`. `ready ... modes=blank,dot,place`. Dots stay available on request. |
+| 3    | 2026-11-14 | `MODE blank` now reports records too (blank glyphs + records = placement; `place`/`place-blind` are aliases of `blank`/`blank-blind`), the default for MeguLit's launch flow. Record version 4 (`ready ... records=4`). Compatible addition at the end of every dot record: `:px:py:space`, the cell's top-left on screen; `hookGlyphDots` dots carry `at`. `ready ... modes=blank,dot,place`. Dots stay available on request. |
 | 1    | 2026-11-14 | First version: dot geometry, `ToMe_GLYPHDOT` records, `hookGlyphDots` events, `glyphMode` command. |
 | 2    | 2026-11-14 | Dot side grows with the cell: max(3, round(h/10)) from 12 px (was a fixed 3). Records unchanged. |
 | 2    | 2026-11-14 | Compositor heartbeat gate (dot mode), `status needs-relaunch / paused / live` records. |
@@ -57,8 +57,8 @@ The same matcher as the glyph hide (E667) decides; dot mode changes only what a 
 | `blank` | nothing: blank glyph with the same metrics, string left out (version 2 behaviour, the **default and fallback**) |
 | `dot`   | a dot glyph with the same metrics; strings get one dot per character |
 | `dot-blind` | as `dot`, plus every CJK/kana glyph under the dialogue font becomes a dot **without waiting for the line** (kind `b`, index −1) |
-| `place` | blank glyph / string left out, as `blank`, **and** every matched character is reported as in `dot` (records with `s` = 0) with its cell origin on screen (spec 3, "Placement") |
-| `place-blind` | as `place`, with the blind rule of `dot-blind` (kind `b`); blind blanks only while HookBridge is connected or in the first 20 s after load |
+| `blank` (spec 3) | as above **and** every matched character is reported as in `dot` (records with `s` = 0) with its cell origin on screen (spec 3, "Placement") |
+| `blank-blind` | as `blank`, with the blind rule of `dot-blind` (kind `b`); blind blanks only while HookBridge is connected or in the first 20 s after load |
 
 Front end → bridge (stdin JSON): `{"type":"glyphMode","mode":"dot"}` or `"blank"`. Add `"blind":true` (or `MEGULIT_GLYPH_BLIND=1`) for `MODE dot-blind`: for engines whose stream text arrives after the glyphs (AdvHD, KiriKiri2 read-only streams). Scope is the dialogue font only (learned, `FONT` seed, or the probe's leading font); the dialogue window is not known at this layer, so a name or menu drawn in the same face and size is dotted too. `HookNative.setGlyphMode(mode)` sends
 it. `MEGULIT_GLYPH_MODE=dot` in HookBridge's environment starts in dot mode (tests). Bridge → DLL (control pipe
@@ -135,7 +135,7 @@ fallback for every other launch path (Steam, Locale Emulator, shell open). The f
 font yet unless the line stream taught one; HookBridge stores the probe's dialogue font (`BlindSeed`) for the next one.
 Self-test: `run-dots.cmd` starts `earlyhost.exe` through the launcher (x86 and x64); its first glyph must be a dot.
 
-### Placement (`MODE place`, spec 3)
+### Placement (`MODE blank`, spec 3)
 
 For the reader overlay (feat/overlay-placement), which draws MeguLit's text over the game window where the game's own
 text would be. A matched glyph or string is **blank** (same metrics, no coverage: GetGlyphOutline bitmaps zeroed,
@@ -163,13 +163,15 @@ the cell origin appended (`px:py:space`, see Reports).
   boxes) and DrawGlyphRun (run origin + advances + offsets).
 - No heartbeat gate: blank glyphs are not marks. A closed control pipe (HookBridge gone) or `OFF` restores real glyphs
   for everything rasterised afterwards, as in `blank`.
-- In MeguLit (core/glyph-dots.cjs) `place` is the mode of the launch flow when 文字显示 places text over the game
-  (`textRenderer` `placed`, or the older `compositor` value): the launcher starts with `MEGULIT_GLYPH_MODE=place-blind`,
-  HookBridge with `MEGULIT_GLYPH_MODE=place`. `dot` stays available with `MEGULIT_GLYPH_MODE=dot`.
+- In MeguLit (core/glyph-dots.cjs) `blank` is the mode of the launch flow when 文字显示 places text over the game
+  (`textRenderer` `compositor`, or `placed`): the launcher and HookBridge start with `MEGULIT_GLYPH_MODE=blank`
+  (HookBridge also `MEGULIT_GLYPH_ALL=1`). Not blind by default: a blind blank in the dialogue font would also erase
+  names and menus the overlay never draws. `dot` (dot-blind) stays available with `MEGULIT_CAPTURE_COMPOSITOR=1` or
+  `MEGULIT_GLYPH_MODE=dot`.
 - Self-test (`run-dots.cmd`, x86/x64): TextOut, ExtTextOut with `lpDx`, baseline alignment, GetGlyphOutline and
   DrawGlyphRun leave no ink; every character is reported once with the expected origin in `m1000x90`, in `c` (a
   hidden, never shown window whose child at (50,30) must map to client (50+x, 30+y) of the top-level window), in
-  `t1000x90`, and `-` for GetGlyphOutline; `place-blind` leaves no ink either.
+  `t1000x90`, and `-` for GetGlyphOutline; `blank-blind` leaves no ink either.
 
 ### Compositor heartbeat (dot mode only)
 
@@ -202,8 +204,8 @@ ToMe_GLYPHDOT cache seq=<n> missing=<a> of <b>
   - `k` kind: `d` character of the current line, `c` drawn again after it was matched (index of its last placement),
     `p` character of the previous line (index into the previous line's text), `r` ruby kana over a matched draw (`i`=-1).
   - `px`,`py`,`space` the cell's top-left and the space it is in (`c`, `m<W>x<H>`, `t<W>x<H>`, `g`, `-`; see
-    "Placement"). Reported in every mode that reports, dots included; `s` = 0 in `place` mode (no dot drawn).
-  `b` blind dot (`MODE dot-blind`, `MODE place-blind`): drawn before its line arrived; it carries the seq of the last pushed line and belongs
+    "Placement"). Reported in every mode that reports, dots included; `s` = 0 in `blank` mode (no dot drawn).
+  `b` blind dot (`MODE dot-blind`, `MODE blank-blind`): drawn before its line arrived; it carries the seq of the last pushed line and belongs
   to the line pushed next. Map blind dots to that line's characters by reading order. Blind records are deduplicated per
   (character, height) within a seq, so repeated characters appear once in the records but as many times as drawn on screen.
 - Every (index, kind) is reported **once per line** (ruby: once per character and height), even when the game redraws the
@@ -213,7 +215,7 @@ ToMe_GLYPHDOT cache seq=<n> missing=<a> of <b>
   report: it shows up as a dot for which no record arrived in this line. ② may map such dots by reading order
   (dots in order = non-blank characters of the line in order) or treat them as unknown.
 - The existing `ToMe_GLYPHHIDE ready|key|hit|line` records are unchanged; `ready` now reads
-  `ready version=3 modes=blank,dot,place`.
+  `ready version=3 modes=blank,dot,place records=4`.
 
 ### Events (HookBridge → front end, stdout JSON)
 

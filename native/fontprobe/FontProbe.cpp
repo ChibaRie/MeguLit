@@ -90,9 +90,9 @@ Face FaceOf(HDC dc) {
 }
 
 // ---- glyph hide state: GlyphMatch.h decides, HideLock guards it (never taken while holding Gate) ------------------------
-// DotMode: per-character records are reported (MODE dot*, MODE place*). PaintDots: matched glyphs become dots (MODE dot*);
-// 0 with DotMode = MODE place*: blank glyphs (same metrics, no coverage) plus records with the on-screen cell origin, for
-// the reader overlay that draws MeguLit's text where the game's would be (docs/text-architecture.md, "Placement").
+// DotMode: per-character records are reported (every MODE since spec 3). PaintDots: matched glyphs become dots (MODE dot*);
+// otherwise (MODE blank*, alias place*) blank glyphs (same metrics, no coverage) plus records with the cell origin on
+// screen, for the reader overlay that draws MeguLit's text where the game's would be (docs/text-architecture.md, "Placement").
 SRWLOCK HideLock = SRWLOCK_INIT; GlyphHide::Matcher Hide; volatile LONG HideOn = 0, DotMode = 0, BlindMode = 0, PaintDots = 0, CtlConnected = 0;
 bool BlindAllowed();
 struct IndexMap { HFONT font = NULL; long seq = -1; std::map<WORD, wchar_t> map; } Indexes;
@@ -104,8 +104,8 @@ void Command(std::string l) {
  long announce = -1; std::wstring text;
  if (l.rfind("LINE ", 0) == 0) { long before = Hide.Sequence(); Hide.SetLine(Wide(l.substr(5)), GetTickCount()); InterlockedExchange(&HideOn, Hide.Cached() ? 0 : 1); if (DotMode && Hide.Sequence() != before) { announce = Hide.Sequence(); text = Hide.Current(); } }
  else if (l == "OFF") { Hide.Off(); InterlockedExchange(&HideOn, 0); }
- else if (l == "MODE dot" || l == "MODE blank" || l == "MODE dot-blind" || l == "MODE place" || l == "MODE place-blind") {
-  bool report = l != "MODE blank", paint = l.rfind("MODE dot", 0) == 0, blind = l == "MODE dot-blind" || l == "MODE place-blind";
+ else if (l == "MODE dot" || l == "MODE blank" || l == "MODE dot-blind" || l == "MODE blank-blind" || l == "MODE place" || l == "MODE place-blind") {
+  bool report = true, paint = l.rfind("MODE dot", 0) == 0, blind = l.size() > 6 && l.compare(l.size() - 6, 6, "-blind") == 0;
   Hide.StopOnCache = !report; InterlockedExchange(&PaintDots, paint ? 1 : 0); InterlockedExchange(&DotMode, report ? 1 : 0); InterlockedExchange(&BlindMode, blind ? 1 : 0); if (blind) InterlockedExchange(&HideOn, 1); }
  else if (l.rfind("FONT ", 0) == 0) { size_t sp = l.find(' ', 5); if (sp != std::string::npos) { GlyphHide::Key k; k.size = atoi(l.substr(5, sp - 5).c_str()); k.face = Clean(Wide(l.substr(sp + 1))); Hide.Seed(k); } }
  ReleaseSRWLockExclusive(&HideLock);
@@ -115,7 +115,7 @@ DWORD WINAPI Control(void *) {
  wchar_t name[64]; swprintf_s(name, L"\\\\.\\pipe\\MeguLitFontCtl-%lu", GetCurrentProcessId());
  for (;;) {
   HANDLE p = CreateFileW(name, GENERIC_READ, 0, NULL, OPEN_EXISTING, 0, NULL); if (p == INVALID_HANDLE_VALUE) { Sleep(1000); continue; }
-  Send("ToMe_GLYPHHIDE ready version=" + std::to_string(MEGULIT_FONT_VERSION) + " modes=blank,dot,place"); InterlockedExchange(&CtlConnected, 1);
+  Send("ToMe_GLYPHHIDE ready version=" + std::to_string(MEGULIT_FONT_VERSION) + " modes=blank,dot,place records=4"); InterlockedExchange(&CtlConnected, 1);
   std::string buf; char chunk[4096]; DWORD n = 0;
   while (ReadFile(p, chunk, sizeof chunk, &n, NULL) && n) { buf.append(chunk, n); size_t e; while ((e = buf.find('\n')) != std::string::npos) { Command(buf.substr(0, e)); buf.erase(0, e + 1); } if (buf.size() > 65536) buf.clear(); }
   CloseHandle(p); InterlockedExchange(&CtlConnected, 0); Command("OFF"); Sleep(500); // HookBridge gone: nothing stays hidden
@@ -703,7 +703,7 @@ DWORD WINAPI Run(void *) {
  Send("ToMe_FONT status gdi hooks " + std::to_string(n) + "/11");
  // Early injection (MeguLitLaunch<bit>.exe, docs/text-architecture.md): the starting mode and dialogue font come from the
  // game's environment, since HookBridge connects only later; then the launcher is told the hooks are in place.
- { wchar_t v[128]; if (GetEnvironmentVariableW(L"MEGULIT_GLYPH_MODE", v, 128) && (!wcscmp(v, L"dot") || !wcscmp(v, L"dot-blind") || !wcscmp(v, L"place") || !wcscmp(v, L"place-blind"))) Command(std::string("MODE ") + Utf8(v));
+ { wchar_t v[128]; if (GetEnvironmentVariableW(L"MEGULIT_GLYPH_MODE", v, 128) && (!wcscmp(v, L"dot") || !wcscmp(v, L"dot-blind") || !wcscmp(v, L"blank") || !wcscmp(v, L"blank-blind") || !wcscmp(v, L"place") || !wcscmp(v, L"place-blind"))) Command(std::string("MODE ") + Utf8(v));
   if (GetEnvironmentVariableW(L"MEGULIT_GLYPH_FONT", v, 128) && v[0]) Command("FONT " + Utf8(v));
   wchar_t ready[64]; swprintf_s(ready, L"MeguLitFontReady-%lu", GetCurrentProcessId()); HANDLE e = OpenEventW(EVENT_MODIFY_STATE, FALSE, ready); if (e) { SetEvent(e); CloseHandle(e); } }
  HANDLE ctl = CreateThread(NULL, 0, Control, NULL, 0, NULL); if (ctl) CloseHandle(ctl); // after the hooks: a pushed line always meets them

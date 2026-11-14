@@ -4,24 +4,26 @@
    When 文字显示 places MeguLit's text over the game (data/config/gal-preferences.json textRenderer "placed", or the older
    "compositor" value), or MEGULIT_GLYPH_MODE=place|dot is set:
    - a game MeguLit starts itself as a plain process goes through native/MeguLitLaunch<bit>.exe, which loads
-     MeguLitFont<bit>.dll before the game's main thread runs (<mode>-blind, with the dialogue font this game taught earlier);
-   - HookBridge starts in that mode for every write-back and read-only stream (MODE <mode>-blind + all).
-   The mode is "place" (blank glyphs + per-character records with on-screen cell origins, for the reader overlay); "dot"
-   (the retired capture compositor's dot glyphs) only when MEGULIT_GLYPH_MODE=dot asks for it.
+     MeguLitFont<bit>.dll before the game's main thread runs (with the dialogue font this game taught earlier);
+   - HookBridge starts in that mode for every write-back and read-only stream (all).
+   The mode is "blank" (blank glyphs + per-character records with on-screen cell origins, for the reader overlay; not
+   blind: a blind blank in the dialogue font would also erase names and menus the overlay never draws). "dot" (the retired
+   capture compositor's dot glyphs, blind) only with MEGULIT_CAPTURE_COMPOSITOR=1 or MEGULIT_GLYPH_MODE=dot.
    Steam launches keep the late attach here (feat/text-paths starts the exe directly where it can). */
 const fs = require('node:fs'), path = require('node:path');
 
 /* 'place', 'dot' or '' (off). */
 function mode(root) {
   const env = process.env.MEGULIT_GLYPH_MODE;
-  if (env === 'dot' || env === 'place') return env;
-  try { const r = JSON.parse(fs.readFileSync(path.join(root, 'data', 'config', 'gal-preferences.json'), 'utf8')).textRenderer; return r === 'placed' || r === 'compositor' ? 'place' : ''; } catch { return ''; }
+  if (env === 'dot' || env === 'blank' || env === 'place') return env === 'dot' ? 'dot' : 'blank';
+  try { const r = JSON.parse(fs.readFileSync(path.join(root, 'data', 'config', 'gal-preferences.json'), 'utf8').replace(/^\uFEFF/, '')).textRenderer; if (r !== 'placed' && r !== 'compositor') return ''; } catch { return ''; }
+  return process.env.MEGULIT_CAPTURE_COMPOSITOR === '1' ? 'dot' : 'blank';
 }
 function wanted(root) { return !!mode(root); }
 /* Extra environment for HookBridge.exe. */
 function bridgeEnv(root) {
   const m = mode(root);
-  return m ? {MEGULIT_GLYPH_MODE: m, MEGULIT_GLYPH_ALL: '1', MEGULIT_GLYPH_BLIND: '1'} : {};
+  return !m ? {} : m === 'dot' ? {MEGULIT_GLYPH_MODE: 'dot', MEGULIT_GLYPH_ALL: '1', MEGULIT_GLYPH_BLIND: '1'} : {MEGULIT_GLYPH_MODE: 'blank', MEGULIT_GLYPH_ALL: '1'};
 }
 /* The dialogue font HookBridge remembered for this exact program (data/glyph-hide/<name>-<size>.json, the name with
    the characters HookBridge's MemoryPath replaces turned into _), as "<px> <face>". */
@@ -40,7 +42,7 @@ function earlyStart(root, exe, args, x86, baseEnv = process.env) {
   if (!m) return null;
   const bit = x86 ? '32' : '64', file = path.join(root, 'native', 'MeguLitLaunch' + bit + '.exe'), dll = path.join(root, 'native', 'MeguLitFont' + bit + '.dll');
   if (!fs.existsSync(file) || !fs.existsSync(dll)) return null;
-  const env = {...baseEnv, MEGULIT_GLYPH_MODE: m + '-blind'}, font = seed(root, exe);
+  const env = {...baseEnv, MEGULIT_GLYPH_MODE: m === 'dot' ? 'dot-blind' : 'blank'}, font = seed(root, exe);
   if (font) env.MEGULIT_GLYPH_FONT = font; else delete env.MEGULIT_GLYPH_FONT;
   return {file, args: [dll, exe, ...args], env};
 }
