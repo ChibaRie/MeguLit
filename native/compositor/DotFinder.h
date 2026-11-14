@@ -678,6 +678,7 @@ private:
     std::sort(colours.begin(), colours.end(), [](const auto &a, const auto &b) { return a.second > b.second; });
     if (colours.size() > 8) colours.resize(8);
     double bestScore = 0; Rgb bestColor; float bestSize = 0;
+    struct Cand { Rgb c; float size; double score; std::vector<Dot> d; }; std::vector<Cand> scored;
     for (const auto &cc : colours) {
       const Rgb c = cc.first;
       Blob cand; for (const Blob &b : blobs) if (std::min(b.box.w(), b.box.h()) >= 2 && ColorDist(b.mean(), c) <= 30) { cand = b; break; }
@@ -701,7 +702,18 @@ private:
       if (spec.expected > 0 && int(d.size()) > (whole ? spec.expected * 8 + 8 : spec.expected)) score = 0;
       if (spec.hint >= 4 && d.size() * 5 < size_t(spec.hint) * 3) score = 0; // far fewer than ① drew (a blinking cursor, a UI mark)
       if (spec.em > 0 && p > 0 && std::fabs(p - spec.em) > spec.em * .5f) score = 0;
+      if (score > 0) scored.push_back({ c, size, score, d });
       if (score > bestScore) { bestScore = score; bestColor = c; bestSize = size; }
+    }
+    // A drop shadow / lower outline is an offset copy of each mark, 1–4 px down and/or right, in another colour: the
+    // marks are the colour whose copy that is (the upper-left one), not the shadow.
+    for (const Cand &o : scored) {
+      if (ColorDist(o.c, bestColor) <= 30 || o.score < bestScore * .5) continue;
+      const Cand *b = nullptr; for (const Cand &x : scored) if (ColorDist(x.c, bestColor) <= 30) b = &x;
+      if (!b || b->d.empty()) break;
+      int hit = 0;
+      for (const Dot &q : b->d) for (const Dot &p : o.d) { const float dx = q.cx - p.cx, dy = q.cy - p.cy; if (dx >= -.5f && dy >= -.5f && dx + dy >= 1.f && dx <= 4.5f && dy <= 4.5f) { ++hit; break; } }
+      if (hit * 10 >= int(b->d.size()) * 7) { bestColor = o.c; bestSize = o.size; bestScore = o.score; break; }
     }
     if (bestScore < 2 && !(bestScore >= 1 && spec.expected == 1)) return;
     color = bestColor; colorKnown = true; dotSize = bestSize; prevFrame.clear(); prevFrame.shrink_to_fit(); prevW = prevH = 0;
