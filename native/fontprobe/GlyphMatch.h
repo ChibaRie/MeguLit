@@ -196,7 +196,7 @@ public:
       if (d.Same(k))
         return true;
     if (learned.empty())
-      return seeded.Same(k) || (seeded.Empty() && leader.Same(k));
+      return leader.Empty() ? seeded.Same(k) : leader.Same(k); // the probe's live leader beats a remembered seed (a stale seed from a name box must not keep the dialogue size out)
     return false;
   }
   bool KnowsKey() const { return !learned.empty() || !seeded.Empty(); }
