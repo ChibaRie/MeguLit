@@ -136,7 +136,7 @@ test('Unity shadow: the game folder is mirrored (junctions + links), never writt
  fs.writeFileSync(path.join(sh.shadow,'stale.txt'),'x');U.makeShadow({exe,shadowRoot:path.join(base,'shadow'),pack,port:4322});
  assert.equal(fs.existsSync(path.join(sh.shadow,'stale.txt')),false,'an entry the game no longer has goes');
  assert.deepEqual(listAll(game),before);assert.ok(fs.existsSync(path.join(game,'Game_Data','Managed','Assembly-CSharp.dll')),'nothing behind a junction deleted');
- const other=path.join(base,'il2cpp');fs.mkdirSync(other);assert.throws(()=>U.makeShadow({exe:fakeUnity(other,{il2cpp:true}),shadowRoot:path.join(base,'shadow'),pack,port:1}),/UNITY_NOT_MONO/);
+ const other=path.join(base,'il2cpp');fs.mkdirSync(other);assert.throws(()=>U.makeShadow({exe:fakeUnity(other,{il2cpp:true}),shadowRoot:path.join(base,'shadow'),pack,port:1}),/UNITY_PACK_MISSING il2cpp-x86/,'IL2CPP needs the il2cpp part of the pack');
  const mod=path.join(base,'mod');fs.mkdirSync(mod);assert.throws(()=>U.makeShadow({exe:fakeUnity(mod,{modded:true}),shadowRoot:path.join(base,'shadow'),pack,port:1}),/UNITY_ALREADY_MODDED/,'never mixed with someone else\'s mods');
  unjunction(path.join(base,'shadow'));fs.rmSync(base,{recursive:true,force:true});
 });
@@ -152,7 +152,7 @@ test('Unity control socket: plugin records in, HIDE / WANT out; canary blocks hi
  u.exited(-1073741819);assert.equal(canary.allowed('unity'),false);fromHost='';u.hide(true);await new Promise(r=>setTimeout(r,100));assert.match(fromHost,/HIDE 0/,'refused after a crash');
  c.destroy();u.stop();fs.rmSync(dir,{recursive:true,force:true});
  const cs=read('native/unitytext/MeguLitUnityText.cs');
- assert.match(cs,/\[BepInPlugin\("com\.megulit\.unitytext"/);assert.match(cs,/tmpAlpha\.SetValue\(c, a, null\)/);assert.match(cs,/bool hidden = hidingCurrent && GetAlpha\(current\) <= 0f;/,'hidden only if still alpha 0 at the end of the frame');
+ assert.match(cs,/\[BepInPlugin\("com\.megulit\.unitytext"/);assert.match(cs,/tmpAlpha\.SetValue\(c, a, null\)/);assert.ok(cs.includes('bool hidden = hidingCurrent && AllHidden(current);'),'hidden only if the renderers are still at alpha 0 at the end of the frame');
  assert.match(cs,/connected = false; hideAsked = false;/,'socket gone: drawn again');
  assert.doesNotMatch(cs,/PlayerPrefs\.|File\.Write|\.Save\(/,'never writes game data');
 });
@@ -170,4 +170,15 @@ test('launch: off unless switched on; web gets switches, Unity a shadow program;
  assert.ok(b.includes('textPath.session.exited(child.exit.code??-1)'),'exit code to the canary');
  assert.equal(require('../core/runtime-packs.cjs').MARKERS['unity-text'],'runtime/unity-text/MeguLitUnityText.dll');
  fs.rmSync(base,{recursive:true,force:true});
+});
+
+test('Unity IL2CPP: BepInEx 6 flavour from the pack, plugin hides through CanvasRenderers and leaves ruby out',()=>{
+ const cs=read('native/unitytext/MeguLitUnityText.IL2CPP.cs');
+ assert.match(cs,/\[BepInPlugin\("com\.megulit\.unitytext\.il2cpp"/);assert.match(cs,/: BasePlugin/);assert.match(cs,/AddComponent<MeguLitTextDriver>\(\)/);
+ assert.ok(cs.includes('cr.SetAlpha(0f)'),'CanvasRenderer alpha: the game\'s own vertex-colour animation cannot undo it (live 魔法少女ノ魔女裁判)');
+ assert.ok(cs.includes('ci.pointSize < body * 0.75f'),'ruby left out');
+ assert.ok(read('native/unitytext/MeguLitUnityText.cs').includes('cr.SetAlpha(0f)'),'Mono plugin hides the same way');
+ const u=read('core/text-paths-unity.cjs');assert.ok(u.includes("const flavour=kind==='il2cpp'?'il2cpp-'+arch:arch"));
+ const p=read('tools/unity-text-pack.cjs');assert.match(p,/'il2cpp-x64':\{file:'BepInEx-Unity\.IL2CPP-win-x64-6\.0\.0-be\.793/);
+ assert.ok(read('core/text-paths-launch.cjs').includes("il2cppReady=kind==='il2cpp'"));
 });

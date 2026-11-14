@@ -8,12 +8,12 @@
    (winhttp.dll + doorstop_config.ini) and BepInEx with the plugin, from the on-demand runtime pack "unity-text".
    Unity resolves <exe>_Data next to the program it was started as, so the shadow program loads the real data
    through the junction. BepInEx writes its config, cache and log inside the shadow folder only.
-   IL2CPP games (GameAssembly.dll) need BepInEx 6 and generated interop assemblies: not covered yet (blocked).
+   IL2CPP games (GameAssembly.dll) get BepInEx 6 (IL2CPP build) and MeguLitUnityText.IL2CPP.dll from il2cpp-x64 / il2cpp-x86.
    A game that already ships its own BepInEx / doorstop is left alone (no mixing with someone else's mods). */
 const fs=require('node:fs'),path=require('node:path'),net=require('node:net');
 const {formatChars,parseChars}=require('./text-paths.cjs');
 
-const OURS=new Set(['winhttp.dll','doorstop_config.ini','.doorstop_version','bepinex','megulit-shadow.json','steam_appid.txt']);
+const OURS=new Set(['winhttp.dll','doorstop_config.ini','.doorstop_version','bepinex','dotnet','megulit-shadow.json','steam_appid.txt']);
 function unityGame(exe){const dir=path.dirname(String(exe||'')),stem=path.basename(String(exe||''),path.extname(String(exe||'')));const data=path.join(dir,stem+'_Data');
  if(!fs.existsSync(data))return null;if(fs.existsSync(path.join(dir,'GameAssembly.dll')))return 'il2cpp';
  if(fs.existsSync(path.join(data,'Managed','Assembly-CSharp.dll'))||fs.existsSync(path.join(data,'Managed','UnityEngine.dll')))return 'mono';return null;}
@@ -26,8 +26,11 @@ function linkDir(from,to){fs.symlinkSync(from,to,'junction');}
 /* (Re)build the shadow folder for one game. pack: the unpacked "unity-text" pack folder holding x86\ and x64\
    (each: winhttp.dll, doorstop_config.ini, BepInEx\core\...) and MeguLitUnityText.dll. Returns the shadow program. */
 function makeShadow({exe,shadowRoot,pack,port,steamAppId=null}){
- const dir=path.dirname(exe),b=bits(exe),flavour=b===64?'x64':b===32?'x86':null;if(!flavour)throw Error('UNITY_BITS');
- if(unityGame(exe)!=='mono')throw Error('UNITY_NOT_MONO');if(modded(exe))throw Error('UNITY_ALREADY_MODDED');
+ const dir=path.dirname(exe),b=bits(exe),kind=unityGame(exe),arch=b===64?'x64':b===32?'x86':null;if(!arch)throw Error('UNITY_BITS');
+ if(!kind)throw Error('UNITY_NOT_UNITY');
+ /* IL2CPP: BepInEx 6 (IL2CPP build, own .NET runtime, interop assemblies generated on the first start inside the shadow) */
+ const flavour=kind==='il2cpp'?'il2cpp-'+arch:arch,pluginFile=kind==='il2cpp'?'MeguLitUnityText.IL2CPP.dll':'MeguLitUnityText.dll';
+ if(!fs.existsSync(path.join(pack,flavour))||!fs.existsSync(path.join(pack,pluginFile)))throw Error('UNITY_PACK_MISSING '+flavour);if(modded(exe))throw Error('UNITY_ALREADY_MODDED');
  const key=path.basename(exe).replace(/[^A-Za-z0-9._-]/g,'_')+'-'+fs.statSync(exe).size,shadow=path.join(shadowRoot,key);
  fs.mkdirSync(shadow,{recursive:true});
  /* mirror: entries that no longer exist in the game are removed from the shadow (never anything inside a junction) */
@@ -44,9 +47,9 @@ function makeShadow({exe,shadowRoot,pack,port,steamAppId=null}){
  /* ours: doorstop + BepInEx (real files in the shadow) */
  const src=path.join(pack,flavour);
  for(const f of ['winhttp.dll','doorstop_config.ini'])fs.copyFileSync(path.join(src,f),path.join(shadow,f));
- fs.cpSync(path.join(src,'BepInEx'),path.join(shadow,'BepInEx'),{recursive:true});
+ fs.cpSync(path.join(src,'BepInEx'),path.join(shadow,'BepInEx'),{recursive:true}); if(fs.existsSync(path.join(src,'dotnet')))fs.cpSync(path.join(src,'dotnet'),path.join(shadow,'dotnet'),{recursive:true});
  const plugins=path.join(shadow,'BepInEx','plugins','MeguLit');fs.mkdirSync(plugins,{recursive:true});
- fs.copyFileSync(path.join(pack,'MeguLitUnityText.dll'),path.join(plugins,'MeguLitUnityText.dll'));
+ fs.copyFileSync(path.join(pack,pluginFile),path.join(plugins,pluginFile));
  fs.writeFileSync(path.join(plugins,'MeguLitUnityText.port'),String(port));
  /* quiet BepInEx: no console window, no log file growth beyond the default */
  const cfgDir=path.join(shadow,'BepInEx','config');fs.mkdirSync(cfgDir,{recursive:true});const cfg=path.join(cfgDir,'BepInEx.cfg');
