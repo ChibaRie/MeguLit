@@ -49,6 +49,7 @@ struct GlyphLearner {
  // learned
  bool preset = false; bool learned = false; void *areaRt = nullptr; unsigned areaW = 0, areaH = 0; Rect area{}; std::set<long long> atlases; unsigned learnedSeq = 0; float glyphH = 0;
  std::map<void *, unsigned> texFirst; // texture -> first time a glyph quad used it
+ struct PosSeen { unsigned firstAt, lastFrame; }; std::map<long long, PosSeen> posSeen; unsigned noMatchSeq = 0;
  std::map<long long, Group> groups; unsigned frameNo = 0, bbW = 0, bbH = 0;
  std::map<void *, std::pair<Rect, Rect>> rtMap; // rt texture -> (uv rect, screen rect)
 
@@ -103,10 +104,16 @@ struct GlyphLearner {
    /* 2026-11-15 (沙耶の唄 NVL: the second line of a page was half hidden, its outline left as streaks): on a learned page atlas the current
       line is what was first drawn since the line started (its fill and its outline / shadow copies alike), wherever on the page;
       the page's older lines were drawn before and stay the game's own. */
-   bool freshKey = (int)(it->second.firstAt - (lineAt > 300 ? lineAt - 300 : 0)) >= 0;
+   /* by screen position, not texture: engines that redraw the page into a new texture per line keep older lines at the same
+      places. A place is new when first drawn after the previous line (or drawn again after the page was cleared). */
+   bool freshKey; { long long pk = ((long long)(int)(x.x0 * 0.25f) << 40) ^ ((long long)(int)(x.y0 * 0.25f) << 20) ^ (long long)rtW;
+    auto ps = posSeen.find(pk); if (ps == posSeen.end()) { if (posSeen.size() > 50000) posSeen.clear(); ps = posSeen.emplace(pk, PosSeen{ now, frameNo }).first; }
+    else { if (frameNo - ps->second.lastFrame > 5) ps->second.firstAt = now; ps->second.lastFrame = frameNo; }
+    unsigned since = prevLineAt && now - prevLineAt < 120000 ? (std::max)(prevLineAt + 200, lineAt - 6000) : lineAt - 6000;
+    freshKey = (int)(ps->second.firstAt - since) >= 0; }
    // learned atlas on the learned target; or, for engines that build a small glyph sheet per line (a new texture every
    // line), any glyph quad of the learned glyph height on a target of the learned size (effect buffers drawn twice)
-   bool sameAtlas = rtW == areaW && rtH == areaH && atlases.count(AtlasKey(NULL, tex)), sheet = freshTex && LineSized(tw, th) && (x.y1 - x.y0) >= glyphH * 0.6f && (x.y1 - x.y0) <= glyphH * 1.8f;
+   bool sameAtlas = rtW == areaW && rtH == areaH && atlases.count(AtlasKey(NULL, tex)), sheet = freshKey && LineSized(tw, th) && (x.y1 - x.y0) >= glyphH * 0.6f && (x.y1 - x.y0) <= glyphH * 1.8f; /* a sheet redrawn with the whole page holds older lines too: only glyphs new to this line */
    /* 2026-11-15 (沙耶の唄 NVL, user: half-hidden lines with streaks): a glyph sheet made for the current line belongs to that line
       wherever the page puts it (rows below the learned area) and whatever pass draws it (outline / shadow buffers of another
       size, slightly larger cells): no area, target-size or tight height test for it. Older lines' sheets are not fresh. */
@@ -147,6 +154,8 @@ struct GlyphLearner {
  // glyphs (reading order; the blank positions are dropped from the result).
  const std::vector<Rect> *Match(const std::vector<Rect> &a, const std::vector<Rect> &b, std::vector<Rect> &keep) const {
   if (a.size() == n) return &a; if (b.size() == n) return &b;
+  /* 2026-11-15 (沙耶の唄 NVL): a page redrawn whole for every line - the line is the last n glyphs in reading order, starting a row */
+  if (learned && n >= 2 && a.size() > n) { size_t st = a.size() - n; float h = a[st].y1 - a[st].y0; if (a[st].y0 > a[st - 1].y0 + h * 0.5f) { keep.assign(a.begin() + st, a.end()); return &keep; } }
   if (!nb) return nullptr;
   for (const std::vector<Rect> *src : { &a, &b }) if (src->size() > n && src->size() <= n + nb && Blanks(*src, keep)) return &keep;
   return nullptr;
@@ -172,7 +181,7 @@ struct GlyphLearner {
    const std::vector<Rect> &last = g.prevFrame == frameNo - 1 ? g.frame : g.prev; live = last;
    std::vector<Rect> a = Chars(Cluster(Chars(live))), b = Chars(Cluster(Chars(fresh)));
    if (log && (now / 500) != ((now - 17) / 500)) log("frame %u group rt=%p %ux%u live=%u fresh=%u n=%u", frameNo, g.rt, g.tw, g.th, (unsigned)a.size(), (unsigned)b.size(), n);
-   std::vector<Rect> keep; const std::vector<Rect> *hit = Match(a, b, keep); if (!hit) continue;
+   std::vector<Rect> keep; const std::vector<Rect> *hit = Match(a, b, keep); if (!hit) { if (emit && hiddenQuads && noMatchSeq != seq && a.size() >= n) { noMatchSeq = seq; char m[160]; snprintf(m, sizeof m, "ToMe_GPUHIDE nomatch seq=%u live=%u fresh=%u n=%u nb=%u rt=%ux%u", seq, (unsigned)a.size(), (unsigned)b.size(), n, nb, g.rtW, g.rtH); emit(m); } continue; }
    if (learned && (g.rtW != areaW || g.rtH != areaH || (!preset && !atlases.count(AtlasKey(NULL, g.tex))))) continue;
    Report(g, *hit);
    return;

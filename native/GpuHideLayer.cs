@@ -35,7 +35,7 @@ public static partial class HookBridge {
  static void GpuCalibrationSave(string v){try{string f=GpuCalibrationFile();if(f!=""&&!(File.Exists(f)&&File.ReadAllText(f).Trim()==v)){File.WriteAllText(f,v);Diagnostic("gpu hide calibration saved "+v);}}catch{}}
  static string GpuCalibrationLoad(){try{string f=GpuCalibrationFile();if(f==""||!File.Exists(f))return "";string v=File.ReadAllText(f).Trim();return System.Text.RegularExpressions.Regex.IsMatch(v,@"^[0-9.]{1,6} \d{2,5} \d{2,5}$")?v:"";}catch{return "";}}
  static void GpuReport(string s){
-  if(s.StartsWith("ToMe_CHARS ",StringComparison.Ordinal)){Emit(new{type="hookChars",line=s});return;}
+  if(s.StartsWith("ToMe_CHARS ",StringComparison.Ordinal)){Emit(new{type="hookChars",line=s});Diagnostic("gpu chars "+(s.Length>90?s.Substring(0,90):s));return;}
   // glyph trace (GlyphTrace.h): where the GetGlyphOutline glyphs of the line were drawn; core/gpu-glyph-pos.cjs reads it
   if(s.StartsWith("ToMe_GLYPHPOS ",StringComparison.Ordinal)){Emit(new{type="hookGlyphPos",line=s});return;}
   if(!s.StartsWith("ToMe_GPUHIDE ",StringComparison.Ordinal))return;s=s.Substring(13);Diagnostic("gpu hide "+s);
