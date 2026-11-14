@@ -323,5 +323,5 @@ colours every frame undoes the component's own alpha. TextMeshPro characters in 
 `RevealableTextModified`): the plugin loads, records per character while the line types, hidden=1 with the line gone,
 drawn again on reset, boxes on every glyph. Mono regression 月に寄りそう乙女の作法 with the renderer hiding: hidden=1, gone.
 
-Not covered yet: (BepInEx 6 + generated interop assemblies, or XUnity's IL2CPP build), canvas web engines,
-KiriKiri games drawing through the textrender plugin (Yuzusoft) or their own message-layer class, Ren'Py text outside the say screen.
+Not covered yet: canvas web engines (RenJS / Phaser), KiriKiri games with their own message-layer class that use
+neither KAG `processCh` nor TextRender, Ren'Py text outside the say screen, YU-RIS and Artemis (see above).
