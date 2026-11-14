@@ -95,7 +95,7 @@ test('stream choice: an unreadable line never selects a stream, two in a row on 
   /* second recording (05:21): auto-select took Nitroplus3 (HSXF4, UTF-8 read as Shift-JIS: 「縲弱ロ繧ｧ繝阪ぉ…」); every line was dropped and
      the Japanese NitroPlus stream stayed aux, so the reader never got a line and only art/OCR translations showed */
   const b = read('native/HookBridge.cs');
-  assert.match(b, /else if\(\(Selected==""\|\|\(StaleMemory\(\)&&tp\.Key\(\)!=Selected\)\|\|\(tp\.Key\(\)!=Selected&&SelectedUnreadableRun>=2&&SelectedReadableRun<2\)\)&&c!=null[^{]*&&!EmbedTextPolicy\.Unreadable\(text\)\)\{bool leave=/);
+  assert.match(b, /else if\(\(Selected==""\|\|\(StaleMemory\(\)&&tp\.Key\(\)!=Selected\)\|\|\(tp\.Key\(\)!=Selected&&SelectedUnreadableRun>=2&&SelectedReadableRun<2\)\)&&c!=null[^{]*&&\(!EmbedTextPolicy\.Unreadable\(text\)\|\|EmbedTextPolicy\.EngineText\(c\.code\)\)\)\{bool leave=/);
   assert.match(b, /if\(Enabled&&tp\.Key\(\)==Selected\)\{if\(EmbedTextPolicy\.Unreadable\(text\)&&\(c==null\|\|!EmbedTextPolicy\.EngineText\(c\.code\)\)\)SelectedUnreadableRun\+\+;else\{SelectedUnreadableRun=0;SelectedReadableRun\+\+;\}\}/);
   assert.equal(garbledSource('縲弱ロ繧ｧ繝阪ぉ縲∽ｻ雁ｺｦ繝弱☆・f・ｾ・ｾf蜉斐ゑｽｩI謦･D骭仙ｹｴ繝上√ラ繝・き貂呻ｽｨt繝ｼ縺ｨ繝｢驕翫', { controls: false }), true);
 });

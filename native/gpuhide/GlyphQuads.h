@@ -50,6 +50,9 @@ struct GlyphLearner {
  bool preset = false; bool learned = false; void *areaRt = nullptr; unsigned areaW = 0, areaH = 0; Rect area{}; std::set<long long> atlases; unsigned learnedSeq = 0; float glyphH = 0;
  std::map<void *, unsigned> texFirst; // texture -> first time a glyph quad used it
  struct PosSeen { unsigned firstAt, lastFrame; }; std::map<long long, PosSeen> posSeen; unsigned noMatchSeq = 0;
+ static long long PosKey(float x0, float y0, unsigned rtW) { return ((long long)(int)(x0 * 0.25f) << 40) ^ ((long long)(int)(y0 * 0.25f) << 20) ^ (long long)rtW; }
+ // a screen place first drawn since the previous line (the rule the hide uses): the line's own glyphs on a page redrawn whole
+ bool PlaceNew(const Rect &r, unsigned rtW, unsigned since) const { auto ps = posSeen.find(PosKey(r.x0, r.y0, rtW)); return ps != posSeen.end() && (int)(ps->second.firstAt - since) >= 0; }
  std::map<long long, Group> groups; unsigned frameNo = 0, bbW = 0, bbH = 0;
  std::map<void *, std::pair<Rect, Rect>> rtMap; // rt texture -> (uv rect, screen rect)
 
@@ -106,7 +109,7 @@ struct GlyphLearner {
       the page's older lines were drawn before and stay the game's own. */
    /* by screen position, not texture: engines that redraw the page into a new texture per line keep older lines at the same
       places. A place is new when first drawn after the previous line (or drawn again after the page was cleared). */
-   bool freshKey; { long long pk = ((long long)(int)(x.x0 * 0.25f) << 40) ^ ((long long)(int)(x.y0 * 0.25f) << 20) ^ (long long)rtW;
+   bool freshKey; { long long pk = PosKey(x.x0, x.y0, rtW);
     auto ps = posSeen.find(pk); if (ps == posSeen.end()) { if (posSeen.size() > 50000) posSeen.clear(); ps = posSeen.emplace(pk, PosSeen{ now, frameNo }).first; }
     else { if (frameNo - ps->second.lastFrame > 5) ps->second.firstAt = now; ps->second.lastFrame = frameNo; }
     unsigned since = prevLineAt && now - prevLineAt < 120000 ? (std::max)(prevLineAt + 200, lineAt - 6000) : lineAt - 6000;
@@ -154,8 +157,6 @@ struct GlyphLearner {
  // glyphs (reading order; the blank positions are dropped from the result).
  const std::vector<Rect> *Match(const std::vector<Rect> &a, const std::vector<Rect> &b, std::vector<Rect> &keep) const {
   if (a.size() == n) return &a; if (b.size() == n) return &b;
-  /* 2026-11-15 (沙耶の唄 NVL): a page redrawn whole for every line - the line is the last n glyphs in reading order, starting a row */
-  if (learned && n >= 2 && a.size() > n) { size_t st = a.size() - n; float h = a[st].y1 - a[st].y0; if (a[st].y0 > a[st - 1].y0 + h * 0.5f) { keep.assign(a.begin() + st, a.end()); return &keep; } }
   if (!nb) return nullptr;
   for (const std::vector<Rect> *src : { &a, &b }) if (src->size() > n && src->size() <= n + nb && Blanks(*src, keep)) return &keep;
   return nullptr;
@@ -177,7 +178,7 @@ struct GlyphLearner {
   unsigned since = prevLineAt && now - prevLineAt < 120000 ? (std::max)(prevLineAt + 200, lineAt - 3000) : lineAt - 3000;
   for (auto &kv : groups) {
    Group &g = kv.second; std::vector<Rect> fresh, live;
-   for (auto &s : g.keys) if ((int)(s.second.firstAt - since) >= 0) fresh.push_back(s.second.r);
+   for (auto &s : g.keys) if ((int)(s.second.firstAt - since) >= 0 || (learned && s.second.lastFrame + 2 >= frameNo && PlaceNew(s.second.r, g.rtW, since))) fresh.push_back(s.second.r);
    const std::vector<Rect> &last = g.prevFrame == frameNo - 1 ? g.frame : g.prev; live = last;
    std::vector<Rect> a = Chars(Cluster(Chars(live))), b = Chars(Cluster(Chars(fresh)));
    if (log && (now / 500) != ((now - 17) / 500)) log("frame %u group rt=%p %ux%u live=%u fresh=%u n=%u", frameNo, g.rt, g.tw, g.th, (unsigned)a.size(), (unsigned)b.size(), n);
