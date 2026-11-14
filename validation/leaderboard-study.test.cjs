@@ -90,10 +90,14 @@ test('page: 学习练习 tab instead of 假名练习, no order codes, hover card
  assert.ok(html.includes('data-lb-metric="study"')&&html.includes('学习练习'));
  assert.ok(!html.includes('data-lb-metric="kana"'),'no separate kana tab');
  assert.ok(!/No\.\d/.test(html),'no No.01 order code');
- assert.equal((html.match(/data-lb-detail="/g)||[]).length,2);
+ assert.equal((html.match(/data-lb-detail>/g)||[]).length,2);
+ assert.equal((html.match(/class="lb-gdetail"/g)||[]).length,2,'the parts sit inside each card, no pop-up');
+ assert.ok(!html.includes('lb-detail-head'),'no avatar or name in the parts');
  assert.equal(view.formatValue('study',160,'zh'),'160 题');
  const w={...view.leaderboardWords('zh'),dAnki:'Anki 背词',dGrammar:'语法练习',dKana:'假名练习',dPractice:'其他练习',dTime:'学习时长',dTotal:'合计'};
- const card=view.detailHTML(entries[0],w,'zh',esc,{});
+ const card=view.detailHTML(entries[0],w,'zh',esc);
  for(const s of ['Anki 背词','120 个','语法练习','30 题','假名练习','7 题','其他练习','3 题','学习时长','1 小时 30 分钟','合计','160 题'])assert.ok(card.includes(s),s);
- assert.equal(view.detailHTML({name:'x',value:1},w,'zh',esc,{}),'','no parts, no card');
+ const old=view.detailHTML(entries[1],w,'zh',esc);
+ assert.ok(old.includes('40 题')&&!old.includes('Anki')&&!old.includes('学习时长'),'parts at 0 are left out');
+ assert.equal(view.detailHTML({name:'x',value:1},w,'zh',esc),'','no parts, no card');
 });

@@ -119,16 +119,17 @@ function headHTML(entries,metric,w,locale,esc,board){
  const total=entries.reduce((n,e)=>n+(Number(e.value)||0),0);
  return `<section class="lb-circle"><div class="lb-circle-sigil">${SIGIL}</div><div class="lb-circle-text"><small>${w.circleTitle}</small><strong>${esc(formatValue(metric,total,locale))}</strong><span>${esc(fill(w.circleSub,{n:entries.length}))}</span></div></section>`;
 }
-/* 2026-11-15 学习练习: hovering (or focusing) a reader's card shows their parts in a card of the same look — Anki words,
-   grammar, kana, other practice, study time and the total. No order numbers anywhere (the old No.01 code is gone). */
-export function detailHTML(e,w,locale,esc,images){
+/* 2026-11-15 学习练习: hovering (or focusing) a reader's card swaps the avatar, name and level for their parts, inside
+   the card itself (user: no big pop-up card, only the numbers) — Anki words, grammar, kana, other practice, study time
+   and the total; parts at 0 are left out. No order numbers anywhere (the old No.01 code is gone). */
+export function detailHTML(e,w,locale,esc){
  const d=e?.detail;if(!d)return '';const n=v=>nf(locale).format(v||0);
- const rows=[[w.dAnki,`${n(d.anki)} ${w.unitWords}`],[w.dGrammar,`${n(d.grammar)} ${w.unitKana}`],[w.dKana,`${n(d.kana)} ${w.unitKana}`],[w.dPractice,`${n(d.practice)} ${w.unitKana}`],[w.dTime,formatValue('seconds',d.studySeconds,locale)]];
- return `<div class="lb-detail-head"><span class="lb-gem">${avatarHTML(e,images,esc)}</span><span class="lb-gname">${esc(e.name)}</span>${rankTag(e,esc)}</div><dl class="lb-detail-rows">${rows.map(([k,v])=>`<div><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join('')}</dl><p class="lb-detail-total"><small>${esc(w.dTotal)}</small><strong>${esc(formatValue('study',e.value,locale))}</strong></p>`;
+ const rows=[[w.dAnki,d.anki,`${n(d.anki)} ${w.unitWords}`],[w.dGrammar,d.grammar,`${n(d.grammar)} ${w.unitKana}`],[w.dKana,d.kana,`${n(d.kana)} ${w.unitKana}`],[w.dPractice,d.practice,`${n(d.practice)} ${w.unitKana}`],[w.dTime,d.studySeconds,formatValue('seconds',d.studySeconds,locale)]].filter(x=>x[1]>0);
+ return `<dl class="lb-gdetail">${rows.map(([k,,v])=>`<div><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join('')}<div class="lb-gdetail-total"><dt>${esc(w.dTotal)}</dt><dd>${esc(formatValue('study',e.value,locale))}</dd></div></dl>`;
 }
 function circleHTML(entries,metric,w,locale,esc,images,board){
  return `${headHTML(entries,metric,w,locale,esc,board)}
- <ol class="lb-grimoires" role="list">${entries.map((e,i)=>`<li class="lb-grimoire${e.me?' is-me':''}" style="--i:${i}"${metric==='study'&&e.detail?` data-lb-detail="${i}"`:''}>${e.me?`<em class="lb-me-tag">${w.meTag}</em>`:''}${personButton(e,`<span class="lb-gem">${avatarHTML(e,images,esc)}</span><span class="lb-gname">${esc(e.name)}</span>${rankTag(e,esc)}`,esc)}<strong class="lb-gvalue">${esc(formatValue(metric,e.value,locale))}</strong>${reportButton(e,w,esc)}</li>`).join('')}</ol>`;
+ <ol class="lb-grimoires" role="list">${entries.map((e,i)=>`<li class="lb-grimoire${e.me?' is-me':''}" style="--i:${i}"${metric==='study'&&e.detail?' data-lb-detail':''}>${e.me?`<em class="lb-me-tag">${w.meTag}</em>`:''}${personButton(e,`<span class="lb-gem">${avatarHTML(e,images,esc)}</span><span class="lb-gname">${esc(e.name)}</span>${rankTag(e,esc)}`,esc)}<strong class="lb-gvalue">${esc(formatValue(metric,e.value,locale))}</strong>${metric==='study'?detailHTML(e,w,locale,esc):''}${reportButton(e,w,esc)}</li>`).join('')}</ol>`;
 }
 export function boardHTML(data,w,locale,esc){
  w={...words(locale),...w};
@@ -305,18 +306,6 @@ export async function mountLeaderboard(main,{api,locale,esc,toast,isCurrent=()=>
   const openProfile=()=>openProfilePanel({api,locale,esc,toast,openSettings,onClose:()=>{if(isCurrent())render();}});
   main.querySelectorAll('[data-lb-me],[data-lb-profile]').forEach(b=>b.addEventListener('click',openProfile));
   main.querySelectorAll('[data-lb-lookup]').forEach(b=>b.addEventListener('click',()=>lookup?.(b.dataset.lbLookup)));
-  /* 学习练习 hover card: one floating card, placed over the hovered reader (under it when there is no room above) */
-  {const page=main.querySelector('.leaderboard-page');main.querySelectorAll('.lb-detail').forEach(x=>x.remove());
-   const hide=()=>main.querySelectorAll('.lb-detail').forEach(x=>x.remove());
-   main.querySelectorAll('.lb-grimoire[data-lb-detail]').forEach(li=>{
-    const show=()=>{hide();const e=(last?.board?.entries||[])[Number(li.dataset.lbDetail)],html=detailHTML(e,words(locale),locale,esc,last?.avatars||{});if(!html||!page)return;
-     const tip=document.createElement('div');tip.className='lb-detail';tip.setAttribute('role','tooltip');tip.innerHTML=html;page.append(tip);
-     /* a transformed ancestor moves position:fixed off the viewport: measure where it lands and take that offset out */
-     const r=li.getBoundingClientRect(),t=tip.getBoundingClientRect(),vw=document.documentElement.clientWidth,floor=Math.max(8,main.getBoundingClientRect().top+8);
-     const x=Math.max(8,Math.min(vw-t.width-8,r.left+r.width/2-t.width/2)),y=r.top-t.height-10>=floor?r.top-t.height-10:r.bottom+10;
-     tip.style.left=x+'px';tip.style.top=y+'px';tip.style.transform='none';const land=tip.getBoundingClientRect();tip.style.transform='';tip.style.left=(2*x-land.left)+'px';tip.style.top=(2*y-land.top)+'px';requestAnimationFrame(()=>tip.classList.add('is-open'));};
-    li.addEventListener('pointerenter',show);li.addEventListener('focusin',show);li.addEventListener('pointerleave',hide);li.addEventListener('focusout',hide);});
-   if(!main.dataset.lbDetailScroll){main.dataset.lbDetailScroll='1';main.addEventListener('scroll',()=>main.querySelectorAll('.lb-detail').forEach(x=>x.remove()),{passive:true});}}
   bindSocial(main,{api,locale,esc,toast,images:()=>({...(last?.avatars||{}),...(last?.social?.avatars||{})}),avatarHTML,openSettings:section=>section==='personal'?openProfile():openSettings(section),rerender:()=>{if(isCurrent())render();}});
  };
  main.innerHTML=leaderboardHTML(null,locale,esc);
