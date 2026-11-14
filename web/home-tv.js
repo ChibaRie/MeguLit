@@ -1,7 +1,6 @@
 import {activityCells} from './learning-activity.js';
 import {openLinesPicker} from './home-lines.js';
 import {createDepth,markFlat,cachedDaily,rememberDaily,dailyIsFresh,dailySignature,cachedActivity,rememberActivity} from './home-depth.js';
-import {createHand} from './home-hand.js';
 import {exAttr,setExample} from './example-ruby.js';
 import {createDock,openHandPicker,HAND_MAX} from './home-picker.js';
 import {pickHeadline,cachedHeadline,translateHeadline,headlineLabel,activitySummary,emptyActivityHTML} from './home-today.js';
@@ -216,8 +215,8 @@ export const DRAW_NAMES=Object.keys(DRAWS);
 /* 2026-11-13 judges round 2: a title like "English (日本語)" shows the first part big and the bracketed name as a line under it; the big title stays at two lines at most and no larger than ~5vw */
 function splitTitle(t){const m=String(t||'').match(/^(.+?)\s*[（(]([^（）()]+)[）)]\s*$/u);return m&&m[1].trim().length>1?[m[1].trim(),m[2].trim()]:[String(t||''),''];}
 /* 2026-11-13 (user: "不要左侧这么大一个作品名了") the game name is only the fallback when there is no daily headline, and it stays mid-sized */
-function fitTitle(h){const max=Math.min(56,Math.max(30,innerWidth*.03));let size=max;h.style.fontSize=size+'px';const limit=()=>h.scrollHeight>size*1.12*2+size*.3||h.scrollWidth>h.clientWidth+2;
- while(limit()&&size>26){size-=4;h.style.fontSize=size+'px';}}
+function fitTitle(h){const max=Math.min(76,Math.max(36,innerWidth*.04));let size=max;h.style.fontSize=size+'px';const limit=()=>h.scrollHeight>size*1.12*2+size*.3||h.scrollWidth>h.clientWidth+2;
+ while(limit()&&size>28){size-=4;h.style.fontSize=size+'px';}}
 
 function tweenFig(el,to,fmt){if(!el)return;const from=+el.dataset.v||0;el.dataset.v=to;cancelAnimationFrame(+el.dataset.raf||0);if(matchMedia('(prefers-reduced-motion:reduce)').matches||from===to){
  el.textContent=fmt(to);return;}const t0=performance.now(),dur=900;const tick=now=>{const k=Math.min(1,(now-t0)/dur),e=1-Math.pow(1-k,4);el.textContent=fmt(from+(to-from)*e);
@@ -274,7 +273,7 @@ export function renderHomeTV(main,ctx){
   
   <div class="tv-figs"><button class="tv-fig" data-go="statistics"><b data-fig="time">0m</b><small>${w.figRead}</small></button><button class="tv-fig" data-go="detail"><b data-fig="chars">0</b><small>${w.figChars}</small></button><button class="tv-fig" data-go="words"><b data-fig="words">0</b><small>${w.figWords}</small></button><button class="tv-more" data-go="statistics">${w.full} →</button></div>
   <div class="tv-title"><div class="tv-h1" role="heading" aria-level="1"></div><div class="tv-meta"></div></div>
-  <div class="tv-hand"></div><div class="tv-ghosts" aria-hidden="true"></div>
+  <div class="tv-rail"></div>
   <div class="tv-dialog"><span class="tv-who"></span><span class="tv-line"></span><div class="tv-act"></div></div></div>`;
  const root=main.querySelector('.tv-home'),$=s=>root.querySelector(s);
  live={root,timer:0,beat:0,typer:0,depth:null};
@@ -320,9 +319,9 @@ export function renderHomeTV(main,ctx){
   $('.tv-slices').innerHTML=Array.from({length:5},(_,j)=>`<i style="background:${art(g,p)};background-size:500% 100%;background-position:${j*25}% 0;transform:translateZ(${j%2?40:-20}px) translateY(${(j-2)*12}px)"></i>`).join('');
 
   const no=String(Math.max(1,pool.indexOf(g)+1)).padStart(2,'0');
-  const t=$('.tv-title');t.classList.remove('in');setTimeout(()=>{if(mine!==token)return;let n=0;const [mainTitle,subTitle]=splitTitle(g.title);$('.tv-h1').innerHTML=(String(mainTitle).match(/[A-Za-z0-9À-ɏ'’:;!?.,&\-]+|\s+|./gu)||[]).map(word=>/^\s+$/.test(word)?' ':`<i class="w">${[...word].map(c=>`<span style="transition-delay:${(n++)*28}ms">${esc(c)}</span>`).join('')}</i>`).join('');
+  const t=$('.tv-title');t.classList.remove('in');setTimeout(()=>{if(mine!==token)return;const [mainTitle,subTitle]=splitTitle(g.title);$('.tv-h1').textContent=mainTitle;
    $('.tv-h1').title=g.title;$('.tv-meta').innerHTML=(subTitle?`<span class="tv-sub" lang="ja">${esc(subTitle)}</span>`:'')+(g.lastPlayedAt?`<span>${w.last} · ${esc(relativeTime(g.lastPlayedAt))}</span>`:'');void t.offsetWidth;fitTitle($('.tv-h1'));
-   fitLeft(root);setTimeout(()=>t.classList.add('in'),30);/* measure again once the new title has settled, so a block hidden mid-change comes back */setTimeout(()=>{
+   fitLeft(root);requestAnimationFrame(()=>t.classList.add('in'));/* measure again once the new title has settled, so a block hidden mid-change comes back */setTimeout(()=>{
    if(live&&live.root===root)fitLeft(root);},900);},flash?Math.max(0,reveal-(performance.now()-started)):0);
   tweenFig($('[data-fig="time"]'),g.readingSeconds||0,v=>mins(v));tweenFig($('[data-fig="chars"]'),g.characters||0,v=>number(Math.round(v)));tweenFig($('[data-fig="words"]'),
    g.learnedWords||0,v=>number(Math.round(v)));
@@ -330,19 +329,9 @@ export function renderHomeTV(main,ctx){
   
   rail();
  }
- /* 2026-11-13 (user) the cover strip became a hand of cards; picking one plays it onto the field (see home-hand.js) */
- function rail(){hand.render(list.map(g=>({id:g.id,title:g.title,cover:g.cover,pinned:setting.pinned.includes(g.id),g})),shown?.id||null);placeCover();}
- /* 2026-11-13 (user: "你要保证展示的卡要一直在手牌上方居中") the field card is centred over the fan of cards at every window size, measured on the
-    untilted scene; if it would reach into the fan it moves up. Never while a card is in flight (its landing pose is already fixed). */
- /* measured on the card's resting box (hand.restRect), never on the card mid-animation; a touch left of the fan's centre (user: "往左边移动一点点") */
- function placeCover(){const c=$('.tv-cover');if(!c||!live||live.root!==root||hand.flying())return;const fan=hand.extent();if(!fan)return;
-  const run=fn=>live.depth?live.depth.neutral(fn):fn();run(()=>{c.style.left='';c.style.top='';c.style.width='';const rr=root.getBoundingClientRect(),aim=fan.cx-Math.min(48,rr.width*.025);
-   /* (user: the card's top was cut off) a window too short for the card between the top and the fan gets a smaller card, it is never pushed off the top */
-   const minTop=Math.max(16,rr.height*.04),room=fan.top-14-minTop,r0=hand.restRect();if(r0.height>room&&room>80)c.style.width=(c.offsetWidth*room/r0.height)+'px';
-   for(let i=0;i<4;i++){const r=hand.restRect(),k=r.width/(c.offsetWidth||1)||1,dx=(aim-(r.left+r.width/2-rr.left))/k;if(Math.abs(dx)<.5)break;c.style.left=(c.offsetLeft+dx)+'px';}
-   const r=hand.restRect(),ky=r.height/(c.offsetHeight||1)||1,over=r.bottom-rr.top-(fan.top-14);if(over>0)c.style.top=(c.offsetTop-over/ky)+'px';
-   const r2=hand.restRect(),under=minTop-(r2.top-rr.top);if(under>0)c.style.top=(c.offsetTop+under/ky)+'px';
-   /* the deck a random draw is dealt from sits with the card */const pile=root.querySelector(':scope>.tv-pile');if(pile){/* the card's plane is 6% larger than the page on every side (.tv-canvas inset -6%) */pile.style.left=c.style.left?(c.offsetLeft-rr.width*.06)+'px':'';pile.style.top=c.style.top?(c.offsetTop-rr.height*.06)+'px':'';pile.style.width=c.style.width;}});}
+ /* 2026-11-14 (user: "右边下面不是卡牌，是正常选的那种") the games are picked from the cover strip again (thumbnails, the current one wider with its timer bar); the card hand is gone */
+ function rail(){const r=$('.tv-rail');r.innerHTML=list.map((g,i)=>`<button class="tv-chip${g===shown?' on':''}" data-i="${i}" title="${esc(g.title)}" aria-label="${esc(g.title)}" style="--dur:${DUR}ms">${g.cover?`<img src="${esc(g.cover)}" alt="">`:''}${setting.pinned.includes(g.id)?'<span class="pin"></span>':''}<span class="bar"></span></button>`).join('');
+  r.querySelectorAll('.tv-chip').forEach(b=>b.addEventListener('click',()=>{const i=+b.dataset.i;if(list[i]&&list[i]!==shown)paint(i,true,'fade');}));}
  function commit(){model.preferences.homeShowcase=setting;savePreferences({homeShowcase:setting});const id=shown?.id;list=showcaseGames(model.games,setting);
   paint(Math.max(0,list.findIndex(g=>g.id===id)),false);}
  /* 2026-11-13 (user: "不要全部作品 … 把＋卡移到最右边 不要是卡牌了 鼠标放上去再出来") the hand editor is a tab docked on the right edge that slides out
@@ -372,18 +361,11 @@ export function renderHomeTV(main,ctx){
   $('.tv-heatlink').textContent=sum.empty?`${w.activity} →`:`${w.activity} · ${active} ${w.days} →`;const best=sum.best,secs=sum.secs;$('.tv-heatsum').innerHTML=`<span><b>${active}</b>${w.days}</span><span><b>${esc(duration(secs))}</b>${w.total}</span><span><b>${best}</b>${w.streak}</span>`;
   fitLeft(root);};
  {let actSig=JSON.stringify(cachedActivity()||null);if(cachedActivity())showActivity(cachedActivity());api('learning_activity',{range:'year'}).then(r=>{rememberActivity(r);const n=JSON.stringify(r||null);if(n!==actSig){actSig=n;showActivity(r);}}).catch(()=>{});}
- const hand=createHand({root,box:$('.tv-hand'),layer:$('.tv-ghosts'),cover:$('.tv-cover'),reduced:matchMedia('(prefers-reduced-motion:reduce)').matches,
-  back:`<img src="${LOGO}" alt="">`,art:h=>art(h.g||h,['#3b2a26','#5a3a30','#1a1110']),neutral:fn=>live?.depth?live.depth.neutral(fn):fn(),field:()=>shown,
-  onBusy:on=>live?.depth?.hold(on),
-  onPlay:(h,kind,ms)=>{if(kind!=='plain'){root.classList.add('tv-fly');/* the field card's table shadow grows in as the flying card comes down onto it */
-   $('.tv-cshadow')?.animate([{opacity:0},{opacity:0,offset:.55},{opacity:1}],{duration:ms||800,easing:'cubic-bezier(.3,0,.2,1)'});}paint(h.g,kind==='plain','fade');},
-  onLand:()=>{root.classList.remove('tv-fly');placeCover();}});live.hand=hand;
- hand.state&&requestAnimationFrame(()=>placeCover());
  const canvas=$('.tv-canvas'),planes=[...root.querySelectorAll('.tv-plane')],reduced=matchMedia('(prefers-reduced-motion:reduce)').matches;
  /* 2026-11-13 (user) every layer has its own depth: the far headline picture drifts against the pointer, near ones (cards, figures, rail, bottom bar) lead it */
  {const L=(sel,z)=>{const el=$(sel);return el?{el,z}:null;};live.depth=createDepth(root,{canvas,planes,layers:[L('.tv-left',7),L('.tv-figs',8),
-  L('.tv-hand',24),L('.tv-dialog',5),L('.tv-title',9),L('.tv-marks',3),L('.tv-cshadow',-22)].filter(Boolean)});}
- const onResize=()=>{if(live&&live.root===root){fitLeft(root);hand.relayout();placeCover();}else removeEventListener('resize',onResize);};addEventListener('resize',onResize);
+  L('.tv-rail',24),L('.tv-dialog',5),L('.tv-title',9),L('.tv-marks',3),L('.tv-cshadow',-22)].filter(Boolean)});}
+ const onResize=()=>{if(live&&live.root===root){fitLeft(root);}else removeEventListener('resize',onResize);};addEventListener('resize',onResize);
  root.querySelectorAll('.tv-cover,.tv-heat-card').forEach(cardify);
  const coverEl=$('.tv-cover');let clickTimer=0,pressAt=0,pressXY=[0,0];coverEl.setAttribute('aria-label',w.coverHint);const pop=document.createElement('div');pop.className='tv-pop';
   pop.innerHTML=`<p><i class="m1"></i><b>${w.tipClick}</b><span>${w.tipDetail}</span></p><p><i class="m2"></i><b>${w.tipDbl}</b><span>${w.tipDraw}</span></p>`;root.appendChild(pop);
@@ -393,10 +375,7 @@ export function renderHomeTV(main,ctx){
   pressXY=[e.clientX,e.clientY];});coverEl.addEventListener('click',e=>{/* (user 2026-11-12) a long press or a drag only plays with the card; letting go never opens the detail */if(e.detail&&(performance.now()-pressAt>350||Math.hypot(e.clientX-pressXY[0],
   e.clientY-pressXY[1])>6))return;clearTimeout(clickTimer);clickTimer=setTimeout(()=>shown&&onDetail(shown.id),260);});coverEl.addEventListener('dblclick',e=>{e.preventDefault();
   clearTimeout(clickTimer);if(pool.length>1)draw(randomGame());});
- /* 2026-11-13 (user: "再补一个随机抽卡出来的封面 和手牌选取的过渡动画") a random draw is tied to the hand: a game that is in the hand is played out of it like a
-    picked card (the field card flies home); any other game is drawn off the deck while the field card flies back into its slot in the hand */
- function draw(g){if(!g||!live||live.root!==root)return;if(list.includes(g)){hand.play(g.id);return;}const prev=shown;
-  if(prev&&list.includes(prev)&&!matchMedia('(prefers-reduced-motion:reduce)').matches&&hand.stow(prev.id,g.id))$('.tv-cover').dataset.stow='1';paint(g);}
+ function draw(g){if(!g||!live||live.root!==root)return;paint(g);}
  if(list.length)paint(0,false);
  return stopHomeTV;
 }

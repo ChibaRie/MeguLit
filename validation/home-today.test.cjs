@@ -60,14 +60,14 @@ test('a year without any reading is an empty state, a single read day is not',as
  for(const l of ['ja','en'])assert.ok(emptyActivityHTML(l,x=>x,today).includes(EMPTY_COPY[l].title));
 });
 
-test('home page: no background headline, no text bottom-left, picture-only top story under the card, lower hand',()=>{
+test('home page: no background headline, title bottom-left in two lines, picture-only top story under the card, cover strip bottom-right',()=>{
  const js=fs.readFileSync(path.join(WEB,'home-tv.js'),'utf8'),css=fs.readFileSync(path.join(WEB,'home-tv.css'),'utf8');
  for(const gone of ['tv-hero','tv-hl','has-hl'])assert.ok(!js.includes(gone)&&!css.includes(gone),gone+' is gone');
  const block=js.slice(js.indexOf("className='tv-hot-news'"),js.indexOf('fitLeft(root);}',js.indexOf("className='tv-hot-news'")));
  assert.ok(block.includes('tv-hot-img')&&!block.includes('tv-hot-meta'),'the big picture carries no text');assert.ok(js.includes('card.after(big)'),'it sits under the activity card');
  assert.ok(js.includes('pickHeadline(')&&js.includes('translateHeadline('),'title goes through the translation path');
- assert.match(css,/\.tv-home:not\(\.empty\) \.tv-title\{display:none\}/);
- assert.match(css,/\.tv-hand\{bottom:-\d+(\.\d+)?vh\}/,'the hand may run off the bottom edge');
+ assert.ok(!css.includes('.tv-home:not(.empty) .tv-title{display:none}'),'the game title shows bottom-left again');assert.ok(css.includes('line-clamp:2'),'at most two lines');
+ assert.ok(css.includes('.tv-rail{right:5vw'),'the cover strip sits bottom-right');
  assert.match(css,/\.tv-heat-card\.is-empty \.tv-heat/);
 });
 
