@@ -182,3 +182,16 @@ test('Unity IL2CPP: BepInEx 6 flavour from the pack, plugin hides through Canvas
  const p=read('tools/unity-text-pack.cjs');assert.match(p,/'il2cpp-x64':\{file:'BepInEx-Unity\.IL2CPP-win-x64-6\.0\.0-be\.793/);
  assert.ok(read('core/text-paths-launch.cjs').includes("il2cppReady=kind==='il2cpp'"));
 });
+
+test('dot font at the source: in-place outline swap (glyf and CFF), same sizes, file reads and memory, no disk writes',()=>{
+ const h=read('native/fontdot/FontDotPatch.h'),c=read('native/fontdot/FontDot.cpp');
+ assert.match(h,/int s = upem \/ 12;/,'dot side upem/12, clipped to the black box');
+ assert.match(h,/head\.magicNumber/);assert.match(h,/t\[0\] = 'x'; r\.strikes\+\+;/,'embedded bitmap strikes switched off');
+ assert.match(h,/static void Cff\(/,'CFF charstrings dotted too');assert.match(h,/tmp\[w\+\+\] = 14;/,'endchar');
+ assert.doesNotMatch(h,/#include <windows\.h>/,'pure');
+ assert.match(c,/MH_CreateHook\(target, \(void \*\)&HRead/,'ReadFile hook');assert.match(c,/MeguLitFontReady-%lu/,'tells MeguLitLaunch the hooks are in');
+ assert.match(c,/m\.Type == MEM_PRIVATE/,'memory scan: writable private memory only');
+ assert.doesNotMatch(c,/WriteFile\(own|GENERIC_WRITE, FILE_SHARE/,'never writes a game file');
+ assert.match(c,/MEGULIT_FONTDOT_OFF/);
+ for(const f of ['native/fontdot/selftest/patch.cpp','native/fontdot/selftest/check.py','native/fontdot/selftest/run.cmd','native/fontdot/build.cmd'])assert.ok(fs.existsSync(path.join(root,f)),f);
+});
