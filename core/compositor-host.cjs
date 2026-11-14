@@ -103,7 +103,7 @@ class CompositorHost {
     if (e.e !== 'stats' && (e.e !== 'line' || e.status !== this.lastStatus)) this.trace('event ' + JSON.stringify(e).slice(0, 300));
     if (e.e === 'line') this.lastStatus = e.status;
     if (e.e === 'fallback') { this.failedFor = this.identity; this.setDrawing(false); this.onEvent({ type: 'compositorState', state: 'fallback', reason: e.reason }); this.stop(); }
-    else if (e.e === 'exit') { this.cc = null; this.setDrawing(false); }
+    else if (e.e === 'exit') { this.cc = null; this.setDrawing(false); if (e.reason === 'game-closed') { this.identity = ''; this.onEvent({ type: 'compositorState', state: 'gameClosed' }); } } // a launcher window closed: the owner binds the game's next window
     else if (e.e === 'lookup') this.onEvent({ type: 'compositorLookup', id: e.id, index: e.index, char: e.char, x: e.x, y: e.y });
     else if (e.e === 'ready') { this.setDrawing(true); this.onEvent({ type: 'compositorState', state: 'running' }); }
   }
