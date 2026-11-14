@@ -87,7 +87,7 @@ public class MeguLitUnityText : BaseUnityPlugin {
  // ---- components by type name ----------------------------------------------------------------------------------
  Type tmpType, uguiText, graphic;
  PropertyInfo uRich, tmpText, tmpAlpha, tmpInfo, uText, uColor, uGen, uPpu;
- FieldInfo ciIndex, infoCount, infoChars, ciChar, ciVisible, ciBL, ciTR;
+ FieldInfo ciPoint, ciIndex, infoCount, infoChars, ciChar, ciVisible, ciBL, ciTR;
  bool typesTried;
 
  void FindTypes() {
@@ -102,7 +102,7 @@ public class MeguLitUnityText : BaseUnityPlugin {
    var ti = tmpInfo != null ? tmpInfo.PropertyType : null;
    if (ti != null) { infoCount = ti.GetField("characterCount"); infoChars = ti.GetField("characterInfo"); }
    var ci = infoChars != null ? infoChars.FieldType.GetElementType() : null;
-   if (ci != null) { ciChar = ci.GetField("character"); ciIndex = ci.GetField("index"); ciVisible = ci.GetField("isVisible"); ciBL = ci.GetField("bottomLeft"); ciTR = ci.GetField("topRight"); }
+   if (ci != null) { ciChar = ci.GetField("character"); ciIndex = ci.GetField("index"); ciPoint = ci.GetField("pointSize"); ciVisible = ci.GetField("isVisible"); ciBL = ci.GetField("bottomLeft"); ciTR = ci.GetField("topRight"); }
   }
   if (uguiText != null) { uText = uguiText.GetProperty("text"); uGen = uguiText.GetProperty("cachedTextGenerator"); uRich = uguiText.GetProperty("supportRichText"); uPpu = uguiText.GetProperty("pixelsPerUnit"); }
   if (graphic != null) uColor = graphic.GetProperty("color");
@@ -110,7 +110,7 @@ public class MeguLitUnityText : BaseUnityPlugin {
  }
 
  // ---- the dialogue component ------------------------------------------------------------------------------------
- Component current; float currentAlpha = 1f; bool hidingCurrent; float nextScan; string lastKey = ""; int line; string lastText = "";
+ Component current; bool hidingCurrent; float nextScan; string lastKey = ""; int line; string lastText = "";
  readonly Dictionary<int, string> seen = new Dictionary<int, string>();
  readonly Dictionary<int, float> changedAt = new Dictionary<int, float>();
 
@@ -121,7 +121,7 @@ public class MeguLitUnityText : BaseUnityPlugin {
  // A candidate must really be seen: not faded out by its own colour or a CanvasGroup, and on screen (a backlog or a
  // template kept active but transparent or parked outside the view is not the dialogue).
  bool Seen(Component c) {
-  if (c == current && hidingCurrent) { } else if (GetAlpha(c) < 0.02f) return false;
+  if (GetAlpha(c) < 0.02f) return false;
   foreach (var g in c.GetComponentsInParent<CanvasGroup>(true)) { if (g.alpha < 0.02f) return false; if (g.ignoreParentGroups) break; }
   var rt = c.transform as RectTransform; if (rt == null) return true;
   var corners = new Vector3[4]; rt.GetWorldCorners(corners); var cam = CameraOf(c);
@@ -149,15 +149,40 @@ public class MeguLitUnityText : BaseUnityPlugin {
  // ---- hide / restore --------------------------------------------------------------------------------------------
  float GetAlpha(Component c) { try { if (tmpType != null && tmpType.IsInstanceOfType(c)) return (float)tmpAlpha.GetValue(c, null); return ((Color)uColor.GetValue(c, null)).a; } catch { return 1f; } }
  void SetAlpha(Component c, float a) { try { if (tmpType != null && tmpType.IsInstanceOfType(c)) tmpAlpha.SetValue(c, a, null); else { var col = (Color)uColor.GetValue(c, null); col.a = a; uColor.SetValue(c, col, null); } } catch { } }
- void Restore() { if (hidingCurrent && current != null) SetAlpha(current, currentAlpha); hidingCurrent = false; }
+ // Hidden through the CanvasRenderers (the component's and its sub-meshes'): their alpha multiplies whatever colours the
+ // game animates into the mesh (live 2026-11-14, IL2CPP 魔法少女ノ魔女裁判: a typewriter rewrote vertex colours, so the
+ // component's own alpha was not enough). Text without a CanvasRenderer: its Renderers off, else the component alpha.
+ readonly Dictionary<int, float> saved = new Dictionary<int, float>();
+ void HideSet(Component c, bool on) {
+  bool any = false;
+  foreach (var cr in c.GetComponentsInChildren<CanvasRenderer>(true)) {
+   any = true; int k = cr.GetInstanceID(); float a;
+   if (on) { if (!saved.ContainsKey(k)) saved[k] = cr.GetAlpha(); if (cr.GetAlpha() != 0f) cr.SetAlpha(0f); }
+   else if (saved.TryGetValue(k, out a)) { cr.SetAlpha(a <= 0f ? 1f : a); saved.Remove(k); }
+  }
+  if (!any) foreach (var r in c.GetComponentsInChildren<Renderer>(true)) {
+   any = true; int k = r.GetInstanceID(); float a;
+   if (on) { if (!saved.ContainsKey(k)) saved[k] = r.enabled ? 1f : 0f; if (r.enabled) r.enabled = false; }
+   else if (saved.TryGetValue(k, out a)) { r.enabled = a > 0f; saved.Remove(k); }
+  }
+  if (!any) { int k = c.GetInstanceID(); float a; if (on) { if (!saved.ContainsKey(k)) saved[k] = GetAlpha(c); SetAlpha(c, 0f); } else if (saved.TryGetValue(k, out a)) { SetAlpha(c, a <= 0f ? 1f : a); saved.Remove(k); } }
+ }
+ bool AllHidden(Component c) {
+  bool any = false;
+  foreach (var cr in c.GetComponentsInChildren<CanvasRenderer>(true)) { any = true; if (cr.GetAlpha() > 0f) return false; }
+  if (any) return true;
+  foreach (var r in c.GetComponentsInChildren<Renderer>(true)) { any = true; if (r.enabled) return false; }
+  return any || GetAlpha(c) <= 0f;
+ }
+ void Restore() { if (hidingCurrent && current != null) HideSet(current, false); hidingCurrent = false; saved.Clear(); }
 
  void LateUpdate() {
   if (Time.unscaledTime >= nextScan) { nextScan = Time.unscaledTime + 0.5f; try { Scan(); } catch (Exception e) { Logger.LogWarning("scan " + e.Message); } }
   if (current == null || !Shown(current)) { Restore(); current = null; return; }
   bool want = hideAsked && connected;
-  if (want && !hidingCurrent) { currentAlpha = GetAlpha(current); if (currentAlpha <= 0f) currentAlpha = 1f; hidingCurrent = true; }
+  if (want && !hidingCurrent) hidingCurrent = true;
   if (!want) Restore();
-  if (hidingCurrent) SetAlpha(current, 0f);
+  if (hidingCurrent) HideSet(current, true);
  }
 
  IEnumerator EndOfFrame() {
@@ -188,9 +213,13 @@ public class MeguLitUnityText : BaseUnityPlugin {
   };
   if (tmpType != null && tmpType.IsInstanceOfType(current)) {
    object info = tmpInfo.GetValue(current, null); int n = (int)infoCount.GetValue(info); var arr = (Array)infoChars.GetValue(info);
+   // ruby: characters set in a clearly smaller point size than the line's body are left out
+   var sizes = new List<float>(); if (ciPoint != null) for (int i = 0; i < n && i < arr.Length; i++) { object e = arr.GetValue(i); if ((bool)ciVisible.GetValue(e)) sizes.Add(Convert.ToSingle(ciPoint.GetValue(e))); }
+   sizes.Sort(); float body = sizes.Count > 0 ? sizes[sizes.Count / 2] : 0f;
    for (int i = 0; i < n && i < arr.Length; i++) {
     object ci = arr.GetValue(i);
     if (!(bool)ciVisible.GetValue(ci)) continue;
+    if (body > 0 && Convert.ToSingle(ciPoint.GetValue(ci)) < body * 0.75f) continue;
     add((char)ciChar.GetValue(ci), (Vector3)ciBL.GetValue(ci), (Vector3)ciTR.GetValue(ci));
    }
   } else if (uGen != null) {
@@ -222,7 +251,7 @@ public class MeguLitUnityText : BaseUnityPlugin {
   if (rects.Count == 0) return;
   string flat = text.ToString().Replace("\n", "");
   if (!(lastText.Length > 0 && (flat.StartsWith(lastText) || lastText.StartsWith(flat)))) line++;
-  bool hidden = hidingCurrent && GetAlpha(current) <= 0f;
+  bool hidden = hidingCurrent && AllHidden(current);
   var sb = new StringBuilder();
   foreach (var r in rects) { if (sb.Length > 0) sb.Append(';'); sb.Append(F(r[0])).Append(',').Append(F(r[1])).Append(',').Append(F(r[2])).Append(',').Append(F(r[3])); }
   string key = line + "|" + hidden + "|" + sb;

@@ -332,5 +332,25 @@ own opacity restored when MeguLit stops; a hidden-state change resends the line'
 100000 so they never collide with KAG `processCh` sentences. Live 2026-11-14 千恋＊万花: 『お客さん』, 「……ぁ？」, … boxes on
 every glyph, hidden=1 with the dialogue gone, back on reset.
 
-Not covered yet: Unity IL2CPP (BepInEx 6 + generated interop assemblies, or XUnity's IL2CPP build), canvas web engines,
-KiriKiri games drawing through the textrender plugin (Yuzusoft) or their own message-layer class, Ren'Py text outside the say screen.
+YU-RIS (サイコロジック・ラブコメディ, 2026-11-14): its only text APIs are CreateFontIndirectA + TextOutA +
+CreateDIBSection / GetDIBits / StretchDIBits. TextOutA rasterises each new character once into a DIB glyph cache (31
+calls for several lines), and the engine copies cached glyphs into the frame with its own CPU code before uploading it
+to Direct3D 9. Character positions exist only inside that internal blit, so neither ① (glyph dots: cached glyphs are
+reused), layer 4 (no glyph draw reaches the GPU) nor a ③ API hook applies; it needs reverse engineering of the cache-blit
+routine. Artemis (THE SHELL HD, D3D11, 64-bit): no Lua API is exported. Layer 4 checked it (hide-gpu-proxy 9a8a149):
+the 64-bit hooks load, but the game stays black on this machine, and its only draw is one unit quad from a static
+vertex buffer placed by shader constants, which layer 4 cannot read. Stopped; it needs an engine-level path.
+
+**Unity IL2CPP** (`native/unitytext/MeguLitUnityText.IL2CPP.cs`, `Build-UnityText-IL2CPP.ps1`): the same shadow folder
+with BepInEx 6.0.0-be.793's IL2CPP build (its own .NET runtime; the interop assemblies are generated in the shadow on
+the first start, ~10 s) from the pack's `il2cpp-x64` / `il2cpp-x86`, and a BasePlugin that registers one MonoBehaviour
+in the IL2CPP domain. It compiles against one game's generated interop and binds by type / member name at run time.
+Both Unity plugins hide through the **CanvasRenderers** of the dialogue component and its sub-meshes (renderer alpha 0;
+text without a CanvasRenderer: its Renderers off; else the component alpha), because a typewriter that rewrites vertex
+colours every frame undoes the component's own alpha. TextMeshPro characters in a point size under 0.75 × the line's body
+(ruby) are left out. Live 2026-11-14 魔法少女ノ魔女裁判 (Unity 6000.0.48, IL2CPP x64, Steam, Naninovel
+`RevealableTextModified`): the plugin loads, records per character while the line types, hidden=1 with the line gone,
+drawn again on reset, boxes on every glyph. Mono regression 月に寄りそう乙女の作法 with the renderer hiding: hidden=1, gone.
+
+Not covered yet: canvas web engines (RenJS / Phaser), KiriKiri games with their own message-layer class that use
+neither KAG `processCh` nor TextRender, Ren'Py text outside the say screen, YU-RIS and Artemis (see above).

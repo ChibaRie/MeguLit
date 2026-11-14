@@ -3,7 +3,7 @@
 /* Text architecture ③ at launch (docs/text-architecture.md). services/bridge.cjs asks prepare() before it starts a
    game itself; when an engine path applies and is allowed, the start is adjusted:
      web   (NW.js / Electron shell next to the program): Chromium's remote debugging switches on a free loopback port;
-     unity (Mono, pack "unity-text" installed): the program in MeguLit's shadow folder, Steam's app id in the
+     unity (Mono or IL2CPP, pack "unity-text" installed): the program in MeguLit's shadow folder, Steam's app id in the
            environment so Steam does not restart it from the real folder.
    KiriKiri and Ren'Py need nothing at launch: HookBridge loads their DLLs into the running game.
    The returned session connects after the start (connect(pid)), feeds ToMe_CHARS records to the hook reader and
@@ -26,7 +26,8 @@ async function prepare({root,exe,profile={},enabled=false,shadowRoot=null,trace=
    connect:()=>session.attach().then(ok=>{trace('text-paths-web',{attached:ok,port});return ok;})};
  }
  const pack=unityPack(root);
- if(pack&&U.unityGame(exe)==='mono'&&!U.modded(exe)&&canary.allowed('unity')){
+ const kind=pack&&U.unityGame(exe),il2cppReady=kind==='il2cpp'&&require('node:fs').existsSync(path.join(pack,'MeguLitUnityText.IL2CPP.dll'));
+ if(pack&&(kind==='mono'||il2cppReady)&&!U.modded(exe)&&canary.allowed('unity')){
   const session=new U.UnityTextPath({canary});const port=await session.listen();
   let sh;try{sh=U.makeShadow({exe,shadowRoot:shadowRoot||path.join(root,'data','unity-shadow'),pack,port,steamAppId:steam});}catch(e){session.stop();trace('text-paths-unity-skipped',{error:e.message});return null;}
   trace('text-paths-unity',{shadow:sh.shadow,links:sh.links,copies:sh.copies,junctions:sh.junctions});
