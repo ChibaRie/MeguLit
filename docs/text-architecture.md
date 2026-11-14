@@ -171,7 +171,7 @@ Covered: GetGlyphOutlineA/W (all formats, glyph indices), TextOutA/W, ExtTextOut
 DrawText/DrawTextEx (through ExtTextOut), GdipDrawString, GdipDrawDriverString (character mode),
 ID2D1RenderTarget::DrawText / DrawTextLayout / DrawGlyphRun.
 
-Not covered (left to blank fallback or to ③): ID2D1DeviceContext's own DrawGlyphRun overload, IDWriteTextLayout::Draw
+Not covered (left to blank fallback or to ③): IDWriteTextLayout::Draw
 with a game-supplied renderer, IDWriteBitmapRenderTarget, Direct3D/OpenGL text from prebuilt font textures, engines that
 blit prerendered font sheets (KiriKiri prerendered fonts, see ③). World transforms and non-`MM_TEXT` mapping modes in GDI
 draw the dot in logical units (it scales with the transform).

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-3.0-or-later
+﻿// SPDX-License-Identifier: GPL-3.0-or-later
 // MeguLitFont32/64.dll: which font does the game really draw its Japanese text with? (user, 2026-11-13: 自动读内存来导入游戏字体)
 // Loaded by HookBridge into every bound game (all engines). The probe part is read-only: every hook calls the original.
 //  - font creation: CreateFontIndirectA/W, CreateFontA (the A face is decoded as CP932 first, so a Japanese game on a
@@ -37,7 +37,7 @@
 //    "MODE blank" (default) is the version 2 blank glyph, kept as the fallback.
 #include <windows.h>
 #include <dwrite.h>
-#include <d2d1.h>
+#include <d2d1_1.h>
 #include <string>
 #include <deque>
 #include <vector>
@@ -511,21 +511,23 @@ void LayoutDots(ID2D1RenderTarget *rt, D2D1_POINT_2F at, IDWriteTextLayout *layo
   ServeDot(seq, "d2d", Dot{sv[i].index, text[i], h, (int)(base * dy / 96.f + .5f), (int)(ht.width * dx / 96.f + .5f), 0, 0, side, sv[i].kind}); }
  rt->SetAntialiasMode(mode);
 }
-void STDMETHODCALLTYPE HDrawText(ID2D1RenderTarget *rt, const WCHAR *s, UINT32 n, IDWriteTextFormat *format, const D2D1_RECT_F *rc, ID2D1Brush *brush, D2D1_DRAW_TEXT_OPTIONS o, DWRITE_MEASURING_MODE mm) {
+template <D2DT *Orig> void STDMETHODCALLTYPE HDrawTextT(ID2D1RenderTarget *rt, const WCHAR *s, UINT32 n, IDWriteTextFormat *format, const D2D1_RECT_F *rc, ID2D1Brush *brush, D2D1_DRAW_TEXT_OPTIONS o, DWRITE_MEASURING_MODE mm) {
  std::vector<GlyphHide::Served> sv; long seq = 0;
  if (HideOn && s && n > 0 && n <= 4096 && HideText(std::wstring(s, n), FormatFace(format), "d2d", &sv, &seq)) {
   IDWriteFactory *f = DotMode && rc ? Factory() : NULL; IDWriteTextLayout *layout = NULL;
   if (f && SUCCEEDED(f->CreateTextLayout(s, n, format, (std::max)(0.f, rc->right - rc->left), (std::max)(0.f, rc->bottom - rc->top), &layout)) && layout) {
    KeepLayout(layout, NULL, 0, NULL); LayoutDots(rt, D2D1::Point2F(rc->left, rc->top), layout, brush, std::wstring(s, n), sv, seq); layout->Release(); }
   return; }
- ODrawText(rt, s, n, format, rc, brush, o, mm);
+ (*Orig)(rt, s, n, format, rc, brush, o, mm);
 }
-void STDMETHODCALLTYPE HDrawTextLayout(ID2D1RenderTarget *rt, D2D1_POINT_2F at, IDWriteTextLayout *layout, ID2D1Brush *brush, D2D1_DRAW_TEXT_OPTIONS o) {
+D2DT ODrawTextDc; constexpr auto HDrawText = &HDrawTextT<&ODrawText>; constexpr auto HDrawTextDc = &HDrawTextT<&ODrawTextDc>;
+template <D2DL *Orig> void STDMETHODCALLTYPE HDrawTextLayoutT(ID2D1RenderTarget *rt, D2D1_POINT_2F at, IDWriteTextLayout *layout, ID2D1Brush *brush, D2D1_DRAW_TEXT_OPTIONS o) {
  if (HideOn && layout) { std::pair<std::wstring, Face> v; bool found = false; AcquireSRWLockShared(&LayoutLock); auto it = Layouts.find(layout); if (it != Layouts.end()) { v = it->second; found = true; } ReleaseSRWLockShared(&LayoutLock);
   std::vector<GlyphHide::Served> sv; long seq = 0;
   if (found && HideText(v.first, v.second, "d2d", &sv, &seq)) { if (DotMode) LayoutDots(rt, at, layout, brush, v.first, sv, seq); return; } }
- ODrawTextLayout(rt, at, layout, brush, o);
+ (*Orig)(rt, at, layout, brush, o);
 }
+D2DL ODrawTextLayoutDc; constexpr auto HDrawTextLayout = &HDrawTextLayoutT<&ODrawTextLayout>; constexpr auto HDrawTextLayoutDc = &HDrawTextLayoutT<&ODrawTextLayoutDc>;
 // Glyph runs carry glyph indices: they are mapped back through the run's font face to the characters of the current
 // and previous line (per face and line). Left-to-right, horizontal runs with advances only; others are left out.
 struct { IDWriteFontFace *face = NULL; long seq = -1; std::map<UINT16, wchar_t> map; } RunIndexes;
@@ -539,7 +541,7 @@ std::wstring RunText(const DWRITE_GLYPH_RUN *run) {
  ReleaseSRWLockExclusive(&HideLock); return w;
 }
 typedef void(STDMETHODCALLTYPE *D2DG)(ID2D1RenderTarget *, D2D1_POINT_2F, const DWRITE_GLYPH_RUN *, ID2D1Brush *, DWRITE_MEASURING_MODE); D2DG ODrawGlyphRun;
-void STDMETHODCALLTYPE HDrawGlyphRun(ID2D1RenderTarget *rt, D2D1_POINT_2F at, const DWRITE_GLYPH_RUN *run, ID2D1Brush *brush, DWRITE_MEASURING_MODE mm) {
+template <D2DG *Orig> void STDMETHODCALLTYPE HDrawGlyphRunT(ID2D1RenderTarget *rt, D2D1_POINT_2F at, const DWRITE_GLYPH_RUN *run, ID2D1Brush *brush, DWRITE_MEASURING_MODE mm) {
  if (HideOn && run && run->fontFace && run->glyphIndices && run->glyphCount && run->glyphCount <= 4096) {
   std::wstring text = RunText(run); std::vector<GlyphHide::Served> sv; long seq = 0;
   if (!text.empty() && HideText(text, Face{L"", (int)(run->fontEmSize + .5f), 400}, "run", &sv, &seq)) {
@@ -553,8 +555,9 @@ void STDMETHODCALLTYPE HDrawGlyphRun(ID2D1RenderTarget *rt, D2D1_POINT_2F at, co
      pen += run->glyphAdvances[i]; }
     rt->SetAntialiasMode(mode); }
    return; } }
- ODrawGlyphRun(rt, at, run, brush, mm);
+ (*Orig)(rt, at, run, brush, mm);
 }
+D2DG ODrawGlyphRunDc; constexpr auto HDrawGlyphRun = &HDrawGlyphRunT<&ODrawGlyphRun>; constexpr auto HDrawGlyphRunDc = &HDrawGlyphRunT<&ODrawGlyphRunDc>;
 
 
 // ---- Conversion source (spec ③-conv). Idea from UniversalInjectorFramework's MultiByteToWideChar hook (AtomCrafty, no
@@ -624,12 +627,18 @@ void LateHooks() {
  if (d2 && !D2dDone) { D2dDone = true;
   // ID2D1RenderTarget: 27 DrawText, 28 DrawTextLayout, 29 DrawGlyphRun. d2d1.dll implements them once for its render targets; the
   // vtable is read from a DC render target made here (no window, nothing drawn).
-  typedef HRESULT(WINAPI *D2CF)(D2D1_FACTORY_TYPE, REFIID, const D2D1_FACTORY_OPTIONS *, void **); D2CF create = (D2CF)GetProcAddress(d2, "D2D1CreateFactory"); ID2D1Factory *factory = NULL; ID2D1DCRenderTarget *rt = NULL; bool ok = false, run = false;
+  typedef HRESULT(WINAPI *D2CF)(D2D1_FACTORY_TYPE, REFIID, const D2D1_FACTORY_OPTIONS *, void **); D2CF create = (D2CF)GetProcAddress(d2, "D2D1CreateFactory"); ID2D1Factory *factory = NULL; ID2D1DCRenderTarget *rt = NULL; bool ok = false, run = false; int dcHooks = 0;
   if (create && SUCCEEDED(create(D2D1_FACTORY_TYPE_MULTI_THREADED, __uuidof(ID2D1Factory), NULL, (void **)&factory)) && factory) {
    D2D1_RENDER_TARGET_PROPERTIES props = {D2D1_RENDER_TARGET_TYPE_DEFAULT, {DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED}, 0, 0, D2D1_RENDER_TARGET_USAGE_NONE, D2D1_FEATURE_LEVEL_DEFAULT};
-   if (SUCCEEDED(factory->CreateDCRenderTarget(&props, &rt)) && rt) { void **vt = *(void ***)rt; ok = HookAt(vt[27], (void *)&HDrawText, (void **)&ODrawText) && HookAt(vt[28], (void *)&HDrawTextLayout, (void **)&ODrawTextLayout); run = HookAt(vt[29], (void *)&HDrawGlyphRun, (void **)&ODrawGlyphRun); rt->Release(); }
+   if (SUCCEEDED(factory->CreateDCRenderTarget(&props, &rt)) && rt) { void **vt = *(void ***)rt; ok = HookAt(vt[27], (void *)HDrawText, (void **)&ODrawText) && HookAt(vt[28], (void *)HDrawTextLayout, (void **)&ODrawTextLayout); run = HookAt(vt[29], (void *)HDrawGlyphRun, (void **)&ODrawGlyphRun);
+    // ID2D1DeviceContext has its own vtable copies of slots 27-29 (idea and slots from MacType directwrite.cpp, GPL-3.0); hook
+    // them too when they are other functions, with the same detours (MinHook gives each target its own trampoline, so these
+    // need their own originals).
+    ID2D1DeviceContext *dc = NULL; if (SUCCEEDED(rt->QueryInterface(__uuidof(ID2D1DeviceContext), (void **)&dc)) && dc) { void **v2 = *(void ***)dc;
+     if (v2[27] != vt[27]) dcHooks += HookAt(v2[27], (void *)HDrawTextDc, (void **)&ODrawTextDc); if (v2[28] != vt[28]) dcHooks += HookAt(v2[28], (void *)HDrawTextLayoutDc, (void **)&ODrawTextLayoutDc); if (v2[29] != vt[29]) dcHooks += HookAt(v2[29], (void *)HDrawGlyphRunDc, (void **)&ODrawGlyphRunDc); dc->Release(); }
+    rt->Release(); }
    factory->Release(); }
-  Send(std::string("ToMe_FONT status d2d1 ") + (ok ? "hooked text" : "not hooked") + (run ? " run" : "")); }
+  Send(std::string("ToMe_FONT status d2d1 ") + (ok ? "hooked text" : "not hooked") + (run ? " run" : "") + " dc=" + std::to_string(dcHooks)); }
 }
 
 DWORD WINAPI Writer(void *) {

@@ -33,3 +33,18 @@ H:\MeguLit-Work\oss\ and read, not run. MTool itself is closed source; we did no
 
 YU-RIS (サイコロジック) is **not** blocked: in dialogue it draws with TextOutA at 100 px, and the existing ① `text` path
 turns every character into a dot. The earlier "0 calls" runs never got past the episode menu.
+
+## Second round: font renderers, windowing, graphics hooks, open engine implementations
+
+| Project | Licence | What it is | Where it hooks / draws text | What MeguLit takes |
+|---|---|---|---|---|
+| MacType (snowie2000) | GPL-3.0 | system-wide font renderer replacement | GDI: TextOut/ExtTextOut A/W, GetGlyphOutline A/W, GetCharWidth*, GetTextFace*, BeginBufferedPaint; DirectWrite/D2D by COM vtable: ID2D1RenderTarget **and ID2D1DeviceContext** slots 27 DrawText / 29 DrawGlyphRun (`directwrite.cpp`), IDWriteBitmapRenderTarget | **adopted**: ID2D1DeviceContext slots 27–29 hooked as well (separate vtable copies; the self-test host reports `dc=3`), which closes the gap docs/text-architecture.md listed. Still not covered: IDWriteBitmapRenderTarget, BufferedPaint |
+| DxWnd | GPL (SourceForge; GitHub mirror gone, not cloned) | forces fullscreen DirectDraw/D3D/OpenGL games into a window | hooks ChangeDisplaySettings, DirectDraw SetCooperativeLevel/SetDisplayMode, D3D CreateDevice presentation params | not done: noted as the gap for DirectDraw / D3D8 games that ② borderless cannot window |
+| Borderless Gaming (Codeusa) | GPL-2.0 | strips window styles | `Manipulation.cs`: SetWindowLong(GWL_STYLE/EXSTYLE) + SetWindowPos only, no API hooks | nothing new: ② borderless already does this |
+| ReShade (crosire) | BSD-3-Clause | post-processing injector | proxy DLLs (d3d9/d3d11/dxgi/opengl32/vulkan layer), hooks Present/SwapChain and draws into the back buffer | idea for a later "draw in the game's frame" fallback when capture fails; not implemented tonight |
+| Special K | GPL-3.0 | game modding framework | D3D8 (via d3d8to9), D3D9/11/12, Vulkan, OpenGL Present hooks; forced windowed / borderless | same as ReShade; D3D8/D3D12 coverage source for layer 4 later |
+| kiero (Rebzzel) | MIT | minimal graphics vtable hook | creates a dummy device, reads vtable, hooks Present (D3D9/10/11/12, OpenGL, Vulkan) | small enough to reuse for layer 4's D3D12/Vulkan when that is built |
+| rlvm (eglaysher) | GPL-3.0 | RealLive reimplementation | `systems/base/text_page.cc` `TextPage::Character()` / `Name()` per character, layout in `text_window.cc` | position model for RealLive (CLANNAD old builds): one Character call per glyph at the window's insertion point |
+| xclannad | repo holds only an APK + notes | — | — | nothing (no source) |
+| ONScripter (ogapee) | GPL-2.0-or-later | NScripter reimplementation | `ONScripter_text.cpp` `drawChar()` / `drawGlyph()`: one glyph per call at `FontInfo` x/y (SDL_ttf) | layout model for NScripter: pitch from `FontInfo`, line break in `checkLineBreak()` |
+| Kirikiroid2 / krkrsdl2 | BSD-3-Clause / MIT | KiriKiri Z reimplementations | `visual/LayerIntf.cpp` Layer.drawText → `tTVPFontRasterizer` (`GDIFontRasterizer.cpp` uses GetGlyphOutline, `FreeTypeFontRasterizer.cpp` FreeType); prerendered fonts (.tft) bypass both | explains 千恋＊万花: no GDI glyphs because it uses a prerendered font or FreeType. Hook point for ③: Layer.drawText (character + x/y per call) |
