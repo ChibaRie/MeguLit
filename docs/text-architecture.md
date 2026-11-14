@@ -599,8 +599,8 @@ clicks go to the headless page. Shots: PrintWindow of the game + transparent rea
 
 ### Not done / not verified
 - No game checked live against (a)–(h); owner test list: `H:MeguLit-Workchecklistsoverlay-placement.md`.
-- (h) Name plates and choices: glyph engines with feat/glyph-dots f752a94+ (extra lines n/o, , called
-  only when present): blanked by the game and drawn by the reader () on their boxes, click-through so the
+- (h) Name plates and choices: glyph engines with feat/glyph-dots f752a94+ (extra lines n/o, `setGlyphExtras`, called
+  only when present): blanked by the game and drawn by the reader (`textPlaceExtra`) on their boxes, click-through so the
   game's own button takes the click; placed only when every character has a box. Choice translations are not drawn
   beside the options yet. ③ paths: a speaker inside the record text is skipped, the game's own name plate stays.
 - Siglus/YU-RIS glyph cache: a blanked character stays blank wherever the engine reuses it (menus, backlog).
