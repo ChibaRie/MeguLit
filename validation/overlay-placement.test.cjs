@@ -39,6 +39,11 @@ p.extras({ 3: { id: 3, kind: 'n', text: '朋也', dots: [{ i: 0, ch: '朋', h: 3
   4: { id: 4, kind: 'o', text: 'いいえ', dots: [{ i: 0, ch: 'い', h: 30, a: 28, k: 'o', at: { x: 1, y: 1, space: 'c' } }] } });
 let ex = sent.shift(); assert.strictEqual(ex.type, 'textPlaceExtra'); assert.deepStrictEqual(ex.items.map(i => i.text), ['朋也'], 'incomplete option not placed');
 assert.deepStrictEqual(ex.items[0].rects[1], [108, 450, 28, 30]);
+p.extras({ 5: { id: 5, kind: 'o', text: 'はい', dots: [{ i: 0, ch: 'は', h: 30, a: 28, k: 'o', at: { x: 600, y: 200, space: 'c' } }, { i: 1, ch: 'い', h: 30, a: 28, k: 'o', at: { x: 628, y: 200, space: 'c' } }] } });
+sent.shift(); let cb = sent.shift();
+assert.deepStrictEqual(cb, { type: 'placeChoiceBoxes', sw: 1280, sh: 720, items: [{ text: 'はい', x0: 600, y0: 200, x1: 656, y1: 230 }] }, 'option boxes for the choice overlay');
+assert.strictEqual(p.choicesPlaced, true);
+p.extras({}); sent.shift(); cb = sent.shift(); assert.deepStrictEqual(cb.items, [], 'options gone: choice overlay cleared'); assert.strictEqual(p.choicesPlaced, false);
 const { HookNative } = require('../core/hook-native.cjs'), hn = Object.create(HookNative.prototype);
 hn.state = {}; hn.emit = () => {}; hn.notify = v => { hn.state = { ...hn.state, ...v }; };
 hn.glyphDots({ state: 'line', seq: 1, text: 'あ' });

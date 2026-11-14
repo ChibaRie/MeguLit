@@ -106,6 +106,14 @@ class OverlayPlacement {
     const key = JSON.stringify(items);
     if (key === this.extraKey) return; this.extraKey = key;
     this.send({ type: 'textPlaceExtra', items, client: this.client.slice() });
+    /* the choices' boxes also feed the reader's choice overlay (ruby + translation under each option) in place of the
+       OCR locate, which finds nothing once the options are blank */
+    const options = items.filter(i => i.kind === 'o');
+    this.choicesPlaced = options.length > 0;
+    if (options.length || this.choiceSent) {
+      this.choiceSent = options.length > 0;
+      this.send({ type: 'placeChoiceBoxes', sw: this.client[0], sh: this.client[1], items: options.map(i => { const r = i.rects; return { text: i.text, x0: Math.round(Math.min(...r.map(v => v[0]))), y0: Math.round(Math.min(...r.map(v => v[1]))), x1: Math.round(Math.max(...r.map(v => v[0] + v[2]))), y1: Math.round(Math.max(...r.map(v => v[1] + v[3]))) }; }) });
+    }
   }
   /* the dialogue area learned from an exactly placed line: left edge, first row top, row pitch, width, size */
   learn(rects) {
