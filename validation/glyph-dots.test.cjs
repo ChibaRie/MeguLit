@@ -26,7 +26,7 @@ test('DLL: dot mode keeps metrics, draws one square per character, reports every
  assert.ok(c.includes('if (lf.lfEscapement || lf.lfOrientation || lf.lfFaceName[0] == L\'@\''),'vertical fonts fall back to blank');
  assert.ok(c.includes('run = HookAt(vt[29], (void *)&HDrawGlyphRun, (void **)&ODrawGlyphRun);'),'ID2D1RenderTarget::DrawGlyphRun hooked');
  assert.ok(c.includes('Gp.SetSmoothing(g, 3 /* SmoothingModeNone */);'),'GDI+ dots are crisp squares');
- assert.ok(c.includes('l == "MODE dot-blind"')&&c.includes('if (!r && BlindMode && BlindChar(ch) && (ch || index) && Hide.DialogueKey(KeyOf(f))) { r = true; if (sv) *sv = GlyphHide::Served{-1, \'b\'}; }'),'blind dots: dialogue font only, kind b');
+ assert.ok(c.includes('l == "MODE dot-blind"')&&c.includes('if (!r && BlindMode && BlindChar(ch) && (ch || index) && Hide.BlindKey(KeyOf(f))) { r = true; if (sv) *sv = GlyphHide::Served{-1, \'b\'}; }'),'blind dots: dialogue font only, kind b');
  assert.ok(c.includes('rt->SetAntialiasMode(D2D1_ANTIALIAS_MODE_ALIASED);'),'Direct2D dots are crisp squares');
  assert.match(c,/Send\("ToMe_GLYPHDOT line seq=" \+ std::to_string\(seq\) \+ " text=" \+ Utf8\(text\)\)/);
  assert.match(c,/Send\("ToMe_GLYPHDOT dots seq=" \+ std::to_string\(DotSeq\) \+ " path=" \+ DotPath \+ " list=" \+ DotBuf\)/);
@@ -82,7 +82,7 @@ test('heartbeat gate status reaches the player: needs-relaunch sets the hook mes
  h.glyphDots({type:'hookGlyphDots',state:'status',status:'needs-relaunch',served:12});
  assert.equal(h.state.hookGlyphRelaunch,true);assert.match(h.state.hookMessage,/重启游戏/);
  h.glyphDots({type:'hookGlyphDots',state:'status',status:'live'});assert.equal(h.state.hookGlyphRelaunch,false);
- assert.match(require('fs').readFileSync(require('path').join(__dirname,'..','native','HookBridge.cs'),'utf8'),/\^status \(paused\|needs-relaunch\|live\)/);
+ assert.match(require('fs').readFileSync(require('path').join(__dirname,'..','native','HookBridge.cs'),'utf8'),/\^status \(paused\|live\|needs-relaunch\)/);
 });
 
 test('compositor mode: a write-back stream whose lines get no glyph dots is switched to text marks', () => {

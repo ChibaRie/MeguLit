@@ -199,6 +199,15 @@ public:
       return leader.Empty() ? seeded.Same(k) : leader.Same(k); // the probe's live leader beats a remembered seed (a stale seed from a name box must not keep the dialogue size out)
     return false;
   }
+  // Blind dots: the probe's leading font (or, before it is known, the remembered seed) always counts, besides learned
+  // keys; a name box learned first (AdvHD: 17 px names, 20 px dialogue) must not keep the dialogue size out.
+  bool BlindKey(const Key &k) const
+  {
+    for (auto &d : learned)
+      if (d.Same(k))
+        return true;
+    return leader.Empty() ? seeded.Same(k) : leader.Same(k);
+  }
   bool KnowsKey() const { return !learned.empty() || !seeded.Empty(); }
 
   // One glyph rasterised (GetGlyphOutline). render=false: a metrics-only call (moves the cursor, nothing to blank).
