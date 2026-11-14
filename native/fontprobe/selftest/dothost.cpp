@@ -168,6 +168,21 @@ int wmain(int argc, wchar_t **argv) {
  { Push("MODE dot-blind"); const std::wstring blind = L"見知らぬ天井だった"; Measure(blind); Clear(); std::vector<POINT> e; bool same = true; DrawGgo(blind, GGO_GRAY8_BITMAP, X0, base, e, same); (void)same; Dots("blind-ggo", e);
   HFONT tiny = CreateFontW(-16, 0, 0, 0, 400, 0, 0, 0, SHIFTJIS_CHARSET, 0, 0, ANTIALIASED_QUALITY, 0, Face); SelectObject(Dc, tiny); Clear(); TextOutW(Dc, X0, Y0, blind.c_str(), (int)blind.size()); Check(Ink() > 100, "blind: the same text in another size is drawn normally"); SelectObject(Dc, dialogue); DeleteObject(tiny);
   Push("MODE dot"); Sleep(200); Check(Got.find(":b;") != std::string::npos || Got.find(":b\n") != std::string::npos, "blind dots reported with kind b"); }
+ // Compositor heartbeat (owner rule: the player never sees marks): dots only while the beat says presenting and fresh.
+ { struct Beat { DWORD magic, version, pid, presenting; unsigned long long tick, frames; };
+  wchar_t bn[64]; swprintf_s(bn, L"Local\\MeguLitCompositorBeat-%lu", GetCurrentProcessId());
+  HANDLE bm = CreateFileMappingW(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE, 0, sizeof(Beat), bn); Beat *bt = bm ? (Beat *)MapViewOfFile(bm, FILE_MAP_WRITE, 0, 0, sizeof(Beat)) : NULL;
+  auto inked = [&](wchar_t c) { MAT2 m = {{0, 1}, {0, 0}, {0, 0}, {0, 1}}; GLYPHMETRICS gm{}; DWORD n = GetGlyphOutlineW(Dc, c, GGO_GRAY8_BITMAP, &gm, 0, NULL, &m); if (n == GDI_ERROR || !n) return -1; std::vector<BYTE> b(n); GetGlyphOutlineW(Dc, c, GGO_GRAY8_BITMAP, &gm, n, b.data(), &m); int k = 0; for (BYTE x : b) k += x != 0; return k; };
+  if (bt) {
+   *bt = {0x4243474D, 1, GetCurrentProcessId(), 1, GetTickCount64(), 1};
+   Push("MODE dot-blind"); Check(inked(L'鳥') > 0 && inked(L'鳥') <= 16, "heartbeat presenting and fresh: dot");
+   bt->presenting = 0; Check(inked(L'魚') > 30, "heartbeat presenting=0: real glyph at once");
+   Sleep(500); Check(Got.find("ToMe_GLYPHDOT status needs-relaunch") != std::string::npos, "lapse after served dots: needs-relaunch reported");
+   bt->presenting = 1; bt->tick = GetTickCount64(); Check(inked(L'馬') > 0 && inked(L'馬') <= 16, "heartbeat back: new glyphs are dots again");
+   bt->tick = GetTickCount64() - 5000; Check(inked(L'羊') > 30, "stale heartbeat (5 s): real glyph");
+   bt->tick = GetTickCount64(); UnmapViewOfFile(bt); CloseHandle(bm); Sleep(50);
+   Push("MODE dot"); }
+  else Check(false, "heartbeat mapping created"); }
  Push("OFF"); Sleep(400);
  { Clear(); TextOutW(Dc, X0, Y0, A.c_str(), (int)A.size()); Save("after-off"); Check(Ink() > 500, "after OFF: the line is drawn in full again"); }
  printf("%s", Got.c_str());

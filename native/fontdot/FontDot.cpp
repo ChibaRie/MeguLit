@@ -33,11 +33,26 @@ struct Range { DWORD vol; ULONGLONG id; ULONGLONG at; std::vector<uint8_t> data;
 std::vector<Range> Ranges;
 std::vector<std::pair<ULONGLONG, ULONGLONG>> Checked;  // (file key hash, offset) already looked at
 std::vector<uintptr_t> MemDone;
+volatile LONG Live = 1; // the compositor heartbeat gate (below): dots only while it is open
 thread_local bool Inside;
 HANDLE Pipe = INVALID_HANDLE_VALUE;
 DWORD PipeTried;
 
+std::vector<std::string> Pending; // reports made while Gate is held, sent after
 std::vector<std::string> Backlog; // reports wait here until the listener is up (fonts load before anyone listens)
+// Fonts found in memory. An engine may hold several copies of one font (Ren'Py's FreeType stream reads the whole font
+// into a new Python bytes object again and again), so the original bytes are kept once per font (Sig: size + a hash of
+// the bytes right after the table directory, which the patch never touches), and only the most recent 256 buffers are
+// remembered for switching back.
+struct Sig { uint32_t size; uint64_t hash; bool operator==(const Sig &o) const { return size == o.size && hash == o.hash; } };
+struct FontOriginal { Sig sig; std::vector<uint8_t> bytes; bool reported; };
+struct MemFont { uint8_t *at; Sig sig; std::vector<uint8_t> dir; bool dotted; };
+std::vector<FontOriginal> Originals; std::vector<MemFont> MemFonts;
+Sig SigOf(const uint8_t *p, uint32_t ext) {
+ size_t d = 12 + 16 * (size_t)FontDot::U16(p + 4); if (FontDot::U32(p) == FontDot::TAG_TTCF) d = 12 + 4 * (size_t)FontDot::U32(p + 8);
+ uint64_t h = 1469598103934665603ull; for (size_t i = d; i < d + 256 && i < ext; i++) { h ^= p[i]; h *= 1099511628211ull; }
+ Sig s; s.size = ext; s.hash = h; return s;
+}
 void Report(const std::string &line) {
  std::lock_guard<std::mutex> g(Gate);
  if (!line.empty()) { if (Backlog.size() > 4000) Backlog.erase(Backlog.begin()); Backlog.push_back(line); }
@@ -83,6 +98,9 @@ void Register(HANDLE h, DWORD vol, ULONGLONG id, ULONGLONG at) {
   if (ext >= 1024 && at + ext <= (ULONGLONG)size.QuadPart && ext < (256u << 20)) {
    std::vector<uint8_t> data(ext);
    if (ReadAt(own, at, data.data(), ext)) {
+    // the original, so a copy the engine keeps in memory (already dotted by this read) can be switched back later
+    { std::lock_guard<std::mutex> g(Gate); Sig sg = SigOf(data.data(), ext); bool have = false; for (auto &x : Originals) if (x.sig == sg) have = true;
+      if (!have && Originals.size() < 32) { FontOriginal n; n.sig = sg; n.reported = true; if (ext <= (64u << 20)) n.bytes = data; Originals.push_back(std::move(n)); } }
     FontDot::Result r = FontDot::Patch(data.data(), data.size());
     if (r.ok) { { std::lock_guard<std::mutex> g(Gate); Ranges.push_back(Range{vol, id, at, std::move(data)}); } registered = true; Report(Stat("file", r)); }
    }
@@ -106,7 +124,7 @@ void After(HANDLE h, LPVOID buf, DWORD len, LARGE_INTEGER pos) {
     if (!seen) { Register(h, vol, id, (ULONGLONG)pos.QuadPart); any = true; }
    }
   }
-  if (any && (keyed || Key(h, &vol, &id))) {
+  if (any && Live && (keyed || Key(h, &vol, &id))) {
    std::lock_guard<std::mutex> g(Gate);
    ULONGLONG a = (ULONGLONG)pos.QuadPart, b = a + len;
    for (auto &r : Ranges) {
@@ -130,6 +148,25 @@ BOOL WINAPI HRead(HANDLE h, LPVOID buf, DWORD n, LPDWORD got, LPOVERLAPPED ov) {
  return ok;
 }
 
+// ---- compositor heartbeat (docs/text-architecture.md, "Owner rule: the player never sees marks") --------------------
+// The same gate as MeguLitFont's glyph dots: Local\MeguLitCompositorBeat-<pid> {magic 'MGCB', version 1, compositorPid,
+// presenting, tickMs, frames}. Before any heartbeat: dots for 20 s from load (early injection starts before the
+// compositor). After one was seen: dots only while presenting == 1 and the tick is at most 1 s old. When the gate closes
+// every font patched in memory gets its original bytes back and file reads are served as they are; when it opens again
+// they are patched again. Glyphs the engine already rasterised stay as they were drawn (status needs-relaunch).
+#pragma pack(push, 4)
+struct Beat { DWORD magic, version, compositorPid, presenting; unsigned long long tickMs, frames; };
+#pragma pack(pop)
+ULONGLONG LoadedAt; volatile const Beat *BeatView; volatile LONG BeatSeen;
+bool DotsLive() {
+ if (!BeatView) { wchar_t name[64]; swprintf_s(name, L"Local\\MeguLitCompositorBeat-%lu", GetCurrentProcessId()); HANDLE m = OpenFileMappingW(FILE_MAP_READ, FALSE, name);
+  if (m) { void *v = MapViewOfFile(m, FILE_MAP_READ, 0, 0, sizeof(Beat)); if (v && InterlockedCompareExchangePointer((PVOID *)&BeatView, v, NULL) != NULL) UnmapViewOfFile(v); CloseHandle(m); } }
+ ULONGLONG now = GetTickCount64(); const volatile Beat *b = BeatView;
+ if (b && b->magic == 0x4243474D && b->version == 1) { if (b->tickMs) InterlockedExchange(&BeatSeen, 1); if (BeatSeen) return b->presenting == 1 && b->tickMs && now >= b->tickMs && now - b->tickMs <= 1000; }
+ if (BeatSeen) return false;
+ return now - LoadedAt <= 20000;
+}
+
 // ---- fonts already in memory ----------------------------------------------------------------------------------------
 int ScanRegion(uint8_t *base, size_t size);
 int ScanRegionGuarded(uint8_t *base, size_t size) { __try { return ScanRegion(base, size); } __except (EXCEPTION_EXECUTE_HANDLER) { return 0; } }
@@ -141,7 +178,7 @@ int ScanOnce() {
  while (p < end && VirtualQuery(p, &m, sizeof m)) {
   uint8_t *base = (uint8_t *)m.BaseAddress; size_t size = m.RegionSize;
   bool rw = m.State == MEM_COMMIT && !(m.Protect & (PAGE_GUARD | PAGE_NOACCESS)) && (m.Protect & (PAGE_READWRITE | PAGE_EXECUTE_READWRITE)) && m.Type == MEM_PRIVATE;
-  if (rw && size >= 4096) found += ScanRegionGuarded(base, size);
+  if (rw && size >= 4096) { std::lock_guard<std::mutex> g(Gate); found += ScanRegionGuarded(base, size); }
   p = base + size;
  }
  return found;
@@ -152,12 +189,18 @@ int ScanRegion(uint8_t *base, size_t size) {
      if (!Magic(base + i, 4)) continue;
      uint32_t ext = FontDot::Extent(base + i, size - i);
      if (ext < 1024 || ext > size - i) continue;
-     uintptr_t at = (uintptr_t)(base + i); bool done = false;
-     for (auto d : MemDone) if (d == at) { done = true; break; }
-     if (done) { i += ext & ~15u; continue; }
-     FontDot::Result r = FontDot::Patch(base + i, size - i);
-     MemDone.push_back(at);
-     if (r.ok) { found++; Report(Stat("mem", r)); }
+     uint8_t *at = base + i; Sig sig = SigOf(at, ext); bool live = Live != 0;
+     MemFont *known = NULL; for (auto &m : MemFonts) if (m.at == at && m.sig == sig) { known = &m; break; }
+     if (known && known->dotted == live) { i += ext & ~15u; continue; }    // already as it should be
+     FontOriginal *o = NULL; for (auto &x : Originals) if (x.sig == sig) { o = &x; break; }
+     if (!o && Originals.size() < 32) { FontOriginal n; n.sig = sig; n.reported = false; if (ext <= (64u << 20)) n.bytes.assign(at, at + ext); Originals.push_back(std::move(n)); o = &Originals.back(); }
+     if (live) {
+      FontDot::Result r = FontDot::Patch(at, size - i);
+      if (r.ok && o && !o->reported) { o->reported = true; found++; Pending.push_back(Stat("mem", r)); }
+     } else if (known && o && !o->bytes.empty()) memcpy(at, o->bytes.data(), o->bytes.size());
+     if (known) known->dotted = live;
+     else { MemFont m; m.at = at; m.sig = sig; m.dotted = live; m.dir.assign(at, at + 12 + 16 * (size_t)FontDot::U16(at + 4));
+      if (MemFonts.size() >= 256) MemFonts.erase(MemFonts.begin()); MemFonts.push_back(std::move(m)); }
      i += ext & ~15u;
     }
  return found;
@@ -171,20 +214,52 @@ void TraceMapped() {
     if (strstr(u, ".rpa") || strstr(u, ".ttf") || strstr(u, ".otf") || strstr(u, ".pfs")) { char r[800]; sprintf_s(r, "ToMe_FONTDOT mapped %p size=%zu protect=%lx %s", m.BaseAddress, m.RegionSize, m.Protect, u); Report(r); } } }
   p = (uint8_t *)m.BaseAddress + m.RegionSize; }
 }
+void FlushPending() { std::vector<std::string> p; { std::lock_guard<std::mutex> g(Gate); p.swap(Pending); } for (auto &l : p) Report(l); }
+const FontOriginal *OriginalOf(const MemFont &f) { for (auto &x : Originals) if (x.sig == f.sig && !x.bytes.empty()) return &x; return NULL; }
+bool StillOurs(const MemFont &f, size_t size) {
+ MEMORY_BASIC_INFORMATION m; if (!VirtualQuery(f.at, &m, sizeof m) || m.State != MEM_COMMIT || !(m.Protect & (PAGE_READWRITE | PAGE_EXECUTE_READWRITE))) return false;
+ if ((uint8_t *)m.BaseAddress + m.RegionSize < f.at + size) return false;
+ if (FontDot::Extent(f.at, size) != size) return false;                 // freed and reused: not a font of this size any more
+ return memcmp(f.at, f.dir.data(), f.dir.size()) == 0 && SigOf(f.at, (uint32_t)size) == f.sig;
+}
+int Switch(bool dots) {
+ int n = 0;
+ for (auto &f : MemFonts) {
+  const FontOriginal *o = OriginalOf(f); if (f.dotted == dots || !o || !StillOurs(f, o->bytes.size())) continue;
+  if (dots) FontDot::Patch(f.at, o->bytes.size()); else memcpy(f.at, o->bytes.data(), o->bytes.size());
+  f.dotted = dots; n++;
+ }
+ return n;
+}
+int SwitchGuarded(bool dots) { __try { return Switch(dots); } __except (EXCEPTION_EXECUTE_HANDLER) { return -1; } }
+DWORD WINAPI BeatWatch(void *) {
+ bool served = false;
+ for (;;) {
+  Sleep(250); bool live = DotsLive();
+  if (live == (Live != 0)) continue;
+  InterlockedExchange(&Live, live ? 1 : 0);
+  int n; { std::lock_guard<std::mutex> g(Gate); n = SwitchGuarded(live); }
+  if (live) Report("ToMe_FONTDOT status live fonts=" + std::to_string(n));
+  else { Report(std::string("ToMe_FONTDOT status ") + (served || n > 0 ? "needs-relaunch" : "paused") + " fonts=" + std::to_string(n)); }
+  served = served || n > 0 || !Originals.empty();
+ }
+}
 DWORD WINAPI Scanner(void *) {
- for (int i = 0; i < 30; i++) { ScanOnce(); if (Trace && (i % 5) == 4) TraceMapped(); Report(""); Sleep(2000); }
- for (;;) { ScanOnce(); Report(""); Sleep(10000); }
+ for (int i = 0; i < 30; i++) { ScanOnce(); FlushPending(); if (Trace && (i % 5) == 4) TraceMapped(); Report(""); Sleep(2000); }
+ for (;;) { ScanOnce(); FlushPending(); Report(""); Sleep(10000); }
 }
 
 DWORD WINAPI Start(void *) {
+ LoadedAt = GetTickCount64();
  MH_Initialize();
  HMODULE kb = GetModuleHandleW(L"kernelbase.dll"); if (!kb) kb = GetModuleHandleW(L"kernel32.dll");
  void *target = kb ? (void *)GetProcAddress(kb, "ReadFile") : NULL;
  bool hooked = target && MH_CreateHook(target, (void *)&HRead, (void **)&ORead) == MH_OK && MH_EnableHook(target) == MH_OK;
  wchar_t ready[64]; swprintf_s(ready, L"MeguLitFontReady-%lu", GetCurrentProcessId());
  HANDLE ev = OpenEventW(EVENT_MODIFY_STATE, FALSE, ready); if (ev) { SetEvent(ev); CloseHandle(ev); }
- Report(std::string("ToMe_FONTDOT ready version=1 readfile=") + (hooked ? "1" : "0"));
+ Report(std::string("ToMe_FONTDOT ready version=2 readfile=") + (hooked ? "1" : "0"));
  CreateThread(NULL, 0, Scanner, NULL, 0, NULL);
+ CreateThread(NULL, 0, BeatWatch, NULL, 0, NULL);
  return 0;
 }
 }
@@ -196,8 +271,9 @@ BOOL WINAPI DllMain(HINSTANCE h, DWORD reason, void *) {
   { char t[8]; Trace = GetEnvironmentVariableA("MEGULIT_FONTDOT_TRACE", t, sizeof t) && t[0] == '1'; }
   HMODULE pin; GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_PIN, (LPCWSTR)&DllMain, &pin);
   // hooks before the launcher resumes the game: installed on this (loader) thread's helper, waited for by the launcher
-  HANDLE t = CreateThread(NULL, 0, Start, NULL, 0, NULL); if (t) CloseHandle(t);
+  // hooks in before LoadLibrary returns: MeguLitLaunch loads this DLL while the game is still suspended (no wait event)
+  Start(NULL);
  }
  return TRUE;
 }
-extern "C" __declspec(dllexport) const char *MeguLitFontDotVersion() { return "MeguLitFontDot version=1"; }
+extern "C" __declspec(dllexport) const char *MeguLitFontDotVersion() { return "MeguLitFontDot version=2"; }

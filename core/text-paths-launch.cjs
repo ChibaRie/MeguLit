@@ -40,4 +40,24 @@ async function prepare({root,exe,profile={},enabled=false,shadowRoot=null,trace=
 function attach(prepared,hook){if(!prepared?.session||!hook)return;const s=prepared.session;
  s.onChars=line=>hook.charRects(line);s.onStatus=st=>hook.trace?.('text path '+prepared.path+': '+st);hook.attachTextPath?.(s);}
 
-module.exports={prepare,attach,unityPack};
+/* ③ dot font at the source (native/fontdot, docs/text-architecture.md): when ① starts the game through MeguLitLaunch
+   (compositor mode), MeguLitFontDot<bit>.dll rides along in MEGULIT_LAUNCH_EXTRA and is loaded while the game is still
+   suspended. Off with MEGULIT_FONTDOT_OFF=1, without the DLL, or once the crash canary saw the game die with it. The DLL
+   itself serves dots only while the compositor's heartbeat says it is presenting (else the real fonts). */
+function fontDot(root,exe,early,trace=()=>{}){
+ if(!early||process.env.MEGULIT_FONTDOT_OFF==='1')return null;
+ const bit=/MeguLitLaunch32\.exe$/i.test(early.file)?'32':'64',dll=path.join(root,'native','MeguLitFontDot'+bit+'.dll');
+ if(!require('node:fs').existsSync(dll))return null;
+ const canary=new Canary(root,exe);canary.settle();
+ if(!canary.allowed('fontdot')){trace('fontdot-off',{reason:canary.read().off?.fontdot?.reason||''});return null;}
+ early.env={...early.env,MEGULIT_LAUNCH_EXTRA:[early.env?.MEGULIT_LAUNCH_EXTRA,dll].filter(Boolean).join(';')};
+ canary.arm('fontdot');trace('fontdot',{dll:path.basename(dll)});
+ return {dll,canary,
+  /* the launcher exits at once, so the game's own process is watched: gone within 20 s = died with the dot font */
+  watch(pid,{alive=p=>{try{process.kill(p,0);return true;}catch{return false;}},every=1000,until=21000}={}){
+   const t0=Date.now();if(!Number.isInteger(Number(pid))){canary.exited('fontdot',0);return;}
+   const w=setInterval(()=>{if(!alive(Number(pid))){clearInterval(w);canary.exited('fontdot',-1);trace('fontdot-canary',{died:Date.now()-t0});return;}
+    if(Date.now()-t0>=until){clearInterval(w);canary.alive('fontdot');canary.exited('fontdot',0);}},every);w.unref?.();}};
+}
+
+module.exports={prepare,attach,unityPack,fontDot};

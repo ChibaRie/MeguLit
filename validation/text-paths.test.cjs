@@ -195,3 +195,31 @@ test('dot font at the source: in-place outline swap (glyf and CFF), same sizes, 
  assert.match(c,/MEGULIT_FONTDOT_OFF/);
  for(const f of ['native/fontdot/selftest/patch.cpp','native/fontdot/selftest/check.py','native/fontdot/selftest/run.cmd','native/fontdot/build.cmd'])assert.ok(fs.existsSync(path.join(root,f)),f);
 });
+
+test('dot font in the normal launch: rides along MeguLitLaunch, crash canary, compositor heartbeat gate',()=>{
+ const L=require('../core/text-paths-launch.cjs'),base=tmp();
+ fs.mkdirSync(path.join(base,'native'));const exe=path.join(base,'Game.exe');fs.writeFileSync(exe,'MZ');
+ const early={file:path.join(base,'native','MeguLitLaunch64.exe'),args:['x.dll',exe],env:{MEGULIT_GLYPH_MODE:'dot-blind'}};
+ assert.equal(L.fontDot(base,exe,early),null,'no DLL: nothing');
+ fs.writeFileSync(path.join(base,'native','MeguLitFontDot64.dll'),'x');
+ const fd=L.fontDot(base,exe,early);assert.ok(fd);assert.equal(early.env.MEGULIT_LAUNCH_EXTRA,path.join(base,'native','MeguLitFontDot64.dll'));
+ assert.ok(fd.canary.read().armed.fontdot,'armed at launch');
+ /* the game dies at once: off for this game next time */
+ let alive=false;fd.watch(123,{alive:()=>alive,every:1,until:50});
+ return new Promise(r=>setTimeout(r,30)).then(()=>{
+  assert.equal(fd.canary.allowed('fontdot'),false);
+  const e2={...early,env:{}};assert.equal(L.fontDot(base,exe,e2),null,'canary keeps it off');assert.equal(e2.env.MEGULIT_LAUNCH_EXTRA,undefined);
+  const b=read('services/bridge.cjs');assert.ok(b.includes("const fontDot=early&&!textPath?require('../core/text-paths-launch.cjs').fontDot(root,game.executable,early,trace):null;"));
+  assert.ok(b.includes('if(fontDot)fontDot.watch(state?.pid);'));
+  const l=read('native/fontprobe/Launch.cpp');assert.match(l,/GetEnvironmentVariableW\(L"MEGULIT_LAUNCH_EXTRA"/,'launcher loads the extra DLLs while the game is suspended');
+  const c=read('native/fontdot/FontDot.cpp');
+  assert.ok(c.includes('MeguLitCompositorBeat-%lu'),'same heartbeat as the glyph dots');
+  assert.match(c,/return now - LoadedAt <= 20000;/,'20 s grace before the compositor exists');
+  assert.match(c,/memcpy\(f\.at, o->bytes\.data\(\), o->bytes\.size\(\)\)/,'original fonts back when the gate closes');
+  assert.match(c,/if \(any && Live && /,'file reads served as they are when the gate is closed');
+  assert.match(c,/needs-relaunch/);
+  assert.ok(read('Release.ps1').includes("'native/MeguLitFontDot64.dll'"));
+  assert.match(read('native/native-builds.json'),/"name":"fontdot"/);
+  fs.rmSync(base,{recursive:true,force:true});
+ });
+});

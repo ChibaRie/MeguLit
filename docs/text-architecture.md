@@ -22,6 +22,7 @@ version, a line in this log, and stays backward compatible where possible (new f
 |------|------------|--------|
 | 1    | 2026-11-14 | First version: dot geometry, `ToMe_GLYPHDOT` records, `hookGlyphDots` events, `glyphMode` command. |
 | 2    | 2026-11-14 | Dot side grows with the cell: max(3, round(h/10)) from 12 px (was a fixed 3). Records unchanged. |
+| 2    | 2026-11-14 | Compositor heartbeat gate (dot mode), `status needs-relaunch / paused / live` records. |
 | 2    | 2026-11-14 | Compatible addition: `MODE dot-blind` / `blind:true`, record kind `b`. |
 | 1    | 2026-11-14 | Compatible addition: `glyphMode` `all:true` (write-back streams on dots too).                    |
 | 1    | 2026-11-14 | Compatible addition: in dot mode `ToMe_GLYPHDOT line` is sent when the line is pushed, before any dot. |
@@ -113,11 +114,29 @@ set MEGULIT_GLYPH_FONT=<px> <face>        (the remembered dialogue font, data\gl
 MeguLitLaunch32.exe <path to MeguLitFont32.dll> <game.exe> [args]
 ```
 
+In MeguLit (core/glyph-dots.cjs) this is automatic when 文字显示 is `compositor` (gal-preferences.json `textRenderer`):
+the library's 启动 starts a plain-process game through the launcher with the remembered font, and HookBridge starts with
+`MEGULIT_GLYPH_MODE=dot`, `MEGULIT_GLYPH_ALL=1`, `MEGULIT_GLYPH_BLIND=1`. Steam, Locale Emulator and shell-open launches keep the late attach.
+Live (2026-11-14): CLANNAD started from MeguLit's launch service went through MeguLitLaunch32; its first line was 8/8 dots from the first glyph (game window only, live\clannad-app-launch-dots.png).
+
 The DLL reads both variables at start (no HookBridge yet) and serves dots from the first glyph. HookBridge attaches
 later as usual (the same DLL path is not loaded twice) and takes over with `MODE`/`LINE`. The late attach stays the
 fallback for every other launch path (Steam, Locale Emulator, shell open). The first launch of a game has no remembered
 font yet unless the line stream taught one; HookBridge stores the probe's dialogue font (`BlindSeed`) for the next one.
 Self-test: `run-dots.cmd` starts `earlyhost.exe` through the launcher (x86 and x64); its first glyph must be a dot.
+
+### Compositor heartbeat (dot mode only)
+
+Owner rule: the player never sees marks. MeguLitFont serves dots only while the capture compositor presents this game:
+it reads `Local\MeguLitCompositorBeat-<game pid>` (`magic 0x4243474D 'MGCB'`, `version 1`, `compositorPid`, `presenting`,
+`tickMs` = GetTickCount64, `frames`; written by ② every 50 ms). Before any heartbeat was seen, dots are allowed for 20 s
+from DLL load (early injection starts before the compositor). Once one was seen: only while `presenting == 1` and
+`now − tickMs ≤ 1000 ms`, checked before every glyph/string and by a 250 ms watcher. Otherwise every path answers
+"not matched", so the game gets its real glyphs and strings at once (MeguLit, HookBridge or the compositor crashing or
+closing all end here). On a lapse the DLL sends once `ToMe_GLYPHDOT status needs-relaunch served=<n>` when dots were
+already served (an engine cache may still hold them; MeguLit offers a restart) or `status paused` when none were; when the
+heartbeat comes back, `status live`, and only glyphs rasterised from then on become dots. Blank mode is not affected.
+Self-test: `run-dots.cmd` (fresh beat → dot, presenting 0 → real at once, needs-relaunch reported, back → dots, stale 5 s → real).
 
 ### Reports (DLL → HookBridge, pipe `\\.\pipe\MeguLitFont-<pid>`, UTF-8 lines)
 
@@ -409,8 +428,22 @@ memory from the `.rpa`) patched in memory when the story started; the dialogue�
 HD (Artemis, 64-bit, Steam) via MeguLitLaunch64 from a hard-link shadow of the game folder on the same volume (junctions
 for folders, `steam_appid.txt` in the shadow so Steam does not restart the real program; removed afterwards): four
 fonts patched in memory after the engine decrypted them from `.pfs` (three CFF of 11–25 MB, one TrueType), title →
-start, the dialogue drawn as one dot per character over two rows; the game ran normally on screen. Not wired into
-HookBridge's launch yet, and no crash canary for it yet (it loads only through MeguLitLaunch, by hand).
+start, the dialogue drawn as one dot per character over two rows; the game ran normally on screen.
+
+**In the normal launch** (services/bridge.cjs, `core/text-paths-launch.cjs fontDot`): whenever ① starts a game through
+MeguLitLaunch (文字显示 = compositor), `MeguLitFontDot<bit>.dll` is added to `MEGULIT_LAUNCH_EXTRA`; the launcher loads
+every DLL listed there right after MeguLitFont, still suspended (the DLL installs its hooks inside LoadLibrary). Steam,
+Locale Emulator and shell-open starts keep the late attach and get no dot font (fonts are read before an attach).
+**Crash canary** `fontdot`: armed at launch; the launcher exits at once, so the game's own process is watched: gone
+within 20 s = died with it, the path is off for this game from the next launch (MEGULIT_FONTDOT_OFF=1 for all).
+**Compositor heartbeat** (the same `Local\MeguLitCompositorBeat-<pid>` gate as ①): dots for 20 s from load before any
+heartbeat, then only while the compositor presents with a tick at most 1 s old. When the gate closes every font patched
+in memory gets its original bytes back (kept once per font, the 256 most recent buffers remembered) and file reads are
+served as they are; status `needs-relaunch` (glyphs the engine already rasterised stay dots, as with ①) or `paused`;
+`live` when it opens again. Live by hand 2026-11-14 on 夏末盛开的花 with MeguLitLaunch64 + MeguLitFont64 + the dot font
+in MEGULIT_LAUNCH_EXTRA and a stand-in heartbeat: both fonts dotted through the file-read path, dialogue as dots while
+the heartbeat ran; heartbeat stopped → `needs-relaunch fonts=6` (originals back in memory; the engine's cached glyphs
+stayed dots, as documented). Not yet run from the real app with the real compositor (capture-compositor verifies).
 
 Not covered yet: canvas web engines (RenJS / Phaser), KiriKiri games with their own message-layer class that use
 neither KAG `processCh` nor TextRender, Ren'Py text outside the say screen, YU-RIS and Artemis (see above).
