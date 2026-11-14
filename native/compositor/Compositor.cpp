@@ -87,6 +87,7 @@ struct LineMsg {
   // ③ (engines without glyph dots): the game reports where each character is and draws nothing there itself. No dot
   // search, no erasing: MeguLit's glyphs go straight onto these client rects (one per character of text, blanks too).
   bool rectMode = false; bool rectHidden = false; std::vector<Box> rects;
+  bool bestFit = false;       // more marks than characters: all erased, the text drawn on the first ones
   bool undot = false;        // fallback chosen: the game draws this line itself, MeguLit neither erases nor draws it
   LineStatus last = LineStatus::Waiting; double lastChange = 0, started = 0; int lastFound = -1; bool complete = false, everDots = false;
   std::vector<Box> demoCells; // --demo: the compositor paints these dots itself (stand-in for part ①)
@@ -162,6 +163,11 @@ static void MouseThread() {
 }
 
 // ---------------------------------------------------------------- compositor
+// Heartbeat for the glyph-dot DLL (docs/text-architecture.md, "Heartbeat"): shared memory
+// Local\MeguLitCompositorBeat-<game pid>, refreshed every tick (50 ms) while this window shows the game. The DLL keeps dot /
+// marker glyphs only while the beat is fresh; a crashed, closed or hidden compositor stops it within a second.
+struct CompositorBeat { uint32_t magic, version, compositorPid, presenting; uint64_t tickMs; uint64_t frames; };
+constexpr uint32_t BeatMagic = 0x4243474D; // "MGCB"
 struct Options {
   HWND game = nullptr; bool scale = false; bool headless = false; bool demo = false; bool trace = false; // --trace: diagnostic events
   int windowAlpha = 255;  // test aid: an invisible (alpha 1) but composited window for off-screen live tests
@@ -182,6 +188,7 @@ public:
     if (!UpdateGeometry(true)) return Fail("geometry");
     if (!StartCapture()) return Fail("capture");
     if (!opt.headless && !CreateWindowAndSwapChain()) return Fail("window");
+    if (!opt.headless) OpenBeat();
     Emit(std::string("{\"e\":\"ready\",\"version\":\"") + Marker + "\",\"game\":" + std::to_string((uintptr_t)opt.game) + ",\"window\":" + std::to_string((uintptr_t)hwnd) + ",\"mode\":\"" + (opt.scale ? "scale" : "overlay") + "\",\"src\":[" + std::to_string(srcW) + "," + std::to_string(srcH) + "]}");
     return true;
   }
@@ -313,7 +320,25 @@ public:
     Compose(); Present();
   }
 
+  void OpenBeat() {
+    DWORD pid = 0; GetWindowThreadProcessId(opt.game, &pid); if (!pid) return;
+    const std::wstring name = L"Local\\MeguLitCompositorBeat-" + std::to_wstring(pid);
+    beatMap = CreateFileMappingW(INVALID_HANDLE_VALUE, nullptr, PAGE_READWRITE, 0, sizeof(CompositorBeat), name.c_str());
+    if (!beatMap) return;
+    beat = static_cast<CompositorBeat *>(MapViewOfFile(beatMap, FILE_MAP_WRITE, 0, 0, sizeof(CompositorBeat)));
+    if (beat) { beat->magic = BeatMagic; beat->version = 1; beat->compositorPid = GetCurrentProcessId(); beat->presenting = 0; beat->tickMs = 0; beat->frames = 0; }
+  }
+  // Fresh only while our window is up and shows the game (a hidden window or a minimised game does not cover the dots).
+  void Beat() {
+    if (!beat) return;
+    const bool showing = hwnd && IsWindowVisible(hwnd) && !IsIconic(opt.game) && haveFrame;
+    beat->presenting = showing ? 1 : 0; beat->frames = uint64_t(frames);
+    if (showing) beat->tickMs = GetTickCount64();
+  }
+  void StopBeat() { if (!beat) return; beat->presenting = 0; beat->tickMs = 0; UnmapViewOfFile(beat); beat = nullptr; if (beatMap) CloseHandle(beatMap); beatMap = nullptr; }
+
   void Tick() {
+    Beat();
     if (!IsWindow(opt.game)) { Emit("{\"e\":\"exit\",\"reason\":\"game-closed\"}"); quit = true; return; }
     FollowGame();
     const double now = NowMs();
@@ -349,7 +374,7 @@ private:
   std::map<uint64_t, Glyph> layouts;
   // tracking
   double lastFrameAt = 0, recheckAt = 0; bool haveFrame = false; int recheck = 0; // Recheck(): passes left over the last frame
-  std::map<int, std::vector<Json>> earlyGlyphs; std::map<int, int> alias; /* repeated line id → the line it repeats */ int flood = 0; double starveSince = 0; DotTracker tracker; ChoiceTracker choiceTracker; TrackResult lastResult; ChoiceTracker::Out lastChoices;
+  std::map<int, std::vector<Json>> earlyGlyphs; std::map<int, int> alias; /* repeated line id → the line it repeats */ std::vector<Dot> menuMarks; CompositorBeat *beat = nullptr; HANDLE beatMap = nullptr; int flood = 0; double starveSince = 0; DotTracker tracker; ChoiceTracker choiceTracker; TrackResult lastResult; ChoiceTracker::Out lastChoices;
   bool dotsSeen = false; // ① reported at least one dot in this game session
   LineMsg cur; std::map<int, LineMsg> kept; int autoId = 0, autoMax = 0, autoEmpty = 0;
   std::vector<ChoiceText> choices; bool choicesOn = false, choiceUndot = false; double choiceStart = 0;
@@ -618,6 +643,8 @@ private:
       lastChoices = choiceTracker.Update(im);
       // Choices whose dots never all line up within 1.5 s fall back to the game's own drawing.
       if (!lastChoices.ok && !choiceUndot && NowMs() - choiceStart > 1500) { choiceUndot = true; Emit("{\"e\":\"undot\",\"choices\":true,\"reason\":\"choices-unmatched\"}"); }
+      // Owner rule: never show marks. An unmatched menu still has its marks erased and its items drawn as a list there.
+      menuMarks = (!lastChoices.ok && choiceUndot) ? choiceTracker.MenuMarks(im) : std::vector<Dot>{};
       if (lastChoices.ok) choiceStart = NowMs();
     }
     if (!cur.id && opt.autoLines) { cur = LineMsg{}; cur.id = ++autoId; cur.lastChange = NowMs(); LineSpec s; s.id = cur.id; tracker.BeginLine(s); autoMax = 0; autoEmpty = 0; }
@@ -681,9 +708,12 @@ private:
         AssignOrphans(rest); st = LineStatus::Complete; cur.complete = true; lastResult.status = st;
       }
     }
+    // Owner rule: the player never sees marks. More marks than characters and nothing to give them to: every mark found
+    // is still erased, and the line's stream text is drawn on the marks in reading order (the found cells and the
+    // measured pitch are the best fit there is); the surplus marks are erased without a character. Never handed back.
     if (!cur.undot && st == LineStatus::Mismatch) {
-      cur.undot = true; tracker.DropCurrent(); lastResult.dots.clear();
-      Emit("{\"e\":\"undot\",\"id\":" + std::to_string(cur.id) + ",\"reason\":\"" + (st == LineStatus::Mismatch ? "too-many-dots" : "reveal-stalled") + "\",\"found\":" + std::to_string(found) + "}");
+      st = LineStatus::Complete; lastResult.status = st; cur.complete = true;
+      if (!cur.bestFit) { cur.bestFit = true; Emit("{\"e\":\"line\",\"id\":" + std::to_string(cur.id) + ",\"status\":\"complete\",\"bestFit\":true,\"found\":" + std::to_string(found) + ",\"expected\":" + std::to_string(Expected(cur)) + "}"); }
     }
     if (cur.undot) lastResult.dots.clear();
   }
@@ -698,6 +728,7 @@ private:
     };
     if (!cur.rectMode) for (const Dot &d : lastResult.dots) patch(d.box); // ③ lines: the game drew nothing to erase
     for (const auto &k : lastResult.kept) if (kept.count(k.id)) for (const Dot &d : k.dots) patch(d.box);
+    if (choicesOn && !menuMarks.empty()) for (const Dot &d : menuMarks) patch(d.box);
     if (choicesOn && lastChoices.ok && !choiceUndot) for (const auto &it : lastChoices.items) {
       if (it.missing > 0) { const int p = int(lastChoices.pitch * .3f) + 2; patch(Box{ it.box.x0 - p, it.box.y0 - p, it.box.x1 + p, it.box.y1 + p }, true); } // real cached glyphs too
       else for (const Dot &d : it.dots) patch(d.box);
@@ -733,6 +764,7 @@ private:
     // overlay off while the compositor owns the game, its translation is shown as a caption above the text area.
     if (cur.id && style.mode != 1 && !cur.tl.empty() && (cur.undot || (!cur.everDots && lastResult.dots.empty())) && NowMs() - cur.started > 1200) DrawCaption(cur.tl);
     if (choicesOn && lastChoices.ok && !choiceUndot) DrawChoices();
+    else if (choicesOn && !menuMarks.empty()) DrawMenuList();
     if (opt.scale) DrawCursor();
     d2->EndDraw();
     d2->SetTarget(nullptr);
@@ -919,6 +951,19 @@ private:
     }
   }
 
+  // Unmatched menu: the items as a list on a plate over the area the menu's marks cover (translation under each item,
+  // or only the translation in translation-only mode).
+  void DrawMenuList() {
+    Box a = menuMarks[0].box; for (const Dot &d : menuMarks) { a.x0 = std::min(a.x0, d.box.x0); a.y0 = std::min(a.y0, d.box.y0); a.x1 = std::max(a.x1, d.box.x1); a.y1 = std::max(a.y1, d.box.y1); }
+    const float em = std::max(14.f, (a.h() > 0 && choices.size() ? float(a.h()) / float(choices.size()) * .45f : 20.f) * Sy());
+    std::wstring all; for (size_t i = 0; i < choices.size(); ++i) { const ChoiceText &c = choices[i]; if (i) all += L"\n"; all += style.mode == 2 && !c.tl.empty() ? c.tl : W16(c.text); if (style.mode == 0 && !c.tl.empty()) all += L"  " + c.tl; }
+    com_ptr<IDWriteTextLayout> tl; dw->CreateTextLayout(all.c_str(), UINT32(all.size()), Format(style.mode == 2 ? style.tlFont : style.jpFont, em, false), float(outW) * .8f, 4096, tl.put()); if (!tl) return;
+    DWRITE_TEXT_METRICS m{}; tl->GetMetrics(&m);
+    const D2D1_POINT_2F p = Map(float(a.x0), float(a.y0)); const float pad = em * .4f;
+    brush->SetColor(D2D1::ColorF(0, 0, 0, .6f)); d2->FillRoundedRectangle(D2D1::RoundedRect(D2D1::RectF(p.x - pad, p.y - pad, p.x + m.width + pad, p.y + m.height + pad), pad, pad), brush.get());
+    Text(tl.get(), p, style.tlColor, 1);
+  }
+
   void Present() {
     if (!swap) return;
     com_ptr<ID3D11Texture2D> back; if (FAILED(swap->GetBuffer(0, IID_PPV_ARGS(back.put())))) return;
@@ -1019,6 +1064,7 @@ int wmain(int argc, wchar_t **argv) {
     if (r == WAIT_OBJECT_0) c.Frame();
     c.Tick();
   }
+  c.StopBeat(); // the DLL turns real glyphs back on at once
   c.Stats(NowMs());
   Emit("{\"e\":\"exit\"}");
   return 0;

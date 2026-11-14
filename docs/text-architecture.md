@@ -26,6 +26,64 @@ version, a line in this log, and stays backward compatible where possible (new f
 | 1    | 2026-11-14 | Compatible addition: `glyphMode` `all:true` (write-back streams on dots too).                    |
 | 1    | 2026-11-14 | Compatible addition: in dot mode `ToMe_GLYPHDOT line` is sent when the line is pushed, before any dot. |
 | ③ 1  | 2026-11-14 | Non-dot paths: `ToMe_CHARS` records, `hookCharRects` events, crash canary (`feat/text-paths`).    |
+| ② 1  | 2026-11-14 | Compositor heartbeat (`Local\MeguLitCompositorBeat-<game pid>`): marks only while it is fresh; the DLL side is ①'s. |
+
+## Owner rule: the player never sees marks
+
+Dots and other markers are MeguLit's private signal between the game and the capture compositor. Two safeguards keep
+them off the player's screen.
+
+### Heartbeat (compositor → DLL)
+
+The compositor (native/compositor/Compositor.cpp) publishes a heartbeat in shared memory:
+
+- name `Local\MeguLitCompositorBeat-<game process id>` (a page-file mapping, created by the compositor)
+- layout, little endian: `uint32 magic = 0x4243474D ("MGCB")`, `uint32 version = 1`, `uint32 compositorPid`,
+  `uint32 presenting`, `uint64 tickMs` (GetTickCount64), `uint64 frames`
+- refreshed every 50 ms while the compositor window is visible, the game is not minimised and at least one frame has
+  been captured (`presenting = 1`, `tickMs` = now); while it does not show the game `presenting = 0` and `tickMs` stops
+- on a normal exit (game closed, MeguLit closed its stdin, `quit`) it writes `presenting = 0`, `tickMs = 0` and closes
+  the mapping; a crash or kill just stops the ticks (the mapping disappears with the last handle)
+
+The glyph DLL (MeguLitFont, ①) must:
+
+1. Before the first beat: dot / marker glyphs are allowed for a start-up grace of 20 s from the DLL's load (early
+   injection runs long before the compositor exists).
+2. After a beat was seen: marks are allowed only while `presenting == 1` and `GetTickCount64() - tickMs <= 1000`.
+   Checked at least once a second and before serving a glyph.
+3. When the beat goes stale or the mapping cannot be opened any more: go back to real glyphs at once and flush every
+   glyph cache it can reach (its own cache, `GetGlyphOutline`/`TextOut` caches it controls). If the engine keeps
+   rasterised marks in a cache MeguLit cannot reach, report `ToMe_GLYPHDOT status needs-relaunch` so the app tells the
+   player to restart the game (and does not start dot mode again for that run).
+4. A new beat (MeguLit restarted) may turn marks on again only for glyphs rasterised after that.
+
+HookBridge and the front end do not take part: the beat comes straight from the process that hides the marks, so a
+crashed MeguLit, a crashed HookBridge, a closed or hung compositor all end in real glyphs.
+
+### No exposed marks on a mismatch (compositor)
+
+- A line with more marks than characters is never handed back to the game: every mark found is erased, the line's
+  stream text is drawn on the marks in reading order (found cells and measured pitch), surplus marks are erased
+  without a character (`line` event with `bestFit: true`). Lines with ① reports first give surplus marks to earlier
+  lines of the page (NVL page view).
+- A stalled reveal (some characters stay real in the engine's glyph cache) keeps its marks drawn and counts as shown.
+- A menu whose items cannot be matched still has its marks erased (largest compact group of the menu colours' lone
+  dots) and gets its items drawn as a list over that area.
+- Lines that never show marks (the game draws them itself) get their translation as a caption above the text area.
+
+### What still shows marks by design (to decide later)
+
+These are drawn by the game into its own images or windows that the compositor does not cover:
+
+| Where | Why | Possible answer |
+|---|---|---|
+| The game's own screenshots / CG-capture features | the game reads its back buffer, which holds marks | turn marks off for that call (engine-specific), or redraw on export |
+| Save / load thumbnails | the game renders a reduced copy of the screen at save time | same; or real glyphs while a save screen is open |
+| Backlog / history pages | same glyph path; usually not a hooked line, so not mapped | map backlog pages as NVL pages, or real glyphs while the backlog is open |
+| Name boxes, menus, UI text in the dialogue font (blind mode) | dot-blind marks every glyph of that font, mapped only when a line arrives | layer ③/④ positions, or limit blind to the message window |
+| Window captures by other tools (OBS window capture, PrintWindow, Alt-Tab thumbnails, Steam screenshots) | they read the game window, not the compositor's window above it | tell users to capture the screen or the compositor window |
+| The first frames after the compositor stops (≤ 1 s, heartbeat) | the DLL notices the stale beat on its next check | shorter check, or the compositor writes `presenting = 0` before exiting (done for normal exits) |
+| Glyphs cached as marks inside the engine after the beat stops | engines keep rasterised glyphs | flush or `needs-relaunch` (heartbeat rule 3) |
 
 ## ① Glyph dots
 

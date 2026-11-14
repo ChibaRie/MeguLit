@@ -749,6 +749,19 @@ public:
     return o;
   }
   const std::vector<Rgb> &Colors() const { return colors; }
+  // Unmatched menu: its marks all the same (owner rule: never shown). The largest compact group of the menu colours'
+  // lone dots (linked within 5 % of the frame), when it holds at least half of the items' characters.
+  std::vector<Dot> MenuMarks(const Image &im) const {
+    const size_t n = lastAll.size(); if (n < 2 || n > 1500) return {};
+    const float d = .05f * std::max(im.w, im.h), d2 = d * d;
+    std::vector<int> up(n); for (size_t i = 0; i < n; ++i) up[i] = int(i);
+    auto root = [&](int i) { while (up[i] != i) i = up[i] = up[up[i]]; return i; };
+    for (size_t i = 0; i < n; ++i) for (size_t j = i + 1; j < n; ++j) { const float dx = lastAll[i].cx - lastAll[j].cx, dy = lastAll[i].cy - lastAll[j].cy; if (dx * dx + dy * dy <= d2) up[root(int(i))] = root(int(j)); }
+    std::vector<std::vector<Dot>> g(n); for (size_t i = 0; i < n; ++i) g[root(int(i))].push_back(lastAll[i]);
+    size_t best = 0; for (size_t i = 1; i < n; ++i) if (g[i].size() > g[best].size()) best = i;
+    if (int(g[best].size()) * 2 < total || int(g[best].size()) > total * 2 + 4) return {};
+    return g[best];
+  }
 private:
   std::vector<Dot> DotsOf(const Image &im, const Rgb &c) {
     std::vector<Dot> v;
@@ -759,6 +772,7 @@ private:
   Out MatchAll(const Image &im, const std::vector<std::vector<Dot>> &per) {
     std::vector<Dot> all;
     for (const auto &v : per) for (const Dot &d : v) { bool dup = false; for (auto &x : all) dup = dup || (std::fabs(x.cx - d.cx) < 1.5f && std::fabs(x.cy - d.cy) < 1.5f); if (!dup) all.push_back(d); }
+    lastAll = all;
     Out o = Match(im, all);
     if (!o.ok && per.size() > 1) for (const auto &v : per) { o = Match(im, v); if (o.ok) break; }
     if (!o.ok) o = MatchGroups(im, all);
@@ -860,7 +874,7 @@ private:
     }
     return true;
   }
-  std::vector<int> counts; std::vector<Rgb> colors; int total = 0; bool wholeTried = false;
+  std::vector<int> counts; std::vector<Rgb> colors; int total = 0; bool wholeTried = false; std::vector<Dot> lastAll;
   std::vector<Blob> blobs; Visit seen; std::vector<int> stack, parent; std::vector<uint8_t> prev; int prevW = 0, prevH = 0;
   void Remember(const Image &im) { prev.resize(size_t(im.w) * im.h * 4); prevW = im.w; prevH = im.h; for (int y = 0; y < im.h; ++y) memcpy(&prev[size_t(y) * im.w * 4], im.at(0, y), size_t(im.w) * 4); }
   // Returns true when a colour was added (the last of colors).

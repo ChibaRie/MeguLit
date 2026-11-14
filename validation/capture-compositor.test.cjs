@@ -34,7 +34,7 @@ test('compositor: Magpie capture, D2D on the same device, click-through window, 
   assert.match(c, /WS_EX_NOREDIRECTIONBITMAP \| WS_EX_LAYERED \| WS_EX_TRANSPARENT \| WS_EX_NOACTIVATE/, 'never takes clicks or focus by itself');
   assert.match(c, /SetWindowsHookExW\(WH_MOUSE_LL, MouseLL/, 'only clicks on MeguLit glyph boxes are taken (look-up)');
   assert.match(c, /Fail\("capture"\)/, 'capture failure → fallback event, old overlay stays');
-  assert.match(c, /"too-many-dots" : "reveal-stalled"/, 'a line that cannot be matched is handed back, never misdrawn');
+  assert.match(c, /bestFit/, 'a line with more marks than characters is drawn best-fit on its marks, never handed back with marks showing');
   assert.match(c, /static std::vector<int> Targets\(const LineMsg &l, int n\)/, 'dots map onto ①-reported characters, cached glyphs fill the span');
   assert.match(c, /Magpie Effects\/Lanczos\.hlsl, GPL-3\.0/);
   assert.match(read('THIRD-PARTY.md'), /Magpie/);
@@ -124,4 +124,16 @@ test('runtime: textRenderer setting, compositor with the bound game, overlay dia
   assert.strictEqual(started, null, 'capture failed: this game stays on the overlay');
   // ③ char rects: game screen 1280x720 → a 1920x1080 client keeps the aspect
   assert.deepStrictEqual(rectsToClient({ sw: 1280, sh: 720, viewport: [0, 0, 0, 0], rects: [[100, 600, 32, 32]] }, 1920, 1080), [[150, 900, 48, 48]]);
+});
+
+test('owner rule: heartbeat for the glyph DLL, no mark handed back on a mismatch, unmatched menus still erased', () => {
+  const c = read('native/compositor/Compositor.cpp');
+  assert.match(c, /L"Local\\\\MeguLitCompositorBeat-" \+ std::to_wstring\(pid\)/, 'heartbeat mapping per game process');
+  assert.match(c, /constexpr uint32_t BeatMagic = 0x4243474D;/);
+  assert.match(c, /if \(showing\) beat->tickMs = GetTickCount64\(\);/, 'beat only while the game is shown');
+  assert.match(c, /c\.StopBeat\(\);/, 'normal exit clears the beat');
+  assert.doesNotMatch(c, /"too-many-dots"/, 'a mismatched line is drawn best-fit, never handed back');
+  assert.match(c, /\\"bestFit\\":true/);
+  assert.match(c, /menuMarks = \(!lastChoices\.ok && choiceUndot\) \? choiceTracker\.MenuMarks\(im\)/);
+  assert.match(read('docs/text-architecture.md'), /### What still shows marks by design/);
 });
