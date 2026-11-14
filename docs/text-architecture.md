@@ -568,8 +568,10 @@ Not done / not verified live (the owner came back before the screen slot was fre
 - Glyph sources (CLANNAD, サイコロジック) have no positions in blank mode: asked glyph-dots for MeguLitFont v4 records in blank
   mode with the cell's DC position (`px:py`, `dc=WxH`). Until then glyph games get blank text but no placed line.
   Siglus/YU-RIS cache glyphs: a blanked character stays blank wherever the engine reuses it.
-- Dot font → blank font (same metrics, empty outlines) in `native/fontdot` not written; until then Ren'Py/Artemis
-  (THE SHELL) get no hiding in placement mode.
+- Dot font → blank font: not done on purpose. The font patch changes every glyph of the font, not only the current
+  line, so a blank font would erase menus, names and the backlog too (the dots only worked because the compositor redrew
+  every frame). Ren'Py and Artemis need line-scoped hiding instead (③ renpy path; Artemis has none yet). Until then
+  they get no hiding in placement mode.
 - BRUNS: blank (U+3000) instead of 「・」 replacement and the per-character hook's line split are not done.
 - Font face/colour come from the reader's game style, not from the source; KiriKiri rects are advance × line height,
   so vertical placement is centred in the line box (check live).
