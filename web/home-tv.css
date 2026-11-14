@@ -406,3 +406,5 @@ html:not(#u):not(#v):not(#w):not(#x):not(#y) body .tv-home .tv-heat-card .tv-hot
 .tv-rail-in{display:flex;gap:10px;align-items:flex-end;width:max-content;transition:transform .5s cubic-bezier(.16,1,.3,1);will-change:transform}
 @media (prefers-reduced-motion:reduce){.tv-rail-in{transition:none}}
 .tv-dock b,.tv-dock span{position:relative;top:-1px}
+/* the upright glyphs sit 2.5px right of their column box: pull the label back so its ink is centred under the star */
+:root:not(:lang(en)) .tv-dock span:not(:lang(en)){left:-2.5px}
