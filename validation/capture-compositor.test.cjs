@@ -112,10 +112,10 @@ test('runtime: textRenderer setting, compositor with the bound game, overlay hid
   assert.deepStrictEqual(sent.find(x => x.t === 'choices').i, [{ text: 'はい' }, { text: 'いいえ' }]);
   host.text('いいえ', '不');
   assert.deepStrictEqual(sent.filter(x => x.t === 'choices').at(-1).i[1], { text: 'いいえ', tl: '不' }, 'menu items get their translation when it arrives');
-  evt({ e: 'line', id: 4, status: 'complete', found: 6 });
-  assert.deepStrictEqual(ui.at(-1), { compositorDrawing: true });
+  evt({ e: 'ready' });
+  assert.deepStrictEqual(ui.find(x => 'compositorDrawing' in x), { compositorDrawing: true }, 'the overlay dialogue is off while the compositor runs');
   evt({ e: 'undot', id: 4 });
-  assert.deepStrictEqual(ui.at(-1), { compositorDrawing: false }, 'a handed-back line shows in the overlay again');
+  assert.ok(!ui.some(x => x.compositorDrawing === false), 'a line the compositor cannot place does not bring the overlay back');
   evt({ e: 'fallback', reason: 'capture' });
   assert.ok(ui.some(m => m.type === 'compositorState' && m.state === 'fallback'));
   started = null; host.configure({ textRenderer: 'compositor' }, { bound: true, gameHwnd: '123', gameStarted: 'a' });

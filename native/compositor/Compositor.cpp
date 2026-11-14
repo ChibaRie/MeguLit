@@ -613,9 +613,15 @@ private:
       Emit("{\"e\":\"line\",\"id\":" + std::to_string(cur.id) + ",\"status\":\"" + StatusName(st) + "\",\"found\":" + std::to_string(found) + ",\"expected\":" + std::to_string(Expected(cur)) + "}");
     }
     if (st == LineStatus::Complete) cur.complete = true;
-    // Fallback (never double or misplace text): more dots than characters, or a reveal stuck short of the full line
-    // for 3 s → hand the line back to the game (the hook redraws real glyphs) and stop erasing/drawing it.
-    if (!cur.undot && (st == LineStatus::Mismatch || (st == LineStatus::Revealing && NowMs() - cur.lastChange > 3000 && !opt.demo))) {
+    // A reveal stuck short of the full line (the engine's glyph cache keeps some characters real): the dots that are
+    // there stay MeguLit's, the real glyphs stay the game's (same cells), and the line counts as shown (translation).
+    if (!cur.undot && !cur.complete && found > 0 && st == LineStatus::Revealing && NowMs() - cur.lastChange > 1500 && !opt.demo) {
+      cur.complete = true;
+      Emit("{\"e\":\"line\",\"id\":" + std::to_string(cur.id) + ",\"status\":\"complete\",\"partial\":true,\"found\":" + std::to_string(found) + ",\"expected\":" + std::to_string(Expected(cur)) + "}");
+    }
+    // Fallback (never double or misplace text): more dots than characters → hand the line back to the game and stop
+    // erasing/drawing it.
+    if (!cur.undot && st == LineStatus::Mismatch) {
       cur.undot = true; tracker.DropCurrent(); lastResult.dots.clear();
       Emit("{\"e\":\"undot\",\"id\":" + std::to_string(cur.id) + ",\"reason\":\"" + (st == LineStatus::Mismatch ? "too-many-dots" : "reveal-stalled") + "\",\"found\":" + std::to_string(found) + "}");
     }

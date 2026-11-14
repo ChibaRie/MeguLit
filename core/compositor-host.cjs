@@ -6,9 +6,10 @@
      - ①'s hookGlyphDots events (line text, per-character metrics) and ③'s hookCharRects (cells of engines without dots),
      - the reader's translation of each line (Reader.message → annotate), the menu choices (choice locate),
      - the 显示内容 setting (display): chinese/english = translation only in the game's text area, japanese = Japanese only.
-   While the compositor draws the current line, the reader page hides its own line (compositorDrawing) so text is never
-   doubled; a line the compositor hands back ('undot') or a compositor that cannot capture ('fallback', or exit) gives
-   the line straight back to the overlay. A game whose capture failed stays on the overlay until it restarts. */
+   While the compositor runs for the game it owns all of the game's text: the reader overlay's dialogue layer stays off
+   (compositorDrawing) for every line, also lines the compositor cannot place (those keep the game's own drawing), so
+   text is never doubled. Only a compositor that cannot capture ('fallback', or exit) gives the text back to the
+   overlay; a game whose capture failed stays on the overlay until it restarts. */
 const path = require('node:path');
 const { CaptureCompositor, strip } = require('../services/capture-compositor.cjs');
 
@@ -95,12 +96,10 @@ class CompositorHost {
   event(e) {
     if (e.e !== 'stats' && (e.e !== 'line' || e.status !== this.lastStatus)) this.trace('event ' + JSON.stringify(e).slice(0, 300));
     if (e.e === 'line') this.lastStatus = e.status;
-    if (e.e === 'line') { const drawing = e.found > 0 && (e.status === 'complete' || e.status === 'revealing' || e.status === 'fading'); this.setDrawing(drawing || (this.drawing && e.status === 'waiting')); }
-    else if (e.e === 'undot') this.setDrawing(false);
-    else if (e.e === 'fallback') { this.failedFor = this.identity; this.setDrawing(false); this.onEvent({ type: 'compositorState', state: 'fallback', reason: e.reason }); this.stop(); }
+    if (e.e === 'fallback') { this.failedFor = this.identity; this.setDrawing(false); this.onEvent({ type: 'compositorState', state: 'fallback', reason: e.reason }); this.stop(); }
     else if (e.e === 'exit') { this.cc = null; this.setDrawing(false); }
     else if (e.e === 'lookup') this.onEvent({ type: 'compositorLookup', id: e.id, index: e.index, char: e.char, x: e.x, y: e.y });
-    else if (e.e === 'ready') this.onEvent({ type: 'compositorState', state: 'running' });
+    else if (e.e === 'ready') { this.setDrawing(true); this.onEvent({ type: 'compositorState', state: 'running' }); }
   }
   setDrawing(v) { if (v === this.drawing) return; this.drawing = v; this.onEvent({ compositorDrawing: v }); }
   stop() { const cc = this.cc; this.cc = null; this.lines.clear(); this.setDrawing(false); cc?.stop(); }
