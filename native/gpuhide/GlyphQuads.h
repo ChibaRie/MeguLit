@@ -4,7 +4,7 @@
 // It learns which quads are the dialogue's glyphs and where the text area is, and decides which quads to leave out.
 //
 // Glyph-like quad: 4..160 px on screen each way, aspect 1:5..5:1, sampled from a cell of a sheet (at most half of a
-// texture of at least 32x32; at most 1/24 of a texture bigger than 256x256), drawn at 0.4..6x its texel size.
+// texture of at least 32x32; at most 1/24 of a texture bigger than 256x256), drawn at 0.2..6x its texel size.
 // Per line (LINE <text>, n = non-blank characters):
 //  - groups = (render target, atlas size). Two counts per group: (A) distinct glyph positions drawn in the last frame,
 //    (B) distinct glyph keys (position + atlas cell) first drawn since the line started (the previous line's glyphs
@@ -32,7 +32,7 @@ static inline bool GlyphLike(const Quad &q, unsigned tw, unsigned th) {
  float tu = (q.u1 - q.u0) * tw, tv = (q.v1 - q.v0) * th; if (tu < 3 || tv < 3) return false;
  // a cell of a sheet: at most half the texture (a whole-texture sprite is never a glyph); big sheets need small cells
  float area = (q.u1 - q.u0) * (q.v1 - q.v0); if (area > 0.5f || (tw * th > 256 * 256 && area > 1.0f / 24)) return false;
- float scale = w / tu; if (scale < 0.4f || scale > 6) return false;
+ float scale = w / tu; if (scale < 0.2f || scale > 6) return false;
  return true;
 }
 static inline bool Blank(wchar_t c) { return c <= 0x20 || c == 0x3000 || c == 0x200B || c == 0xFEFF || c == 0x1F; }
@@ -102,7 +102,8 @@ struct GlyphLearner {
  // Merge offset copies (shadow / outline) and sort in reading order.
  static std::vector<Rect> Chars(std::vector<Rect> v) {
   std::vector<Rect> out; std::sort(v.begin(), v.end(), [](const Rect &a, const Rect &b) { return a.y0 != b.y0 ? a.y0 < b.y0 : a.x0 < b.x0; });
-  for (auto &r : v) { float h = r.y1 - r.y0, tol = h * 0.4f; bool merged = false; for (auto &o : out) if (std::fabs(o.x0 - r.x0) < tol && std::fabs(o.y0 - r.y0) < tol) { o.x0 = (std::min)(o.x0, r.x0); o.y0 = (std::min)(o.y0, r.y0); o.x1 = (std::max)(o.x1, r.x1); o.y1 = (std::max)(o.y1, r.y1); merged = true; break; } if (!merged) out.push_back(r); }
+  // offset copies are as wide as the glyph: narrow neighbours (digits, half-width letters) are never merged
+  for (auto &r : v) { float h = r.y1 - r.y0, tol = h * 0.4f; bool merged = false; for (auto &o : out) if (std::fabs(o.x0 - r.x0) < 0.4f * (std::min)(o.x1 - o.x0, r.x1 - r.x0) && std::fabs(o.y0 - r.y0) < tol) { o.x0 = (std::min)(o.x0, r.x0); o.y0 = (std::min)(o.y0, r.y0); o.x1 = (std::max)(o.x1, r.x1); o.y1 = (std::max)(o.y1, r.y1); merged = true; break; } if (!merged) out.push_back(r); }
   // rows: a glyph whose vertical centre is within half a height of the row's first glyph belongs to that row
   std::vector<std::vector<Rect>> rows; std::sort(out.begin(), out.end(), [](const Rect &a, const Rect &b) { return a.y0 < b.y0; });
   for (auto &r : out) { float cy = (r.y0 + r.y1) / 2; bool put = false; for (auto &row : rows) { float ry = (row[0].y0 + row[0].y1) / 2; if (std::fabs(cy - ry) < (row[0].y1 - row[0].y0) * 0.5f) { row.push_back(r); put = true; break; } } if (!put) rows.push_back({ r }); }
@@ -134,14 +135,27 @@ struct GlyphLearner {
    Report(g, *hit);
    return;
   }
+  // The glyphs of one line can come from several atlas pages: count them together per render target.
+  std::map<void *, std::vector<Group *>> byRt; for (auto &kv : groups) byRt[kv.second.rt].push_back(&kv.second);
+  for (auto &kv : byRt) {
+   if (kv.second.size() < 2 || (learned && kv.first != areaRt)) continue;
+   std::vector<Rect> fresh, live; Group *big = kv.second[0]; size_t most = 0;
+   for (Group *g : kv.second) { const std::vector<Rect> &last = g->prevFrame == frameNo - 1 ? g->frame : g->prev; live.insert(live.end(), last.begin(), last.end()); if (last.size() > most) { most = last.size(); big = g; }
+    for (auto &s : g->keys) if ((int)(s.second.firstAt - since) >= 0) fresh.push_back(s.second.r); }
+   std::vector<Rect> a = Chars(Cluster(Chars(live))), b = Chars(Cluster(Chars(fresh)));
+   if (log && (now / 500) != ((now - 17) / 500)) log("frame %u target rt=%p pages=%u live=%u fresh=%u n=%u", frameNo, kv.first, (unsigned)kv.second.size(), (unsigned)a.size(), (unsigned)b.size(), n);
+   const std::vector<Rect> *hit = a.size() == n ? &a : b.size() == n ? &b : nullptr; if (!hit) continue;
+   Report(*big, *hit);
+   return;
+  }
  }
  void Report(Group &g, const std::vector<Rect> &cs) {
   float h = 0; Rect box{ 1e30f, 1e30f, -1e30f, -1e30f }; for (auto &r : cs) { h += r.y1 - r.y0; box.x0 = (std::min)(box.x0, r.x0); box.y0 = (std::min)(box.y0, r.y0); box.x1 = (std::max)(box.x1, r.x1); box.y1 = (std::max)(box.y1, r.y1); } h /= cs.size();
   char b[256];
   if (!learned) {
    learned = true; areaRt = g.rt; areaW = g.rtW; areaH = g.rtH; glyphH = h; learnedSeq = seq; area = Rect{ box.x0 - h, box.y0 - h, box.x1 + h * 8, box.y1 + h * 2 };
-   // atlases that drew inside the area during this line (outline / shadow sheets too, at least 3 glyphs)
-   for (auto &kv : groups) { if (kv.second.rt != g.rt) continue; int in = 0; for (auto &r : kv.second.frame) { float cx = (r.x0 + r.x1) / 2, cy = (r.y0 + r.y1) / 2; if (cx >= area.x0 && cx <= area.x1 && cy >= area.y0 && cy <= area.y1) in++; } if (in >= 3 || &kv.second == &g) atlases.insert(AtlasKey(kv.second.rt, kv.second.tw, kv.second.th)); }
+   // atlases that drew inside the area during this line (other pages, outline / shadow sheets)
+   for (auto &kv : groups) { if (kv.second.rt != g.rt) continue; int in = 0; for (auto &r : kv.second.frame) { float cx = (r.x0 + r.x1) / 2, cy = (r.y0 + r.y1) / 2; if (cx >= area.x0 && cx <= area.x1 && cy >= area.y0 && cy <= area.y1) in++; } if (in >= 1 || &kv.second == &g) atlases.insert(AtlasKey(kv.second.rt, kv.second.tw, kv.second.th)); }
    snprintf(b, sizeof b, "ToMe_GPUHIDE learn seq=%u area=%.0f,%.0f,%.0f,%.0f atlas=%ux%u glyphs=%u chars=%u atlases=%u", seq, area.x0, area.y0, area.x1 - area.x0, area.y1 - area.y0, g.tw, g.th, (unsigned)cs.size(), n, (unsigned)atlases.size()); if (emit) emit(b);
   } else {
    // grow the area when a longer line spills over it

@@ -25,7 +25,8 @@ for a glyph, so layer 3 sees nothing.
   64-bit. It changes nothing in the game folder.
 - **Direct3D 9.** Windows 10/11 give every device its own copy of the interface table, so the functions those tables
   point at (inside `d3d9.dll`, shared by all devices) are hooked in place with MinHook, found through throwaway devices
-  created in the game process (software / hardware / pure / mixed vertex processing, with and without
+  created in the game process through the **system** `d3d9.dll` only (a game may ship its own wrapper `d3d9.dll` that keeps
+  the device in globals: WHITE ALBUM2 crashed at its first scene when the throwaway devices went through it) (software / hardware / pure / mixed vertex processing, with and without
   `D3DCREATE_MULTITHREADED`). This also covers devices created before the DLL arrived. Hooked: `Present`, `Reset`,
   `SetRenderTarget`, `SetTransform`, `SetViewport`, `SetTexture`, `SetFVF`, `SetVertexDeclaration`, `SetVertexShader`,
   `SetStreamSource`, `SetIndices`, the four `Draw*Primitive*` calls, and `Lock` / `Unlock` of vertex and index buffers
@@ -42,9 +43,12 @@ for a glyph, so layer 3 sees nothing.
 - **GDI blits.** `BitBlt`, `StretchBlt`, `GdiTransparentBlt`, `GdiAlphaBlend`, `StretchDIBits`, `SetDIBitsToDevice`. The
   source bitmap (or DIB memory) is the atlas, the destination bitmap the render target; a back-buffer bitmap copied to
   the window maps its glyphs to the screen.
+- **Vertex declarations and shaders (D3D9).** The declaration's `POSITION` / `POSITIONT` and `TEXCOORD0` of stream 0 are
+  read with `GetDeclaration` when it is set. With a vertex shader the transform is the shader's: positions that all lie in
+  [-1, 1] are read as normalised device coordinates through the viewport, others as pixels.
 - **Quads.** Every draw is split into quads (triangle lists: two triangles each; strips / fans of two triangles), with
-  the screen rectangle (pre-transformed `XYZRHW`, or `XYZ` through world × view × projection and the viewport) and the
-  texture-coordinate rectangle. Vertex shaders, declarations and unknown layouts are not decoded: nothing is hidden there.
+  the screen rectangle (pre-transformed `XYZRHW` / `POSITIONT`, `XYZ` through world × view × projection and the viewport,
+  or shader positions as above) and the texture-coordinate rectangle. Unknown layouts are not decoded: nothing is hidden there.
 - **Glyph-like quad:** 4–160 px each way, aspect within 1:5, a cell of a sheet (at most half of a texture of at least
   32 × 32, at most 1/24 of a texture bigger than 256 × 256), drawn at 0.4–6 × its texel size.
 - **Learning (read-only).** HookBridge pushes each line of the selected stream (`LINE <text>`). Per (render target, atlas)
@@ -52,7 +56,9 @@ for a glyph, so layer 3 sees nothing.
   line started; offset copies (shadow, outline) closer than 40 % of the glyph height are one character; the largest row
   cluster is kept (names and menus elsewhere fall out). When a count equals the line's non-blank characters, the text
   area (the cluster's box, grown by one glyph height up / left, 8 to the right, 2 down) and the atlases that drew inside
-  it are learned. Learning hides nothing.
+  it are learned. Glyphs of one line drawn from several atlas pages are counted together per render target; offset copies
+  are merged only when closer than 40 % of the glyph's own width (adjacent narrow digits stay two characters). Learning
+  hides nothing.
 - **Hiding.** From the next frame on, while a line is armed (60 s after the last `LINE`, until `OFF` or the control pipe
   closes), glyph-like quads whose centre lies inside the text area are left out when they come from a learned atlas,
   or (engines that build a small glyph sheet for every line, a new texture each line) when they have the learned glyph
@@ -63,6 +69,16 @@ for a glyph, so layer 3 sees nothing.
 - **Rectangles for the compositor.** Whenever the glyph count of the current line matches its characters, the DLL sends
   one `ToMe_CHARS engine=gpu` record (`docs/text-architecture.md`, ③ record): one rectangle per non-blank character in
   reading order, in back-buffer pixels, `hidden=1` once the line's glyphs are being left out.
+
+### Crash canary
+
+Layer 4 must never crash a game. HookBridge keeps `data/gpu-hide/<exe>-<size>.json` per game build (the key of the stream
+memory): before the DLL is loaded the file is armed with the game's pid, and a bridge thread waits for the game to end.
+An exit by an exception (exit code `0xC0000000` and up: access violation, stack overflow, ...) while the layer was loaded
+turns layer 4 **off** for that game (`off`, `reason`); every later launch skips the DLL and emits
+`{"type":"hookGpuHide","state":"off","reason":...}`. Any other exit clears the arm. A run whose end the bridge did not see
+(MeguLit closed first) is only logged. Turning the layer on again is the user's call: `GpuCanaryReset()`;
+`GpuCanaryOff()` returns the reason (empty = allowed).
 
 ### Protocol
 
@@ -91,6 +107,7 @@ the same path as the GDI hide (`GdiHideHit`).
 | `void GpuArm(string streamId, string line)` | Hide that line of that stream from now on (60 s, renewed by every call). Learns first; never hides when unsure. |
 | `void GpuDisarm()` | Stop hiding at once (`OFF`). |
 | `void GpuReadOnly(bool on)` | Learn and report rectangles only. |
+| `string GpuCanaryOff()` / `void GpuCanaryReset()` | Why the canary turned the layer off for the bound game (empty = allowed) / turn it on again (user's call). |
 | `event Action<string,int,int,int> GpuHit` | First hidden draw of a line: stream, line number, quads left out, characters. |
 
 Today HookBridge arms it by itself for the streams layer 3 serves (selected stream without write-back, replacement on or
@@ -109,6 +126,21 @@ line is drawn again. Built and run by `Build.ps1` and CI through `native/native-
 `MeguLitGpu version=1`, checked by `tools/native-stale.cjs` and `Release.ps1`).
 
 ### Live checks (2026-11-14)
+
+- **CHAOS;CHILD (MAGES, 32-bit, Direct3D 9, Steam): works.** DXT5 atlas pages of 3072 × 4096 and 3072 × 1536, one
+  `DrawPrimitiveUP` triangle fan per character, vertex declaration + vertex shader. With the visible page pushed (32
+  characters, half-width digits included): `learn` 32 = 32, `ToMe_CHARS hidden=0` with 32 rectangles
+  (`360,326,34,34;392,326,34,34;424,326,26,34;…`), `hit`, `hidden=1`; all text gone, the scene and the wait cursor kept;
+  after `OFF` the game draws the page again at once.
+- WHITE ALBUM2 (Leaf, 32-bit, Direct3D 9): the first build crashed it at the first scene (throwaway devices made through
+  the game's own wrapper `d3d9.dll`); fixed (system `d3d9.dll` only), the game then runs normally with the layer loaded.
+  The engine draws each line as 128 × 40 tiles of a pre-rendered line texture (like FVP), so nothing is hidden there.
+- ダストマニア (BRUNS) and the "transparent font sheet at load time" idea: not done, because it cannot be generic or safe.
+  The sheets are encrypted (`EENZ`), so serving a changed file means decoding an engine format; the decoded sheet in
+  memory is the engine's own data, and blanking its cells changes game data (the rule this layer exists to keep), for
+  every use of the font at once (names, choices, backlog, menus), for the whole run (no per-line arm / disarm), and which
+  cell is which character is engine knowledge. Character rectangles are not observable either: the engine copies glyph
+  pixels with plain CPU code into its frame buffer, with no API call per character. It needs an engine-level path.
 
 - **みにくいモジカの子 (Nitro+, 32-bit, Direct3D 11): works.** The engine builds a small glyph sheet for each line
   (e.g. 76 × 88 for 「いたい。」) and draws one quad per character, twice (an effect buffer and the 1280 × 720
