@@ -67,6 +67,10 @@ test('KiriKiri: the TJS script reports each sentence\'s boxes at its end; hidden
  assert.ok(s.includes('var h=(rec.hc>=rec.cn)?1:0;'),'live 2026-11-14 Fata Morgana: glyphs drawn invisible stay so after the switch');
  assert.ok(s.includes("'ToMe_CHARS engine=krkr line='+rec.line+' hidden='+h"));
  assert.ok(s.includes("if(rec.n>0) {this.send('end',rec,rec.x0,rec.x1);try {this.chars(rec);} catch(e) {this.charsErr=e.message;}}"),'a failing record never breaks the end line');
+ assert.ok(s.includes('global.TextRender.done=(global.__megulitTrHook incontextof null);'),'TextRender engines (Yuzusoft): class-level done hook reaches every instance');
+ assert.ok(s.includes('var cs=(inst.getCharacters incontextof inst)(0,100000);'),'character boxes from TextRender.getCharacters');
+ assert.ok(s.includes('if(T.opacity!=0) T.opacity=0;'),'hidden = the text-only layer at opacity 0');
+ assert.ok(s.includes('if(this.trT.opacity==0) this.trT.opacity=this.trOp;'),'the game\'s own opacity comes back when MeguLit stops asking');
  assert.match(c,/wcsncmp\(text, L"ToMe_CHARS ", 11\) == 0 && len < 28000/);
  assert.match(h,/text architecture 3 char records/);
 });
