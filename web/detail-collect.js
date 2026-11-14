@@ -11,7 +11,7 @@ import {exAttr,setExample} from './example-ruby.js';
 
 const L={
  zh:{words:'关联单词',sentences:'收录句子',total:'本作单词',all:'全部',groups:['新词','学习中','已掌握'],levels:['新收录','学习中','熟悉','掌握','熟练'],
-  order:'按最近遇见排列 · 悬停预览，点击或 ↑ ↓ 选中',search:'搜索单词、读音或释义',filter:'按掌握度筛选',list:'单词列表',shown:'已显示',more:n=>`再加载 ${n} 个`,
+  order:'按最近遇见排列 · 点击或 ↑ ↓ 选中，滚轮浏览',search:'搜索单词、读音或释义',filter:'按掌握度筛选',list:'单词列表',shown:'已显示',more:n=>`再加载 ${n} 个`,
   recent:n=>`最近遇见的 ${n} 个`,current:'当前单词',inAnki:'已在 Anki',notAnki:'未加入 Anki',met:'本作遇见',metTitle:n=>`本作中遇见 ${n} 次`,otherMeans:n=>`另 ${n} 义`,
   less:'收起',dict:'查词典',first:'首见',latest:'最近',mastery:'掌握度',byDay:'遇见日期',byDayAria:'按日期的遇见次数',created:'收录',
   none:q=>`这部作品里还没遇到过「${q}」`,noneSub:'关联单词只收你在本作里查过的词，可以换成读音或中文释义再找，或者去词典里查它',clear:'清除搜索',dictQ:q=>`在词典中查「${q}」`,
@@ -23,7 +23,7 @@ const L={
   how:[['在游戏里','点一个词','或在台词上拖选一段文字，弹出查词卡'],['查词卡底部 · 最常用','☆ 收藏句子','这一整句和它的译文一起存进来'],['加卡时顺手留下','加入 Anki','把词加入 Anki 时，它所在的那一句会自动收进来']],
   emptyEnd:'收下第一句后，这里会换成',emptyWall:'你的台词墙'},
  ja:{words:'関連単語',sentences:'保存した例文',total:'この作品の単語',all:'すべて',groups:['新語','学習中','習得済み'],levels:['新規','学習中','見覚えあり','習得','熟知'],
-  order:'最近出会った順 · ホバーでプレビュー、クリックか ↑ ↓ で選択',search:'単語・読み・意味で検索',filter:'習得度で絞り込む',list:'単語リスト',shown:'表示中',more:n=>`さらに ${n} 語`,
+  order:'最近出会った順 · クリックか ↑ ↓ で選択、ホイールでスクロール',search:'単語・読み・意味で検索',filter:'習得度で絞り込む',list:'単語リスト',shown:'表示中',more:n=>`さらに ${n} 語`,
   recent:n=>`最近の ${n} 語`,current:'選択中の単語',inAnki:'Anki に追加済み',notAnki:'Anki 未追加',met:'この作品で',metTitle:n=>`この作品で ${n} 回`,otherMeans:n=>`ほか ${n} 件`,
   less:'閉じる',dict:'辞書で調べる',first:'初出',latest:'最近',mastery:'習得度',byDay:'出会った日',byDayAria:'日ごとの回数',created:'登録',
   none:q=>`この作品では「${q}」にまだ出会っていません`,noneSub:'関連単語はこの作品で調べた語だけです。読みや意味で探すか、辞書で調べてください',clear:'検索をクリア',dictQ:q=>`辞書で「${q}」を調べる`,
@@ -35,7 +35,7 @@ const L={
   how:[['ゲーム中に','単語をクリック','または台詞をドラッグすると辞書カードが開きます'],['辞書カードの下 · いちばん手軽','☆ 文を保存','その一文と訳文を保存します'],['カード追加のついでに','Anki に追加','単語を Anki に追加すると、その文も自動で保存されます']],
   emptyEnd:'最初の一文を保存すると、ここが',emptyWall:'あなたの台詞の壁に'},
  en:{words:'Linked words',sentences:'Saved sentences',total:'Words in this game',all:'All',groups:['New','Learning','Mastered'],levels:['New','Learning','Familiar','Known','Mastered'],
-  order:'Most recently met first · hover to preview, click or ↑ ↓ to select',search:'Search words, readings or meanings',filter:'Filter by mastery',list:'Word list',shown:'Showing',more:n=>`Load ${n} more`,
+  order:'Most recently met first · click or ↑ ↓ to select, scroll to browse',search:'Search words, readings or meanings',filter:'Filter by mastery',list:'Word list',shown:'Showing',more:n=>`Load ${n} more`,
   recent:n=>`the ${n} most recent`,current:'Current word',inAnki:'In Anki',notAnki:'Not in Anki',met:'Met here',metTitle:n=>`Met ${n} times in this game`,otherMeans:n=>`${n} more`,
   less:'Collapse',dict:'Dictionary',first:'First met',latest:'Latest',mastery:'Mastery',byDay:'Days met',byDayAria:'Times met per day',created:'Saved',
   none:q=>`“${q}” has not come up in this game`,noneSub:'Linked words are the words you looked up in this game. Try a reading or a meaning, or look it up in the dictionary',clear:'Clear search',dictQ:q=>`Look up “${q}”`,
@@ -107,7 +107,7 @@ const group=s=>{const v=level(s);return v>=3?'2':v>=1?'1':'0';};
 const ticks=s=>[0,1,2,3,3][level(s)];
 const meter=(s,t,esc,lg=false)=>`<span class="esr-mt${lg?' lg':''}" data-s="${ticks(s)}" role="img" aria-label="${esc(t.mastery+'：'+t.levels[level(s)])}"><span class="esr-mt-b" aria-hidden="true"><i></i><i></i><i></i></span>${esc(t.levels[level(s)])}</span>`;
 function meansFit(list,k,max){const out=[];let n=0;for(const m of list.slice(0,k)){if(out.length&&n+m.length>max)break;out.push(m);n+=m.length+2;}return out;}
-const STEP=40,TOP=18;
+const STEP=40;
 
 /* scope 'all' (学习 › 单词): lookupOnly = looked-up surfaces never saved (shown only under 常查单词); onStatus / onDelete put the status
    picker and the delete button into the detail column; enhance styles the picker like the app's other selects; onGame opens a line's game */
@@ -170,16 +170,13 @@ export function mountWords(target,{words=[],lookupOnly=[],counts,locale='zh',esc
   <div class="esr-act">${q?`<button type="button" class="secondary" data-clear>${IC.x}${esc(t.clear)}</button>${onLookup?`<button type="button" class="secondary" data-dict-q>${IC.book}${esc(t.dictQ(q))}</button>`:''}`:`<button type="button" class="secondary" data-clear>${IC.x}${esc(t.clear)}</button>`}</div></div>`;}
 
  const listEl=()=>vp.querySelector('.esr-list');
- /* the current row's centre sits at 40% of the window; near the head of the list the list rests at the top instead of leaving a void above */
- /* 2026-11-15 rows share one height (the current one adds its ruby room), so the position is arithmetic on sizes measured once per render or
-    resize; reading offsetTop on every step forced a full page layout (~40 ms a step with thousands of words) */
- let geo=null;
- const measure=()=>{const l=listEl(),cur=l?.querySelector('.esr-row.is-cur');if(!cur){geo=null;return null;}const plain=l.querySelector('.esr-row:not(.is-cur)');
-  geo={vpH:vp.clientHeight,rowH:plain?plain.offsetHeight:cur.offsetHeight,curH:cur.offsetHeight};return geo;};
- const centreY=()=>{const g=geo||measure();if(!g)return 0;const idx=Math.max(0,list.findIndex(w=>w.id===state.cur));
-  const y=Math.min(TOP,g.vpH*.4-(idx*g.rowH+g.curH/2));vp.classList.toggle('at-top',y>=TOP);return y;};
- function place(glide){const l=listEl();if(!l)return;const y=centreY(),gsap=motion();
-  if(gsap&&glide)life.add(()=>gsap.to(l,{y,duration:.7,ease:'power4.inOut',overwrite:true}));else if(window.gsap)window.gsap.set(l,{y});else l.style.transform=`translateY(${y}px)`;}
+ /* 2026-11-15 (user: 不要悬停就切换 / 换单词高度被挤 / 滚轮滚不动) the list is a plain scroll area: every row keeps the same height
+    (the ruby room is reserved on all rows), the wheel scrolls it natively and never the page behind (overscroll-behavior), and only a
+    click, ↑ ↓ or Enter changes the current word. Keyboard steps scroll the current row into view; a click never moves the list. */
+ function reveal(r,smooth){if(!r)return;const top=r.offsetTop,bottom=top+r.offsetHeight,h=vp.clientHeight,st=vp.scrollTop,pad=Math.min(80,h*.2);
+  if(top<st+pad)vp.scrollTo({top:Math.max(0,top-pad),behavior:smooth&&!reduced()?'smooth':'auto'});
+  else if(bottom>st+h-pad)vp.scrollTo({top:bottom-h+pad,behavior:smooth&&!reduced()?'smooth':'auto'});}
+ const edge=()=>{vp.classList.toggle('at-top',vp.scrollTop<=2);vp.classList.toggle('at-end',vp.scrollTop+vp.clientHeight>=vp.scrollHeight-2);};
  function cutIn(tl,at){const d=side,g=window.gsap;if(!d.firstElementChild)return tl;
   tl.from(d.querySelector('.esr-t'),{yPercent:60,rotationX:-80,opacity:0,transformPerspective:700,transformOrigin:'50% 100%',duration:.6,ease:'power4.out'},at)
    .from(d.querySelector('.esr-bar'),{scaleX:0,transformOrigin:'0 50%',duration:.4,ease:'expo.out'},'<.12')
@@ -196,24 +193,23 @@ export function mountWords(target,{words=[],lookupOnly=[],counts,locale='zh',esc
   const shown=list.slice(0,state.shown);
   vp.innerHTML=list.length?`<ul class="esr-list" role="listbox" aria-label="${esc(t.list)}"${state.cur!=null?` aria-activedescendant="esr-o-${esc(String(state.cur))}"`:''}>${shown.map(row).join('')}</ul>`:noResults();
   paintFoot();
-  root.classList.toggle('is-none',!list.length);paintDetail();geo=null;place(false);}
+  root.classList.toggle('is-none',!list.length);paintDetail();vp.scrollTop=0;reveal(vp.querySelector('.esr-row.is-cur'),false);edge();}
  function paintFoot(){const shown=Math.min(state.shown,list.length),capped=scope!=='all'&&total>all.length&&state.filter==='all'&&!state.q.trim();
   foot.innerHTML=list.length?`<span class="esr-prog"><span>${esc(t.shown)} <b>${shown}</b> / ${list.length}${capped?` <small>（${esc(t.recent(all.length))}）</small>`:''}</span><i style="--p:${(shown/Math.max(1,list.length)).toFixed(4)}"></i></span>`+
    (shown<list.length?`<button type="button" class="text-button" data-more>${esc(t.more(Math.min(STEP,list.length-shown)))}${IC.chev}</button>`:''):'';}
  /* batches: rows are added STEP at a time at the end of the list (never a full rebuild), so thousands of words stay smooth */
  function appendRows(){const l=listEl();if(!l||state.shown>=list.length)return [];const from=l.children.length;state.shown=Math.min(list.length,Math.max(state.shown,from)+STEP);
-  l.insertAdjacentHTML('beforeend',list.slice(from,state.shown).map(row).join(''));paintFoot();return [...l.children].slice(from);}
+  l.insertAdjacentHTML('beforeend',list.slice(from,state.shown).map(row).join(''));paintFoot();edge();return [...l.children].slice(from);}
 
- let hoverTimer=0;
  function select(id,{focus=false,glide=false,punch=true}={}){const w=list.find(x=>x.id===id);if(!w)return;const changed=id!==state.cur;
   if(changed){state.cur=id;state.open=false;}
   const l=listEl();if(!l)return;
   l.querySelectorAll('.esr-row').forEach(r=>{const on=Number(r.dataset.id)===id||r.dataset.id===String(id);r.classList.toggle('is-cur',on);r.setAttribute('aria-selected',String(on));r.tabIndex=on?0:-1;});
   l.setAttribute('aria-activedescendant',`esr-o-${id}`);
   const r=l.querySelector(`.esr-row[data-id="${CSS.escape(String(id))}"]`);if(focus)r?.focus({preventScroll:true});
-  if(changed)paintDetail();if(glide)place(true);
+  if(changed)paintDetail();if(glide)reveal(r,true);
   const gsap=motion();if(!gsap||!changed||!punch||!r)return;
-  life.add(()=>{const tl=gsap.timeline();tl.fromTo(r.querySelector('.esr-w'),{skewX:-10,x:-16,scale:1.06},{skewX:0,x:0,scale:1,duration:.45,ease:'expo.out',overwrite:'auto'});cutIn(tl,0);});}
+  life.add(()=>{const tl=gsap.timeline();tl.fromTo(r.querySelector('.esr-w'),{x:-10},{x:0,duration:.4,ease:'expo.out',overwrite:'auto'});cutIn(tl,0);});}
  function step(delta){const i=list.findIndex(w=>w.id===state.cur),next=Math.max(0,Math.min(list.length-1,i+delta));if(next===i)return;
   while(next>=state.shown-8&&state.shown<list.length)appendRows();select(list[next].id,{focus:true,glide:true});}
 
@@ -225,11 +221,8 @@ export function mountWords(target,{words=[],lookupOnly=[],counts,locale='zh',esc
  let qTimer=0;input.addEventListener('input',()=>{clearTimeout(qTimer);qTimer=setTimeout(()=>{state.q=input.value;state.shown=STEP;renderList();},120);});
  input.addEventListener('keydown',e=>{if(e.key==='Escape'&&input.value){e.preventDefault();e.stopPropagation();input.value='';state.q='';renderList();}
   else if(e.key==='ArrowDown'){e.preventDefault();vp.querySelector('.esr-row.is-cur')?.focus({preventScroll:true});}});
- life.off(()=>{clearTimeout(qTimer);clearTimeout(hoverTimer);});
- vp.addEventListener('mouseover',e=>{const r=e.target.closest('.esr-row');if(!r||r.classList.contains('is-cur'))return;clearTimeout(hoverTimer);
-  hoverTimer=setTimeout(()=>{if(life.live&&r.isConnected)select(Number(r.dataset.id)||r.dataset.id);},90);});
- vp.addEventListener('mouseleave',()=>clearTimeout(hoverTimer));
- vp.addEventListener('click',e=>{const r=e.target.closest('.esr-row');if(r){clearTimeout(hoverTimer);select(Number(r.dataset.id)||r.dataset.id,{focus:true,glide:true});return;}
+ life.off(()=>clearTimeout(qTimer));
+ vp.addEventListener('click',e=>{const r=e.target.closest('.esr-row');if(r){select(Number(r.dataset.id)||r.dataset.id,{focus:true});return;}
   if(e.target.closest('[data-clear]')){input.value='';state.q='';renderList();input.focus();return;}
   if(e.target.closest('[data-dict-q]'))onLookup?.(state.q.trim());});
  vp.addEventListener('keydown',e=>{if(!e.target.closest('.esr-row'))return;const k=e.key;
@@ -238,11 +231,8 @@ export function mountWords(target,{words=[],lookupOnly=[],counts,locale='zh',esc
   else if(k==='Home'||k==='End'){e.preventDefault();step(k==='Home'?-1e6:1e6);}
   else if(k==='Enter'){e.preventDefault();const w=curWord();if(w)onLookup?.(w.spelling);}
   else if(k==='Escape'&&state.q){e.preventDefault();input.value='';state.q='';renderList();input.focus();}});
- /* wheel over the list steps through the words, but only once the whole frame is on screen; otherwise the page keeps scrolling */
- let wheelAt=0;vp.addEventListener('wheel',e=>{if(!list.length)return;const scroller=root.closest('.main'),fr=root.querySelector('.esr-body').getBoundingClientRect(),
-  view=scroller?scroller.getBoundingClientRect():{top:0,bottom:innerHeight};if(fr.top<view.top-2||fr.bottom>view.bottom+2)return;
-  const i=list.findIndex(w=>w.id===state.cur),dir=Math.sign(e.deltaY);if(!dir||(dir<0&&i<=0)||(dir>0&&i>=list.length-1))return;e.preventDefault();
-  const now=performance.now();if(now-wheelAt<110)return;wheelAt=now;step(dir);},{passive:false});
+ /* the wheel scrolls the list natively; near the end the next batch of rows is added */
+ vp.addEventListener('scroll',()=>{edge();if(state.shown<list.length&&vp.scrollTop+vp.clientHeight>=vp.scrollHeight-vp.clientHeight*.6)appendRows();},{passive:true});
  foot.addEventListener('click',e=>{if(!e.target.closest('[data-more]'))return;
   const gsap=motion(),rows=appendRows();if(gsap&&rows.length)life.add(()=>gsap.from(rows,{opacity:0,x:-20,duration:.4,stagger:.02,ease:'power3.out'}));});
  side.addEventListener('click',e=>{const w=curWord();if(!w)return;
@@ -268,22 +258,21 @@ export function mountWords(target,{words=[],lookupOnly=[],counts,locale='zh',esc
   if(d.definition)w.means=String(d.definition).split(/[;；\n]/).map(x=>x.trim()).filter(Boolean);if(d.reading&&d.reading!==w.spelling)w.reading=d.reading;
   const r=listEl()?.querySelector(`.esr-row[data-id="${CSS.escape(String(w.id))}"]`);if(r){const tmp=document.createElement('ul');tmp.innerHTML=row(w);r.replaceWith(tmp.firstElementChild);}
   if(state.cur===w.id)paintDetail();}})();
- const ro=new ResizeObserver(()=>{geo=null;place(false);});ro.observe(vp);life.off(()=>ro.disconnect());
- document.fonts?.ready?.then(()=>{if(life.live){geo=null;place(false);}});
+ const ro=new ResizeObserver(()=>edge());ro.observe(vp);life.off(()=>ro.disconnect());
 
  function swapIn(){const gsap=motion();if(!gsap)return;life.add(()=>{const tl=gsap.timeline();
   tl.from(vp.querySelectorAll('.esr-w'),{yPercent:60,opacity:0,duration:.45,stagger:.025,ease:'power4.out'});cutIn(tl,0);});}
  renderList();
  /* intro: the block rises row by row on a 3D hinge while the list dollies up to the current word, the current word punches in,
-    the detail column slides in and cuts to the title */
+    the detail column slides in and cuts to the title (rows animate on transform / opacity only, so nothing is pushed) */
  const gsap=animate&&motion();
- if(gsap&&listEl())life.add(()=>{const l=listEl(),y=centreY(),cur=l.querySelector('.esr-row.is-cur');gsap.set(l,{y});
+ if(gsap&&listEl())life.add(()=>{const l=listEl(),cur=l.querySelector('.esr-row.is-cur');
   const tl=gsap.timeline({defaults:{duration:.6,ease:'power3.out'}});
   tl.from(root.querySelectorAll('.esr-h > *'),{y:16,opacity:0,stagger:.08,duration:.5})
-   .from(l,{y:y+220,duration:1.1,ease:'power4.out'},'<')
+   .from(l,{y:120,opacity:0,duration:.9,ease:'power4.out'},'<')
    .from(l.querySelectorAll('.esr-w'),{yPercent:80,rotationX:-70,opacity:0,transformPerspective:800,transformOrigin:'50% 100%',stagger:.04,duration:.65,ease:'power4.out'},'<.05')
    .from(l.querySelectorAll('.esr-g'),{opacity:0,x:12,stagger:.04,duration:.4},'<.25');
-  if(cur)tl.from(cur.querySelector('.esr-w'),{scale:1.14,skewX:-10,duration:.5,ease:'expo.out'},'-=.4');
+  if(cur)tl.from(cur.querySelector('.esr-w'),{x:-14,duration:.5,ease:'expo.out'},'-=.4');
   tl.from(side,{opacity:0,x:40,duration:.7,ease:'power4.out'},'-=.45');cutIn(tl,'-=.3');
   const fill=foot.querySelector('.esr-prog i');if(fill)tl.from(fill,{opacity:0,duration:.6},'<');});
  else if(!window.gsap)loadGsap().catch(()=>{});

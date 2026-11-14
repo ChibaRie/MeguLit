@@ -49,6 +49,17 @@ test('学习 › 单词 mounts the shared 关联单词 component, not a copy',()
  assert.match(web('detail-collect.css'),/:is\(\.game-detail-content,\.study-words\)/,'same styles on both pages');
 });
 
+test('words list: click-only switching, same height on every row, native wheel scroll',()=>{
+ const dc=web('detail-collect.js'),words=dc.slice(dc.indexOf('export function mountWords'),dc.indexOf('/* =================================================================== sentences'));
+ assert.doesNotMatch(words,/addEventListener\('mouseover'/,'hover never changes the current word');
+ assert.doesNotMatch(words,/addEventListener\('wheel'/,'the wheel is not intercepted');
+ assert.doesNotMatch(words,/悬停预览|hover to preview|ホバーでプレビュー/);
+ const css=web('detail-collect.css');
+ assert.match(css,/\.esr-vp\{[^}]*overflow-y:auto;overscroll-behavior:contain/);
+ assert.doesNotMatch(css,/\.esr-row\.is-cur\{padding-top/,'no extra ruby room on the current row only');
+ assert.doesNotMatch(css,/\.esr-row:focus-visible\{padding-bottom/);
+});
+
 test('the detail-collect module still parses as an ES module',async()=>{
  const {pathToFileURL}=require('node:url');const mod=await import(pathToFileURL(path.join(__dirname,'..','web','detail-collect.js')));
  assert.equal(typeof mod.mountWords,'function');
