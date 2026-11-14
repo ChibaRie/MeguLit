@@ -98,8 +98,8 @@ struct LineMsg {
 struct Style {
   int mode = 0;               // 0 bilingual (Japanese + translation beside), 1 Japanese only, 2 translation only
   std::wstring jpFont = L"Yu Mincho", tlFont = L"Microsoft YaHei", rubyFont = L"Meiryo";
-  bool ruby = true, shadow = true, lookup = true, plate = true;
-  int tlPlace = 0;            // 0 above the text area, 1 below
+  bool ruby = true, shadow = true, lookup = true, plate = false; // owner 2026-11-14: no dark plate behind translations
+  int tlPlace = 1;            // 0 above the text area, 1 below (owner: Japanese on top, translation under it)
   float tlScale = .8f, rubyScale = .5f;
   bool useGameColor = true; Rgb jpColor{ 255, 255, 255 }; Rgb tlColor{ 255, 236, 190 }; Rgb shadowColor{ 0, 0, 0 }; float shadowAlpha = .6f;
 };
@@ -979,9 +979,8 @@ private:
     tl->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
     DWRITE_TEXT_METRICS m{}; tl->GetMetrics(&m);
     const float x0 = float(outW) * .1f, y = std::max(0.f, float(outH) * .70f - m.height);
-    brush->SetColor(D2D1::ColorF(0, 0, 0, .55f));
-    d2->FillRoundedRectangle(D2D1::RoundedRect(D2D1::RectF(x0 + m.left - pad, y - pad, x0 + m.left + m.width + pad, y + m.height + pad), pad, pad), brush.get());
-    Text(tl.get(), { x0, y }, style.tlColor, 1);
+    if (style.plate) { brush->SetColor(D2D1::ColorF(0, 0, 0, .55f)); d2->FillRoundedRectangle(D2D1::RoundedRect(D2D1::RectF(x0 + m.left - pad, y - pad, x0 + m.left + m.width + pad, y + m.height + pad), pad, pad), brush.get()); }
+    Text(tl.get(), { x0, y }, style.tlColor, 1); // the text's own shadow keeps it readable
   }
   // Translation only: Chinese in the Japanese's area at the game's font size, wrapped inside the measured area and
   // revealed in step with the game's own reveal (share of dots shown → share of translation characters shown).
