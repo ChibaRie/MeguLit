@@ -219,6 +219,19 @@ int wmain(int argc, wchar_t **argv) {
    DWRITE_GLYPH_RUN run{ff, 28.f, (UINT32)gi.size(), gi.data(), adv.data(), NULL, FALSE, 0}; Clear(); rt->BindDC(Dc, &r); rt->BeginDraw(); rt->Clear(D2D1::ColorF(1, 1, 1)); rt->CreateSolidColorBrush(D2D1::ColorF(0, 0, 0), &brush); rt->DrawGlyphRun(D2D1::Point2F((FLOAT)X0, (FLOAT)base), &run, brush); rt->EndDraw();
    Check(Ink() == 0, "place d2d drawglyphrun: no ink"); char t[32]; sprintf_s(t, "t%dx%d", W, H); Placed[Seq] = {e, t};
    brush->Release(); ff->Release(); f->Release(); fam->Release(); sys->Release(); rt->Release(); }
+  // Locating marks (MARK on): GRAY8 glyphs of the first, second and last character keep one pixel of coverage 1/64 at
+  // their black box top-left (white background, black text: 255 - 255/64 = 252), nothing else; GRAY4 gets none.
+  { Push("MARK on");
+   const std::wstring &l = Next("ggo"); Clear(); std::vector<POINT> e; bool same = true; DrawGgo(l, GGO_GRAY8_BITMAP, X0, base, e, same); GdiFlush();
+   std::vector<POINT> got; int faintest = 255, darkest = 255; for (int y = 0; y < H; y++) for (int x = 0; x < W; x++) { int v = Bits[y * W + x] & 0xff; if (v < 255) { got.push_back({x, y}); faintest = (std::min)(faintest, 255 - v); darkest = (std::min)(darkest, v); } }
+   size_t n = l.size(); bool at = got.size() == 3; for (size_t k : {(size_t)0, (size_t)1, n - 1}) { bool hit = false; for (auto &g : got) hit = hit || (g.x == e[k].x && g.y == e[k].y); at = at && hit; }
+   Save("mark-ggo"); Check(at && darkest >= 251 && same, "marks: exactly 3 pixels (first, second, last character) at their black box top-left, at most 4 levels from the background (" + std::to_string(got.size()) + " found, darkest " + std::to_string(darkest) + ")");
+   const std::wstring &l4 = Next("ggo"); Clear(); e.clear(); DrawGgo(l4, GGO_GRAY4_BITMAP, X0, base, e, same); GdiFlush(); int any = 0; for (int i = 0; i < W * H; i++) any += (Bits[i] & 0xff) < 255;
+   Check(any == 0, "marks: none in GRAY4 (1/16 would be visible)");
+   Sleep(200); AcquireSRWLockShared(&GotLock); std::string g = Got; ReleaseSRWLockShared(&GotLock);
+   std::string tag = "ToMe_GLYPHDOT dots seq=" + std::to_string(Seq - 1) + " "; size_t p0 = g.find(tag); int ones = 0; while (p0 != std::string::npos) { size_t eol = g.find('\n', p0); std::string m = g.substr(p0, eol - p0); for (size_t q = 0; (q = m.find(":1:d:", q)) != std::string::npos; q++) ones++; p0 = g.find(tag, eol); }
+   Check(ones == 3, "marks: the three marked characters are reported with s = 1 (" + std::to_string(ones) + ")");
+   Placed.erase(Seq - 1); Placed[Seq] = {{}, "-"}; SeqPath.erase(Seq - 1); SeqText.erase(Seq - 1); Push("MARK off"); }
   // Extra lines (names, choices): whole-string draws of a pushed name / choice are blank and reported with their
   // origin (kind n / o, index into the extra), in any font size; other strings stay drawn.
   { HFONT plate = CreateFontW(-20, 0, 0, 0, 400, 0, 0, 0, SHIFTJIS_CHARSET, 0, 0, ANTIALIASED_QUALITY, 0, Face); SelectObject(Dc, plate);
@@ -257,7 +270,7 @@ int wmain(int argc, wchar_t **argv) {
    std::string list = msg.substr(msg.find("list=") + 5); size_t a = 0;
    while (a < list.size()) { size_t b = list.find(';', a); if (b == std::string::npos) b = list.size(); int i, h, bl, ad, x, y, s, px, py; unsigned ch; char k; char sp[24] = {};
     if (sscanf_s(list.substr(a, b - a).c_str(), "%d:%x:%d:%d:%d:%d:%d:%d:%c:%d:%d:%23[^;]", &i, &ch, &h, &bl, &ad, &x, &y, &s, &k, 1, &px, &py, sp, (unsigned)sizeof sp) == 12) {
-     if (k == 'b') { a = b + 1; continue; } count[i]++; bool place = Placed.count(seq) != 0;
+     if (k != 'd') { a = b + 1; continue; } /* c, p: redraws and the previous line; b: blind */ count[i]++; bool place = Placed.count(seq) != 0;
      if (i < 0 || i >= (int)l.size() || l[i] != (wchar_t)ch || k != 'd' || s != (place ? 0 : Side) || h <= 0) chars = false;
      if (place && i >= 0 && i < (int)l.size()) { const Place &e = Placed[seq]; if (e.sp != sp) { chars = false; printf("     seq %d index %d space %s, expected %s\n", seq, i, sp, e.sp.c_str()); }
       else if (!e.at.empty() && (abs(e.at[i].x - px) > 1 || abs(e.at[i].y - py) > 1)) { chars = false; printf("     seq %d index %d at %d,%d, expected %ld,%ld\n", seq, i, px, py, e.at[i].x, e.at[i].y); } } }

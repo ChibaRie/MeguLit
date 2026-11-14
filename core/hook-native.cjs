@@ -152,6 +152,8 @@ class HookNative{
     origins, each under its own id (state.hookGlyphExtras: {[id]:{id,kind:'n'|'o',text,dots}}; a new name replaces the old
     one). setGlyphExtras({names:true}) lets the bridge push every name-stream line; {choices:[...]} pushes the options on
     screen ([] clears them). Off by default: only turn it on when the reader overlay draws names and choices itself. */
+ /* locating marks for GetGlyphOutline engines (core/glyph-locate.cjs): on only while the reader captures frames to find them */
+ setGlyphMarks(on){this.send({type:'glyphMarks',on:on===true});}
  setGlyphExtras(o={}){const m={type:'glyphExtras',names:o.names===true};if(Array.isArray(o.choices))m.choices=o.choices.map(String).filter(t=>t.trim()).slice(0,12);this.send(m);if(Array.isArray(o.choices)&&!m.choices.length&&this.state.hookGlyphExtras){const keep={};for(const[k,v]of Object.entries(this.state.hookGlyphExtras))if(v.kind!=='o')keep[k]=v;this.state={...this.state,hookGlyphExtras:keep};}}
  glyphExtra(m){if(!m||!Number.isSafeInteger(m.id))return;const all={...(this.state.hookGlyphExtras||{})};
   if(m.state==='line'&&(m.kind==='n'||m.kind==='o')&&typeof m.text==='string'){if(m.kind==='n')for(const[k,v]of Object.entries(all))if(v.kind==='n')delete all[k];all[m.id]={id:m.id,kind:m.kind,text:m.text.slice(0,200),dots:[]};const ids=Object.keys(all).map(Number).sort((a,b)=>a-b);while(ids.length>16)delete all[ids.shift()];}

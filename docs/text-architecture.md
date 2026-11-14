@@ -22,6 +22,7 @@ version, a line in this log, and stays backward compatible where possible (new f
 
 | Spec | Date       | Change |
 |------|------------|--------|
+| 3    | 2026-11-15 | Compatible addition: locating marks for GetGlyphOutline engines (`MARK on|off`, `glyphMarks`, record `s` = 1 on a marked glyph; core/glyph-locate.cjs). GGO format counts in `ToMe_FONT status ggo`. |
 | 3    | 2026-11-15 | Compatible addition: extra lines for the name plate and choices (`EXTRA n|o <text>`, `EXTRA-CLEAR n|o`; records `ToMe_GLYPHDOT extra` / `xdots`; event `hookGlyphExtra`; front end `glyphExtras`). Whole-string draws only. |
 | 3    | 2026-11-14 | `MODE blank` now reports records too (blank glyphs + records = placement; `place`/`place-blind` are aliases of `blank`/`blank-blind`), the default for MeguLit's launch flow. Record version 4 (`ready ... records=4`). Compatible addition at the end of every dot record: `:px:py:space`, the cell's top-left on screen; `hookGlyphDots` dots carry `at`. `ready ... modes=blank,dot,place`. Dots stay available on request. |
 | 1    | 2026-11-14 | First version: dot geometry, `ToMe_GLYPHDOT` records, `hookGlyphDots` events, `glyphMode` command. |
@@ -214,10 +215,53 @@ themselves (into their own texture or surface). Their records carry the characte
 2. Relative layout from the metrics (`a`, `h`, `b` per character, in reading order) is already in the records. What is
    missing is the origin of the first character and the wrap width. A blank line has nothing to locate on screen; the
    only frame that shows the text is one that is not blanked, which item (d) forbids. Not done.
-3. Fallback (what ① does today): the line is still blank in the game, so the original never shows (d), and the records
+3. **Locating marks** (2026-11-15, the way chosen): see the next section. Until a game is calibrated, and for engines
+   that do not use `GGO_GRAY8_BITMAP`, the fallback below applies.
+4. Fallback: the line is still blank in the game, so the original never shows (d), and the records
    tell the overlay it cannot place the line (`glyphRects` returns null for `space` `-`). The overlay then shows the line
    its old way (its own text panel, translation beside, words clickable, clicks elsewhere to the game: (c)(e)). Only (a)
    "in the original place" is not met for these engines.
+
+### Locating marks (`MARK on`, GetGlyphOutline engines)
+
+The origin of a line and the wrap width are the same for every line of a game whose text box does not move. They are
+learned from three marks the DLL leaves in blank mode, then every later line is laid out from its records alone.
+
+- **The mark**: with `MARK on`, the `GGO_GRAY8_BITMAP` glyph of the first, second and last character of the pushed line
+  keeps one pixel at its black box's top-left with coverage 1 of 64, the weakest a GRAY8 glyph can have. The game
+  composites it like any glyph pixel: the pixel moves at most 255/64 ≈ 4 levels of 255 from the background towards the
+  text colour (white text on a black box: 0 → 4; dark text on a white box: 255 → 251). One pixel, three per line. Other
+  formats get no mark (GRAY4 would be 16 levels, GRAY2 64, mono full), and such games stay on the fallback. The record of
+  a marked glyph has `s` = 1. `ToMe_FONT status ggo ... gray8=<n>` tells which format a game uses.
+- **Finding it** (reader side, `core/glyph-locate.cjs findMarks`): two captures of the game's client area (PrintWindow /
+  Windows.Graphics.Capture), the first taken when the text box is empty at the start of the line, the second when the
+  line is complete. Marks = clusters of at most 3x3 pixels changed by 1..12 levels with no larger change within one
+  pixel (the game's animations are larger changes and are skipped).
+- **Solving it** (`locate`): every pair of marks on one row whose distance matches the first character's advance gives a
+  scale (client px per glyph px) and the origin; the last character's mark confirms it on the same row (and refines the
+  scale), or on a later row gives the row pitch and the range of wrap widths that put it there (greedy wrap, with or
+  without kinsoku). `merge` keeps one calibration per game (same origin: wrap range narrowed; another origin: replaced),
+  stored as `data/glyph-place/<exe>-<size>.json` (`saveCalib` / `loadCalib`).
+- **Using it** (`layout`): each character's box from its advance, the learned scale, origin, pitch and wrap width; the
+  same shape as `glyph-place.glyphRects` with `space` `c`, `located: true`.
+- When to run it: on the first lines of a game, again whenever placed text and the game disagree (box moved, animated
+  box), then `MARK off`. Turning marks on costs nothing visible.
+- Front end: `HookNative.setGlyphMarks(true|false)` → `{"type":"glyphMarks","on":…}` → `MARK on|off` (re-sent on every
+  control connection while on).
+- Tests: `run-dots.cmd` (exactly three mark pixels at the expected spots, value 252 on white, none in GRAY4, records
+  `s` = 1); `validation/glyph-locate.test.cjs` (synthetic captures: dark and light boxes, animation and stray faint
+  pixels, scale 1 and 1.25, a wrapped line teaching pitch and wrap width, the next line laid out within 2 px).
+- Not verified live: whether a given engine keeps a coverage-1 pixel through its own compositing and scaling (a
+  downscaled engine may average it away; then nothing is found and the fallback stays).
+
+### Read-only streams and the flush delay (AdvHD)
+
+A read-only stream's text reached HookBridge only after LunaHook's flush delay of 180 ms, after the game had already
+rasterised the line, so its glyphs could not be matched one by one (blind mode, the only workaround, would also blank
+names and menus in the same font). While placement covers every stream (`GlyphAll`) and the selected stream cannot
+write back, HookBridge now sets the delay to 30 ms (`FlushFit`, logged as `hook flush delay 30 ms`), back to 180 ms
+otherwise. Not verified live: whether AdvHD's hook fires before it rasterises, and whether a 30 ms delay splits its
+lines.
 
 ### Compositor heartbeat (dot mode only)
 

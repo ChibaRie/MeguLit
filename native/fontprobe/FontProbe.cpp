@@ -93,7 +93,7 @@ Face FaceOf(HDC dc) {
 // DotMode: per-character records are reported (every MODE since spec 3). PaintDots: matched glyphs become dots (MODE dot*);
 // otherwise (MODE blank*, alias place*) blank glyphs (same metrics, no coverage) plus records with the cell origin on
 // screen, for the reader overlay that draws MeguLit's text where the game's would be (docs/text-architecture.md, "Placement").
-SRWLOCK HideLock = SRWLOCK_INIT; GlyphHide::Matcher Hide; volatile LONG HideOn = 0, DotMode = 0, BlindMode = 0, PaintDots = 0, CtlConnected = 0;
+SRWLOCK HideLock = SRWLOCK_INIT; GlyphHide::Matcher Hide; volatile LONG HideOn = 0, DotMode = 0, BlindMode = 0, PaintDots = 0, CtlConnected = 0, MarkOn = 0;
 bool BlindAllowed();
 struct IndexMap { HFONT font = NULL; long seq = -1; std::map<WORD, wchar_t> map; } Indexes;
 GlyphHide::Key KeyOf(const Face &f) { GlyphHide::Key k; k.face = f.name; k.size = f.size; return k; }
@@ -129,6 +129,7 @@ void Command(std::string l) {
  else if ((l.rfind("EXTRA n ", 0) == 0 || l.rfind("EXTRA o ", 0) == 0) && l.size() > 8) { char k = l[6]; std::wstring t = Stripped(Wide(l.substr(8)));
   if (!t.empty() && t.size() <= 200) { if (k == 'n') Extras.erase(std::remove_if(Extras.begin(), Extras.end(), [](const Extra &e) { return e.kind == 'n'; }), Extras.end());
    if (Extras.size() >= 16) Extras.erase(Extras.begin()); Extras.push_back(Extra{++ExtraSeq, k, t, GetTickCount()}); extra = "ToMe_GLYPHDOT extra id=" + std::to_string(ExtraSeq) + " kind=" + std::string(1, k) + " text=" + Utf8(t); } }
+ else if (l == "MARK on" || l == "MARK off") InterlockedExchange(&MarkOn, l == "MARK on" ? 1 : 0);
  else if (l == "EXTRA-CLEAR n" || l == "EXTRA-CLEAR o") { char k = l[12]; Extras.erase(std::remove_if(Extras.begin(), Extras.end(), [k](const Extra &e) { return e.kind == k; }), Extras.end()); }
  else if (l.rfind("FONT ", 0) == 0) { size_t sp = l.find(' ', 5); if (sp != std::string::npos) { GlyphHide::Key k; k.size = atoi(l.substr(5, sp - 5).c_str()); k.face = Clean(Wide(l.substr(sp + 1))); Hide.Seed(k); } }
  ReleaseSRWLockExclusive(&HideLock);
@@ -436,18 +437,28 @@ BOOL WINAPI HTextOutA(HDC dc, int x, int y, LPCSTR s, int n) {
 }
 // A matched glyph: MODE blank zeroes its pixels (outlines collapse to a point); MODE dot serves the dot glyph and
 // reports it. Size queries and GGO_METRICS calls are returned unchanged in both modes.
+// Locating marks (MARK on, blank mode, spec 3): GetGlyphOutline gives no position, so the first, second and last
+// character of the line keep ONE pixel at their black box's top-left with the weakest coverage there is, 1 of 64
+// (GGO_GRAY8_BITMAP only; coarser formats would be visible: GRAY4 1/16, GRAY2 1/4, mono full). The game composites it
+// like a glyph pixel: at most 255/64 = 4 levels of 255 between text colour and background, on one pixel. The reader
+// finds it by frame difference (core/glyph-locate.cjs) and learns the line origin, scale and wrap width; record s = 1.
+bool MarkIndex(int i) {
+ if (i == 0 || i == 1) return true; AcquireSRWLockShared(&HideLock); int n = 0; for (wchar_t c : Hide.Current()) if (!GlyphHide::Blank(c)) n++; ReleaseSRWLockShared(&HideLock);
+ return i == n - 1;
+}
 DWORD ServeGlyph(HDC dc, UINT f, const GLYPHMETRICS *gm, LPVOID b, DWORD n, DWORD r, const GlyphHide::Served &sv, long seq, wchar_t ch) {
  if (!DotMode || !gm || !PaintDots) { if (b && n) BlankGlyph(f, b, r < n ? r : n); if (!DotMode || !gm || !b || !n || (f & 0x0f) == GGO_METRICS) return r; }
  if (!b || !n || (f & 0x0f) == GGO_METRICS) return r;
  TEXTMETRICW tm{}; Cell(dc, tm); int side = PaintDots ? DotSide(tm.tmHeight) : 0; DWORD out = PaintDots ? DotGlyph(f, *gm, b, n, r, side) : r;
+ if (!PaintDots && MarkOn && (f & 0x0f) == GGO_GRAY8_BITMAP && sv.kind == 'd' && gm->gmBlackBoxX && gm->gmBlackBoxY && r != GDI_ERROR && r && MarkIndex(sv.index)) { ((BYTE *)b)[0] = 1; side = 1; }
  ServeDot(seq, "ggo", Dot{sv.index, ch, (int)tm.tmHeight, (int)tm.tmAscent, (int)gm->gmCellIncX, (int)gm->gmptGlyphOrigin.x, (int)tm.tmAscent - (int)gm->gmptGlyphOrigin.y, side, sv.kind});
  return out;
 }
 // Most visual novel engines rasterise their text one character at a time with GetGlyphOutline. Every call counts one
 // character; engines that ask the size first count twice, which ranks every font of that engine alike.
 // Matched glyphs keep their GLYPHMETRICS and buffer size (layout and advance unchanged); only the pixels change.
-volatile LONG GgoChar, GgoIndex, GgoMetrics, GgoReported; // which GetGlyphOutline forms the game uses (one status line)
-void GgoKind(UINT c, UINT f) { if ((f & 0x0f) == GGO_METRICS) InterlockedIncrement(&GgoMetrics); else if (f & GGO_GLYPH_INDEX) InterlockedIncrement(&GgoIndex); else InterlockedIncrement(&GgoChar); (void)c; }
+volatile LONG GgoChar, GgoIndex, GgoMetrics, GgoReported, GgoFormat[8]; // which GetGlyphOutline forms the game uses (one status line)
+void GgoKind(UINT c, UINT f) { if ((f & 0x0f) < 8) InterlockedIncrement(&GgoFormat[f & 0x0f]); if ((f & 0x0f) == GGO_METRICS) InterlockedIncrement(&GgoMetrics); else if (f & GGO_GLYPH_INDEX) InterlockedIncrement(&GgoIndex); else InterlockedIncrement(&GgoChar); (void)c; }
 DWORD WINAPI HGetGlyphOutlineW(HDC dc, UINT c, UINT f, LPGLYPHMETRICS gm, DWORD n, LPVOID b, const MAT2 *m) {
  GgoKind(c, f);
  bool index = (f & GGO_GLYPH_INDEX) != 0; Face face{L"", 0, 400}; bool known = false;
@@ -739,7 +750,7 @@ DWORD WINAPI Run(void *) {
   if (GetEnvironmentVariableW(L"MEGULIT_GLYPH_FONT", v, 128) && v[0]) Command("FONT " + Utf8(v));
   wchar_t ready[64]; swprintf_s(ready, L"MeguLitFontReady-%lu", GetCurrentProcessId()); HANDLE e = OpenEventW(EVENT_MODIFY_STATE, FALSE, ready); if (e) { SetEvent(e); CloseHandle(e); } }
  HANDLE ctl = CreateThread(NULL, 0, Control, NULL, 0, NULL); if (ctl) CloseHandle(ctl); // after the hooks: a pushed line always meets them
- for (;;) { LateHooks(); Report(); if (!GgoReported && GgoChar + GgoIndex + GgoMetrics >= 200) { GgoReported = 1; std::string top; EnterCriticalSection(&Gate); for (auto &sc : Scores) if (top.size() < 300) top += " " + sc.src + ":" + Utf8(sc.face.name) + "/" + std::to_string(sc.face.size) + "=" + std::to_string(sc.chars); LeaveCriticalSection(&Gate); Send("ToMe_FONT status ggo char=" + std::to_string(GgoChar) + " index=" + std::to_string(GgoIndex) + " metrics=" + std::to_string(GgoMetrics) + " scores" + top); } Sleep(1000); }
+ for (;;) { LateHooks(); Report(); if (!GgoReported && GgoChar + GgoIndex + GgoMetrics >= 200) { GgoReported = 1; std::string top; EnterCriticalSection(&Gate); for (auto &sc : Scores) if (top.size() < 300) top += " " + sc.src + ":" + Utf8(sc.face.name) + "/" + std::to_string(sc.face.size) + "=" + std::to_string(sc.chars); LeaveCriticalSection(&Gate); Send("ToMe_FONT status ggo char=" + std::to_string(GgoChar) + " index=" + std::to_string(GgoIndex) + " metrics=" + std::to_string(GgoMetrics) + " mono=" + std::to_string(GgoFormat[GGO_BITMAP]) + " gray2=" + std::to_string(GgoFormat[GGO_GRAY2_BITMAP]) + " gray4=" + std::to_string(GgoFormat[GGO_GRAY4_BITMAP]) + " gray8=" + std::to_string(GgoFormat[GGO_GRAY8_BITMAP]) + " outline=" + std::to_string(GgoFormat[GGO_NATIVE] + GgoFormat[GGO_BEZIER]) + " scores" + top); } Sleep(1000); }
 }
 } // namespace
 
