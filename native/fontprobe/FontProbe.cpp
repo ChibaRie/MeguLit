@@ -355,9 +355,13 @@ DWORD ServeGlyph(HDC dc, UINT f, const GLYPHMETRICS *gm, LPVOID b, DWORD n, DWOR
 // Most visual novel engines rasterise their text one character at a time with GetGlyphOutline. Every call counts one
 // character; engines that ask the size first count twice, which ranks every font of that engine alike.
 // Matched glyphs keep their GLYPHMETRICS and buffer size (layout and advance unchanged); only the pixels change.
+volatile LONG GgoChar, GgoIndex, GgoMetrics, GgoReported; // which GetGlyphOutline forms the game uses (one status line)
+void GgoKind(UINT c, UINT f) { if ((f & 0x0f) == GGO_METRICS) InterlockedIncrement(&GgoMetrics); else if (f & GGO_GLYPH_INDEX) InterlockedIncrement(&GgoIndex); else InterlockedIncrement(&GgoChar); (void)c; }
 DWORD WINAPI HGetGlyphOutlineW(HDC dc, UINT c, UINT f, LPGLYPHMETRICS gm, DWORD n, LPVOID b, const MAT2 *m) {
+ GgoKind(c, f);
  bool index = (f & GGO_GLYPH_INDEX) != 0; Face face{L"", 0, 400}; bool known = false;
  if (!index && c < 0x10000 && Japanese((wchar_t)c)) { face = FaceOf(dc); known = true; Count("gdi", face, 1); }
+ else if (index && (f & 0x0f) != GGO_METRICS) { face = FaceOf(dc); known = true; Count("gdi", face, 1); } // glyph-index engines: every rasterised glyph ranks its font
  GlyphHide::Served sv; long seq = 0; wchar_t ch = 0;
  bool hide = HideOn && c && c < 0x10000 && HideGlyph(dc, c, index, known ? face : FaceOf(dc), (f & 0x0f) != GGO_METRICS, &sv, &seq, &ch);
  DWORD r = OGetGlyphOutlineW(dc, c, f, gm, n, b, m);
@@ -365,7 +369,8 @@ DWORD WINAPI HGetGlyphOutlineW(HDC dc, UINT c, UINT f, LPGLYPHMETRICS gm, DWORD 
  return r;
 }
 DWORD WINAPI HGetGlyphOutlineA(HDC dc, UINT c, UINT f, LPGLYPHMETRICS gm, DWORD n, LPVOID b, const MAT2 *m) {
- bool index = (f & GGO_GLYPH_INDEX) != 0; if (!index && c > 0x8100) Count("gdi", FaceOf(dc), 1);
+ GgoKind(c, f);
+ bool index = (f & GGO_GLYPH_INDEX) != 0; if ((!index && c > 0x8100) || (index && (f & 0x0f) != GGO_METRICS)) Count("gdi", FaceOf(dc), 1);
  bool hide = false; GlyphHide::Served sv; long seq = 0; wchar_t ch = 0;
  if (HideOn && c) { UINT code = c; if (!index) { char bytes[2]; int len = 0; if (c > 0xff) bytes[len++] = (char)(c >> 8); bytes[len++] = (char)(c & 0xff); std::wstring w = GameText(bytes, len); code = w.size() == 1 ? w[0] : 0; }
   hide = code && HideGlyph(dc, code, index, FaceOf(dc), (f & 0x0f) != GGO_METRICS, &sv, &seq, &ch); }
@@ -624,7 +629,7 @@ DWORD WINAPI Run(void *) {
  n += Hook(gdi, "AddFontResourceExA", (void *)&HAddFontResourceExA, (void **)&OAddFontResourceExA);
  Send("ToMe_FONT status gdi hooks " + std::to_string(n) + "/11");
  HANDLE ctl = CreateThread(NULL, 0, Control, NULL, 0, NULL); if (ctl) CloseHandle(ctl); // after the hooks: a pushed line always meets them
- for (;;) { LateHooks(); Report(); Sleep(1000); }
+ for (;;) { LateHooks(); Report(); if (!GgoReported && GgoChar + GgoIndex + GgoMetrics >= 200) { GgoReported = 1; Send("ToMe_FONT status ggo char=" + std::to_string(GgoChar) + " index=" + std::to_string(GgoIndex) + " metrics=" + std::to_string(GgoMetrics)); } Sleep(1000); }
 }
 } // namespace
 
