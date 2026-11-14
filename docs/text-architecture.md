@@ -303,5 +303,12 @@ own opacity restored when MeguLit stops; a hidden-state change resends the line'
 100000 so they never collide with KAG `processCh` sentences. Live 2026-11-14 千恋＊万花: 『お客さん』, 「……ぁ？」, … boxes on
 every glyph, hidden=1 with the dialogue gone, back on reset.
 
+YU-RIS (サイコロジック・ラブコメディ, 2026-11-14): its only text APIs are CreateFontIndirectA + TextOutA +
+CreateDIBSection / GetDIBits / StretchDIBits. TextOutA rasterises each new character once into a DIB glyph cache (31
+calls for several lines), and the engine copies cached glyphs into the frame with its own CPU code before uploading it
+to Direct3D 9. Character positions exist only inside that internal blit, so neither ① (glyph dots: cached glyphs are
+reused), layer 4 (no glyph draw reaches the GPU) nor a ③ API hook applies; it needs reverse engineering of the cache-blit
+routine. Artemis (THE SHELL HD, D3D11, 64-bit): no Lua API is exported; handed to layer 4's D3D11 path.
+
 Not covered yet: Unity IL2CPP (BepInEx 6 + generated interop assemblies, or XUnity's IL2CPP build), canvas web engines,
 KiriKiri games drawing through the textrender plugin (Yuzusoft) or their own message-layer class, Ren'Py text outside the say screen.
