@@ -84,6 +84,7 @@ Face FaceOf(HDC dc) {
  Face f{L"", 0, 400}; HFONT font = (HFONT)GetCurrentObject(dc, OBJ_FONT); if (!font) return f;
  LOGFONTW lf{}; if (GetObjectW(font, sizeof lf, &lf)) { f.name = Clean(lf.lfFaceName); f.size = lf.lfHeight < 0 ? -lf.lfHeight : lf.lfHeight; f.weight = lf.lfWeight ? lf.lfWeight : 400; }
  EnterCriticalSection(&Gate); auto it = AnsiFonts.find(font); if (it != AnsiFonts.end()) f.name = it->second.name; LeaveCriticalSection(&Gate);
+ if (f.name.empty()) { wchar_t real[LF_FACESIZE] = {}; if (GetTextFaceW(dc, LF_FACESIZE, real) > 0) f.name = Clean(real); } // fonts whose LOGFONT carries no face name (seen in AdvHD and YU-RIS)
  if (f.size == 0) { TEXTMETRICW tm{}; if (GetTextMetricsW(dc, &tm)) f.size = tm.tmHeight - tm.tmInternalLeading; }
  return f;
 }
@@ -629,7 +630,7 @@ DWORD WINAPI Run(void *) {
  n += Hook(gdi, "AddFontResourceExA", (void *)&HAddFontResourceExA, (void **)&OAddFontResourceExA);
  Send("ToMe_FONT status gdi hooks " + std::to_string(n) + "/11");
  HANDLE ctl = CreateThread(NULL, 0, Control, NULL, 0, NULL); if (ctl) CloseHandle(ctl); // after the hooks: a pushed line always meets them
- for (;;) { LateHooks(); Report(); if (!GgoReported && GgoChar + GgoIndex + GgoMetrics >= 200) { GgoReported = 1; Send("ToMe_FONT status ggo char=" + std::to_string(GgoChar) + " index=" + std::to_string(GgoIndex) + " metrics=" + std::to_string(GgoMetrics)); } Sleep(1000); }
+ for (;;) { LateHooks(); Report(); if (!GgoReported && GgoChar + GgoIndex + GgoMetrics >= 200) { GgoReported = 1; std::string top; EnterCriticalSection(&Gate); for (auto &sc : Scores) if (top.size() < 300) top += " " + sc.src + ":" + Utf8(sc.face.name) + "/" + std::to_string(sc.face.size) + "=" + std::to_string(sc.chars); LeaveCriticalSection(&Gate); Send("ToMe_FONT status ggo char=" + std::to_string(GgoChar) + " index=" + std::to_string(GgoIndex) + " metrics=" + std::to_string(GgoMetrics) + " scores" + top); } Sleep(1000); }
 }
 } // namespace
 
