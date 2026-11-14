@@ -9,7 +9,7 @@ presents the result in MeguLit's own window over the game. This file is ②'s se
 |-------|------|
 | Compositor (capture, track, erase, draw, present, input) | `native/compositor/Compositor.cpp` → `native/MeguLitCompositor.exe` (x64, one build for 32- and 64-bit games) |
 | Dot finding / tracking / inpainting (portable C++, no Windows types) | `native/compositor/DotFinder.h` |
-| Forced borderless fullscreen | `native/borderless/Borderless.cpp` → `MeguLitBorderless32/64.dll`, `Launch.cpp` → `MeguLitLaunch32/64.exe` |
+| Forced borderless fullscreen | `native/borderless/Borderless.cpp` → `MeguLitBorderless32/64.dll`, `Launch.cpp` → `MeguLitBorderlessLaunch32/64.exe` |
 | MeguLit side (spawn, ① events → commands, events back) | `services/capture-compositor.cjs` (not wired into `runtime.cjs` yet) |
 | Tests | `native/compositor/selftest/DotSelfTest.cpp`, `selftest/replay.cjs` + `FramePlayer.cpp`, `native/borderless/selftest/bltest.cpp`, `validation/capture-compositor.test.cjs` |
 
@@ -139,7 +139,7 @@ Test aids: `--headless` (no window), `--demo` (the compositor paints spec-1 dots
 
 ## Forced borderless fullscreen (`native/borderless`)
 
-`MeguLitLaunch<bits>.exe <MeguLitBorderless<bits>.dll> <game.exe> [args]` starts the game suspended, loads the DLL,
+`MeguLitBorderlessLaunch<bits>.exe <MeguLitBorderless<bits>.dll> <game.exe> [args]` starts the game suspended, loads the DLL,
 resumes it — the hooks must be in place before the game creates its renderer. When the game asks for exclusive
 fullscreen it stays windowed and its window becomes borderless:
 

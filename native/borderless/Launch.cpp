@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// MeguLitLaunch32/64.exe <dll> <game.exe> [args...] — starts the game suspended, loads <dll> (MeguLitBorderless) into
+// MeguLitBorderlessLaunch32/64.exe <dll> <game.exe> [args...] — starts the game suspended, loads <dll> (MeguLitBorderless) into
 // it before any game code runs, then lets it go. Same bitness as the game. Prints the game's pid; exit code 0 = started.
 // The DLL must be in place before the game creates its renderer, which is why it cannot be injected later.
 #define WIN32_LEAN_AND_MEAN
@@ -11,7 +11,7 @@
 static const char Marker[] = "MeguLitBorderless ready mode=launcher";
 
 int wmain(int argc, wchar_t **argv) {
-  if (argc < 3) { std::fprintf(stderr, "%s\nMeguLitLaunch <dll> <game.exe> [args...]\n", Marker); return 2; }
+  if (argc < 3) { std::fprintf(stderr, "%s\nMeguLitBorderlessLaunch <dll> <game.exe> [args...]\n", Marker); return 2; }
   wchar_t dll[MAX_PATH]; if (!GetFullPathNameW(argv[1], MAX_PATH, dll, nullptr) || GetFileAttributesW(dll) == INVALID_FILE_ATTRIBUTES) { std::fwprintf(stderr, L"no dll\n"); return 2; }
   std::wstring cmd = L"\"" + std::wstring(argv[2]) + L"\"";
   for (int i = 3; i < argc; ++i) cmd += L" \"" + std::wstring(argv[i]) + L"\"";

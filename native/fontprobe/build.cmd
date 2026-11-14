@@ -13,6 +13,7 @@ if not exist "%MEGULIT_FONT_OUT%\obj32" mkdir "%MEGULIT_FONT_OUT%\obj32"
 if not exist "%MEGULIT_FONT_OUT%\obj64" mkdir "%MEGULIT_FONT_OUT%\obj64"
 if exist "%MEGULIT_VS_X86%" (call "%MEGULIT_VS_X86%" || exit /b 1) else (call "%MEGULIT_VS%" -arch=x86 -host_arch=x64 -no_logo || exit /b 1)
 cl %FLAGS% /Fo"%MEGULIT_FONT_OUT%\obj32\\" %SRC% /Fe:"%MEGULIT_FONT_OUT%\MeguLitFont32.dll" /link user32.lib gdi32.lib || exit /b 1
+cl /nologo /O2 /MT /EHsc /W3 /utf-8 /DUNICODE /D_UNICODE Launch.cpp /Fo"%MEGULIT_FONT_OUT%\obj32\\" /Fe:"%MEGULIT_FONT_OUT%\MeguLitLaunch32.exe" || exit /b 1
 endlocal & set "MEGULIT_FONT_OUT=%MEGULIT_FONT_OUT%"
 setlocal
 cd /d "%~dp0"
@@ -21,5 +22,6 @@ set SRC=FontProbe.cpp ..\scncapture\minhook\src\hook.c ..\scncapture\minhook\src
 set FLAGS=/nologo /O2 /MT /EHsc /LD /W3 /utf-8 /DUNICODE /D_UNICODE /DWIN32_LEAN_AND_MEAN
 call "%MEGULIT_VS%" -arch=x64 -host_arch=x64 -no_logo || exit /b 1
 cl %FLAGS% /Fo"%MEGULIT_FONT_OUT%\obj64\\" %SRC% /Fe:"%MEGULIT_FONT_OUT%\MeguLitFont64.dll" /link user32.lib gdi32.lib || exit /b 1
+cl /nologo /O2 /MT /EHsc /W3 /utf-8 /DUNICODE /D_UNICODE Launch.cpp /Fo"%MEGULIT_FONT_OUT%\obj64\\" /Fe:"%MEGULIT_FONT_OUT%\MeguLitLaunch64.exe" || exit /b 1
 del /q "%MEGULIT_FONT_OUT%\MeguLitFont32.exp" "%MEGULIT_FONT_OUT%\MeguLitFont32.lib" "%MEGULIT_FONT_OUT%\MeguLitFont64.exp" "%MEGULIT_FONT_OUT%\MeguLitFont64.lib" 2>nul
 endlocal

@@ -100,6 +100,30 @@ would never reach the dots.
 - **Erase rule for ②**: everything inside a found dot square is the dot; nothing else of the game's text is drawn for a
   matched character (the rest of the cell shows the game's background).
 
+### Early injection (engines that fill a glyph cache before MeguLit attaches)
+
+HookBridge attaches about a second after the game starts. Engines that rasterise their glyph cache at start-up (YU-RIS)
+or once per character (Siglus, BGI) keep real glyphs for everything they cached before that. `MeguLitLaunch<bit>.exe`
+(native/, built by `native/fontprobe/build.cmd`, bitness must match the game) starts the game suspended, loads
+`MeguLitFont<bit>.dll` into it before the main thread runs, waits for the DLL's `MeguLitFontReady-<pid>` event and then
+resumes it; it prints the game's pid.
+
+```
+set MEGULIT_GLYPH_MODE=dot-blind          (or dot)
+set MEGULIT_GLYPH_FONT=<px> <face>        (the remembered dialogue font, data\glyph-hide\<exe>-<size>.json)
+MeguLitLaunch32.exe <path to MeguLitFont32.dll> <game.exe> [args]
+```
+
+In MeguLit (core/glyph-dots.cjs) this is automatic when 文字显示 is `compositor` (gal-preferences.json `textRenderer`):
+the library's 启动 starts a plain-process game through the launcher with the remembered font, and HookBridge starts with
+`MEGULIT_GLYPH_MODE=dot`, `MEGULIT_GLYPH_ALL=1`, `MEGULIT_GLYPH_BLIND=1`. Steam, Locale Emulator and shell-open launches keep the late attach.
+
+The DLL reads both variables at start (no HookBridge yet) and serves dots from the first glyph. HookBridge attaches
+later as usual (the same DLL path is not loaded twice) and takes over with `MODE`/`LINE`. The late attach stays the
+fallback for every other launch path (Steam, Locale Emulator, shell open). The first launch of a game has no remembered
+font yet unless the line stream taught one; HookBridge stores the probe's dialogue font (`BlindSeed`) for the next one.
+Self-test: `run-dots.cmd` starts `earlyhost.exe` through the launcher (x86 and x64); its first glyph must be a dot.
+
 ### Reports (DLL → HookBridge, pipe `\\.\pipe\MeguLitFont-<pid>`, UTF-8 lines)
 
 ```
@@ -190,7 +214,7 @@ font probe (`ToMe_FONT` counts and the matcher's `placed`/`requested`):
 | 素晴らしき日々（BGI） | TextOutA per character at 136 px, scaled to ~28 px; EmbedBGI stream | **yes, live** with spec 2 dots (14 px before scaling, visible after): first line 9/9 incl. 「」, name untouched; later lines reuse cached dots. The START path hangs in the opening movie with or without MeguLit (game side); tested through LOAD (live\bgi-dots.png) |
 | CLANNAD（SiglusEngine, Steam build） | GetGlyphOutline rasterisation, ~36 px (scaled to the window), **once per character** (glyph cache) | **yes, live** with `all:true` on the `EmbedSiglus` stream: every character rasterised during a pushed line became a dot with the game's own shadow, at the right cell, advance unchanged (shot H:\MeguLit-Work\glyph-dots\live\clannad-siglus-dots*.png). Characters already in Siglus' cache are drawn as before, and a dotted character stays a dot wherever it is reused (also outside the dialogue) |
 | ISLAND（CatSystem2） | GetGlyphOutline rasterisation (ＭＳ ゴシック 28), every line re-rasterised | **yes, live**: every character of every line on the page became a dot (`all:true`, embed stream; live\island-cs2-dots.png) |
-| サイコロジック・ラブコメディ（YU-RIS） | none seen by the probe; LunaHook found no stream | no → ③ / engine hook |
+| サイコロジック・ラブコメディ（YU-RIS） | none: even with early injection (DLL in place before the main thread, hooks installed) the probe sees no GDI text and no GetGlyphOutline call for the whole run | no: its dialogue glyphs never pass through GDI in this process (likely prebuilt font data) → ③ / engine hook |
 | 月姫 PLUS+DISC（KiriKiri2, Chinese patch） | GDI rasterisation (宋体 22) | not with its stream: only a non-write-back `KiriKiri1` stream, whose text arrives after the glyphs are drawn (17 rasterised, 0 placed) |
 | 女装山脈 | — | did not start (launcher exits; probably needs a Japanese locale) |
 | いろとりどりのヒカリ（FAVORITE） | — | reached the title only; stopped because other sessions' game windows covered the screen |

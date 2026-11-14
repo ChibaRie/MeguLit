@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // MeguLitBorderless32/64.dll — forced borderless fullscreen (docs/text-architecture.md, ② capture compositor).
-// Loaded into the game before it creates its renderer (MeguLitLaunch32/64.exe starts the game suspended and loads it).
+// Loaded into the game before it creates its renderer (MeguLitBorderlessLaunch32/64.exe starts the game suspended and loads it).
 // When the game asks for exclusive fullscreen it stays windowed, and its window becomes borderless:
 //   - Direct3D 9: IDirect3D9::CreateDevice / IDirect3D9Ex::CreateDeviceEx / IDirect3DDevice9::Reset / ResetEx with
 //     Windowed = FALSE → TRUE (refresh rate 0, presentation interval limited to the windowed ones, no fullscreen mode);
