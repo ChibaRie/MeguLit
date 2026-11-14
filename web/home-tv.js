@@ -107,7 +107,7 @@ function swapScript(script,lines,onPick){if(!script)return;const esc2=t=>String(
  lines=lines.slice(-5);const next=lines.map(t=>/^[「『（("]/.test(t)?t:'「'+t+'」'),olds=[...script.querySelectorAll('p')];
  const bind=()=>script.querySelectorAll('p').forEach(el=>el.addEventListener('pointerenter',()=>{const n=+el.dataset.n;if(!lines[n])return;script.querySelectorAll('p').forEach(x=>x.classList.toggle('on',
   x===el));onPick(lines[n]);}));
- const paint=texts=>{script.innerHTML=texts.map((t,n)=>`<p class="${n?'':'on'}" data-n="${n}"><span class="tv-sno">${String(n+1).padStart(2,'0')}</span><span class="tv-stxt" lang="ja"${exAttr(t,null,esc2)}>${esc2(t)}</span></p>`).join('');
+ const paint=texts=>{script.innerHTML=texts.map((t,n)=>`<p class="${n?'':'on'}" data-n="${n}"><span class="tv-stxt" lang="ja"${exAttr(t,null,esc2)}>${esc2(t)}</span></p>`).join('');
   script.classList.toggle('is-empty',!texts.length);bind();};
  script.classList.remove('is-fading');const token=String(Math.random());script.dataset.timer=token;
  if(olds.length===next.length&&olds.every((el,k)=>{const x=el.querySelector('.tv-stxt');return (x?.dataset.exr??x?.textContent)===next[k];}))return;
@@ -216,6 +216,8 @@ export const DRAW_NAMES=Object.keys(DRAWS);
 function splitTitle(t){const m=String(t||'').match(/^(.+?)\s*[（(]([^（）()]+)[）)]\s*$/u);return m&&m[1].trim().length>1?[m[1].trim(),m[2].trim()]:[String(t||''),''];}
 /* 2026-11-13 (user: "不要左侧这么大一个作品名了") the game name is only the fallback when there is no daily headline, and it stays mid-sized */
 /* 2026-11-15 (user: 最左下角只要作品的随机一句话，不要和背景的句子同步，单独随机) the bottom-left line is its own random pick from every line the game has, never tied to the background script */
+const quoted=s=>/^[「『（("]/.test(s)?s:'「'+s+'」';
+function titleHTML(t){const esc3=x=>String(x).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]);return String(t).split(/[s　]+(?=[～〜~]|-S)/u).map(x=>`<span class="tv-seg">${esc3(x)}</span>`).join('');}
 function randomLine(d,background){const all=[...new Set([...(d?.sentences||[]).map(s=>String(s.text||'').trim()),...(d?.recentLines||[]).map(s=>String(s.text||'').trim()),...(Array.isArray(d?.homeAuto)?d.homeAuto:[]).map(t=>String(t||'').trim())].filter(Boolean).map(t=>t.replace(/\[[^\]]*\]/g,'').trim()).filter(t=>t.length>=6&&t.length<=56&&storyLine(t)))];
  const free=all.filter(t=>!background.slice(0,1).includes(t)),pool=free.length?free:all;return pool.length?pool[Math.floor(Math.random()*pool.length)]:'';}
 function fitTitle(h){const max=Math.min(76,Math.max(36,innerWidth*.04));let size=max;h.style.fontSize=size+'px';const limit=()=>h.scrollHeight>size*1.18*3+size*.3||h.scrollWidth>h.clientWidth+2;
@@ -294,8 +296,8 @@ export function renderHomeTV(main,ctx){
  /* 2026-11-13 (user: "左下角显示小字作品名 … 把之前删掉的那个动效…拿回来 放左下角最下面 点缀一下") the bottom bar is back as a quiet accent: the game name in
     small type rises in letter by letter, then one of its lines types itself out */
  const type=s=>{clearInterval(live.typer);let n=0;const line=$('.tv-line');if(!line)return;setExample(line,'');line.textContent='';line.classList.toggle('typing',!!s);if(!s)return;
-  if(matchMedia('(prefers-reduced-motion:reduce)').matches){line.textContent='「'+s+'」';line.classList.remove('typing');setExample(line,s);return;}
-  live.typer=setInterval(()=>{line.textContent='「'+s.slice(0,++n)+(n<s.length?'':'」');if(n>=s.length){clearInterval(live.typer);line.classList.remove('typing');setExample(line,s);}},55);};
+  if(matchMedia('(prefers-reduced-motion:reduce)').matches){line.textContent=quoted(s);line.classList.remove('typing');setExample(line,s);return;}
+  live.typer=setInterval(()=>{n++;line.textContent=n>=s.length?quoted(s):(/^[「『（("]/.test(s)?'':'「')+s.slice(0,n);if(n>=s.length){clearInterval(live.typer);line.classList.remove('typing');setExample(line,s);}},55);};
  const nameIn=g=>{const who=$('.tv-who');if(!who)return;who.classList.remove('in');who.innerHTML=[...String(g.title||'')].map((c,i)=>`<i style="transition-delay:${Math.min(i,40)*22}ms">${esc(c)}</i>`).join('');
   who.title=g.title+(g.lastPlayedAt?` · ${w.last} · ${relativeTime(g.lastPlayedAt)}`:'');void who.offsetWidth;requestAnimationFrame(()=>who.classList.add('in'));};
  const max=Math.max(1,...model.games.map(g=>g.characters||0));
@@ -322,7 +324,7 @@ export function renderHomeTV(main,ctx){
   $('.tv-slices').innerHTML=Array.from({length:5},(_,j)=>`<i style="background:${art(g,p)};background-size:500% 100%;background-position:${j*25}% 0;transform:translateZ(${j%2?40:-20}px) translateY(${(j-2)*12}px)"></i>`).join('');
 
   const no=String(Math.max(1,pool.indexOf(g)+1)).padStart(2,'0');
-  const t=$('.tv-title');t.classList.remove('in');setTimeout(()=>{if(mine!==token)return;const [mainTitle,subTitle]=splitTitle(g.title);$('.tv-h1').textContent=mainTitle;
+  const t=$('.tv-title');t.classList.remove('in');setTimeout(()=>{if(mine!==token)return;const [mainTitle,subTitle]=splitTitle(g.title);$('.tv-h1').innerHTML=titleHTML(mainTitle);
    $('.tv-h1').title=g.title;$('.tv-meta').innerHTML=(subTitle?`<span class="tv-sub" lang="ja">${esc(subTitle)}</span>`:'')+(g.lastPlayedAt?`<span>${w.last} · ${esc(relativeTime(g.lastPlayedAt))}</span>`:'');void t.offsetWidth;fitTitle($('.tv-h1'));
    fitLeft(root);requestAnimationFrame(()=>t.classList.add('in'));/* measure again once the new title has settled, so a block hidden mid-change comes back */setTimeout(()=>{
    if(live&&live.root===root)fitLeft(root);},900);},flash?Math.max(0,reveal-(performance.now()-started)):0);
