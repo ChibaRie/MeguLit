@@ -358,15 +358,26 @@ let launchInFlight=false,pendingHomeGame='';
 const playHomeMotion=createHomeMotion({frame:()=>document.querySelector('.app-frame'),reduced:()=>matchMedia('(prefers-reduced-motion:reduce)').matches});
 /* 2026-11-13 launch plate (user pick F1): while a launch runs the button says so and its foot line sweeps */
 const LAUNCHING={zh:'启动中…',ja:'起動中…',en:'Starting…'};
+/* the button itself is the progress bar: --lp-progress (0..1) fills it left to right. The value follows the launch's real stages
+   (launch_progress, the same milestones game-launch.log records) and only creeps toward the next one, never past it */
+const LAUNCH_FAILED={zh:'启动失败',ja:'起動に失敗',en:'Launch failed'};
+function trackLaunch(button,id){
+ if(!button)return {stop(){}};let shown=0,alive=true,state={p:0,next:.08,at:Date.now()};const set=v=>{shown=Math.max(shown,Math.min(1,v));button.style.setProperty('--lp-progress',shown.toFixed(4));};set(.02);
+ const poll=async()=>{if(!alive)return;try{const r=await api('launch_progress',{id});if(r&&r.state!=='idle')state={...r,got:Date.now()};}catch{}if(alive)setTimeout(poll,350);};poll();
+ const tick=setInterval(()=>{if(!alive)return;const age=Date.now()-(state.at||Date.now()),ease=1-Math.exp(-age/5000),p=state.p||0,next=state.next||1;
+  if(state.state==='done')set(1);else if(state.state!=='failed')set(p+(Math.max(p,Math.min(next,.98))-p)*.9*ease);},120);
+ return {stop(){alive=false;clearInterval(tick);}};
+}
+function launchFailed(button,reason){if(!button)return;button.dataset.launchState='failed';button.title=reason||'';const node=[...button.childNodes].filter(n=>(n.nodeType===3||(n.nodeType===1&&n.tagName!=='svg'))&&n.textContent.trim()).pop();if(node)node.textContent=LAUNCH_FAILED[locale]||LAUNCH_FAILED.zh;}
 function markLaunching(button,on){
- if(!button)return;const node=[...button.childNodes].filter(n=>(n.nodeType===3||(n.nodeType===1&&n.tagName!=='svg'))&&n.textContent.trim()).pop();
+ if(!button)return;if(!on){delete button.dataset.launchState;button.style.removeProperty('--lp-progress');button.removeAttribute('title');}const node=[...button.childNodes].filter(n=>(n.nodeType===3||(n.nodeType===1&&n.tagName!=='svg'))&&n.textContent.trim()).pop();
  if(on){button.setAttribute('aria-busy','true');if(node){button.dataset.idleLabel=node.textContent;node.textContent=LAUNCHING[locale]||LAUNCHING.zh;}return;}
  button.removeAttribute('aria-busy');if(node&&button.dataset.idleLabel!==undefined){node.textContent=button.dataset.idleLabel;delete button.dataset.idleLabel;}
 }
 async function startGame(id,button){
  if(launchInFlight)return;
- launchInFlight=true;if(button)button.disabled=true;markLaunching(button,true);
- let started=false;
+ launchInFlight=true;if(button)button.disabled=true;markLaunching(button,true);const tracker=trackLaunch(button,id);
+ let started=false,failed=false;
  try{
   await invoke('reader_open',{background:true});
   const result=await api('launch',{id});started=true;await waitReader();
@@ -374,9 +385,11 @@ async function startGame(id,button){
   /* v1.1.6 (user): launching a game no longer hides the home window; the game is just brought to the front */
   api('focus_game',{id}).catch(()=>{});model=await api('home');if(route==='home')home();
  }catch(error){
+  failed=true;
   const code=typeof error==='string'?error:error?.message;
   const [failure,close]=launchCopy(locale),title=started?({zh:'游戏已启动，MeguLit 连接失败',ja:'ゲームは起動済みです。MeguLit の接続に失敗しました',en:'Game started. MeguLit could not connect.'})[locale]:failure,
    reason=launchReason(code,locale)||errorMessage(error);
+  launchFailed(button,reason);
   const dialog=modal('<h2>'+title+'</h2><p>'+esc(reason)+'</p><div class="dialog-actions"><button class="secondary" data-launch-close>'+close+'</button></div>');
   dialog.querySelector('[data-launch-close]').onclick=()=>dialog.close();
   /* 2026-11-12 the game imports DirectPlay and Windows has none: install it here (no restart), then launch again */
@@ -393,7 +406,7 @@ async function startGame(id,button){
     openGameLanguage({id,api,invoke,locale,esc,toast,onChanged:async()=>{model=await api('home');renderRoute();}}).catch(()=>toast(text.serviceFailed));};dialog.querySelector('.dialog-actions').append(choose);
     }
   }
- }finally{launchInFlight=false;if(button)button.disabled=false;markLaunching(button,false);}
+ }finally{launchInFlight=false;tracker.stop();if(button)button.disabled=false;if(failed&&button)setTimeout(()=>markLaunching(button,false),2600);else{if(button)button.style.setProperty('--lp-progress','1');setTimeout(()=>markLaunching(button,false),button?260:0);}}
 }
 
 const seriesUI=createSeriesLibrary({model:()=>model,locale:()=>locale,text:()=>text,esc,icon,api,invoke,card,modal,duration,number,relativeTime,search:()=>search,
