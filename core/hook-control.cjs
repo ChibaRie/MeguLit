@@ -75,7 +75,8 @@ class HookControl{
      still in Japanese is the intended fallback while its translation is on the way, and OCR reads the drawn Chinese kanji as
      the original; no OCR cover then. */
   if(m.matched&&h.preferences?.embedTranslation===true&&h.preferences?.translationBlur!==true&&!(h.hooks?.state?.hookThreads||[]).some(t=>t.selected&&t.hideOnly===true)){this.status({hookCheckState:'replaced',hookVisualVerified:false,hookCheckMessage:'译文由游戏自己显示'});return;}
-  if(m.matched){if(h.hooks.lastSource)h.send({type:'maskAssist',source:h.hooks.lastSource});this.status({hookCheckState:'visible',hookVisualVerified:false,hookCheckMessage:'游戏原文仍然可见，本句已临时用遮罩盖住'});return;}
+  /* 2026-11-15 P0 (user: 「不允许任何打马赛克和模糊」): the OCR cover (maskAssist) is never drawn again, whatever the check finds */
+  if(m.matched){this.status({hookCheckState:'visible',hookVisualVerified:false,hookCheckMessage:'游戏原文仍然可见'});return;}
   if(m.sample<2)return;
   const drawFresh=(h.hooks.state.hookDrawAt||0)>=this.sourceAt-1800;
   if(this.baseline&&(drawFresh||h.hooks.state.replacementState==='callback-acknowledged')&&m.japaneseCharacters===0){this.status({hookCheckState:'verified',hookVisualVerified:true,hookCheckedAt:m.checkedAt,hookCheckMessage:'隐藏检查通过：绘制已拦截，连续两次未在游戏扫描区识别到日文'});}
