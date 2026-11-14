@@ -25,6 +25,11 @@ test('glyph-dots: off by default; compositor setting turns on the launcher and t
       fs.writeFileSync(path.join(root, 'data', 'glyph-hide', '___.exe-100.json'), JSON.stringify({face: 'MS Gothic', size: 20}));
       e = g.earlyStart(root, exe, [], true); assert.equal(e.env.MEGULIT_GLYPH_FONT, '20 MS Gothic', 'remembered font, HookBridge file naming');
       assert.equal(g.earlyStart(root, exe, [], false), null, '64-bit game needs MeguLitLaunch64');
+      const le = path.join(root, 'le'); fs.mkdirSync(le);
+      const l = g.earlyLocale(root, le, exe);
+      assert.equal(l.file, path.join(le, 'MeguLitLaunch32.exe'), '日文环境: the launcher runs from a copy in the LE folder');
+      assert.ok(fs.existsSync(l.file)); assert.equal(l.env.MEGULIT_LAUNCH_LE, le); assert.equal(l.env.MEGULIT_GLYPH_MODE, 'dot-blind');
+      assert.equal(g.earlyLocale(root, path.join(root, 'missing'), exe), null, 'copy fails: LEProc path');
     } finally { if (saved === undefined) delete process.env.MEGULIT_GLYPH_MODE; else process.env.MEGULIT_GLYPH_MODE = saved; }
   } finally { fs.rmSync(root, {recursive: true, force: true}); }
 });
@@ -35,5 +40,7 @@ test('launch flow: direct starts use the launcher (helper, not indirect); Steam 
   assert.ok(b.includes("startProcess(early?early.file:steam?'explorer.exe':launchExe,early?early.args:"));
   assert.ok(b.includes('{helper:steam||!!early,indirect:steam,'), 'the launcher exiting is not the game exiting; a game that quits at once is still seen');
   assert.ok(read('core/hook-native.cjs').includes("env:{...process.env,...require('./glyph-dots.cjs').bridgeEnv(path.join(this.folder,'..'))}"));
-  assert.match(read('docs/text-architecture.md'), /Locale Emulator and shell-open launches keep the late attach/);
+  const lc = read('core/locale-emulator.cjs');
+  assert.ok(lc.includes("const early=require('./glyph-dots.cjs').earlyLocale(this.root,s.dir,launchExe);")&&lc.includes("trace('locale-early-failed'"),'日文环境 tries the early launcher, falls back to LEProc');
+  assert.ok(read('native/fontprobe/Launch.cpp').includes('GetProcAddress(m, "LeCreateProcess")'),'launcher creates through LE loader');
 });
