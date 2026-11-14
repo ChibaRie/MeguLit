@@ -757,7 +757,7 @@ private:
       if (p >= 0) { const Dot &a = r.dots[size_t(realAt[size_t(p)])]; d = a; d.cx = a.cx + pitch * .75f + pitch * .5f * before; }
       else if (n < total) { const Dot &a = r.dots[size_t(realAt[size_t(n)])]; d = a; d.cx = a.cx - pitch * .75f - pitch * .5f * after; }
       else return;
-      d.box = { int(d.cx - pitch * .3f), int(d.cy - pitch * .5f), int(d.cx + pitch * .3f) + 1, int(d.cy + pitch * .5f) + 1 };
+      d.box = { int(d.cx - pitch * .3f), int(d.cy - pitch * .5f), int(d.cx + pitch * .3f) + 1, int(d.cy + pitch * .5f) + 1 }; d.cell = true;
       if (d.box.x0 < 0 || d.box.x1 > srcW || d.box.y0 < 0 || d.box.y1 > srcH) return;
       out.push_back(d);
     }
@@ -814,7 +814,7 @@ private:
       if (b.right <= b.left || b.bottom <= b.top) return;
       ctx->UpdateSubresource(srcTex.get(), 0, &b, static_cast<uint8_t *>(map.pData) + size_t(b.top) * map.RowPitch + size_t(b.left) * 4, map.RowPitch, 0);
     };
-    if (!cur.rectMode) for (const Dot &d : lastResult.dots) patch(d.box); // ③ lines: the game drew nothing to erase
+    if (!cur.rectMode) for (const Dot &d : lastResult.dots) patch(d.box, d.cell); // ③ lines: the game drew nothing to erase
     for (const auto &k : lastResult.kept) if (kept.count(k.id)) for (const Dot &d : k.dots) patch(d.box);
     if (choicesOn && !menuMarks.empty()) for (const Dot &d : menuMarks) patch(d.box);
     if (choicesOn && lastChoices.ok && !choiceUndot) for (const auto &it : lastChoices.items) {

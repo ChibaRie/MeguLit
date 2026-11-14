@@ -33,6 +33,7 @@ struct Dot {
   Box box;                // pixels covered, x1/y1 exclusive
   float alpha = 1;        // 1 = full text colour, lower while the game fades the line
   Rgb color;              // mean colour of the dot core
+  bool cell = false;      // a placed character cell (not a found mark): erased exactly, no flood
 };
 
 struct LineSpec {
