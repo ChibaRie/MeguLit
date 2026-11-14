@@ -447,7 +447,12 @@ public class GalWindowBridge {
         else if(type=="hitRegions"){MenuRegionReady=Bool(d,"menuOpen");RegionAckPending=MenuRegionReady;HitRegions.Clear();object regions;if(d.TryGetValue("regions",out regions)&&regions is System.Collections.ArrayList){foreach(object item in (System.Collections.ArrayList)regions){var rect=item as Dictionary<string,object>;if(rect==null||HitRegions.Count>=256)continue;double x=Num(rect,"x",0),y=Num(rect,"y",0),w=Num(rect,"width",0),h=Num(rect,"height",0);if(w>0&&h>0&&w<=16384&&h<=16384&&Math.Abs(x)<32768&&Math.Abs(y)<32768)HitRegions.Add(new HitRegion{Bounds=new Rect((int)x,(int)y,(int)(x+w),(int)(y+h)),Pass=Bool(rect,"pass")});}}
             // Over a bound game apply the new region right away instead of in the next tick (which also captures the game
             // for text and marker detection and made the menu wait ~170 ms before it could open).
-            if(TranslationMode&&Target!=IntPtr.Zero&&Overlay!=IntPtr.Zero&&Captured&&HasLastRect&&IsShown){ApplyRegion(LastRect.Right-LastRect.Left,LastRect.Bottom-LastRect.Top);AckRegion();}RefreshReaderPointer();}
+            if(TranslationMode&&Target!=IntPtr.Zero&&Overlay!=IntPtr.Zero&&Captured&&HasLastRect&&IsShown){ApplyRegion(LastRect.Right-LastRect.Left,LastRect.Bottom-LastRect.Top);AckRegion();}
+            /* 2026-11-15 (user video: Alt+T resized by its edge showed blank areas and clipped content): the desktop-wide host
+               (no bound game) applied a new region only on the next 100 ms tick, so the whole-layer region a drag or resize
+               asks for arrived after the panel had already grown. Apply it at once here too. */
+            else if(PreferredOverlay!=IntPtr.Zero&&(!TranslationMode||Target==IntPtr.Zero)&&Overlay!=IntPtr.Zero&&IsShown&&MenuOpen&&MenuRegionReady&&HitRegions.Count>0){Rect menuClient;if(GetClientRect(Overlay,out menuClient)){ApplyRegion(menuClient.Right,menuClient.Bottom);AckRegion();}}
+            RefreshReaderPointer();}
         else if(type=="glass")GlassCommand(d);
         else if(type=="lookup"){bool open=Bool(d,"open")&&TranslationMode&&CoverEnabled;if(open!=LookupOpen){LookupOpen=open;HasLastRect=false;Rect client;if(Overlay!=IntPtr.Zero&&IsShown&&GetClientRect(Overlay,out client))ApplyRegion(client.Right,client.Bottom);RefreshReaderPointer();}}
         else if(type=="quit")Running=false;

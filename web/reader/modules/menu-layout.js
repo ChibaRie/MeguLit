@@ -78,6 +78,12 @@
  .tomoyo-cn-dialog .tomoyo-slider-value { color:var(--menu-accent)!important;font-size:12px; }
  .tomoyo-cn-dialog .tomoyo-mask-state,.tomoyo-cn-dialog .tomoyo-gal-state,.tomoyo-cn-dialog .tomoyo-cn-status { font-size:11px;color:var(--theme-textSecondary,#aaa)!important;overflow-wrap:anywhere; }
  `;(document.head||document.documentElement).appendChild(style);
+ /* A drag or resize first asks for one whole-layer window region (interaction.js) and only then moves the panel:
+    the region reaches the native side about 90 ms after pointerdown (page, Tauri, service, bridge), and a panel that
+    grew or moved before that was clipped at its moving edge (2026-11-15, user video). Resolves on the bridge's
+    region acknowledgement, or after 200 ms when there is none (an older bridge, or no bridge at all). */
+ const surfaceReady=()=>new Promise(resolve=>{let done=false;const finish=()=>{if(done)return;done=true;removeEventListener('tome-region-applied',finish);clearTimeout(timer);resolve();};
+  addEventListener('tome-region-applied',finish);const timer=setTimeout(finish,200);window.__tomoyoHitRegionsRefresh?.(true);});
  function installMenuDrag(dialog){
   const header=dialog.querySelector('.tomoyo-menu-header');if(!header||header.dataset.menuDrag)return;header.dataset.menuDrag='true';
   const key='tomoyo-menu-position-'+(document.body.classList.contains('tomoyo-ui-translation')?'overlay':'normal');
@@ -94,8 +100,9 @@
    const r=dialog.getBoundingClientRect(),start=place(r.left,r.top);let pos=start,frame=0,lastEvent=down;
    dialog.classList.remove('tome-menu-settle');dialog.classList.add('tomoyo-menu-resizing','tome-menu-dragging');
    const paint=()=>{frame=0;pos=clamp(start.x+lastEvent.clientX-down.clientX,start.y+lastEvent.clientY-down.clientY,r.width,r.height);dialog.style.setProperty('transform','translate3d('+(pos.x-start.x)+'px,'+(pos.y-start.y)+'px,0)','important');};
-   const move=e=>{lastEvent=e.getCoalescedEvents?.().at(-1)||e;if(!frame)frame=requestAnimationFrame(paint);};
-   const up=()=>{header.removeEventListener('pointermove',move);header.removeEventListener('pointerup',up);header.removeEventListener('pointercancel',up);if(frame){cancelAnimationFrame(frame);paint();}
+   let ready=false,ended=false;surfaceReady().then(()=>{ready=true;if(!ended&&lastEvent!==down&&!frame)frame=requestAnimationFrame(paint);});
+   const move=e=>{lastEvent=e.getCoalescedEvents?.().at(-1)||e;if(ready&&!frame)frame=requestAnimationFrame(paint);};
+   const up=()=>{ended=true;header.removeEventListener('pointermove',move);header.removeEventListener('pointerup',up);header.removeEventListener('pointercancel',up);if(frame)cancelAnimationFrame(frame);if(frame||lastEvent!==down)paint();
     dialog.style.removeProperty('transform');place(pos.x,pos.y);dialog.classList.remove('tome-menu-dragging');dialog.classList.add('tome-menu-settle');dialog.classList.remove('tomoyo-menu-resizing');setTimeout(()=>dialog.classList.remove('tome-menu-settle'),220);try{localStorage.setItem(key,JSON.stringify(pos));}catch{}};
    header.addEventListener('pointermove',move);header.addEventListener('pointerup',up);header.addEventListener('pointercancel',up);
   });
@@ -159,27 +166,40 @@
   bridge.calibrationMenuOpened?.(dialog);
   // Resizable like a normal window: drag any edge or corner. Size is remembered; double-click an edge to reset.
   // Normal window and translation overlay have very different sizes, so each mode remembers its own menu size.
-  const MIN_W=380,MIN_H=360,SIZE_KEY='tomoyo-menu-size-'+(document.body.classList.contains('tomoyo-gal-bound')||document.body.classList.contains('tomoyo-ui-translation')?'overlay':'normal');
+  /* 2026-11-15 (user video: dragging an edge left blank black areas, clipped the footer, flashed and jumped the panel):
+     the edge drag now works like the header drag. The panel carries tomoyo-menu-resizing for the whole gesture, so the
+     window region stays one whole-layer rectangle and the glass reads the whole layer (no per-frame SetWindowRgn the
+     bridge cannot keep up with); the new size is laid out once per frame; release writes size and position together.
+     The minimum keeps the tab rail, a few rows of content and the footer usable; the content scrolls. */
+  const MIN_W=440,MIN_H=460,SIZE_KEY='tomoyo-menu-size-'+(document.body.classList.contains('tomoyo-gal-bound')||document.body.classList.contains('tomoyo-ui-translation')?'overlay':'normal'),
+   POS_KEY='tomoyo-menu-position-'+(document.body.classList.contains('tomoyo-ui-translation')?'overlay':'normal');
   const applySize=(w,h)=>{dialog.style.setProperty('width',w+'px','important');dialog.style.setProperty('max-width','calc(100vw - 8px)','important');dialog.style.setProperty('max-height','calc(100vh - 8px)','important');form.style.setProperty('height',h+'px','important');};
   // A size clamped to the minimum was recorded while the reader was confined to the floating text box (2026-11-02):
   // it is ignored, and nothing is recorded while the window itself is that small.
-  try{const saved=JSON.parse(localStorage.getItem(SIZE_KEY)||'null');if(saved&&saved.w>=MIN_W&&saved.h>MIN_H+4)applySize(Math.min(saved.w,innerWidth-8),Math.min(saved.h,innerHeight-10));}catch{}
+  try{const saved=JSON.parse(localStorage.getItem(SIZE_KEY)||'null');if(saved&&saved.w>=380&&saved.h>364)applySize(Math.max(Math.min(MIN_W,innerWidth-8),Math.min(saved.w,innerWidth-8)),Math.max(Math.min(MIN_H,innerHeight-10),Math.min(saved.h,innerHeight-10)));}catch{}
   for(const edge of ['n','s','e','w','nw','ne','sw','se']){
    const handle=document.createElement('div');handle.className='tomoyo-menu-resize';handle.dataset.edge=edge;dialog.appendChild(handle);
-   handle.addEventListener('dblclick',()=>{for(const p of ['width','max-width','max-height','left','top','right','bottom','margin'])dialog.style.removeProperty(p);form.style.removeProperty('height');try{localStorage.removeItem(SIZE_KEY);}catch{}});
+   handle.addEventListener('dblclick',()=>{for(const p of ['width','max-width','max-height','left','top','right','bottom','margin'])dialog.style.removeProperty(p);form.style.removeProperty('height');try{localStorage.removeItem(SIZE_KEY);}catch{}window.__tomoyoHitRegionsRefresh?.(true);});
    handle.addEventListener('pointerdown',down=>{
     if(down.button!==0)return;down.preventDefault();down.stopPropagation();handle.setPointerCapture(down.pointerId);
     const r=dialog.getBoundingClientRect(),startH=form.getBoundingClientRect().height,extra=r.height-startH;
     // Pin the dialog where it is so growing one edge does not move the opposite one.
     for(const [p,v] of [['left',r.left+'px'],['top',r.top+'px'],['right','auto'],['bottom','auto'],['margin','0']])dialog.style.setProperty(p,v,'important');
-    dialog.classList.add('tomoyo-menu-resizing');let w=r.width,h=startH;
-    const move=e=>{const dx=e.clientX-down.clientX,dy=e.clientY-down.clientY;let left=r.left,top=r.top;w=r.width;h=startH;
-     if(edge.includes('e'))w=Math.max(MIN_W,Math.min(innerWidth-r.left-4,r.width+dx));
-     if(edge.includes('w')){w=Math.max(MIN_W,Math.min(r.right-4,r.width-dx));left=r.right-w;}
-     if(edge.includes('s'))h=Math.max(MIN_H,Math.min(innerHeight-r.top-extra-4,startH+dy));
-     if(edge.includes('n')){h=Math.max(MIN_H,Math.min(r.bottom-extra-4,startH-dy));top=r.bottom-extra-h;}
-     dialog.style.setProperty('left',left+'px','important');dialog.style.setProperty('top',top+'px','important');applySize(Math.round(w),Math.round(h));};
-    const up=()=>{handle.removeEventListener('pointermove',move);handle.removeEventListener('pointerup',up);handle.removeEventListener('pointercancel',up);dialog.classList.remove('tomoyo-menu-resizing');if(innerHeight>=520)try{localStorage.setItem(SIZE_KEY,JSON.stringify({w:Math.round(w),h:Math.round(h)}));}catch{}};
+    dialog.classList.remove('tome-menu-settle');dialog.classList.add('tomoyo-menu-resizing');
+    let w=r.width,h=startH,left=r.left,top=r.top,frame=0,last=down,ready=false,ended=false;
+    const minW=Math.min(MIN_W,innerWidth-8),minH=Math.min(MIN_H,innerHeight-extra-8);
+    const paint=()=>{frame=0;const dx=last.clientX-down.clientX,dy=last.clientY-down.clientY;left=r.left;top=r.top;w=r.width;h=startH;
+     if(edge.includes('e'))w=Math.max(minW,Math.min(innerWidth-r.left-4,r.width+dx));
+     if(edge.includes('w')){w=Math.max(minW,Math.min(r.right-4,r.width-dx));left=r.right-w;}
+     if(edge.includes('s'))h=Math.max(minH,Math.min(innerHeight-r.top-extra-4,startH+dy));
+     if(edge.includes('n')){h=Math.max(minH,Math.min(r.bottom-extra-4,startH-dy));top=r.bottom-extra-h;}
+     w=Math.round(w);h=Math.round(h);left=Math.round(left);top=Math.round(top);
+     dialog.style.setProperty('left',left+'px','important');dialog.style.setProperty('top',top+'px','important');applySize(w,h);};
+    surfaceReady().then(()=>{ready=true;if(!ended&&last!==down&&!frame)frame=requestAnimationFrame(paint);});
+    const move=e=>{last=e.getCoalescedEvents?.().at(-1)||e;if(ready&&!frame)frame=requestAnimationFrame(paint);};
+    const up=()=>{ended=true;handle.removeEventListener('pointermove',move);handle.removeEventListener('pointerup',up);handle.removeEventListener('pointercancel',up);if(frame)cancelAnimationFrame(frame);if(frame||last!==down)paint();
+     dialog.classList.remove('tomoyo-menu-resizing');window.__tomoyoHitRegionsRefresh?.(true);
+     if(innerHeight>=520)try{localStorage.setItem(SIZE_KEY,JSON.stringify({w,h}));localStorage.setItem(POS_KEY,JSON.stringify({x:left,y:top}));}catch{}};
     handle.addEventListener('pointermove',move);handle.addEventListener('pointerup',up);handle.addEventListener('pointercancel',up);
    });
   }
