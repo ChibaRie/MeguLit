@@ -46,7 +46,7 @@ class Reader{
     this.gal?.send({type:'gameUi',items:[]});this.immersion.scene(kind==='dialogue');
    }
   }
-  /* E322: every whole-layer hide or show is logged with its cause (user: the layer faded out by itself in several games). */if(message.type==='dialogScene'||message.type==='dialogSceneKept')this.logVisibility({type:message.type,visible:message.visible,reason:message.reason});if(message.type==='dialogScene')this.immersion.scene(message.visible,'scene '+(message.reason||''));
+  /* E322: every whole-layer hide or show is logged with its cause (user: the layer faded out by itself in several games). */if(message.type==='dialogScene'||message.type==='dialogSceneKept')this.logVisibility({type:message.type,visible:message.visible,reason:message.reason});if(message.type==='dialogScene'){/* E578: the game hid or showed its text window (box band only): followed with immersion off too */if(message.box===true)this.immersion.window(message.visible,'window '+(message.reason||''));else this.immersion.scene(message.visible,'scene '+(message.reason||''));}
   if(message.type==='dialogAuto')this.immersion.autoBox(message.visible);
   if(message.type==='readerInput'){if(message.complete===true){this.immersion.input?.();this.gal?.hooks?.advance?.();}this.immersion.skip(message.skipHeld);if(typeof message.skipHeld==='boolean')this.gal?.hooks?.skipHeld?.(message.skipHeld);}
   if(message.type==='hookDialog')this.immersion.engine(message.visible,message.engine);

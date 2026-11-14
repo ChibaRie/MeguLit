@@ -18,6 +18,8 @@ namespace MeguLitGdiHide
   inline std::atomic<bool> Attached = false;
   // Set by solvefont: an EMBED_ABLE hook asked for the font hijack, so the GDI functions also switch fonts.
   inline bool FontWanted = false;
+  // The first strings seen after arming are logged (fn, length, first character, decision), so a game whose text never matches can be diagnosed from the log.
+  inline std::atomic<long> Seen = 0;
   constexpr DWORD NewLineGap = 400, ArmedFor = 60000, SingleCharWindow = 3000, RubyWindow = 3000;
   constexpr size_t MaxLine = 2048;
 
@@ -145,6 +147,11 @@ namespace MeguLitGdiHide
         ruby = true;
     }
     ReleaseSRWLockShared(&Lock);
+    if (Seen < 12 && now - LastFeed < ArmedFor)
+    {
+      Seen++;
+      Msg::Log("MeguLit_GDIHIDE seen fn=%s n=%d first=%04x hit=%d ruby=%d on=%d", fn, (int)drawn.size(), (unsigned)drawn[0], (int)hit, (int)ruby, (int)check_embed_able(tp));
+    }
     if (!armed || !(hit || ruby) || !check_embed_able(tp))
       return false;
     TEXTMETRICW tm;
@@ -166,6 +173,39 @@ namespace MeguLitGdiHide
     if (report)
       Msg::Log("MeguLit_GDIHIDE hit fn=%s size=%ld n=%d", fn, height, (int)drawn.size());
     return true;
+  }
+
+  // Character blanking (E578 live: an engine that draws its dialogue from bitmap font atlases makes no GDI text call).
+  // A per-character hook that reads its UTF-16 character straight from a stack argument hands the engine that very
+  // character; when the host switched that stream on, the engine gets a blank of the same width instead, so it lays
+  // the line out unchanged and draws nothing. ASCII stays (script markup such as ruby tags), controls stay.
+  inline long BlankLine = -1;
+  inline wchar_t BlankFor(wchar_t c)
+  {
+    if (c < 0x80 || c == 0x3000 || (c >= 0xd800 && c <= 0xdfff) || (c >= 0xfe00 && c <= 0xfe0f))
+      return c;
+    if (c >= 0xff61 && c <= 0xffdc)
+      return L' ';
+    return 0x3000;
+  }
+  // Called after Feed for the same character; returns the character to hand back to the engine.
+  inline wchar_t BlankChar(wchar_t c)
+  {
+    wchar_t b = BlankFor(c);
+    if (b == c)
+      return c;
+    bool report = false;
+    AcquireSRWLockExclusive(&Lock);
+    if (BlankLine != Line)
+    {
+      BlankLine = Line;
+      report = Reported != Line;
+      Reported = Line;
+    }
+    ReleaseSRWLockExclusive(&Lock);
+    if (report)
+      Msg::Log("MeguLit_GDIHIDE hit fn=charblank size=0 n=1");
+    return b;
   }
 
   inline bool SkipA(HDC hdc, const char *s, int n, const char *fn)

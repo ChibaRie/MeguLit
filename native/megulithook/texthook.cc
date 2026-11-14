@@ -373,7 +373,9 @@ void TextHook::Send(hook_context *context)
 
 		parsenewlineseperator(&buff);
 
-		bool canembed;
+		/* MeguLit E578: upstream left this unset for a hook that is not EMBED_ABLE; it was harmless while such a stream was never
+		   switched on, but the GDI hide switches it on and the garbage value made every character wait ~1 s for a write-back */
+		bool canembed = false;
 		if (hp.type & EMBED_ABLE)
 		{
 			if (!checklengthembedable(hp, buff.size))
@@ -395,7 +397,16 @@ void TextHook::Send(hook_context *context)
 		TextOutput(tp, hp, buffer, buff.size);
 		/* MeguLit: a stream that cannot write back is hidden where the game draws it through GDI (MeguLitGdiHide.h) */
 		if (!(hp.type & EMBED_ABLE) && check_embed_able(tp))
+		{
 			MeguLitGdiHide::Feed(tp, hp, buff);
+			/* MeguLit E578: a character read straight from a stack argument is the one the engine will draw: hand it a blank */
+			if (buff.size == 2 && (hp.type & CODEC_UTF16) && !(hp.type & (DATA_INDIRECT | USING_STRING | CSHARP_STRING)) && !text_fun && hp.jittype == JITTYPE::PC && plpdatain)
+			{
+				wchar_t c = *(wchar_t *)buff.data, b = MeguLitGdiHide::BlankChar(c);
+				if (b != c && ((*plpdatain) & 0xffff) == c)
+					*plpdatain = ((*plpdatain) & ~(uintptr_t)0xffff) | b;
+			}
+		}
 
 		if (canembed && (check_embed_able(tp)))
 		{
