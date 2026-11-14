@@ -1,0 +1,157 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+'use strict';
+/* Text architecture, overlay placement (2026-11-14, replaces the capture compositor as the default).
+   The sources stop the game drawing the current line (blank glyphs, opacity 0 layers, alpha 0 renderers) and report
+   where every character is. This host turns those reports into one `textPlace` message per line for the reader
+   overlay (web/reader/modules/text-place.js), which draws MeguLit's Japanese, ruby and translation at exactly those
+   boxes and keeps its usual interaction (word card, drag-select, clicks elsewhere go to the game).
+   Positions come from the sources only, never from screen pixels:
+     - ③ hookCharRects (KiriKiri, Unity, Ren'Py, web): game-screen px + viewport → client px;
+     - ① hookGlyphDots records with a cell position (MeguLitFont v4, blank mode): client px of each cell.
+   Switched on by 文字显示 = 画进游戏画面 (gal-preferences textRenderer 'compositor'), unless the old capture compositor is
+   forced for tests (MEGULIT_CAPTURE_COMPOSITOR=1). */
+const fs = require('node:fs'), path = require('node:path');
+const { rectsToClient } = require('./compositor-host.cjs');
+
+class OverlayPlacement {
+  constructor({ root, send = () => {} } = {}) {
+    this.root = root; this.send = send; this.client = [0, 0]; this.current = null; this.on = false;
+  }
+  wanted(preferences) {
+    if (process.env.MEGULIT_CAPTURE_COMPOSITOR === '1') return false;
+    if (this.root) try {
+      const file = path.join(this.root, 'data', 'config', 'gal-preferences.json'), t = fs.statSync(file).mtimeMs;
+      if (t !== this.settingTime) { this.settingTime = t; this.setting = JSON.parse(fs.readFileSync(file, 'utf8').replace(/^﻿/, '')).textRenderer; }
+      if (this.setting) return this.setting === 'compositor';
+    } catch {}
+    return preferences?.textRenderer === 'compositor';
+  }
+  configure(preferences, state) {
+    /* GalWindowBridge reports the client size in its layout message (state.layout); older callers passed it flat */
+    const size = state?.layout?.clientWidth ? state.layout : state;
+    if (size?.clientWidth && size?.clientHeight) this.client = [size.clientWidth, size.clientHeight];
+    const on = this.wanted(preferences) && state?.bound === true;
+    if (on !== this.on) { this.on = on; if (!on) { this.clear(); if (this.extraKey && this.extraKey !== '[]') this.send({ type: 'textPlaceExtra', items: [] }); this.extraKey = ''; } this.send({ type: 'textPlaceMode', on }); }
+  }
+  clear() { if (this.current) { this.current = null; this.send({ type: 'textPlace', clear: true }); } }
+  hook(m) {
+    if (!this.on || !m) return;
+    /* engine position hooks (hookTextPos: line box in game-screen px) anchor lines that come without device positions */
+    if (m.type === 'hookTextPos') { const k = m.sw > 0 && this.client[0] ? this.client[0] / m.sw : 1, ky = m.sh > 0 && this.client[1] ? this.client[1] / m.sh : k; if ([m.x0, m.y0, m.x1, m.size].every(Number.isFinite) && m.size > 0) this.anchor({ x: m.x0 * k, y: m.y0 * ky, size: m.size * ky, width: Math.max((m.x1 - m.x0) * k, m.size * ky * 16) }); return; }
+    if (m.type === 'hookCharRects') {
+      const chars = [...String(m.text || '')].map(c => c === '\u001f' ? '\n' : c), flat = [];
+      for (const c of chars) if (c !== '\n' && c !== '\r') flat.push(c);
+      const rects = rectsToClient(m, this.client[0], this.client[1]);
+      if (rects.length !== flat.length) return; // one rect per character is the protocol; anything else is not placeable
+      const id = String(m.engine || 'path') + ':' + (Number(m.line) || 0);
+      if (m.hidden !== true) { if (this.current?.id === id) this.clear(); return; }
+      const line = { id, engine: m.engine, text: flat.join(''), rects, client: this.client.slice() };
+      this.learn(rects);
+      const key = JSON.stringify(line);
+      if (key === this.lastKey) return; this.lastKey = key; this.current = line;
+      this.send({ type: 'textPlace', ...line });
+    }
+  }
+  /* ① MeguLitFont blank mode (record spec 3): the current line's table (hook-native state.hookGlyphDots) with a cell
+     origin per character. Spaces: c = client px, m<W>x<H> / t<W>x<H> = a surface of that size (scaled to the client),
+     g / - = no device position (not placeable). A character the engine drew from its glyph cache has no record: it sits
+     right after the previous placed one on the same row (advance), as long as a later character of the line was drawn. */
+  glyph(table) {
+    if (!this.on || !table || typeof table.text !== 'string' || !table.text) return;
+    const chars = [...table.text], { rects, drawn, sizes } = this.rectsOf(table, ['d', 'c']);
+    let last = -1; for (let i = rects.length - 1; i >= 0; i--) if (rects[i]) { last = i; break; }
+    const id = 'glyph:' + (Number(table.seq) || 0);
+    if (last >= 0) {
+      for (let i = 1; i < last; i++) if (!rects[i] && rects[i - 1]) { const p = rects[i - 1]; rects[i] = [p[0] + p[2], p[1], p[2], p[3]]; }
+      this.learn(rects);
+      return this.emitLine({ id, engine: 'glyph', text: table.text, rects, client: this.client.slice() });
+    }
+    /* no device position at all (GetGlyphOutline engines: Siglus, AdvHD...): lay the line out from the anchor (the last
+       exactly placed line of this game, or an outside locator: anchor()), one advance per character, wrapping at the
+       anchor's width; only characters the game has drawn so far (typing). Without an anchor: fallback. */
+    /* glyph-dots' locating marks learned this game's text position (core/glyph-locate-host.cjs) */
+    const located = this.locator?.(table);
+    if (Array.isArray(located) && located.length === chars.length && located.some(Boolean)) { this.learn(located); return this.emitLine({ id, engine: 'glyph', text: table.text, rects: located, client: this.client.slice(), located: true }); }
+    if (this.anchorBox) return this.emitLine({ id, engine: 'glyph', text: table.text, rects: this.estimate(chars, drawn, sizes), client: this.client.slice(), approx: true });
+    this.emitLine({ id, engine: 'glyph', text: table.text, fallback: true, client: this.client.slice() });
+  }
+  /* one box per character of a glyph table (null = no record / no device position); kinds: record kinds that count */
+  rectsOf(table, accept) {
+    const chars = [...table.text], rects = new Array(chars.length).fill(null), kinds = new Array(chars.length).fill(''), [cw, ch] = this.client;
+    const drawn = new Set(), sizes = [];
+    for (const d of Array.isArray(table.dots) ? table.dots : []) {
+      if (!d || !accept.includes(d.k) || !(d.i >= 0 && d.i < chars.length)) continue;
+      if (d.ch && d.ch !== chars[d.i]) continue;
+      drawn.add(d.i); if (d.h > 0) sizes.push([d.h, d.a > 0 ? d.a : d.h, d.b > 0 ? d.b : 0]);
+      if (!d.at || kinds[d.i] === accept[0]) continue; /* first kind-d record of an index wins (shadow / outline passes, redraws) */
+      const sp = String(d.at.space || ''), m = /^[mt](\d+)x(\d+)$/.exec(sp);
+      let kx = 1, ky = 1;
+      if (m) { const w = +m[1], h = +m[2]; if (!(w > 0 && h > 0 && cw > 0 && ch > 0)) continue; kx = cw / w; ky = ch / h; }
+      else if (sp !== 'c') continue;
+      const hgt = d.h > 0 ? d.h : 0, adv = d.a > 0 ? d.a : hgt;
+      if (!hgt) continue;
+      rects[d.i] = [d.at.x * kx, d.at.y * ky, adv * kx, hgt * ky]; kinds[d.i] = d.k;
+    }
+    return { rects, drawn, sizes };
+  }
+  /* ① extra lines (glyph-dots records 4, hook-native state.hookGlyphExtras): name plate (kind n) and choices (kind o),
+     blanked by the game like the line. Placed only when every character has a box (no guessing: a wrong name or option
+     is worse than the game's blank); the reader draws them click-through, so a click on an option reaches the game's
+     own (blank) button. */
+  extras(all) {
+    if (!this.on) return;
+    const items = [];
+    for (const t of Object.values(all || {}).sort((p, q) => p.id - q.id)) {
+      if (!t || typeof t.text !== 'string' || !t.text || !(t.kind === 'n' || t.kind === 'o')) continue;
+      const { rects } = this.rectsOf(t, [t.kind]);
+      if (rects.every(Boolean)) items.push({ id: t.id, kind: t.kind, text: t.text, rects });
+    }
+    const key = JSON.stringify(items);
+    if (key === this.extraKey) return; this.extraKey = key;
+    this.send({ type: 'textPlaceExtra', items, client: this.client.slice() });
+    /* the choices' boxes also feed the reader's choice overlay (ruby + translation under each option) in place of the
+       OCR locate, which finds nothing once the options are blank */
+    const options = items.filter(i => i.kind === 'o');
+    this.choicesPlaced = options.length > 0;
+    if (options.length || this.choiceSent) {
+      this.choiceSent = options.length > 0;
+      this.send({ type: 'placeChoiceBoxes', sw: this.client[0], sh: this.client[1], items: options.map(i => { const r = i.rects; return { text: i.text, x0: Math.round(Math.min(...r.map(v => v[0]))), y0: Math.round(Math.min(...r.map(v => v[1]))), x1: Math.round(Math.max(...r.map(v => v[0] + v[2]))), y1: Math.round(Math.max(...r.map(v => v[1] + v[3]))) }; }) });
+    }
+  }
+  /* the dialogue area learned from an exactly placed line: left edge, first row top, row pitch, width, size */
+  learn(rects) {
+    const r = rects.filter(Boolean); if (r.length < 2) return;
+    const x = Math.min(...r.map(v => v[0])), y = Math.min(...r.map(v => v[1])), right = Math.max(...r.map(v => v[0] + v[2]));
+    const tops = [...new Set(r.map(v => Math.round(v[1])))].sort((p, q) => p - q), h = r[0][3];
+    const pitch = tops.length > 1 ? tops[1] - tops[0] : (this.anchorBox?.pitch || h * 1.5);
+    const prev = this.anchorBox?.exact ? this.anchorBox : null;
+    this.anchorBox = { x, y, pitch, width: Math.max(right - x, prev && Math.abs(prev.x - x) < h ? prev.width : 0), size: h, exact: true };
+  }
+  /* outside locator (game-style probe dialogue box, OCR of the first character): {x, y, size, width, pitch} in client px.
+     An exact line learned later replaces it. */
+  anchor(box) {
+    if (!box || !(box.size > 0) || !Number.isFinite(box.x) || !Number.isFinite(box.y)) return;
+    if (this.anchorBox?.exact) return;
+    this.anchorBox = { x: box.x, y: box.y, size: box.size, pitch: box.pitch > 0 ? box.pitch : box.size * 1.5, width: box.width > 0 ? box.width : Math.max(box.size * 20, (this.client[0] || 1280) * .7), exact: false };
+  }
+  estimate(chars, drawn, sizes) {
+    const A = this.anchorBox, med = (k, d) => { const v = sizes.map(s => s[k]).sort((p, q) => p - q); return v.length ? v[v.length >> 1] : d; };
+    const h = A.exact ? A.size : med(0, A.size), adv = med(1, h), all = drawn.size === 0, rects = [];
+    let x = A.x, y = A.y;
+    chars.forEach((c, i) => {
+      if (c === '\n') { x = A.x; y += A.pitch; rects.push(null); return; }
+      const w = /[\x20-\x7e｡-ﾟ]/.test(c) ? adv / 2 : adv;
+      if (x + w > A.x + A.width + 1 && x > A.x) { x = A.x; y += A.pitch; }
+      rects.push(all || drawn.has(i) ? [x, y, w, h] : null); x += w;
+    });
+    return rects;
+  }
+  emitLine(line) {
+    const key = JSON.stringify(line);
+    if (key === this.lastKey) return; this.lastKey = key; this.current = line;
+    this.send({ type: 'textPlace', ...line });
+  }
+  stop() { this.clear(); if (this.extraKey && this.extraKey !== '[]') this.send({ type: 'textPlaceExtra', items: [] }); this.extraKey = ''; this.on = false; }
+}
+
+module.exports = { OverlayPlacement };

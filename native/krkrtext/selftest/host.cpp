@@ -67,6 +67,7 @@ public:
   if (Report) {
    const wchar_t *lines[] = {L"ToMe_KRKR begin line=1 same=0 nvl=1 x0=60 y0=80 x1=1180 y1=80 size=28 sw=1280 sh=720 n=0",
                              L"ToMe_KRKR end line=1 same=0 nvl=1 x0=60 y0=80 x1=1150 y1=120 size=28 sw=1280 sh=720 n=12 text=一行目の文\n二行目の文。",
+                             L"ToMe_CHARS engine=krkr line=1 hidden=1 sw=1280 sh=720 vx=0 vy=0 vw=0 vh=0 n=2 rects=60,80,28,28;88,80,28,28 text=一行",
                              L"not a protocol line"};
    for (auto l : lines) { tTJSVariant v(l), *a[1] = {&v}; Report->FuncCall(0, NULL, NULL, NULL, 1, a, NULL); }
   }
@@ -119,7 +120,7 @@ static DWORD WINAPI Listen(void *) {
  HANDLE p = CreateNamedPipeW(name, PIPE_ACCESS_INBOUND, PIPE_TYPE_BYTE | PIPE_WAIT, 1, 0, 65536, 0, NULL);
  if (p == INVALID_HANDLE_VALUE || (!ConnectNamedPipe(p, NULL) && GetLastError() != ERROR_PIPE_CONNECTED)) { printf("FAIL pipe\n"); ExitProcess(2); }
  std::string all; char buf[4096]; DWORD got;
- bool status = false, begin = false, end = false, junk = false;
+ bool status = false, begin = false, end = false, chars = false, junk = false;
  while (ReadFile(p, buf, sizeof buf, &got, NULL) && got) {
   all.append(buf, got);
   size_t at;
@@ -129,9 +130,10 @@ static DWORD WINAPI Listen(void *) {
    if (line.rfind("ToMe_KRKR status ok layers=2", 0) == 0) status = true;
    if (line.rfind("ToMe_KRKR begin line=1 same=0 nvl=1 x0=60", 0) == 0) begin = true;
    if (line.rfind("ToMe_KRKR end line=1", 0) == 0 && line.find("text=\xe4\xb8\x80\xe8\xa1\x8c\xe7\x9b\xae\xe3\x81\xae\xe6\x96\x87\x1f\xe4\xba\x8c") != std::string::npos) end = true;
+   if (line.rfind("ToMe_CHARS engine=krkr line=1 hidden=1 ", 0) == 0 && line.find("rects=60,80,28,28;88,80,28,28") != std::string::npos) chars = true;
    if (line.find("not a protocol") != std::string::npos) junk = true;
   }
-  if (status && begin && end && Evals >= 4) { printf(junk ? "FAIL a non-protocol line was forwarded\n" : "PASS exporter, cdecl check, game-thread eval, failed eval survived, report function, pipe, line breaks\n"); fflush(stdout); ExitProcess(junk ? 3 : 0); }
+  if (status && begin && end && chars && Evals >= 4) { printf(junk ? "FAIL a non-protocol line was forwarded\n" : "PASS exporter, cdecl check, game-thread eval, failed eval survived, report function, pipe, line breaks, text architecture 3 char records\n"); fflush(stdout); ExitProcess(junk ? 3 : 0); }
  }
  printf("FAIL pipe closed\n"); ExitProcess(2);
 }

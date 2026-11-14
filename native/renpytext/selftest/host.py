@@ -54,8 +54,29 @@ def install_fakes():
         def blit(self, child, pos):
             self.children.append((child, pos[0], pos[1], True, True))
             return child
+
+        # gl2 (Ren'Py 7.4+ / 8): alpha goes through the renpy.alpha shader and its uniforms
+        def add_shader(self, name):
+            self.shaders = getattr(self, 'shaders', ()) + (name,)
+
+        def add_uniform(self, name, value):
+            if getattr(self, 'uniforms', None) is None:
+                self.uniforms = {}
+            self.uniforms[name] = value
     render.Render = Render
-    render.render_screen = lambda root, w, h: root
+    render.models = True
+
+    def render_screen(root, w, h):
+        # Ren'Py renders each displayable into its own Render: the Text's (possibly wrapped) render() sets its alpha
+        stack = [root]
+        while stack:
+            node = stack.pop()
+            for d in node.render_of:
+                r = d.render(w, h, 0, 0)
+                node.alpha = r.alpha if (getattr(r, 'uniforms', None) or {}).get('u_renpy_alpha', 1.0) == 0.0 or r.alpha == 1.0 else 1.0
+            stack.extend(e[0] for e in node.children)
+        return root
+    render.render_screen = render_screen
 
     class Glyph(object):
         def __init__(self, ch, x, ascent, ruby=0):
@@ -96,6 +117,11 @@ def install_fakes():
 
         def get_layout(self):
             return self._layout
+
+        def render(self, width, height, st, at):
+            rv = Render()
+            rv.alpha = 1.0
+            return rv
     textmod.Text = Text
 
     def filter_text_tags(s, allow=None):
@@ -148,8 +174,19 @@ def scenario(fakes):
     store.nvl_list.append(('b', 'y', {}))
     state['tree'] = screen((t1, (20, 30), None), (t2, (40, 0), 0.5))
     renpy.exports.display_say(None, what2, nvl_show_core)
-    state['tree'] = screen()
+    # ADV line, MeguLit asks for the game's own text to be drawn invisible (text architecture 3)
+    t3 = Text('\u666e\u901a\u306e\u53f0\u8a5e\u3002', 24, ['\u666e\u901a\u306e\u53f0\u8a5e\u3002'])
+    state['tree'] = screen((t3, (60, 500), None))
+    sys._megulit_renpy_hide = lambda: True
     renpy.character.display_say('Eileen', '\u666e\u901a\u306e\u53f0\u8a5e\u3002', say_show)
+    nodes, stack = [], [state['tree']]
+    while stack:
+        nodes.append(stack.pop())
+        stack.extend(e[0] for e in nodes[-1].children)
+    state['alpha3'] = [n.alpha for n in nodes if t3 in n.render_of]
+    sys._megulit_renpy_hide = lambda: False
+    renpy.display.render.render_screen(state['tree'], 1280, 720)  # MeguLit stops asking: drawn again at once
+    state['alpha3'] += [n.alpha for n in nodes if t3 in n.render_of]
     t4 = Text('\u65b0\u3057\u3044\u9801\u3002', 28, ['\u65b0\u3057\u3044\u9801\u3002'])
     store.nvl_list = [('c', 'z', {})]
     state['tree'] = screen((t4, (20, 30), None))
@@ -164,6 +201,7 @@ def run_sink(script):
     for _ in range(2):  # the DLL runs it again every two seconds: the second run must not wrap twice
         exec(compile(src, script, 'exec'), {'__name__': '__main__'})
     scenario(fakes)
+    out.append('HOST alpha3=%s' % (fakes[7].get('alpha3'),))
     sys.stdout.buffer.write(json.dumps(out).encode('utf-8'))
     return 0
 
@@ -202,7 +240,11 @@ def run_dll(dll):
         return 3
     scenario(fakes)
     time.sleep(3.5)  # a later run of the script (2 s period) must leave the wrappers as they are
-    scenario_lines = [l for l in got if not l.startswith('ToMe_RENPY status ')]
+    chars = [l for l in got if l.startswith('ToMe_CHARS ')]
+    scenario_lines = [l for l in got if not l.startswith('ToMe_RENPY status ') and not l.startswith('ToMe_CHARS ')]
+    if sorted(set(re.search(r' line=(\d+) ', l).group(1) for l in chars)) != ['1', '2', '3', '4']:
+        print('FAIL char records %r' % chars)
+        return 6
     status = [l for l in got if l.startswith('ToMe_RENPY status ')]
     if scenario_lines != EXPECTED:
         print('FAIL lines differ')

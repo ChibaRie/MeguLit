@@ -25,7 +25,7 @@ public static partial class HookBridge {
  public static event Action<string,int,int,int> GpuHit;
  static void GpuSend(string line){lock(GpuGate){if(GpuCtlPipe==null)return;try{GpuCtlPipe.WriteLine(line);}catch{GpuCtlPipe=null;}}}
  // The same streams the glyph hide (E667) serves: the selected stream without write-back, with replacement on or probing.
- static bool GpuWanted(){lock(Gate){Candidate c;return Enabled&&(ReplacementEnabled||ProbeWanted)&&Selected!=""&&Candidates.TryGetValue(Selected,out c)&&c.gdiProbe;}}
+ static bool GpuWanted(){lock(Gate){Candidate c;return Enabled&&(ReplacementEnabled||ProbeWanted)&&Selected!=""&&Candidates.TryGetValue(Selected,out c)&&(c.gdiProbe||GlyphMode=="dot"&&GlyphAll);}} /* text-arch: in ①'s dot mode (compositor) the GDI probe is never switched on, the stream is still the dialogue */
  static void GpuLine(string text){if(GpuWanted()){string s;lock(Gate){s=Selected;}GpuArm(s,text);}else GpuDisarm();}
  static void GpuReport(string s){
   if(s.StartsWith("ToMe_CHARS ",StringComparison.Ordinal)){Emit(new{type="hookChars",line=s});return;}
@@ -90,7 +90,7 @@ public static partial class HookBridge {
   if(on&&GpuCanaryOff()!=""){Diagnostic("text marks refused: crash canary ("+GpuCanaryOff()+")");on=false;}
   MarksMode=on;if(on){MarksSince=(long)GetTickCount64();BeatSeen=false;MarksPaused=false;}if(MarksEvent==IntPtr.Zero)MarksEvent=CreateEventW(IntPtr.Zero,true,false,"Local\\MeguLitMarks-"+Pid);
   if(MarksEvent!=IntPtr.Zero){if(on)SetEvent(MarksEvent);else ResetEvent(MarksEvent);}
-  Diagnostic("text marks "+(on?"on":"off"));Emit(new{type="hookTextMarks",state=on?"on":"off",mark="middle-dot"});}
+  Diagnostic("text marks "+(on?"on":"off"));Emit(new{type="hookTextMarks",state=on?"on":"off",mark="middle-dot"});Probe();}
  /* Owner rule "the player never sees marks" (docs/text-architecture.md): the write-back marks only while MeguLit's capture
     compositor presents the game: heartbeat Local\MeguLitCompositorBeat-<game pid> (magic 'MGCB', version 1, presenting,
     tickMs = GetTickCount64). Before any beat a 20 s grace from SetMarks(true); after one was seen, presenting == 1 and

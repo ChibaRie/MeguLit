@@ -34,5 +34,5 @@ test('E407 choices: the overlay never covers the game text (no backing, invisibl
  assert.doesNotMatch(src,/megulit-choice-mask/);
  assert.match(src,/\.megulit-choice-jp\{[^}]*color:transparent/);
  for(const rule of src.match(/'\.megulit-choice[^']*\{[^}]*\}'/g)||[])assert.doesNotMatch(rule,/background:(?!none)/,rule);
- assert.match(read('web/reader/modules/interaction.js'),/\.megulit-choice,\.megulit-choice-cn'/);
+ /* 2026-11-15 painted but click-through (pass regions): the click reaches the game's own option */assert.match(read('web/reader/modules/interaction.js'),/querySelectorAll\('[^']*\.megulit-choice,\.megulit-choice-cn[^']*'\)\)\{[\s\S]{0,700}pass:true/);
 });

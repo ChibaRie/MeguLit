@@ -151,6 +151,7 @@
     body.tomoyo-gal-ja-only .tomoyo-cn-row { display:none!important; }
     body.tomoyo-gal-zh-only .sentence-text { display:none!important; }
     body.tomoyo-gal-none :is(.sentence-text,.tomoyo-cn-row) { visibility:hidden!important; }
+    body.megulit-composited :is(.sentence-window,.sentence-text,.tomoyo-cn-row) { visibility:hidden!important; } /* the compositor owns the game's text: no overlay dialogue at all */
     body.tomoyo-gal-zh-only .tomoyo-cn-row { margin-top:0!important; }
     body.tomoyo-gal-mask .sentence-window { background:var(--tomoyo-gal-mask,#171923)!important; }
     body.tomoyo-game-style .sentence-text .char-token,body.tomoyo-game-style .tomoyo-cn-output,body.tomoyo-gal-bound .sentence-text .char-token,body.tomoyo-gal-bound .tomoyo-cn-output {
@@ -601,6 +602,8 @@
       window.__tomoyoMode?.set(message.interfaceMode,message.type==='interfaceMode');
     }
     if(message.type==='gameClosed')window.__tomoyoMode?.gameClosed?.();
+    /* Text architecture ②: while the capture compositor draws the current line in the game picture, the window's own line hides (never doubled) */
+    if(typeof message.compositorDrawing==='boolean')document.body.classList.toggle('megulit-composited',message.compositorDrawing);
     if (typeof message.coverEnabled === 'boolean') document.body.classList.toggle('tomoyo-cover-hidden',!message.coverEnabled);
     /* Issue 127 (user): Alt+H hides MeguLit's layer, but the game drew the current line blank, so its original only comes back with the next line. Say so, and where to show only the original or only the translation instead. */
     if (typeof message.coverEnabled === 'boolean') { const was=document.body.dataset.megulitCover; document.body.dataset.megulitCover=String(message.coverEnabled);

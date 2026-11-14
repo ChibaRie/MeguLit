@@ -1,4 +1,20 @@
-# Text architecture: MeguLit draws the game's text
+# Text architecture
+
+## Owner acceptance checklist (2026-11-15, replaces the 1–5 list; check every screenshot against it)
+
+- (a) The Japanese is in its original place; font, size, colour and outline look like the game's own.
+- (b) Furigana above the right kanji (the game's own ruby first, then the shared rule).
+- (c) The Chinese translation beside or under the Japanese, with no plate or dark background.
+- (d) The game's original text and any dot or mark are completely invisible.
+- (e) Words can be clicked (word card opens); a click on empty space advances the game as usual.
+- (f) No flicker: a 60 fps, 5 s recording shows zero changed pixels in the text area.
+- (g) It keeps working for the whole game: after chapter changes, loading a save, opening/closing menus, scene changes.
+- (h) Name plates and choice text are handled the same way, (a)–(f).
+
+OCR (owner, 2026-11-14): only OCR masking (blurring or covering the game's text) is banned. OCR may read: text baked into
+images (titles, cards, image choices), checking what a frame actually draws when marks cannot all be matched, and the
+per-game verdict that the original text is gone.
+
 
 Agreed with the owner on 2026-11-14. MeguLit draws every line of dialogue itself, in the place and size where the game
 would have drawn it. Three parts, each with its own section below:
@@ -31,6 +47,73 @@ version, a line in this log, and stays backward compatible where possible (new f
 | 2    | 2026-11-14 | Compatible addition: `MODE dot-blind` / `blind:true`, record kind `b`. |
 | 1    | 2026-11-14 | Compatible addition: `glyphMode` `all:true` (write-back streams on dots too).                    |
 | 1    | 2026-11-14 | Compatible addition: in dot mode `ToMe_GLYPHDOT line` is sent when the line is pushed, before any dot. |
+| ③ 1  | 2026-11-14 | Non-dot paths: `ToMe_CHARS` records, `hookCharRects` events, crash canary (`feat/text-paths`).    |
+| 2    | 2026-11-14 | Compatible addition: path `conv` (MultiByteToWideChar source, mark U+30FB, h=0, map by reading order); switches on by itself after two lines without dots, remembered in `cache| ② 1  | 2026-11-14 | Compositor heartbeat (`Local\MeguLitCompositorBeat-<game pid>`): marks only while it is fresh; the DLL side is ①'s. |
+
+## Owner rule: the player never sees marks
+
+Two kinds of marks reach the compositor: ①'s glyph dots (a small square at each glyph's top-left, below) and ④'s
+text marks (the game itself draws a centred 「・」/「･」 per character, spec: [text-architecture-marks.md](text-architecture-marks.md);
+`hookTextMarks` lines go to the compositor with their mark count, and each glyph is placed centred on its mark).
+
+Dots and other markers are MeguLit's private signal between the game and the capture compositor. Two safeguards keep
+them off the player's screen.
+
+### Heartbeat (compositor → DLL)
+
+The compositor (native/compositor/Compositor.cpp) publishes a heartbeat in shared memory:
+
+- name `Local\MeguLitCompositorBeat-<game process id>` (a page-file mapping, created by the compositor)
+- layout, little endian: `uint32 magic = 0x4243474D ("MGCB")`, `uint32 version = 1`, `uint32 compositorPid`,
+  `uint32 presenting`, `uint64 tickMs` (GetTickCount64), `uint64 frames`
+- refreshed every 50 ms while the compositor window is visible, the game is not minimised and at least one frame has
+  been captured (`tickMs` = now); `presenting = 1` only once MeguLit has sent it a dialogue line for this game (before
+  that, e.g. no stream selected, a game language the reader does not take, the title menu, nothing would find and erase
+  the dots, so the game draws real text); while it does not show the game `presenting = 0` and `tickMs` stops
+- on a normal exit (game closed, MeguLit closed its stdin, `quit`) it writes `presenting = 0`, `tickMs = 0` and closes
+  the mapping; a crash or kill just stops the ticks (the mapping disappears with the last handle)
+
+The glyph DLL (MeguLitFont, ①) must:
+
+1. Before the first beat: dot / marker glyphs are allowed for a start-up grace of 20 s from the DLL's load (early
+   injection runs long before the compositor exists).
+2. After a beat was seen: marks are allowed only while `presenting == 1` and `GetTickCount64() - tickMs <= 1000`.
+   Checked at least once a second and before serving a glyph.
+3. When the beat goes stale or the mapping cannot be opened any more: go back to real glyphs at once and flush every
+   glyph cache it can reach (its own cache, `GetGlyphOutline`/`TextOut` caches it controls). If the engine keeps
+   rasterised marks in a cache MeguLit cannot reach, report `ToMe_GLYPHDOT status needs-relaunch` so the app tells the
+   player to restart the game (and does not start dot mode again for that run).
+4. A new beat (MeguLit restarted) may turn marks on again only for glyphs rasterised after that.
+
+HookBridge and the front end do not take part: the beat comes straight from the process that hides the marks, so a
+crashed MeguLit, a crashed HookBridge, a closed or hung compositor all end in real glyphs.
+
+### No exposed marks on a mismatch (compositor)
+
+- A line with more marks than characters is never handed back to the game: every mark found is erased, the line's
+  stream text is drawn on the marks in reading order (found cells and measured pitch), surplus marks are erased
+  without a character (`line` event with `bestFit: true`). Lines with ① reports first give surplus marks to earlier
+  lines of the page (NVL page view).
+- A stalled reveal (some characters stay real in the engine's glyph cache) keeps its marks drawn and counts as shown.
+- A menu whose items cannot be matched still has its marks erased (largest compact group of the menu colours' lone
+  dots) and gets its items drawn as a list over that area.
+- Lines that never show marks (the game draws them itself) get their translation as a caption above the text area.
+
+### What still shows marks by design (to decide later)
+
+These are drawn by the game into its own images or windows that the compositor does not cover:
+
+| Where | Why | Possible answer |
+|---|---|---|
+| The game's own screenshots / CG-capture features | the game reads its back buffer, which holds marks | turn marks off for that call (engine-specific), or redraw on export |
+| Save / load thumbnails | the game renders a reduced copy of the screen at save time | same; or real glyphs while a save screen is open |
+| Backlog / history pages | same glyph path; usually not a hooked line, so not mapped | map backlog pages as NVL pages, or real glyphs while the backlog is open |
+| Name boxes, menus, UI text in the dialogue font (blind mode) | dot-blind marks every glyph of that font, mapped only when a line arrives | layer ③/④ positions, or limit blind to the message window |
+| Window captures by other tools (OBS window capture, PrintWindow, Alt-Tab thumbnails, Steam screenshots) | they read the game window, not the compositor's window above it | tell users to capture the screen or the compositor window |
+| The first frames after the compositor stops (≤ 1 s, heartbeat) | the DLL notices the stale beat on its next check | shorter check, or the compositor writes `presenting = 0` before exiting (done for normal exits) |
+| Glyphs cached as marks inside the engine after the beat stops | engines keep rasterised glyphs | flush or `needs-relaunch` (heartbeat rule 3) |
+
+ont-probe<hash>source.txt`, canary `conv-trial` → `conv-off`. |
 
 ## ① Glyph dots
 
@@ -338,7 +421,7 @@ Covered: GetGlyphOutlineA/W (all formats, glyph indices), TextOutA/W, ExtTextOut
 DrawText/DrawTextEx (through ExtTextOut), GdipDrawString, GdipDrawDriverString (character mode),
 ID2D1RenderTarget::DrawText / DrawTextLayout / DrawGlyphRun.
 
-Not covered (left to blank fallback or to ③): ID2D1DeviceContext's own DrawGlyphRun overload, IDWriteTextLayout::Draw
+Not covered (left to blank fallback or to ③): IDWriteTextLayout::Draw
 with a game-supplied renderer, IDWriteBitmapRenderTarget, Direct3D/OpenGL text from prebuilt font textures, engines that
 blit prerendered font sheets (KiriKiri prerendered fonts, see ③). World transforms and non-`MM_TEXT` mapping modes in GDI
 draw the dot in logical units (it scales with the transform).
@@ -391,3 +474,301 @@ font probe (`ToMe_FONT` counts and the matcher's `placed`/`requested`):
 
 Rule seen live: dots need the line **before** the glyphs are rasterised, i.e. a write-back (embed) stream with `all:true`; a read-only stream is ~180 ms late. CatSystem2, Siglus, BGI, AdvHD and YU-RIS show real dialogue dots (limited by its glyph cache; ② drew 16 of 17 CLANNAD lines on the game's cells from these dots). For caching engines dot mode must be on and the stream selected before the first dialogue glyph is rasterised (MODE dot at connect + the remembered stream pre-armed at start), otherwise the characters cached earlier stay real for the whole process; HookBridge does both: MODE is sent at connect, the dot passthrough remembers the stream, and with `all:true` a remembered stream is never displaced by another stream that speaks first (title menus). Verified on CLANNAD: fresh process, NEW GAME, the first line 一面、白い世界… = 8 records, 8 dots, no other ink (live\clannad-first-line-dots.png); the cases above are what decides ①'s reach. The x86/x64 self-test hosts
 remain the proof that every covered API produces exact dots.
+
+## ③ Non-dot paths (engines that do not take glyphs from Windows)
+
+Branch `feat/text-paths`. Four engine families draw their text without asking Windows for glyphs, so ① can never put
+dots there. Each of them gets an engine-level path that gives ② the same two things: (a) the current line is not drawn,
+(b) the place of every character of it. Instead of dots in pixels, the game side **reports rectangles**.
+
+| Path    | Engines                                   | Hides how                                         | Rectangles from |
+|---------|-------------------------------------------|---------------------------------------------------|-----------------|
+| web     | NW.js / Electron shells: TyranoScript, WebGAL, Monogatari, ink web, any DOM-text engine | one style rule on the message element: `color` / `-webkit-text-fill-color` transparent, no shadow / stroke | `Range.getClientRects` per character, × `devicePixelRatio` |
+| unity   | Unity Mono (TextMeshPro, uGUI)            | the dialogue component's alpha 0 (`TMP_Text.alpha`, `Graphic.color.a`) | TMP `textInfo.characterInfo` / `TextGenerator.verts`, through the canvas camera |
+| krkr    | KiriKiri 2 / Z KAG message layers (own rasteriser, `.tft` prerendered fonts) | the existing opacity-0 drawing of the message `lineLayer` (E472, `__megulitKrkrHide`) | the TJS `processCh` wrapper: x / y of each character, width from the drawing font |
+| renpy   | Ren'Py 7 / 8                              | the say Text's own Render: `Render.alpha` 0 (gl) and the `renpy.alpha` shader with `u_renpy_alpha` 0 (gl2) | the Text's `Layout` glyphs through the render tree's offsets and reverse matrices |
+
+Rules shared by all four (the same as ① and the older layers):
+
+- **Never change game data.** Nothing is written to the game folder, its archives, saves or settings. Web: Chromium
+  switches only; Unity: a shadow folder (below); KiriKiri / Ren'Py: wrappers in the running engine that fall back to the
+  engine's own function on any error.
+- **Hidden is confirmed per line.** A record says `hidden=1` only after the game side really drew that line invisible
+  (web: computed colour of every text node transparent; Unity: alpha still 0 at the end of the frame; Ren'Py: the Text's
+  Render is drawn with alpha 0 / the alpha shader; KiriKiri: the line's glyphs went through the opacity-0 draw). A game
+  that draws its text again (MeguLit gone, switch off, the game animating its own colour) sends `hidden=0` for the same
+  line. `core/text-paths.cjs HiddenGate` keeps the latest state per line; ② draws over a line only while it is hidden.
+- **Only while MeguLit is there.** Every path follows HookBridge's replacement switch, and the game side drops hiding by
+  itself when the connection to MeguLit goes away (pipe / socket / DevTools closed).
+- **Crash canary.** `data/text-paths/<exe name>-<exe size>.json` (the key of the stream memory). A path is armed the
+  first time it hides, stays armed while the game runs, and is cleared after 20 s or when the game exits. Only an
+  **exception exit code** (NTSTATUS ≥ 0xC0000000, e.g. 0xC0000005, not 0xFFFFFFFF) while armed turns that path **off**
+  for the game (`off.<path>.reason`); a kill (taskkill /F = exit 1), a normal quit, or an arm still there at the next
+  start (nobody saw the exit) is not a crash and is only cleared; switching it on again is the user's call (`Canary.reset`). C#: `native/TextPathCanary.cs`
+  (krkr, renpy, in HookBridge); node: `core/text-paths.cjs Canary` (web, unity, at launch).
+
+### Record (spec 1 of ③)
+
+Game side → MeguLit, one UTF-8 line per sentence (sent again whenever its rectangles or its hidden state change):
+
+```
+ToMe_CHARS engine=<krkr|renpy|web|unity> line=N hidden=0|1 sw=W sh=H vx=X vy=Y vw=W vh=H n=K rects=x,y,w,h;x,y,w,h;... text=<line>
+```
+
+- `text`: the sentence as drawn, a newline (sent as U+001F) where the game started a new row. Blanks and ruby are not
+  part of it.
+- `rects`: exactly one per character of `text` without its newlines, in order, in **game-screen pixels** (0..sw,
+  0..sh), top-left origin, `w`/`h` the character's box (KiriKiri and Ren'Py: advance × line height; web: the glyph's
+  client rect; Unity: the glyph quad).
+- `vx vy vw vh`: where the game screen sits in the window's client area, in client pixels (web and Unity: the whole
+  client, `0 0 sw sh`; Ren'Py: `renpy.display.draw` drawable viewport; KiriKiri: `0 0 0 0` = unknown, aspect fit).
+- `line`: increases per sentence; a typewriter that grows the same sentence keeps its number.
+- Parser and helpers: `core/text-paths.cjs` (`parseChars`, `formatChars`, `toClient(rec, clientW, clientH)` → client
+  pixels, `viewportOf`).
+
+Transport: KiriKiri and Ren'Py send it on their existing pipes (`\\.\pipe\MeguLitKrkr-<pid>`,
+`\\.\pipe\MeguLitRenpy-<pid>`); HookBridge passes it on unchanged as `{"type":"hookChars","line":...}`. Web and Unity
+records come from node directly (`core/text-paths-web.cjs`, `core/text-paths-unity.cjs`). Both end in
+`HookNative.charRects`, which emits the front-end event:
+
+```
+{"type":"hookCharRects","engine":"renpy","line":3,"hidden":true,"sw":1280,"sh":720,"viewport":[0,0,1280,720],
+ "rects":[[208,563,24,45],...],"text":"…","at":…}
+```
+
+For ②: `toClient(event, clientWidth, clientHeight)` gives each character's box in the game window's client area. The
+erase rule is simpler than for dots: the game drew nothing for a hidden line, so nothing has to be erased.
+
+### Paths in detail
+
+**Web** (`core/text-paths-web.cjs`). `chromiumShell(exe)`: `icudtl.dat` plus `nw.dll` / `package.nw` (NW.js) or
+`resources\app.asar` / `resources\app` (Electron) next to the program. `services/bridge.cjs` adds
+`--remote-debugging-port=<free loopback port> --remote-debugging-address=127.0.0.1 --remote-allow-origins=…` to the
+start (a Steam game is then started directly with `SteamAppId` in the environment, never through Steam). `WebTextPath`
+attaches over the DevTools protocol to every page target, adds `PAGE_SCRIPT` for every new document and evaluates it in
+the current one, and talks through the `__megulitReport` binding. The page script finds the message element (known
+containers of TyranoScript, Monogatari, WebGAL, ink pages, else the smallest visible element whose text is the hook line
+sent with `want()`), toggles `data-megulit-hide` on it, and reports after every DOM change (40 ms debounce). Canvas
+engines (RenJS / Phaser, PixiJS text) report `canvas` and stay as they are.
+
+**Unity** (`core/text-paths-unity.cjs`, `native/unitytext/MeguLitUnityText.cs`). Mono games only (IL2CPP: below). The
+game is started from a shadow folder `data/unity-shadow/<exe>-<size>`: every folder of the game is a directory junction,
+every file a hard link (a copy when the volume differs, mtime kept); MeguLit adds UnityDoorstop (`winhttp.dll`,
+`doorstop_config.ini`) and BepInEx 5.4.23.6 with `BepInEx\plugins\MeguLit\MeguLitUnityText.dll`, the control port, and
+`steam_appid.txt` for Steam games. Unity finds `<exe>_Data` through the junction; BepInEx writes its config and log in
+the shadow only. A game that ships its own BepInEx / doorstop / version.dll proxy is left alone. Rebuilding the shadow
+never deletes through a junction (links are removed as links). The plugin hooks nothing: twice a second it picks the
+dialogue component among the visible TMP_Text / UI.Text (not faded out by its colour or a CanvasGroup, on screen): the
+one whose text is the hook line (`WANT`), else the one with the most kana / kanji that changed last. It reports the
+characters' quads from the laid-out mesh, leaves out quads tiny in both directions (markup some games leave as empty
+glyphs), and maps uGUI quads to characters by the sequence whose length matches the quad count (rich-text tags,
+blanks and line breaks get quads or not depending on the Unity version). Control: loopback TCP (Unity's Mono has no
+reliable Windows named pipes), lines `HIDE 0|1`, `WANT <text>` in, `ToMe_CHARS` / `ToMe_UNITY status` out. Pack:
+`runtime/unity-text` (`tools/unity-text-pack.cjs` builds it from the BepInEx release archives, SHA-256 pinned, plus the
+plugin and LICENSES.txt; marker `runtime/unity-text/MeguLitUnityText.dll` in `core/runtime-packs.cjs`). The
+`setup/runtime.json` entry (onDemand, hidden) is added at release with the published zip's size and hash.
+XUnity.AutoTranslator was evaluated as the base: its documented plugin API has no per-component callback, and its
+translation pipeline is asynchronous and global (it would also blank menus), so the path uses BepInEx + this small
+plugin; XUnity's IL2CPP build is the candidate for the IL2CPP case.
+
+**KiriKiri** (`native/krkrtext/script.inc`, `KrkrText.cpp`). The existing KAG wrappers already know where each
+character is drawn (`track`, E300) and draw the message `lineLayer` at opacity 0 while `Local\MeguLitKrkrHide-<pid>` is
+set (E472). ③ adds the box of each character (x, y, `drawFont.getTextWidth(ch)`, font size) and sends one `ToMe_CHARS`
+at the sentence's end (click wait or clear), `hidden=1` when the sentence's glyphs went through the opacity-0 draw and
+hiding is still on. The DLL forwards `ToMe_CHARS` lines up to 28000 characters.
+
+**Ren'Py** (`native/MeguLitRenpy.py`). Every sentence, ADV as well as NVL, is located in the render tree (E301); its
+glyph boxes go out as `ToMe_CHARS` (width: the glyph's advance, else the distance to the next glyph). A wrapper on
+`renpy.text.text.Text.render` draws the say Text (all sentences of the NVL page on screen) invisible while
+`Local\MeguLitRenpyHide-<pid>` is set and the pipe to MeguLit is connected; HookBridge sets that event on the same rule
+as KiriKiri's. When hiding stops, every Render drawn invisible gets its alpha back and is redrawn at once.
+
+### Launch and wiring
+
+`core/text-paths-launch.cjs prepare()` (called by `services/bridge.cjs` before a direct start) is **off unless
+`preferences.ownTextOutput` is true** (the owner's "MeguLit draws all text" switch; ② turns it on with its UI). It
+returns the adjusted start (program, arguments, environment, folder) and a session; after the game window is up the
+session joins the hook reader (`attach`): records go to `HookNative.charRects`, HookBridge's replacement switch
+(`enable` / `disable`) becomes `hide(on)`, and every source line becomes `want(text)`. The game's exit code goes to the
+canary. KiriKiri and Ren'Py need nothing at launch (HookBridge loads their DLLs).
+
+### Live checks (2026-11-14, off screen, muted, new game, no saves)
+
+| Path  | Game | Result |
+|-------|------|--------|
+| web   | TyranoScript's own sample game (MIT, `ShikemokuMK/tyranoscript`) in headless Chrome | **works**: title → Start, 4 lines, hidden while asked (pixels gone), shown again at once, boxes on every character (shots `H:\MeguLit-Work\text-paths\web`). No NW.js / Electron galgame on E: or in Steam to try the launch switches on. |
+| unity | 月に寄りそう乙女の作法 (Tsukiniyorisou, Unity 2020.3 Mono, 32-bit, Steam) | **works**: shadow folder (junctions, copies on H:), BepInEx + plugin loaded, Start → NVL page; hidden=1 and the text gone, typewriter records per character, boxes on every glyph, drawn again on HIDE 0; canary refuses hiding after a simulated crash. Found live: Steam restarts the program from its real folder unless `SteamAppId` / `steam_appid.txt` are set; the dialogue was a uGUI Text with rich-text tags. |
+| renpy | 夏末盛开的花 (Flowers Blooming at the End of Summer, Ren'Py 8.4, gl2) | **works** after one fix: `Render.alpha` alone is ignored by gl2, the `renpy.alpha` shader hides it. New game, ADV lines located (21 / 20 / 16 / 30 characters), hidden from the first frame of the next line, shown again on reset, boxes on every character. |
+| krkr  | ファタモルガーナの館 (KiriKiri 2, on screen, new game, Ctrl skip) | **works**: 45 sentences located, every one hidden=1 while asked (dialogue gone, the name plate is a separate layer), boxes on every character. Two fixes found live: a sentence counts as hidden when each of its characters was drawn while hiding was on (the glyphs stay invisible after the switch, the end record comes at the click wait), and blanks get no box. Not covered: 千恋＊万花 (Yuzusoft, KiriKiri Z) draws through the `textrender.dll` plugin, not KAG `processCh` / `drawText` (draws=0); ATRI needs a running Steam. |
+
+Yuzusoft KiriKiri Z (千恋＊万花, probed live 2026-11-14 with the test-only build `cl /DMEGULIT_KRKR_DEBUG`, which
+evaluates `krkrdebug.tjs` placed next to the DLL): the message layer is `CustomMessageLayer`; its text is drawn natively
+into `textLayer` (`CustomMessageTextLayer`, a 1920x263 image holding nothing but the text) by the `TextRender` plugin
+class (calls seen: `clear`, `setRenderSize`, `done`), never through `processCh` or any `drawText`. Setting
+`textLayer.opacity` to 0 hides exactly the dialogue (the name plate stays). **Covered now** (`script.inc` `st.tr*`):
+`TextRender.done` is wrapped once on the class (`incontextof null`, so every instance reaches it), followed by
+`getCharacters(0, n)` (entries: `text`, `x`, `y`, `cw`, `size` in the render box). Boxes = message layer's absolute
+position + `marginL` / `marginT` (+ `PreRenderFontEx.resizePadding` vertically), `cw` × `size`. Hidden = the current
+message layer's `textLayer` at opacity 0 while asked (checked every 100 ms with the dialog-visibility timer), the game's
+own opacity restored when MeguLit stops; a hidden-state change resends the line's record. Lines are numbered from
+100000 so they never collide with KAG `processCh` sentences. Live 2026-11-14 千恋＊万花: 『お客さん』, 「……ぁ？」, … boxes on
+every glyph, hidden=1 with the dialogue gone, back on reset.
+
+YU-RIS (サイコロジック・ラブコメディ, 2026-11-14): its only text APIs are CreateFontIndirectA + TextOutA +
+CreateDIBSection / GetDIBits / StretchDIBits. TextOutA rasterises each new character once into a DIB glyph cache (31
+calls for several lines), and the engine copies cached glyphs into the frame with its own CPU code before uploading it
+to Direct3D 9. Character positions exist only inside that internal blit, so neither ① (glyph dots: cached glyphs are
+reused), layer 4 (no glyph draw reaches the GPU) nor a ③ API hook applies; it needs reverse engineering of the cache-blit
+routine. Artemis (THE SHELL HD, D3D11, 64-bit): no Lua API is exported. Layer 4 checked it (hide-gpu-proxy 9a8a149):
+the 64-bit hooks load, but the game stays black on this machine, and its only draw is one unit quad from a static
+vertex buffer placed by shader constants, which layer 4 cannot read. Stopped; it needs an engine-level path.
+
+**Unity IL2CPP** (`native/unitytext/MeguLitUnityText.IL2CPP.cs`, `Build-UnityText-IL2CPP.ps1`): the same shadow folder
+with BepInEx 6.0.0-be.793's IL2CPP build (its own .NET runtime; the interop assemblies are generated in the shadow on
+the first start, ~10 s) from the pack's `il2cpp-x64` / `il2cpp-x86`, and a BasePlugin that registers one MonoBehaviour
+in the IL2CPP domain. It compiles against one game's generated interop and binds by type / member name at run time.
+Both Unity plugins hide through the **CanvasRenderers** of the dialogue component and its sub-meshes (renderer alpha 0;
+text without a CanvasRenderer: its Renderers off; else the component alpha), because a typewriter that rewrites vertex
+colours every frame undoes the component's own alpha. TextMeshPro characters in a point size under 0.75 × the line's body
+(ruby) are left out. Live 2026-11-14 魔法少女ノ魔女裁判 (Unity 6000.0.48, IL2CPP x64, Steam, Naninovel
+`RevealableTextModified`): the plugin loads, records per character while the line types, hidden=1 with the line gone,
+drawn again on reset, boxes on every glyph. Mono regression 月に寄りそう乙女の作法 with the renderer hiding: hidden=1, gone.
+
+### Dot font at the source (engines with their own rasteriser)
+
+`native/fontdot` (MeguLitFontDot32/64.dll, `FontDotPatch.h`): for engines that rasterise text themselves (FreeType:
+Ren'Py, Artemis, many newer engines) the dots of ① are made in the font itself, so ② finds every character exactly as it
+does for GDI games. The patch works **in place, same length**: each glyph outline inside its own `glyf` slot (TrueType,
+also every font of a `.ttc`) or its own Type 2 charstring (CFF `OTTO`) becomes one square of side `unitsPerEm / 12`,
+clipped to the black box, at the glyph's black-box top-left (CFF: hmtx left side bearing and vertical origin − vmtx top
+side bearing, as exact as the TrueType bbox); the rest of the slot is zero. cmap, hmtx / vmtx, hhea / OS/2, kerning,
+units per em, loca and every table size are untouched, so layout, wrapping and pacing are the engine's own; embedded
+bitmap strikes are switched off by renaming their tags. At 36–48 px a dot is 3–4 px.
+
+Where the font is caught (no file on disk is ever written):
+- **In memory**: a background scan (every 2 s for a minute, then every 10 s) finds sfnt data in writable private memory
+  (table directory + `head.magicNumber`) and patches it there: the engine's own decrypted / read-in copy (Ren'Py reads
+  whole fonts out of its `.rpa` into memory; Artemis decrypts `.pfs` members).
+- **File reads**: a `ReadFile` whose data starts a font registers that byte range of the file; the DLL reads the font
+  once through its own handle, patches the copy, and serves the patched bytes to every read of that range (loose font
+  files, plain archives where the member starts the read).
+Load it before the game reads its fonts: `MeguLitLaunch<bit>.exe <MeguLitFontDot<bit>.dll> <game>` (from ①) starts the
+game suspended; the DLL sets `MeguLitFontReady-<pid>` when its hooks are in. `MEGULIT_FONTDOT_OFF=1` disables it;
+`MEGULIT_FONTDOT_TRACE=1` reports reads of archives / fonts and mapped views. Reports: `\\.\pipe\MeguLitFontDot-<pid>`,
+`ToMe_FONTDOT ready | patched src=file|mem size= fonts= dotted= emptied= cff= strikes=`.
+Self-tests: `native/fontdot/selftest/run.cmd` (MS Gothic collection from memory through GDI: same advances and cell,
+every glyph a dot ≤ 6 px at 48 px, same length, idempotent) and `check.py` (fontTools: TrueType and CFF squares at the
+original black-box top-left, cmap and advances unchanged).
+
+Live 2026-11-14: 夏末盛开的花 (Ren'Py 8.4) via MeguLitLaunch64: both game fonts (4.9 MB and 21.7 MB TrueType, read into
+memory from the `.rpa`) patched in memory when the story started; the dialogue「通常被称为回忆的，就是这种碎片。」drawn as
+16 dots, one at each character's top-left (punctuation lower, as its black box is), layout unchanged. 殻ノ少女 / THE SHELL
+HD (Artemis, 64-bit, Steam) via MeguLitLaunch64 from a hard-link shadow of the game folder on the same volume (junctions
+for folders, `steam_appid.txt` in the shadow so Steam does not restart the real program; removed afterwards): four
+fonts patched in memory after the engine decrypted them from `.pfs` (three CFF of 11–25 MB, one TrueType), title →
+start, the dialogue drawn as one dot per character over two rows; the game ran normally on screen.
+
+**In the normal launch** (services/bridge.cjs, `core/text-paths-launch.cjs fontDot`): whenever ① starts a game through
+MeguLitLaunch (文字显示 = compositor), `MeguLitFontDot<bit>.dll` is added to `MEGULIT_LAUNCH_EXTRA`; the launcher loads
+every DLL listed there right after MeguLitFont, still suspended (the DLL installs its hooks inside LoadLibrary).
+Locale Emulator and shell-open starts keep the late attach and get no dot font (fonts are read before an attach).
+**Steam games** in compositor mode are started directly too (`steamDirect`): SteamAppId/SteamGameId in the environment;
+when the game folder has no `steam_appid.txt`, the program runs from a shadow `<volume>\MeguLit-Shadow\<exe>-<size>`
+(folders as junctions, files as hard links only, plus `steam_appid.txt`), because some games still restart through
+Steam from the real folder without our DLLs (THE SHELL HD). The game folder is never written; a failed link drops the
+shadow and keeps the `steam://` launch.
+**Crash canary** `fontdot`: armed at launch, cleared after the game ran 20 s; HookBridge writes the game's exit code into
+the same file, and only an exception code turns it off for this game (MEGULIT_FONTDOT_OFF=1 for all).
+**Compositor heartbeat** (the same `Local\MeguLitCompositorBeat-<pid>` gate as ①): dots for 20 s from load before any
+heartbeat, then only while the compositor presents with a tick at most 1 s old. When the gate closes every font patched
+in memory gets its original bytes back (kept once per font, the 256 most recent buffers remembered) and file reads are
+served as they are; status `needs-relaunch` (glyphs the engine already rasterised stay dots, as with ①) or `paused`;
+`live` when it opens again. Live by hand 2026-11-14 on 夏末盛开的花 with MeguLitLaunch64 + MeguLitFont64 + the dot font
+in MEGULIT_LAUNCH_EXTRA and a stand-in heartbeat: both fonts dotted through the file-read path, dialogue as dots while
+the heartbeat ran; heartbeat stopped → `needs-relaunch fonts=6` (originals back in memory; the engine's cached glyphs
+stayed dots, as documented). Not yet run from the real app with the real compositor (capture-compositor verifies).
+
+Not covered yet: canvas web engines (RenJS / Phaser), KiriKiri games with their own message-layer class that use
+neither KAG `processCh` nor TextRender, Ren'Py text outside the say screen, YU-RIS and Artemis (see above).
+
+## Overlay placement (replaces the capture compositor as default, branch `feat/overlay-placement`, 2026-11-14/15)
+
+Owner decision after the live test of ②: the capture compositor stole clicks and focus and its marks showed. It stays in
+the code but is **off unless `MEGULIT_CAPTURE_COMPOSITOR=1`** (tests). 文字显示 = 画进游戏画面 now means: the game draws the
+line blank, the reader overlay draws MeguLit's text at the sources' character boxes.
+
+### Messages (core/overlay-placement.cjs → reader)
+- `{"type":"textPlaceMode","on"}`: placement wanted and a game bound.
+- `{"type":"textPlace",id,engine,text,rects,client}`: one box per character of `text` (blanks may be left out by the
+  source), in game-client px (`client` = its size). A box may be `null`: not drawn yet (typing) - that character waits.
+  `approx:true` = boxes estimated from an anchor, not reported by the source.
+- `{"type":"textPlace",fallback:true,id,text}`: the game drew the line blank but no position is known; the reader keeps
+  its own place and drops its plate (no plate, original still invisible).
+- `{"type":"textPlace","clear":true}`: the game draws the line itself again.
+
+### Position sources, best first
+1. ③ `hookCharRects` (KiriKiri, Unity, Ren'Py, web): exact, hidden lines only, one rect per character.
+2. ① glyph records, spec 3 (MeguLitFont v4, `at:{x,y,space}`): `c` client px, `m<W>x<H>`/`t<W>x<H>` scaled to the
+   client; first kind-`d` record of an index wins; a character drawn from the engine's glyph cache (no record) is put one
+   advance after the previous one, as long as a later character was drawn. Same rule as `core/glyph-place.cjs` on
+   feat/glyph-dots, but it also places a line while it is being typed.
+3. Locating marks (`located`, GetGlyphOutline engines, needs feat/glyph-dots 2e58da4+ `core/glyph-locate.cjs`):
+   `core/glyph-locate-host.cjs`. Only while the game's position is not known: line A complete → one lossless frame of
+   the game window (GalWindowBridge `rawFrame`: GameCapture window DC / rate-limited PrintWindow, never the screen, raw
+   BGRA file under cacheglyph-locate) → MARK on → line B complete → second frame → findMarks / locate / merge → MARK off.
+   Two agreeing lines confirm; the calibration is saved per game (dataglyph-place) and MARK stays off from then on; the
+   next run starts from it with no marks at all. Three lines without a fit give up for the run (no GRAY8 glyphs, glyph
+   cache): the line falls to 4./5. Two frames per learning line, nothing per frame.
+   Owner decision 2026-11-15: the near-invisible marks (1/64 coverage, at most 4 grey levels, single pixels) during the
+   learning lines of a game are accepted; outside learning MARK is always off.
+4. Anchor estimate (`approx`): engines whose glyphs come from GetGlyphOutline (Siglus, AdvHD, ISLAND: `space -`).
+   The anchor is the dialogue area learned from the last exactly placed line of this game (left, top, row pitch, width,
+   size), else an engine position hook (`hookTextPos`, game-screen px), else an outside locator calling
+   `placement.anchor({x,y,size,width,pitch})` (e.g. OCR of the first character: reading only, never masking). Characters
+   advance by the records' median advance (half for ASCII/half-width), wrap at the width; only drawn characters show.
+5. Fallback: no anchor at all → `fallback` (above).
+
+### Reader (web/reader/modules/text-place.js)
+Lays the hook reader's own `.sentence-text` (tokens, ruby bases, translation row) on the boxes. Tokens stay the reader's,
+so word card, drag-select and hit regions are unchanged: the reader window region holds only the words (and the
+translation text), which take the click and show hover; everything else passes to the game. Choices (ruby + translation)
+and the placed name plate / options are painted as pass regions (as E533 art text), so a click there reaches the game; ruby bases sit on the union of their
+tokens (shared rule, gal.js paint); translation under the last row, no plate; translation-only puts the Chinese in the
+Japanese's place at its size. Size = median CJK box width. Boxes are game-client px → reader CSS px through
+`galLayoutInfo()` (client origin and size in the reader surface, physical px / devicePixelRatio). The reader text is
+found inside the record text (a record may start with a speaker or 「), so a leading name is skipped.
+
+### Tests (offline, no game)
+- `validation/overlay-placement.test.cjs`: ③ rects, glyph spec 3 (client / memory surface / cache gap / g, -), anchor
+  estimate with wrap and typing, fallback, hook-native keeps `at`.
+- `validation/glyph-locate-host.test.cjs`: synthetic captures, base/marked cycle, confirm + save, MARK off for good,
+  located placement also while typing, a new run starts from the saved calibration, give-up after three misses.
+- `validation/text-place-dom.test.cjs` (headless Edge via playwright-core; skipped without it): tokens on boxes, ruby union,
+  translation under the line with no plate, translation-only, surface offset + scale, undrawn characters hidden,
+  fallback keeps the reader's place without a plate, off restores everything.
+- Compositor / glyph-dots / text-paths tests run with `MEGULIT_CAPTURE_COMPOSITOR=1`. Pre-existing failure on
+  feat/text-arch: glyph-dots.test 3 expects `DotsOwn` without `&&!MarksMode`.
+
+### Background live rig (for runs while the owner is away; never steals focus or the mouse)
+`H:MeguLit-Workoverlay-placeig`: `node rig.cjs <worktree>` starts the real service with `rig/root` (data copied on H:,
+runtime linked read-only) and the reader page in headless Edge (no window). `root/native/GalWindowBridge.exe` is
+`RigBridge.exe`: reports bound/layout, keeps the game at HWND_BOTTOM (on every show and every 2 s, SWP_NOACTIVATE),
+writes `FOCUS-ALARM.txt` if the game ever becomes foreground; it never moves, shows or activates anything. The service
+starts games through `NoAct.exe` (SW_SHOWNOACTIVATE, `preload.cjs`). Input: PostMessage only (HidDesk key/click); word
+clicks go to the headless page. Shots: PrintWindow of the game + transparent reader shot composited; `FrameDiff.exe`
+= 300 PrintWindow frames at 60 fps. Control: `http://127.0.0.1:47930` /launch?id= /status /shot?name= /key /click
+/pageclick /frames /quit. Not yet run with a game. The older `overlay-placeun.ps1` moves the real cursor: do not use.
+
+### Not done / not verified
+- No game checked live against (a)–(h); owner test list: `H:MeguLit-Workchecklistsoverlay-placement.md`.
+- (h) Name plates and choices: glyph engines with feat/glyph-dots f752a94+ (extra lines n/o, `setGlyphExtras`, called
+  only when present): blanked by the game and drawn by the reader (`textPlaceExtra`) on their boxes, click-through so the
+  game's own button takes the click; placed only when every character has a box. Option boxes also feed the reader's choice
+  overlay (`hookChoices`: ruby and translation under each option) in place of the OCR locate, which finds nothing once
+  the options are blank; when no option box arrives within 600 ms the OCR locate runs as before. ③ paths: a speaker inside the record text is skipped, the game's own name plate stays.
+- Siglus/YU-RIS glyph cache: a blanked character stays blank wherever the engine reuses it (menus, backlog).
+- Dot font → blank font: not done on purpose (the font patch changes every glyph of the font: menus, names, backlog
+  would vanish). Ren'Py/Artemis need line-scoped hiding (③ renpy; Artemis none yet).
+- BRUNS: blank (U+3000) instead of 「・」 and the per-character hook's line split are not done.
+- 魔法少女ノ魔女裁判 is Unity IL2CPP: the ③ unity path needs the BepInEx 6 IL2CPP pack (runtime/unity-text), not installed.
+- Font face/colour come from the reader's game style, not from the source.

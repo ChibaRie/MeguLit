@@ -1,0 +1,73 @@
+# Open-source projects that do what MTool does (2026-11-14)
+
+What we looked for: tools that take or replace a game's text without per-game setup. Sources were cloned to
+H:\MeguLit-Work\oss\ and read, not run. MTool itself is closed source; we did not download it or reverse engineer it.
+
+| Project | Licence | Engines | Where it intercepts text | What MeguLit takes |
+|---|---|---|---|---|
+| UniversalInjectorFramework (AtomCrafty) | none (all rights reserved) | any Win32 SJIS game | IAT/inline hooks on MultiByteToWideChar, IsDBCSLeadByte(Ex), GetGlyphOutlineA/W, TextOut/ExtTextOut/DrawText(Ex), GetTextExtent*, menus, dialogs, MessageBox, SetWindowText; character substitution + SJIS "tunnel" encoding | **idea only**: the conversion source (MultiByteToWideChar) |
+| VNTextPatch + VNTextProxy (arcusmaximus) | MIT | 25+ engines on file level (AdvHD, Artemis, CatSystem, Ethornell/BGI, KiriKiri, Majiro, Musica, Qlie, RealLive, Ren'Py, Softpal, Whale, YU-RIS, …) | VNTextPatch rewrites script files. VNTextProxy is a proxy DLL (d3d9, ddraw, dinput8, msacm32, version, winmm, xinput1_3) that hooks the IAT for GDI text, CreateFont, D2D/DirectWrite (proportionalizer), SJIS tunnelling | proxy-DLL early load (we use MeguLitLaunch instead); script readers are already in services/original-engines |
+| KirikiriTools (arcusmaximus) | MIT | KiriKiri 2/Z | version.dll proxy hooks the XP3 storage media (TVPXP3ArchiveStream); files in `unencrypted/` override the archive | idea noted: file-level redirect; not used (rule: no game data changed) |
+| LunaHook / LunaTranslator embed (HIllya51) | GPL-3.0 | hundreds of engine hooks | per-engine text functions (H-codes), many with write-back ("embed") | already inside MeguLit (megulithook) |
+| Textractor (Artikash) | GPL-3.0 | same family as ITH/LunaHook | engine hooks + generic GDI hooks, read-only | nothing new (LunaHook covers it) |
+| XUnity.AutoTranslator (bbepis) | MIT | Unity (Mono / IL2CPP) | Harmony patches on UI text setters (uGUI Text, TextMeshPro, NGUI, IMGUI) | already in ③ unitytext |
+| GalTransl (xd2333) | GPL-3.0 | offline, via other tools' extracted scripts | none at runtime | nothing |
+| SExtractor (satan53x) | GPL-3.0 | offline script extraction, many engines | file level | already used for engine readers |
+| RPG Maker MV/MZ translators (Translator++, mv-trans plugins) | various | RPG Maker MV/MZ | JS: Window_Base.drawText / processCharacter, `$dataXxx` JSON | covered by ③ web path |
+| Ren'Py translation (built-in `tl`, renpy-translator) | MIT | Ren'Py | `say` / Text displayable | covered by ③ renpytext |
+| TyranoScript translators | MIT | Tyrano (NW.js / Electron) | jQuery DOM text of `.message_inner` | covered by ③ web path |
+| Wolf RPG translators (WolfTrans, UberWolf) | MIT / GPL | Wolf RPG | file level (.dat / .mps) | not used (file level) |
+
+## Points MeguLit lacked, ordered by engines unlocked
+
+1. **Conversion source, MultiByteToWideChar** (UIF idea). Engines that keep SJIS/UTF-8 scripts and rasterise with their own
+   code convert each line first. Added to MeguLitFont as a third dot source (`path=conv`, mark U+30FB). See
+   docs/text-architecture.md. Engines this can reach without other paths: FreeType/atlas engines that convert per line.
+2. WideCharToMultiByte / lstrcpy family: not added; in the code we read they matter only for SJIS-only engines,
+   which go through TextOutA / GetGlyphOutlineA, and ① already covers those.
+3. File-level script redirection (VNTextPatch, KirikiriTools): changes game data, breaks the rule; left out.
+4. KiriKiri patch through a proxy DLL: ③ already reaches KiriKiri through its plugin path.
+5. LunaHook write-back functions: already used (`MEGULIT_GLYPH_ALL`).
+
+## Finding during the live check
+
+YU-RIS (サイコロジック) is **not** blocked: in dialogue it draws with TextOutA at 100 px, and the existing ① `text` path
+turns every character into a dot. The earlier "0 calls" runs never got past the episode menu.
+
+## Second round: font renderers, windowing, graphics hooks, open engine implementations
+
+| Project | Licence | What it is | Where it hooks / draws text | What MeguLit takes |
+|---|---|---|---|---|
+| MacType (snowie2000) | GPL-3.0 | system-wide font renderer replacement | GDI: TextOut/ExtTextOut A/W, GetGlyphOutline A/W, GetCharWidth*, GetTextFace*, BeginBufferedPaint; DirectWrite/D2D by COM vtable: ID2D1RenderTarget **and ID2D1DeviceContext** slots 27 DrawText / 29 DrawGlyphRun (`directwrite.cpp`), IDWriteBitmapRenderTarget | **adopted**: ID2D1DeviceContext slots 27–29 hooked as well (separate vtable copies; the self-test host reports `dc=3`), which closes the gap docs/text-architecture.md listed. Still not covered: IDWriteBitmapRenderTarget, BufferedPaint |
+| DxWnd | GPL (SourceForge; GitHub mirror gone, not cloned) | forces fullscreen DirectDraw/D3D/OpenGL games into a window | hooks ChangeDisplaySettings, DirectDraw SetCooperativeLevel/SetDisplayMode, D3D CreateDevice presentation params | not done: noted as the gap for DirectDraw / D3D8 games that ② borderless cannot window |
+| Borderless Gaming (Codeusa) | GPL-2.0 | strips window styles | `Manipulation.cs`: SetWindowLong(GWL_STYLE/EXSTYLE) + SetWindowPos only, no API hooks | nothing new: ② borderless already does this |
+| ReShade (crosire) | BSD-3-Clause | post-processing injector | proxy DLLs (d3d9/d3d11/dxgi/opengl32/vulkan layer), hooks Present/SwapChain and draws into the back buffer | idea for a later "draw in the game's frame" fallback when capture fails; not implemented tonight |
+| Special K | GPL-3.0 | game modding framework | D3D8 (via d3d8to9), D3D9/11/12, Vulkan, OpenGL Present hooks; forced windowed / borderless | same as ReShade; D3D8/D3D12 coverage source for layer 4 later |
+| kiero (Rebzzel) | MIT | minimal graphics vtable hook | creates a dummy device, reads vtable, hooks Present (D3D9/10/11/12, OpenGL, Vulkan) | small enough to reuse for layer 4's D3D12/Vulkan when that is built |
+| rlvm (eglaysher) | GPL-3.0 | RealLive reimplementation | `systems/base/text_page.cc` `TextPage::Character()` / `Name()` per character, layout in `text_window.cc` | position model for RealLive (CLANNAD old builds): one Character call per glyph at the window's insertion point |
+| xclannad | repo holds only an APK + notes | — | — | nothing (no source) |
+| ONScripter (ogapee) | GPL-2.0-or-later | NScripter reimplementation | `ONScripter_text.cpp` `drawChar()` / `drawGlyph()`: one glyph per call at `FontInfo` x/y (SDL_ttf) | layout model for NScripter: pitch from `FontInfo`, line break in `checkLineBreak()` |
+| Kirikiroid2 / krkrsdl2 | BSD-3-Clause / MIT | KiriKiri Z reimplementations | `visual/LayerIntf.cpp` Layer.drawText → `tTVPFontRasterizer` (`GDIFontRasterizer.cpp` uses GetGlyphOutline, `FreeTypeFontRasterizer.cpp` FreeType); prerendered fonts (.tft) bypass both | explains 千恋＊万花: no GDI glyphs because it uses a prerendered font or FreeType. Hook point for ③: Layer.drawText (character + x/y per call) |
+
+## Live check of the conversion source (千恋＊万花, KiriKiri Z, 2026-11-14)
+
+It switched on by itself after two lines without dots and replaced 19 lines in memory (path=conv), yet the screen kept the
+real text: KiriKiri converts a copy of the line that it never draws. The DLL therefore no longer confirms on its own. It
+reports `conv covered`, and only the compositor decides by sending `CONV ok` (marks found on screen, remembered as `conv`)
+or `CONV off` (line still visible, remembered as `conv-off`). If neither arrives, the next start finds `conv-trial` and
+turns it off. **Open item for ②:** send `CONV ok` / `CONV off` over HookBridge's control pipe after the first conv line.
+For KiriKiri the real draw point is Layer.drawText (Kirikiroid2 `LayerIntf.cpp`), reachable through ③'s plugin path.
+
+## Danganronpa (DR1/DR2, PC, D3D9Ex): what an engine-level hook needs
+
+There is no open reimplementation of the engine. The open tools work on files only: Spiral, DRAT, and the community .lin
+documentation. They show that a line is text opcode 0x02 in a .lin script, with UTF-16 strings in the .pak next to it, and
+that the font is a sprite sheet (.spft: glyph code → x, y, w, h in the atlas). At run time the game draws each glyph as a
+textured quad and positions it through vertex shader constants, so layer 4 cannot read where each glyph lands.
+A generic hook needs:
+1. The glyph table: parse the loaded .spft (from the file read or the texture upload) to map atlas rectangles to characters.
+2. The draw: hook IDirect3DDevice9::SetVertexShaderConstantF + DrawPrimitive while the font texture is bound, and read the
+   constant registers that carry position and UV (learned once per engine build by matching the UV against the .spft
+   rectangles: an automatic learner, not a per-game table).
+3. Hiding: on a matched glyph draw, set the UV to a single texel of the glyph (a dot) instead of skipping the draw.
+Not built tonight.

@@ -72,6 +72,27 @@ int wmain(int argc, wchar_t **argv) {
   }
  }
  if (remote) VirtualFreeEx(pi.hProcess, remote, 0, MEM_RELEASE);
+ // Text architecture ③ (dot font at the source): more DLLs from MEGULIT_LAUNCH_EXTRA (';'-separated full paths), each
+ // loaded the same way while the game is still suspended; they install their hooks inside LoadLibrary (no ready event).
+ // A failure here is reported and the game still starts.
+ wchar_t extra[4096]; DWORD en = GetEnvironmentVariableW(L"MEGULIT_LAUNCH_EXTRA", extra, 4096);
+ if (en && en < 4096) {
+  std::wstring list(extra, en); size_t at = 0;
+  while (at <= list.size()) {
+   size_t end = list.find(L';', at); if (end == std::wstring::npos) end = list.size();
+   std::wstring one = list.substr(at, end - at); at = end + 1;
+   if (one.empty()) continue;
+   size_t nb = (one.size() + 1) * sizeof(wchar_t);
+   void *r = VirtualAllocEx(pi.hProcess, NULL, nb, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+   if (r && WriteProcessMemory(pi.hProcess, r, one.c_str(), nb, NULL)) {
+    HANDLE t = CreateRemoteThread(pi.hProcess, NULL, 0, (LPTHREAD_START_ROUTINE)GetProcAddress(GetModuleHandleW(L"kernel32.dll"), "LoadLibraryW"), r, 0, NULL);
+    DWORD loaded = 0;
+    if (!t || WaitForSingleObject(t, 15000) != WAIT_OBJECT_0 || !GetExitCodeThread(t, &loaded) || !loaded) fwprintf(stderr, L"extra DLL not loaded: %s\n", one.c_str());
+    if (t) CloseHandle(t);
+   }
+   if (r) VirtualFreeEx(pi.hProcess, r, 0, MEM_RELEASE);
+  }
+ }
  ResumeThread(pi.hThread);
  printf("%lu\n", pi.dwProcessId);
  if (event) CloseHandle(event);

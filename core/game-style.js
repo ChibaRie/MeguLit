@@ -48,6 +48,8 @@ if(typeof value.rubyRowOffsetsX==='string')result.rubyRowOffsetsX=value.rubyRowO
     result.bindEnabled = value.bindEnabled === true;
     result.autoGameStyle=value.autoGameStyle!==false;result.livePosition=value.livePosition===true;
     if(['read','euphoria474','embed','off'].includes(value.hookProfile))result.hookProfile=value.hookProfile;
+    /* Text architecture ②: 'compositor' = MeguLit draws the game's text in a captured frame, 'overlay' = reader window */
+    if(['overlay','compositor'].includes(value.textRenderer))result.textRenderer=value.textRenderer;
     result.embedTranslation=value.embedTranslation===true;result.hookAutoStart=value.hookAutoStart!==false;result.hookFast=value.hookFast!==false;
     result.hookHide=value.hookHide!==false;
     result.interfaceMode=value.interfaceMode==='translation'?'translation':'normal';
