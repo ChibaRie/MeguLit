@@ -87,6 +87,7 @@ struct LineMsg {
   // ③ (engines without glyph dots): the game reports where each character is and draws nothing there itself. No dot
   // search, no erasing: MeguLit's glyphs go straight onto these client rects (one per character of text, blanks too).
   bool rectMode = false; bool rectHidden = false; std::vector<Box> rects;
+  bool conv = false;          // dots from oss-universal's conv source (MeguLitFont waits for our CONV ok / off)
   bool centered = false;      // ④'s text marks: the mark is the centre of the character's cell (not a top-left dot)
   bool bestFit = false;       // more marks than characters: all erased, the text drawn on the first ones
   bool undot = false;        // fallback chosen: the game draws this line itself, MeguLit neither erases nor draws it
@@ -376,7 +377,7 @@ private:
   std::map<uint64_t, Glyph> layouts;
   // tracking
   double lastFrameAt = 0, recheckAt = 0; bool haveFrame = false; int recheck = 0; // Recheck(): passes left over the last frame
-  std::map<int, std::vector<Json>> earlyGlyphs; std::map<int, int> alias; /* repeated line id → the line it repeats */ std::vector<Dot> menuMarks; CompositorBeat *beat = nullptr; HANDLE beatMap = nullptr; int flood = 0; double starveSince = 0; DotTracker tracker; ChoiceTracker choiceTracker; TrackResult lastResult; ChoiceTracker::Out lastChoices;
+  std::map<int, std::vector<Json>> earlyGlyphs; std::map<int, int> alias; /* repeated line id → the line it repeats */ int convVerdict = 0; std::vector<Dot> menuMarks; CompositorBeat *beat = nullptr; HANDLE beatMap = nullptr; int flood = 0; double starveSince = 0; DotTracker tracker; ChoiceTracker choiceTracker; TrackResult lastResult; ChoiceTracker::Out lastChoices;
   bool dotsSeen = false; // ① reported at least one dot in this game session
   LineMsg cur; std::map<int, LineMsg> kept; int autoId = 0, autoMax = 0, autoEmpty = 0;
   std::vector<ChoiceText> choices; bool choicesOn = false, choiceUndot = false; double choiceStart = 0;
@@ -694,6 +695,13 @@ private:
       Emit("{\"e\":\"line\",\"id\":" + std::to_string(cur.id) + ",\"status\":\"" + StatusName(st) + "\",\"found\":" + std::to_string(found) + ",\"expected\":" + std::to_string(Expected(cur)) + "}");
     }
     if (st == LineStatus::Complete) cur.complete = true;
+    // conv source verdict (MeguLitFont trusts it only when we say so): the first conv line whose marks we found and
+    // completed → ok; a conv line whose marks never showed although the text colour is known (the game's own text is
+    // still drawn) → off. Sent once per run.
+    if (cur.conv && !convVerdict) {
+      if (cur.complete && found > 0) { convVerdict = 1; Emit("{\"e\":\"conv\",\"ok\":true,\"id\":" + std::to_string(cur.id) + "}"); }
+      else if (!cur.everDots && tracker.HasColor() && NowMs() - cur.started > 4000) { convVerdict = -1; Emit("{\"e\":\"conv\",\"ok\":false,\"id\":" + std::to_string(cur.id) + "}"); }
+    }
     // A reveal stuck short of the full line (the engine's glyph cache keeps some characters real): the dots that are
     // there stay MeguLit's, the real glyphs stay the game's (same cells), and the line counts as shown (translation).
     if (!cur.undot && !cur.complete && found > 0 && st == LineStatus::Revealing && NowMs() - cur.lastChange > 1500 && !opt.demo) {
@@ -1002,7 +1010,7 @@ private:
       if (i < 0 || i >= int(l.metric.size()) || (!kind.empty() && kind != "d" && kind != "c" && kind != "b")) continue; // b: blind dot, mapped to its character
       // path conv (MultiByteToWideChar source): the game draws 「・」 with its own font, the record has no metrics (h = 0):
       // a centred mark, placed like ④'s text marks.
-      if (d["h"].num() <= 0) { l.centered = true; if (!std::binary_search(l.rec.begin(), l.rec.end(), i)) l.rec.insert(std::upper_bound(l.rec.begin(), l.rec.end(), i), i); continue; }
+      if (d["h"].num() <= 0) { l.centered = true; l.conv = true; if (!std::binary_search(l.rec.begin(), l.rec.end(), i)) l.rec.insert(std::upper_bound(l.rec.begin(), l.rec.end(), i), i); continue; }
       l.metric[i] = { true, float(d["h"].num()), float(d["b"].num()), float(d["a"].num()), float(d["x"].num()), float(d["y"].num()) };
       if (!std::binary_search(l.rec.begin(), l.rec.end(), i)) l.rec.insert(std::upper_bound(l.rec.begin(), l.rec.end(), i), i);
     }

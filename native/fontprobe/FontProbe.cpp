@@ -605,7 +605,7 @@ D2DG ODrawGlyphRunDc; constexpr auto HDrawGlyphRun = &HDrawGlyphRunT<&ODrawGlyph
 // ② maps the dots by reading order. Only in dot mode, only while HookBridge is connected (OFF on pipe loss = heartbeat).
 // Probe: switched on by itself after two pushed lines got no dot from any GDI/GDI+/D2D path. Only the compositor can
 // confirm it: it sends CONV ok when it finds the marks on screen (remembered as "conv" in <cache>\source.txt), CONV off
-// when the line stays visible (KiriKiri converts a copy it never draws, live 2026-11-14). Canary: "conv-trial" is written when it switches on; a start that finds "conv-trial"
+// when the line stays visible (an engine may convert a copy it never draws, seen live 2026-11-14). Canary: "conv-trial" is written when it switches on; a start that finds "conv-trial"
 // (never confirmed, e.g. the game crashed) writes "conv-off" and never switches it on again.
 volatile LONG ConvOn = 0; long ConvSeq = -1, ConvNext = 0, ConvMarked = 0, ConvLastDotSeq = -1; int ConvMiss = 0; bool ConvConfirmed = false;
 const wchar_t ConvMarkChar = 0x30fb;

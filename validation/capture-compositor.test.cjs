@@ -112,6 +112,10 @@ test('runtime: textRenderer setting, compositor with the bound game, overlay dia
   assert.deepStrictEqual(sent.filter(x => x.t === 'dots').at(-1)?.dots?.[0]?.k, 'b', 'blind dots mapped by HookNative reach the compositor with their line');
   host.hook({ type: 'hookTextMarks', state: 'line', path: 'embed', text: '雨だ。', marks: 3, mark: 'middle-dot' });
   assert.deepStrictEqual(sent.at(-1), { t: 'line', id: 300001, text: '雨だ。', expected: 3, marks: 'middle-dot' }, '④ text marks become a centred-mark line with its mark count');
+  evt({ e: 'conv', ok: true, id: 7 });
+  assert.deepStrictEqual(ui.at(-1), { type: 'compositorConv', ok: true }, 'conv source verdict goes to the app');
+  assert.match(read('core/gal-native.cjs'), /m\?\.type==='compositorConv'\)\{this\.hooks\.send\?\.\(\{type:'glyphConv',ok:m\.ok===true\}\)/);
+  assert.match(read('native/HookBridge.cs'), /type=="glyphConv"\)\{object ov;bool ok=d\.TryGetValue\("ok",out ov\)&&Convert\.ToBoolean\(ov\);.*GlyphSend\(ok\?"CONV ok":"CONV off"\)/);
   host.choices(['はい', 'いいえ']);
   assert.deepStrictEqual(sent.find(x => x.t === 'choices').i, [{ text: 'はい' }, { text: 'いいえ' }]);
   host.text('いいえ', '不');
