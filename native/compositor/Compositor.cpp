@@ -88,7 +88,7 @@ struct LineMsg {
   // search, no erasing: MeguLit's glyphs go straight onto these client rects (one per character of text, blanks too).
   bool rectMode = false; bool rectHidden = false; std::vector<Box> rects;
   bool undot = false;        // fallback chosen: the game draws this line itself, MeguLit neither erases nor draws it
-  LineStatus last = LineStatus::Waiting; double lastChange = 0; int lastFound = -1; bool complete = false;
+  LineStatus last = LineStatus::Waiting; double lastChange = 0, started = 0; int lastFound = -1; bool complete = false, everDots = false;
   std::vector<Box> demoCells; // --demo: the compositor paints these dots itself (stand-in for part ①)
 };
 struct Style {
@@ -192,7 +192,7 @@ public:
     if (t == "line") {
       if (j["page"].truthy()) { tracker.EndPage(); kept.clear(); }
       if (cur.id && !cur.undot) kept[cur.id] = cur;
-      cur = LineMsg{}; cur.id = int(j["id"].num(++autoId));
+      cur = LineMsg{}; cur.id = int(j["id"].num(++autoId)); cur.started = NowMs();
       cur.text = U32(Wide(j["text"].str())); cur.tl = Wide(j["tl"].str()); cur.dotChar = DotCharIndex(cur.text);
       for (size_t i = 0; i < j["ruby"].size(); ++i) { const Json &r = j["ruby"][i]; cur.ruby.push_back({ int(r[0].num()), int(r[1].num()), Wide(r[2].str()) }); }
       cur.vertical = j.has("vertical") ? (j["vertical"].truthy() ? 1 : 0) : -1;
@@ -601,6 +601,7 @@ private:
     }
     const TrackResult &r = lastResult;
     const int found = int(r.dots.size());
+    if (found > 0) cur.everDots = true;
     // Far more dots than ① reported for the line, frame after frame: the learned colour is not the text's (artwork in
     // the same colour) — forget it and learn again from the next change.
     if (!cur.complete && !cur.rec.empty() && found > 3 * int(cur.rec.size()) + 5) { if (++flood > 15) { tracker.ForgetColor(); flood = 0; } } else flood = 0;
@@ -674,6 +675,9 @@ private:
     std::vector<HitBox> hits;
     for (const auto &k : lastResult.kept) { auto it = kept.find(k.id); if (it != kept.end()) DrawLine(it->second, k.dots, true, hits); }
     if (cur.id && !cur.undot) DrawLine(cur, lastResult.dots, false, hits);
+    // A line MeguLit cannot place (no dots, no cells: the game draws it itself, or it was handed back): with the reader
+    // overlay off while the compositor owns the game, its translation is shown as a caption above the text area.
+    if (cur.id && style.mode != 1 && !cur.tl.empty() && (cur.undot || (!cur.everDots && lastResult.dots.empty())) && NowMs() - cur.started > 1200) DrawCaption(cur.tl);
     if (choicesOn && lastChoices.ok && !choiceUndot) DrawChoices();
     if (opt.scale) DrawCursor();
     d2->EndDraw();
@@ -788,6 +792,17 @@ private:
     }
   }
 
+  void DrawCaption(const std::wstring &text) {
+    const float ts = std::max(16.f, outH / 30.f), pad = ts * .4f;
+    com_ptr<IDWriteTextLayout> tl; dw->CreateTextLayout(text.c_str(), UINT32(text.size()), Format(style.tlFont, ts, false), float(outW) * .8f, 4096, tl.put());
+    if (!tl) return;
+    tl->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
+    DWRITE_TEXT_METRICS m{}; tl->GetMetrics(&m);
+    const float x0 = float(outW) * .1f, y = std::max(0.f, float(outH) * .70f - m.height);
+    brush->SetColor(D2D1::ColorF(0, 0, 0, .55f));
+    d2->FillRoundedRectangle(D2D1::RoundedRect(D2D1::RectF(x0 + m.left - pad, y - pad, x0 + m.left + m.width + pad, y + m.height + pad), pad, pad), brush.get());
+    Text(tl.get(), { x0, y }, style.tlColor, 1);
+  }
   // Translation only: Chinese in the Japanese's area at the game's font size, wrapped inside the measured area and
   // revealed in step with the game's own reveal (share of dots shown → share of translation characters shown).
   void DrawTranslationOnly(const LineMsg &l, const std::vector<Dot> &dots, float emSrc, bool vertical) {
