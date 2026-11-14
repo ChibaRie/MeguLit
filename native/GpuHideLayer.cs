@@ -86,16 +86,31 @@ public static partial class HookBridge {
  [System.Runtime.InteropServices.DllImport("kernel32.dll")] static extern bool ResetEvent(IntPtr h);
  public static void SetMarks(bool on){
   if(on&&GpuCanaryOff()!=""){Diagnostic("text marks refused: crash canary ("+GpuCanaryOff()+")");on=false;}
-  MarksMode=on;if(MarksEvent==IntPtr.Zero)MarksEvent=CreateEventW(IntPtr.Zero,true,false,"Local\\MeguLitMarks-"+Pid);
+  MarksMode=on;if(on){MarksSince=(long)GetTickCount64();BeatSeen=false;MarksPaused=false;}if(MarksEvent==IntPtr.Zero)MarksEvent=CreateEventW(IntPtr.Zero,true,false,"Local\\MeguLitMarks-"+Pid);
   if(MarksEvent!=IntPtr.Zero){if(on)SetEvent(MarksEvent);else ResetEvent(MarksEvent);}
   Diagnostic("text marks "+(on?"on":"off"));Emit(new{type="hookTextMarks",state=on?"on":"off",mark="middle-dot"});}
+ /* Owner rule "the player never sees marks" (docs/text-architecture.md): the write-back marks only while MeguLit's capture
+    compositor presents the game: heartbeat Local\MeguLitCompositorBeat-<game pid> (magic 'MGCB', version 1, presenting,
+    tickMs = GetTickCount64). Before any beat a 20 s grace from SetMarks(true); after one was seen, presenting == 1 and
+    the tick at most 1000 ms old. Otherwise the line gets the ordinary hide (blanks) and hookTextMarks "paused" is sent. */
+ static System.IO.MemoryMappedFiles.MemoryMappedViewAccessor BeatView;static long MarksSince;static bool BeatSeen,MarksPaused;
+ [System.Runtime.InteropServices.DllImport("kernel32.dll")] static extern ulong GetTickCount64();
+ static bool MarksLive(){
+  ulong now=GetTickCount64();bool live;
+  try{if(BeatView==null)BeatView=System.IO.MemoryMappedFiles.MemoryMappedFile.OpenExisting("Local\\MeguLitCompositorBeat-"+Pid,System.IO.MemoryMappedFiles.MemoryMappedFileRights.Read).CreateViewAccessor(0,32,System.IO.MemoryMappedFiles.MemoryMappedFileAccess.Read);}catch{}
+  uint magic=0,version=0,presenting=0;ulong tick=0;
+  try{if(BeatView!=null){magic=BeatView.ReadUInt32(0);version=BeatView.ReadUInt32(4);presenting=BeatView.ReadUInt32(12);tick=BeatView.ReadUInt64(16);}}catch{}
+  if(magic==0x4243474D&&version==1&&tick!=0)BeatSeen=true;
+  if(BeatSeen)live=magic==0x4243474D&&version==1&&presenting==1&&tick!=0&&now>=tick&&now-tick<=1000;else live=now-(ulong)MarksSince<=20000;
+  if(!live&&!MarksPaused){MarksPaused=true;Diagnostic("text marks paused: compositor heartbeat stale");Emit(new{type="hookTextMarks",state="paused",mark="middle-dot"});}
+  else if(live&&MarksPaused){MarksPaused=false;Diagnostic("text marks live");Emit(new{type="hookTextMarks",state="live",mark="middle-dot"});}
+  return live;}
  static void MarksLine(string path,string text,string marked){int n=0;foreach(char c in marked)if(c=='\u30FB'||c=='\uFF65')n++;
   Emit(new{type="hookTextMarks",state="line",path=path,text=text,marks=n,mark="middle-dot"});}
  static void MarksHit(string info){bool fresh=false;lock(Gate){Candidate c;if(Selected!=""&&Candidates.TryGetValue(Selected,out c)&&c.gdiProbe&&!c.embed)fresh=true;}
   if(fresh){GdiHideHit("marks "+info);Status("文字标记已生效：游戏把对白画成「・」，由 MeguLit 接管显示");}
   Emit(new{type="hookTextMarks",state="hit",path="char",mark="middle-dot"});}
- static void GpuHide(string bit,string loader,string[] args){try{string dll=Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"MeguLitGpu"+bit+".dll");if(!File.Exists(dll)){Diagnostic("gpu hide unavailable: "+Path.GetFileName(dll)+" missing");return;}
-  if(Environment.GetEnvironmentVariable("MEGULIT_TEXT_MARKS")=="1")SetMarks(true);
+ static void GpuHide(string bit,string loader,string[] args){try{if(Environment.GetEnvironmentVariable("MEGULIT_TEXT_MARKS")=="1")SetMarks(true); /* marks do not need layer 4 */string dll=Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"MeguLitGpu"+bit+".dll");if(!File.Exists(dll)){Diagnostic("gpu hide unavailable: "+Path.GetFileName(dll)+" missing");return;}
   if(!GpuCanaryArm())return;
   new Thread(()=>{while(!Quit){try{using(var pipe=new System.IO.Pipes.NamedPipeServerStream("MeguLitGpu-"+Pid,System.IO.Pipes.PipeDirection.In,1)){pipe.WaitForConnection();using(var reader=new StreamReader(pipe,new System.Text.UTF8Encoding(false))){string line;while((line=reader.ReadLine())!=null)GpuReport(line);}}}catch(Exception e){Diagnostic("gpu pipe "+e.Message);Thread.Sleep(1000);}}}){IsBackground=true}.Start();
   new Thread(()=>{while(!Quit){try{using(var pipe=new System.IO.Pipes.NamedPipeServerStream("MeguLitGpuCtl-"+Pid,System.IO.Pipes.PipeDirection.Out,1)){pipe.WaitForConnection();var w=new StreamWriter(pipe,new System.Text.UTF8Encoding(false)){AutoFlush=true,NewLine="\n"};lock(GpuGate){GpuCtlPipe=w;GpuSent=false;}Diagnostic("gpu hide connected");while(!Quit){lock(GpuGate){if(GpuCtlPipe!=w)break;}Thread.Sleep(500);}}}catch(Exception e){lock(GpuGate){GpuCtlPipe=null;}Diagnostic("gpu control "+e.Message);Thread.Sleep(1000);}}}){IsBackground=true}.Start();
