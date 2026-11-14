@@ -175,6 +175,39 @@ namespace MeguLitGdiHide
     return true;
   }
 
+  // Character blanking (E578 live, BRUNS: the dialogue is drawn from bitmap font atlases, no GDI text call carries it).
+  // A per-character hook that reads its UTF-16 character straight from a stack argument hands the engine that very
+  // character; when the host switched that stream on, the engine gets a blank of the same width instead, so it lays
+  // the line out unchanged and draws nothing. ASCII stays (script markup such as ruby tags), controls stay.
+  inline long BlankLine = -1;
+  inline wchar_t BlankFor(wchar_t c)
+  {
+    if (c < 0x80 || c == 0x3000 || (c >= 0xd800 && c <= 0xdfff) || (c >= 0xfe00 && c <= 0xfe0f))
+      return c;
+    if (c >= 0xff61 && c <= 0xffdc)
+      return L' ';
+    return 0x3000;
+  }
+  // Called after Feed for the same character; returns the character to hand back to the engine.
+  inline wchar_t BlankChar(wchar_t c)
+  {
+    wchar_t b = BlankFor(c);
+    if (b == c)
+      return c;
+    bool report = false;
+    AcquireSRWLockExclusive(&Lock);
+    if (BlankLine != Line)
+    {
+      BlankLine = Line;
+      report = Reported != Line;
+      Reported = Line;
+    }
+    ReleaseSRWLockExclusive(&Lock);
+    if (report)
+      Msg::Log("MeguLit_GDIHIDE hit fn=charblank size=0 n=1");
+    return b;
+  }
+
   inline bool SkipA(HDC hdc, const char *s, int n, const char *fn)
   {
     if (!Attached || !s)

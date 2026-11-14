@@ -397,7 +397,16 @@ void TextHook::Send(hook_context *context)
 		TextOutput(tp, hp, buffer, buff.size);
 		/* MeguLit: a stream that cannot write back is hidden where the game draws it through GDI (MeguLitGdiHide.h) */
 		if (!(hp.type & EMBED_ABLE) && check_embed_able(tp))
+		{
 			MeguLitGdiHide::Feed(tp, hp, buff);
+			/* MeguLit E578: a character read straight from a stack argument is the one the engine will draw: hand it a blank */
+			if (buff.size == 2 && (hp.type & CODEC_UTF16) && !(hp.type & (DATA_INDIRECT | USING_STRING | CSHARP_STRING)) && !text_fun && hp.jittype == JITTYPE::PC && plpdatain)
+			{
+				wchar_t c = *(wchar_t *)buff.data, b = MeguLitGdiHide::BlankChar(c);
+				if (b != c && ((*plpdatain) & 0xffff) == c)
+					*plpdatain = ((*plpdatain) & ~(uintptr_t)0xffff) | b;
+			}
+		}
 
 		if (canembed && (check_embed_able(tp)))
 		{

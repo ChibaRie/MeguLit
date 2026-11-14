@@ -15,7 +15,7 @@ const {replay}=require('./helpers/hook-replay.cjs');
 test('hook DLL: the selected stream that cannot write back feeds the GDI hide, nothing else does',()=>{
  const t=read('native/megulithook/texthook.cc');
  assert.match(t,/#include "MeguLitGdiHide\.h"/);
- assert.match(t,/TextOutput\(tp, hp, buffer, buff\.size\);[\s\S]{0,200}if \(!\(hp\.type & EMBED_ABLE\) && check_embed_able\(tp\)\)\s*MeguLitGdiHide::Feed\(tp, hp, buff\);/);
+ assert.match(t,/TextOutput\(tp, hp, buffer, buff\.size\);[\s\S]{0,200}if \(!\(hp\.type & EMBED_ABLE\) && check_embed_able\(tp\)\)\s*\{?\s*MeguLitGdiHide::Feed\(tp, hp, buff\);/);
  const h=read('native/megulithook/MeguLitGdiHide.h');
  assert.match(h,/attachFunction\(F_TextOutA \| F_TextOutW \| F_ExtTextOutA \| F_ExtTextOutW \| F_DrawTextA \| F_DrawTextW \| F_DrawTextExA \| F_DrawTextExW\)/);
  assert.match(h,/if \(!armed \|\| !\(hit \|\| ruby\) \|\| !check_embed_able\(tp\)\)\s*return false;/,'never hides once the host switches the stream off');
@@ -110,4 +110,15 @@ test('hook DLL: a stream that cannot write back never waits for a write-back whe
  const h=read('native/megulithook/MeguLitGdiHide.h');
  assert.match(h,/Msg::Log\("MeguLit_GDIHIDE seen fn=%s n=%d first=%04x hit=%d ruby=%d on=%d"/,'first strings after arming are logged for diagnosis');
  assert.match(read('native/megulithook/embed_util.cc'),/Msg::Log\("MeguLit hijack failed flag=%x"/);
+});
+/* E578 (2026-11-15, BRUNS draws its dialogue from bitmap font atlases): a selected per-character stream that cannot write
+   back hands the engine a same-width blank instead of the character it reads straight from the stack (ASCII markup and
+   controls stay), and reports the first blanked character of a line as a hidden draw so the stream becomes hide-only. */
+test('hook DLL: the switched-on per-character stream draws blanks and reports it once per line',()=>{
+ const t=read('native/megulithook/texthook.cc');
+ assert.match(t,/if \(buff\.size == 2 && \(hp\.type & CODEC_UTF16\) && !\(hp\.type & \(DATA_INDIRECT \| USING_STRING \| CSHARP_STRING\)\) && !text_fun && hp\.jittype == JITTYPE::PC && plpdatain\)/);
+ assert.match(t,/if \(b != c && \(\(\*plpdatain\) & 0xffff\) == c\)/,'only the very character the engine passed is replaced');
+ const h=read('native/megulithook/MeguLitGdiHide.h');
+ assert.match(h,/inline wchar_t BlankFor\(wchar_t c\)/);assert.match(h,/Msg::Log\("MeguLit_GDIHIDE hit fn=charblank size=0 n=1"\)/);
+ assert.match(read('native/megulithook/selftest/gdihide.cpp'),/the first blanked character of a new line is reported once/);
 });
