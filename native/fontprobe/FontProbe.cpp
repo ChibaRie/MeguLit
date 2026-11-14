@@ -89,7 +89,7 @@ Face FaceOf(HDC dc) {
 }
 
 // ---- glyph hide state: GlyphMatch.h decides, HideLock guards it (never taken while holding Gate) ------------------------
-SRWLOCK HideLock = SRWLOCK_INIT; GlyphHide::Matcher Hide; volatile LONG HideOn = 0, DotMode = 0;
+SRWLOCK HideLock = SRWLOCK_INIT; GlyphHide::Matcher Hide; volatile LONG HideOn = 0, DotMode = 0, BlindMode = 0;
 struct IndexMap { HFONT font = NULL; long seq = -1; std::map<WORD, wchar_t> map; } Indexes;
 GlyphHide::Key KeyOf(const Face &f) { GlyphHide::Key k; k.face = f.name; k.size = f.size; return k; }
 void AnnounceLine(long seq, const std::wstring &text);
@@ -99,7 +99,7 @@ void Command(std::string l) {
  long announce = -1; std::wstring text;
  if (l.rfind("LINE ", 0) == 0) { long before = Hide.Sequence(); Hide.SetLine(Wide(l.substr(5)), GetTickCount()); InterlockedExchange(&HideOn, Hide.Cached() ? 0 : 1); if (DotMode && Hide.Sequence() != before) { announce = Hide.Sequence(); text = Hide.Current(); } }
  else if (l == "OFF") { Hide.Off(); InterlockedExchange(&HideOn, 0); }
- else if (l == "MODE dot" || l == "MODE blank") { bool dot = l == "MODE dot"; Hide.StopOnCache = !dot; InterlockedExchange(&DotMode, dot ? 1 : 0); }
+ else if (l == "MODE dot" || l == "MODE blank" || l == "MODE dot-blind") { bool dot = l != "MODE blank", blind = l == "MODE dot-blind"; Hide.StopOnCache = !dot; InterlockedExchange(&DotMode, dot ? 1 : 0); InterlockedExchange(&BlindMode, blind ? 1 : 0); if (blind) InterlockedExchange(&HideOn, 1); }
  else if (l.rfind("FONT ", 0) == 0) { size_t sp = l.find(' ', 5); if (sp != std::string::npos) { GlyphHide::Key k; k.size = atoi(l.substr(5, sp - 5).c_str()); k.face = Clean(Wide(l.substr(sp + 1))); Hide.Seed(k); } }
  ReleaseSRWLockExclusive(&HideLock);
  if (announce >= 0) AnnounceLine(announce, text); // dot mode: the line (and how many dots to expect) before the game draws it
@@ -126,17 +126,23 @@ wchar_t FromIndex(HDC dc, UINT g) {
  auto it = Indexes.map.find((WORD)g); return it == Indexes.map.end() ? 0 : it->second;
 }
 void AfterDecision() { if (Hide.Cached()) InterlockedExchange(&HideOn, 0); }
+// Blind dots (MODE dot-blind, for streams whose text arrives after the glyphs are drawn): any CJK/kana glyph (or an
+// unmapped glyph index) under the dialogue font (learned, seeded with FONT, or the probe's leading font) becomes a dot
+// without waiting for the line; kind 'b', index -1. MeguLit maps them to the line by reading order when it arrives.
+bool BlindChar(wchar_t c) { return c == 0 || (c >= 0x3000 && !GlyphHide::Blank(c)) || (c >= 0xff01 && c <= 0xff5e); }
 // One glyph; dc may be NULL when c is already a character. sv/seq/ch (optional): what was served, for the dot report.
 bool HideGlyph(HDC dc, UINT c, bool index, const Face &f, bool render, GlyphHide::Served *sv = NULL, long *seq = NULL, wchar_t *chOut = NULL) {
  AcquireSRWLockExclusive(&HideLock);
  wchar_t ch = index ? FromIndex(dc, c) : (wchar_t)c;
  bool r = ch && Hide.Glyph(ch, KeyOf(f), GetTickCount(), render, "ggo", sv); AfterDecision();
+ if (!r && BlindMode && BlindChar(ch) && (ch || index) && Hide.DialogueKey(KeyOf(f))) { r = true; if (sv) *sv = GlyphHide::Served{-1, 'b'}; }
  if (seq) *seq = Hide.Sequence(); if (chOut) *chOut = ch;
  ReleaseSRWLockExclusive(&HideLock); return r;
 }
 bool HideText(const std::wstring &s, const Face &f, const char *path, std::vector<GlyphHide::Served> *sv = NULL, long *seq = NULL) {
  if (s.empty()) return false;
- AcquireSRWLockExclusive(&HideLock); bool r = Hide.Text(s, KeyOf(f), GetTickCount(), path, sv); AfterDecision(); if (seq) *seq = Hide.Sequence(); ReleaseSRWLockExclusive(&HideLock); return r;
+ AcquireSRWLockExclusive(&HideLock); bool r = Hide.Text(s, KeyOf(f), GetTickCount(), path, sv); AfterDecision();
+ if (!r && BlindMode && Hide.DialogueKey(KeyOf(f))) { bool any = false; for (wchar_t c : s) any = any || (c && BlindChar(c)); if (any) { r = true; if (sv) { sv->assign(s.size(), GlyphHide::Served{}); for (size_t i = 0; i < s.size(); i++) if (s[i] && BlindChar(s[i])) (*sv)[i] = GlyphHide::Served{-1, 'b'}; } } } if (seq) *seq = Hide.Sequence(); ReleaseSRWLockExclusive(&HideLock); return r;
 }
 std::wstring FromIndices(HDC dc, const WORD *g, UINT n) {
  std::wstring w; if (!g || !n || n > 4096) return w;
