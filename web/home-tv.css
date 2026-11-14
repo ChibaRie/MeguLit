@@ -364,3 +364,17 @@
 .tv-script p,.tv-script .tv-stxt{white-space:nowrap!important}
 .tv-script p{flex:none;overflow:hidden;text-overflow:ellipsis}
 .tv-script .tv-stxt{display:inline;overflow:visible}
+
+/* 2026-11-15 owner: title lower, "上次" note left of the bottom line, GSAP title transition (the old .in/translate rules no longer drive the title) */
+.tv-title{bottom:calc(8vh + 18px)}
+.tv-rail{bottom:calc(8vh + 18px)}
+.tv-dialog .tv-who{display:block;flex:none;max-width:none;font-size:13px!important;letter-spacing:.06em!important;white-space:nowrap}
+.tv-dialog{gap:22px}
+.tv-title .tv-h1,.tv-title .tv-meta{opacity:1;transform:none;transition:none}
+.tv-title .tv-h1 span.tv-seg,.tv-title .tv-h1 span.tv-w{opacity:1;transform:none;transition:none}
+.tv-title .tv-h1 span.tv-ch{display:inline-block;opacity:1;transform:none;transition:none;will-change:transform,opacity}
+.tv-title .tv-h1 span.tv-w{display:inline-block;white-space:nowrap}
+html:not(#u):not(#v):not(#w):not(#x):not(#y) body .tv-home .tv-title{bottom:calc(8vh + 18px)!important;max-width:min(34vw,660px)!important}
+@media (max-height:800px){.tv-left{zoom:.74}}
+.tv-title .tv-seg{text-wrap:pretty}
+.tv-title .tv-h1{text-wrap:pretty}

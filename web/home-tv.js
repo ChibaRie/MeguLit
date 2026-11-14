@@ -2,6 +2,7 @@ import {activityCells} from './learning-activity.js';
 import {openLinesPicker} from './home-lines.js';
 import {createDepth,markFlat,cachedDaily,rememberDaily,dailyIsFresh,dailySignature,cachedActivity,rememberActivity} from './home-depth.js';
 import {exAttr,setExample} from './example-ruby.js';
+import {loadGsap} from './gsap-loader.js';
 import {createDock,openHandPicker,HAND_MAX} from './home-picker.js';
 import {pickHeadline,cachedHeadline,translateHeadline,headlineLabel,activitySummary,emptyActivityHTML} from './home-today.js';
 
@@ -217,11 +218,21 @@ function splitTitle(t){const m=String(t||'').match(/^(.+?)\s*[（(]([^（）()]+
 /* 2026-11-13 (user: "不要左侧这么大一个作品名了") the game name is only the fallback when there is no daily headline, and it stays mid-sized */
 /* 2026-11-15 (user: 最左下角只要作品的随机一句话，不要和背景的句子同步，单独随机) the bottom-left line is its own random pick from every line the game has, never tied to the background script */
 const quoted=s=>/^[「『（("]/.test(s)?s:'「'+s+'」';
-function titleHTML(t){const esc3=x=>String(x).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]);return String(t).split(/[s　]+(?=[～〜~]|-S)/u).map(x=>`<span class="tv-seg">${esc3(x)}</span>`).join('');}
+function titleHTML(t){const esc3=x=>String(x).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]),ch=c=>`<span class="tv-ch">${esc3(c)}</span>`;
+ return String(t).split(/[\s\u3000]+(?=[～〜~]|-\S)/u).map(seg=>`<span class="tv-seg">${(seg.match(/[A-Za-z0-9'’!?.,:;&\-]+|[\s\u3000]+|[\s\S]/gu)||[]).map(tok=>/^[A-Za-z0-9'’!?.,:;&\-]+$/.test(tok)?`<span class="tv-w">${[...tok].map(ch).join('')}</span>`:/^[\s\u3000]+$/.test(tok)?' ':ch(tok)).join('')}</span>`).join('');}
+/* 2026-11-15 (user: 不同作品的标题过渡动画) old title leaves character by character (up, blur, fade), the new one rises from the mask below; the line and the last-played note follow. GSAP, transform/opacity/filter only; a new switch kills the running timeline first so nothing stacks */
+const calm=()=>matchMedia('(prefers-reduced-motion:reduce)').matches;
+function titleOut(root,lv){const g=window.gsap;if(!g||calm())return Promise.resolve();lv.tl?.kill();const t=root.querySelector('.tv-title'),chars=t.querySelectorAll('.tv-ch'),rest=[t.querySelector('.tv-meta'),root.querySelector('.tv-who'),root.querySelector('.tv-line')].filter(Boolean);
+ return new Promise(res=>{const tl=g.timeline();lv.tl=tl;if(chars.length)tl.to(chars,{y:-18,opacity:0,filter:'blur(6px)',duration:.26,ease:'power2.in',stagger:{amount:.16}},0);tl.to(rest,{y:-6,opacity:0,duration:.22,ease:'power2.in'},0);tl.call(res);});}
+function titleIn(root,lv){const g=window.gsap;if(!g||calm())return;lv.tl?.kill();const t=root.querySelector('.tv-title'),chars=t.querySelectorAll('.tv-ch'),rest=[t.querySelector('.tv-meta'),root.querySelector('.tv-who'),root.querySelector('.tv-line')].filter(Boolean);
+ const tl=g.timeline({onComplete:()=>g.set([...chars,...rest],{clearProps:'filter,willChange'})});lv.tl=tl;
+ if(chars.length)tl.fromTo(chars,{y:'110%',opacity:0,filter:'blur(0px)'},{y:0,opacity:1,duration:.55,ease:'expo.out',stagger:{amount:.32}},0);
+ tl.fromTo(rest,{y:8,opacity:0},{y:0,opacity:1,duration:.4,ease:'power2.out',stagger:.06},.18);}
 function randomLine(d,background){const all=[...new Set([...(d?.sentences||[]).map(s=>String(s.text||'').trim()),...(d?.recentLines||[]).map(s=>String(s.text||'').trim()),...(Array.isArray(d?.homeAuto)?d.homeAuto:[]).map(t=>String(t||'').trim())].filter(Boolean).map(t=>t.replace(/\[[^\]]*\]/g,'').trim()).filter(t=>t.length>=6&&t.length<=56&&storyLine(t)))];
  const free=all.filter(t=>!background.slice(0,1).includes(t)),pool=free.length?free:all;return pool.length?pool[Math.floor(Math.random()*pool.length)]:'';}
-function fitTitle(h){const max=Math.min(76,Math.max(36,innerWidth*.04));let size=max;h.style.fontSize=size+'px';const limit=()=>h.scrollHeight>size*1.18*3+size*.3||h.scrollWidth>h.clientWidth+2;
- while(limit()&&size>28){size-=4;h.style.fontSize=size+'px';}}
+/* prefer two lines (down to 44px), fall back to three lines (down to 28px); never clipped */
+function fitTitle(h){const max=Math.min(76,Math.max(36,innerWidth*.04));for(const [lines,floor] of [[2,Math.max(34,innerWidth*.023)],[3,28]]){let size=max;h.style.fontSize=size+'px';const limit=()=>h.scrollHeight>size*1.18*lines+size*.3||h.scrollWidth>h.clientWidth+2;
+ while(limit()&&size>floor){size-=2;h.style.fontSize=size+'px';}if(!limit())return;}}
 
 function tweenFig(el,to,fmt){if(!el)return;const from=+el.dataset.v||0;el.dataset.v=to;cancelAnimationFrame(+el.dataset.raf||0);if(matchMedia('(prefers-reduced-motion:reduce)').matches||from===to){
  el.textContent=fmt(to);return;}const t0=performance.now(),dur=900;const tick=now=>{const k=Math.min(1,(now-t0)/dur),e=1-Math.pow(1-k,4);el.textContent=fmt(from+(to-from)*e);
@@ -256,7 +267,7 @@ export function cardify(card){const face=card.querySelector('.tv-face');let pres
  card.addEventListener('pointerleave',()=>{pressed=false;last=null;card.classList.remove('touch');face.style.transition='transform .7s cubic-bezier(.2,1.6,.4,1)';
   face.style.transform='';});}
 
-export function stopHomeTV(){if(!live)return;clearTimeout(live.timer);clearInterval(live.beat);clearInterval(live.typer);live.depth?.stop();live.hand?.stop();live=null;}
+export function stopHomeTV(){if(!live)return;live.tl?.kill();clearTimeout(live.timer);clearInterval(live.beat);clearInterval(live.typer);live.depth?.stop();live.hand?.stop();live=null;}
 
 export function homeTVSignature(model){return JSON.stringify([model.games.map(g=>[g.id,g.available,g.cover?.length,g.title,g.lastPlayedAt,g.readingSeconds,g.characters,
  g.learnedWords]),model.stats,model.preferences.homeShowcase,model.preferences.username]);}
@@ -281,7 +292,7 @@ export function renderHomeTV(main,ctx){
   <div class="tv-rail"></div>
   <div class="tv-dialog"><span class="tv-who"></span><span class="tv-line"></span><div class="tv-act"></div></div></div>`;
  const root=main.querySelector('.tv-home'),$=s=>root.querySelector(s);
- live={root,timer:0,beat:0,typer:0,depth:null};
+ live={root,timer:0,beat:0,typer:0,depth:null};loadGsap().catch(()=>{});
  const art=(g,p)=>g.cover?`url("${String(g.cover).replace(/"/g,'%22')}") center/cover`:`linear-gradient(160deg,${p[0]},${p[2]} 70%)`;
  root.querySelectorAll('[data-go]').forEach(b=>b.addEventListener('click',()=>{const to=b.dataset.go;if(to==='detail'){if(shown)onDetail(shown.id);return;}if(to==='words')navigate('learning',
   'words');else if(to==='activity')navigate('statistics');else navigate(to);}));
@@ -298,8 +309,7 @@ export function renderHomeTV(main,ctx){
  const type=s=>{clearInterval(live.typer);let n=0;const line=$('.tv-line');if(!line)return;setExample(line,'');line.textContent='';line.classList.toggle('typing',!!s);if(!s)return;
   if(matchMedia('(prefers-reduced-motion:reduce)').matches){line.textContent=quoted(s);line.classList.remove('typing');setExample(line,s);return;}
   live.typer=setInterval(()=>{n++;line.textContent=n>=s.length?quoted(s):(/^[「『（("]/.test(s)?'':'「')+s.slice(0,n);if(n>=s.length){clearInterval(live.typer);line.classList.remove('typing');setExample(line,s);}},55);};
- const nameIn=g=>{const who=$('.tv-who');if(!who)return;who.classList.remove('in');who.innerHTML=[...String(g.title||'')].map((c,i)=>`<i style="transition-delay:${Math.min(i,40)*22}ms">${esc(c)}</i>`).join('');
-  who.title=g.title+(g.lastPlayedAt?` · ${w.last} · ${relativeTime(g.lastPlayedAt)}`:'');void who.offsetWidth;requestAnimationFrame(()=>who.classList.add('in'));};
+ const nameIn=g=>{const who=$('.tv-who');if(!who)return;who.textContent=g.lastPlayedAt?`${w.last} · ${relativeTime(g.lastPlayedAt)}`:'';who.title=g.title;};
  const max=Math.max(1,...model.games.map(g=>g.characters||0));
  async function paint(i,flash=true,mode='draw'){
   const g=typeof i==='object'?i:list[i];if(!root.isConnected){if(live?.root===root)stopHomeTV();return;}if(!g||!live||live.root!==root)return;shown=g;cur=list.indexOf(g);
@@ -324,13 +334,12 @@ export function renderHomeTV(main,ctx){
   $('.tv-slices').innerHTML=Array.from({length:5},(_,j)=>`<i style="background:${art(g,p)};background-size:500% 100%;background-position:${j*25}% 0;transform:translateZ(${j%2?40:-20}px) translateY(${(j-2)*12}px)"></i>`).join('');
 
   const no=String(Math.max(1,pool.indexOf(g)+1)).padStart(2,'0');
-  const t=$('.tv-title');t.classList.remove('in');setTimeout(()=>{if(mine!==token)return;const [mainTitle,subTitle]=splitTitle(g.title);$('.tv-h1').innerHTML=titleHTML(mainTitle);
-   $('.tv-h1').title=g.title;$('.tv-meta').innerHTML=(subTitle?`<span class="tv-sub" lang="ja">${esc(subTitle)}</span>`:'')+(g.lastPlayedAt?`<span>${w.last} · ${esc(relativeTime(g.lastPlayedAt))}</span>`:'');void t.offsetWidth;fitTitle($('.tv-h1'));
-   fitLeft(root);requestAnimationFrame(()=>t.classList.add('in'));/* measure again once the new title has settled, so a block hidden mid-change comes back */setTimeout(()=>{
+  const t=$('.tv-title');t.classList.remove('in');const outP=flash?titleOut(root,live):Promise.resolve();setTimeout(async()=>{await outP;if(mine!==token||!live||live.root!==root)return;const [mainTitle,subTitle]=splitTitle(g.title);$('.tv-h1').innerHTML=titleHTML(mainTitle);
+   $('.tv-h1').title=g.title;$('.tv-meta').innerHTML=(subTitle?`<span class="tv-sub" lang="ja">${esc(subTitle)}</span>`:''); void t.offsetWidth;fitTitle($('.tv-h1'));
+   fitLeft(root);nameIn(g);type(randomLine(d,sentences));t.classList.add('in');if(flash)titleIn(root,live);/* measure again once the new title has settled, so a block hidden mid-change comes back */setTimeout(()=>{
    if(live&&live.root===root)fitLeft(root);},900);},flash?Math.max(0,reveal-(performance.now()-started)):0);
   tweenFig($('[data-fig="time"]'),g.readingSeconds||0,v=>mins(v));tweenFig($('[data-fig="chars"]'),g.characters||0,v=>number(Math.round(v)));tweenFig($('[data-fig="words"]'),
    g.learnedWords||0,v=>number(Math.round(v)));
-  nameIn(g);type(randomLine(d,sentences));
   
   rail();
  }
