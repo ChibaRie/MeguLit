@@ -570,6 +570,8 @@ line blank, the reader overlay draws MeguLit's text at the sources' character bo
    Two agreeing lines confirm; the calibration is saved per game (dataglyph-place) and MARK stays off from then on; the
    next run starts from it with no marks at all. Three lines without a fit give up for the run (no GRAY8 glyphs, glyph
    cache): the line falls to 4./5. Two frames per learning line, nothing per frame.
+   Owner decision 2026-11-15: the near-invisible marks (1/64 coverage, at most 4 grey levels, single pixels) during the
+   learning lines of a game are accepted; outside learning MARK is always off.
 4. Anchor estimate (`approx`): engines whose glyphs come from GetGlyphOutline (Siglus, AdvHD, ISLAND: `space -`).
    The anchor is the dialogue area learned from the last exactly placed line of this game (left, top, row pitch, width,
    size), else an engine position hook (`hookTextPos`, game-screen px), else an outside locator calling
