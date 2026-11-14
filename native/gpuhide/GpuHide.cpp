@@ -32,6 +32,8 @@
 #include <vector>
 #include <deque>
 #include <map>
+#include <memory>
+#include <set>
 #include <algorithm>
 #include <cmath>
 #include "GlyphQuads.h"
@@ -469,12 +471,19 @@ static void Emit(const std::string &s) { Send(s); }
 // device in globals); creating throwaway devices through it corrupted that state (WHITE ALBUM2 crashed at the first
 // scene). The wrapper ends in the system DLL, so hooking the system functions still sees every draw.
 static HMODULE SystemModule(const wchar_t *name) { wchar_t path[MAX_PATH]; UINT n = GetSystemDirectoryW(path, MAX_PATH); if (!n || n > MAX_PATH - 20) return NULL; swprintf_s(path + n, MAX_PATH - n, L"\\%s", name); return GetModuleHandleW(path); }
+#include "FontDots.h"
+
 static DWORD WINAPI Start(void *module) {
  wchar_t path[MAX_PATH]; GetModuleFileNameW((HMODULE)module, path, MAX_PATH); wchar_t *slash = wcsrchr(path, L'\\'); if (slash) wcscpy_s(slash + 1, MAX_PATH - (slash + 1 - path), L"MeguLitGpu.diag");
  FILE *f = NULL; if (_wfopen_s(&f, path, L"r, ccs=UTF-8") == 0 && f) { wchar_t log[MAX_PATH] = {}; if (fgetws(log, MAX_PATH, f)) { size_t n = wcslen(log); while (n && (log[n - 1] == L'\n' || log[n - 1] == L'\r' || log[n - 1] == L' ')) log[--n] = 0; wchar_t full[MAX_PATH]; swprintf_s(full, L"%s.%lu.log", log, GetCurrentProcessId()); Diag = _wfsopen(full, L"w", _SH_DENYNO); } fclose(f); }
  Learner.emit = Emit; Learner.log = Diag ? Log : NULL;
  CreateThread(NULL, 0, Sender, NULL, 0, NULL); CreateThread(NULL, 0, Control, NULL, 0, NULL);
- MH_Initialize(); int gdi = InstallGdi(); CreateThread(NULL, 0, GdiTicker, NULL, 0, NULL); Log("installed gdi hooks=%d", gdi); Send("ToMe_GPUHIDE status gdi hooked=" + std::to_string(gdi));
+ MH_Initialize();
+ // Font dots at the source (FontDots.h): only with MEGULIT_FONT_DOTS=1 from the launcher that injects this DLL before the
+ // game's main thread runs; the launcher resumes the game once MeguLitFontReady-<pid> is set.
+ { wchar_t v[8] = {}; if (GetEnvironmentVariableW(L"MEGULIT_FONT_DOTS", v, 8) && v[0] == L'1') { int n = InstallFontDots(); FontDotsOn = n == 8; Log("installed font dots hooks=%d", n); Send(FontDotsOn ? "ToMe_FONTDOTS ready version=1" : "ToMe_FONTDOTS status hooks failed"); }
+   wchar_t ev[64]; swprintf_s(ev, L"MeguLitFontReady-%lu", GetCurrentProcessId()); HANDLE e = OpenEventW(EVENT_MODIFY_STATE, FALSE, ev); if (e) { SetEvent(e); CloseHandle(e); } }
+ int gdi = InstallGdi(); CreateThread(NULL, 0, GdiTicker, NULL, 0, NULL); Log("installed gdi hooks=%d", gdi); Send("ToMe_GPUHIDE status gdi hooked=" + std::to_string(gdi));
  // Wait for the system's d3d9.dll / d3d11.dll (games often load them after their first window), then hook each once.
  bool d9 = false, d11 = false, ogl = false;
  for (int i = 0; i < 600 && !Quit && !(d9 && d11 && ogl); i++) {
@@ -492,5 +501,5 @@ BOOL WINAPI DllMain(HINSTANCE h, DWORD reason, void *) {
  }
  return TRUE;
 }
-// Marker for tools/native-stale.cjs: MeguLitGpu version=1
+// Marker for tools/native-stale.cjs: MeguLitGpu version=1 (font dots: ToMe_FONTDOTS)
 extern "C" __declspec(dllexport) const char *MeguLitGpuVersion() { return "MeguLitGpu version=1"; }
