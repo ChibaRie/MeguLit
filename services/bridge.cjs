@@ -118,7 +118,11 @@ async function launch(db,id,runtime=null,windowsLaunch=false,{retried=false,redi
    const companion=!!companionArgs;
    const steam=steamApp&&!companion;
    const {startProcess,waitForVisibleGame}=require('./game-readiness.cjs');
-   const child=await startProcess(steam?'explorer.exe':game.executable,steam?['steam://rungameid/'+profile.appid]:companion?companionArgs:[],path.dirname(game.executable),'GAME_LAUNCH_FAILED',undefined,companion?{...process.env,SteamAppId:String(profile.appid),SteamGameId:String(profile.appid),SteamOverlayGameId:String(profile.appid)}:null);
+   const directEnv=companion?{...process.env,SteamAppId:String(profile.appid),SteamGameId:String(profile.appid),SteamOverlayGameId:String(profile.appid)}:null;
+   /* Text architecture ①: with 文字显示 = compositor a direct start goes through MeguLitLaunch<bit>.exe, so the glyph dots are in place before the game's first glyph (core/glyph-dots.cjs); Steam keeps the late attach */
+   const early=steam?null:require('../core/glyph-dots.cjs').earlyStart(root,game.executable,companion?companionArgs:[],require('../core/locale-emulator.cjs').x86(game.executable),directEnv||process.env);
+   if(early)trace('glyph-dots-early',{launcher:path.basename(early.file),font:early.env.MEGULIT_GLYPH_FONT||''});
+   const child=await startProcess(early?early.file:steam?'explorer.exe':game.executable,early?early.args:steam?['steam://rungameid/'+profile.appid]:companion?companionArgs:[],path.dirname(game.executable),'GAME_LAUNCH_FAILED',undefined,early?early.env:directEnv);
    trace('launch-process-started',{pid:child.pid,steam,steamDirect:companion||undefined});
    stage='window-wait';
    /* Steam may start another program in the install folder than the one on record (Summer Pockets: the library has
@@ -128,7 +132,7 @@ async function launch(db,id,runtime=null,windowsLaunch=false,{retried=false,redi
    const anyProcess=async()=>{const own=await gameProcesses(root,game.executable);if(own.length||!siblings.length)return own;for(const exe of siblings){const found=await gameProcesses(root,exe).catch(()=>[]);if(found.length){trace('steam-runs-other-program',{exe:path.basename(exe)});return found;}}return own;};
    /* E303: Steam may prepare a first start (cloud sync, install scripts) for longer than 15 s; wait up to 45 s for its window. */
    const startedAt=Date.now();
-   try{state=await waitForVisibleGame(anyProcess,{helper:steam,indirect:steam,helperError:'GAME_LAUNCH_FAILED',exit:()=>child.exit,trace,...(steam?{attempts:180,timeout:45000}:{})});}
+   try{state=await waitForVisibleGame(anyProcess,{helper:steam||!!early,indirect:steam,helperError:'GAME_LAUNCH_FAILED',exit:()=>child.exit,trace,...(steam?{attempts:180,timeout:45000}:{})});}
    catch(error){
     /* E333 (user 2026-11-10, 女装山脈 with 以日文系统环境启动 off): many Japanese x86 games quit at once, without a window,
        under a Chinese system locale. A quit within 3 s is retried once in the Japanese environment (this launch only). */
