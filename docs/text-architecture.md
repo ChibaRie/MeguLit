@@ -405,9 +405,11 @@ original black-box top-left, cmap and advances unchanged).
 
 Live 2026-11-14: 夏末盛开的花 (Ren'Py 8.4) via MeguLitLaunch64: both game fonts (4.9 MB and 21.7 MB TrueType, read into
 memory from the `.rpa`) patched in memory when the story started; the dialogue「通常被称为回忆的，就是这种碎片。」drawn as
-16 dots, one at each character's top-left (punctuation lower, as its black box is), layout unchanged. Artemis (THE SHELL
-HD) not verified: Steam restarts the program from its own folder (the restarted copy has no DLL; a `steam_appid.txt`
-would have to go into the game folder) and the game stays black on this machine (layer 4 saw the same). Not wired into
+16 dots, one at each character's top-left (punctuation lower, as its black box is), layout unchanged. 殻ノ少女 / THE SHELL
+HD (Artemis, 64-bit, Steam) via MeguLitLaunch64 from a hard-link shadow of the game folder on the same volume (junctions
+for folders, `steam_appid.txt` in the shadow so Steam does not restart the real program; removed afterwards): four
+fonts patched in memory after the engine decrypted them from `.pfs` (three CFF of 11–25 MB, one TrueType), title →
+start, the dialogue drawn as one dot per character over two rows; the game ran normally on screen. Not wired into
 HookBridge's launch yet, and no crash canary for it yet (it loads only through MeguLitLaunch, by hand).
 
 Not covered yet: canvas web engines (RenJS / Phaser), KiriKiri games with their own message-layer class that use
