@@ -94,7 +94,7 @@ Face FaceOf(HDC dc) {
 SRWLOCK HideLock = SRWLOCK_INIT; GlyphHide::Matcher Hide; volatile LONG HideOn = 0, DotMode = 0, BlindMode = 0;
 struct IndexMap { HFONT font = NULL; long seq = -1; std::map<WORD, wchar_t> map; } Indexes;
 GlyphHide::Key KeyOf(const Face &f) { GlyphHide::Key k; k.face = f.name; k.size = f.size; return k; }
-void AnnounceLine(long seq, const std::wstring &text); void ConvLineEnded(bool hadDots);
+void AnnounceLine(long seq, const std::wstring &text); void ConvLineEnded(bool hadDots); void ConvVerdict(bool ok);
 void Command(std::string l) {
  while (!l.empty() && (l.back() == '\r' || l.back() == '\n')) l.pop_back();
  AcquireSRWLockExclusive(&HideLock);
@@ -102,6 +102,7 @@ void Command(std::string l) {
  if (l.rfind("LINE ", 0) == 0) { long before = Hide.Sequence(); Hide.SetLine(Wide(l.substr(5)), GetTickCount()); InterlockedExchange(&HideOn, Hide.Cached() ? 0 : 1); if (DotMode && Hide.Sequence() != before) { announce = Hide.Sequence(); text = Hide.Current(); } }
  else if (l == "OFF") { Hide.Off(); InterlockedExchange(&HideOn, 0); }
  else if (l == "MODE dot" || l == "MODE blank" || l == "MODE dot-blind") { bool dot = l != "MODE blank", blind = l == "MODE dot-blind"; Hide.StopOnCache = !dot; InterlockedExchange(&DotMode, dot ? 1 : 0); InterlockedExchange(&BlindMode, blind ? 1 : 0); if (blind) InterlockedExchange(&HideOn, 1); }
+ else if (l == "CONV ok" || l == "CONV off") ConvVerdict(l == "CONV ok");
  else if (l.rfind("FONT ", 0) == 0) { size_t sp = l.find(' ', 5); if (sp != std::string::npos) { GlyphHide::Key k; k.size = atoi(l.substr(5, sp - 5).c_str()); k.face = Clean(Wide(l.substr(sp + 1))); Hide.Seed(k); } }
  ReleaseSRWLockExclusive(&HideLock);
  if (announce >= 0) AnnounceLine(announce, text); // dot mode: the line (and how many dots to expect) before the game draws it
@@ -602,8 +603,9 @@ D2DG ODrawGlyphRunDc; constexpr auto HDrawGlyphRun = &HDrawGlyphRunT<&ODrawGlyph
 // (or continues it character by character), every visible character becomes U+30FB '・', so the game's own rasteriser draws
 // a dot with the same count, in the game's colour; control codes and blanks stay. Reports path=conv, cell unknown (h=0):
 // ② maps the dots by reading order. Only in dot mode, only while HookBridge is connected (OFF on pipe loss = heartbeat).
-// Probe: switched on by itself after two pushed lines got no dot from any GDI/GDI+/D2D path; remembered per game in
-// <cache>\source.txt ("conv"). Canary: "conv-trial" is written when it switches on; a start that finds "conv-trial"
+// Probe: switched on by itself after two pushed lines got no dot from any GDI/GDI+/D2D path. Only the compositor can
+// confirm it: it sends CONV ok when it finds the marks on screen (remembered as "conv" in <cache>\source.txt), CONV off
+// when the line stays visible (KiriKiri converts a copy it never draws, live 2026-11-14). Canary: "conv-trial" is written when it switches on; a start that finds "conv-trial"
 // (never confirmed, e.g. the game crashed) writes "conv-off" and never switches it on again.
 volatile LONG ConvOn = 0; long ConvSeq = -1, ConvNext = 0, ConvMarked = 0, ConvLastDotSeq = -1; int ConvMiss = 0; bool ConvConfirmed = false;
 const wchar_t ConvMarkChar = 0x30fb;
@@ -613,6 +615,7 @@ std::string ConvRecall() { if (!Dir[0]) return ""; wchar_t f[1100]; swprintf_s(f
 void ConvEnable(bool remembered) { if (InterlockedExchange(&ConvOn, 1)) return; if (!remembered) ConvRemember("conv-trial"); Send(std::string("ToMe_FONT status conv on") + (remembered ? " remembered" : " probe")); }
 // Called on every new line seq (under DotLock): counts lines that got no dot at all.
 void ConvLineEnded(bool hadDots) { if (ConvOn) return; ConvMiss = hadDots ? 0 : ConvMiss + 1; if (DotMode && ConvMiss >= 2) { std::string r = ConvRecall(); if (r != "conv-off") ConvEnable(false); } }
+void ConvVerdict(bool ok) { ConvRemember(ok ? "conv" : "conv-off"); if (!ok) InterlockedExchange(&ConvOn, 0); Send(std::string("ToMe_FONT status conv ") + (ok ? "confirmed" : "off (not on screen)")); }
 void ConvMark(wchar_t *w, int r) {
  int k = 0; for (int i = 0; i < r; i++) if (ConvChar(w[i])) k++; if (!k) return;
  if (!TryAcquireSRWLockShared(&HideLock)) return; std::wstring line = Hide.Current(); long seq = Hide.Sequence(); ReleaseSRWLockShared(&HideLock);
@@ -628,7 +631,7 @@ void ConvMark(wchar_t *w, int r) {
  for (int i = 0; i < r && j < pos + got.size(); i++) if (ConvChar(w[i])) { dots.push_back(Dot{at[j], w[i], 0, 0, 0, 0, 0, 0, 'd'}); w[i] = ConvMarkChar; j++; }
  ConvNext = (long)(pos + got.size()); ConvMarked += (long)got.size();
  for (auto &d : dots) ServeDot(seq, "conv", d);
- if (!ConvConfirmed && ConvMarked >= (long)vis.size() && vis.size() >= 2) { ConvConfirmed = true; ConvRemember("conv"); Send("ToMe_FONT status conv confirmed seq=" + std::to_string(seq)); }
+ if (!ConvConfirmed && ConvMarked >= (long)vis.size() && vis.size() >= 2) { ConvConfirmed = true; Send("ToMe_FONT status conv covered seq=" + std::to_string(seq)); } // replaced in memory only; the screen check is the compositor's (CONV ok / CONV off)
 }
 typedef int(WINAPI *MBTWC)(UINT, DWORD, LPCCH, int, LPWSTR, int); MBTWC OMultiByteToWideChar;
 int WINAPI HMultiByteToWideChar(UINT cp, DWORD fl, LPCCH s, int n, LPWSTR w, int cw) {
