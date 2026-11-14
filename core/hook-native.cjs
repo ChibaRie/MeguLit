@@ -152,7 +152,7 @@ class HookNative{
     reader and the text written back into the game, so the matcher's reading position moves once per line. */
  /* Front end -> bridge: MODE dot or blank for the glyph fallback (the compositor switches dots on while it runs). */
  setGlyphMode(mode){this.send({type:'glyphMode',mode:mode==='dot'?'dot':'blank'});}
- glyphDots(m){if(!m||!['line','dots','cached'].includes(m.state))return;const cur=this.state.hookGlyphDots;
+ glyphDots(m){/* the DLL's compositor heartbeat gate: marks stopped because MeguLit's drawing layer went away; glyphs the engine cached as marks stay until the game restarts */if(m&&m.state==='status'){if(m.status==='needs-relaunch')this.notify({hookGlyphRelaunch:true,hookMessage:'MeguLit 的画字层中断过：游戏里可能还留着标记点，重启游戏即可恢复'});else if(m.status==='live')this.notify({hookGlyphRelaunch:false});this.emit(m);return;}if(!m||!['line','dots','cached'].includes(m.state))return;const cur=this.state.hookGlyphDots;
   if(m.state==='cached'){if(cur)this.notify({hookGlyphDots:{...cur,cached:true}});this.emit(m);return;}
   if(!Number.isSafeInteger(m.seq))return;
   let next=cur&&cur.seq===m.seq?{...cur}:{seq:m.seq,text:'',dots:[],cached:cur?.cached===true};

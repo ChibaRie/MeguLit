@@ -76,3 +76,11 @@ test('front end: hookGlyphDots builds the current line table per seq and is re-e
  h.glyphDots({type:'hookGlyphDots',state:'line',seq:5,text:'今日は雨だ'});
  assert.deepEqual(h.state.hookGlyphDots.dots.filter(d=>d.k==='b').map(d=>[d.i,d.ch]),[[3,'雨'],[4,'だ']],'blind dots of the previous seq mapped to the next line by reading order');
  h.setGlyphMode('dot');h.setGlyphMode('weird');assert.deepEqual(sent,[{type:'glyphMode',mode:'dot'},{type:'glyphMode',mode:'blank'}]);});
+
+test('heartbeat gate status reaches the player: needs-relaunch sets the hook message, live clears the flag', () => {
+ const {HookNative}=require('../core/hook-native.cjs');const out=[];const h=new HookNative({native:'x',hook:'y'},m=>out.push(m),()=>({}));
+ h.glyphDots({type:'hookGlyphDots',state:'status',status:'needs-relaunch',served:12});
+ assert.equal(h.state.hookGlyphRelaunch,true);assert.match(h.state.hookMessage,/重启游戏/);
+ h.glyphDots({type:'hookGlyphDots',state:'status',status:'live'});assert.equal(h.state.hookGlyphRelaunch,false);
+ assert.match(require('fs').readFileSync(require('path').join(__dirname,'..','native','HookBridge.cs'),'utf8'),/\^status \(paused\|needs-relaunch\|live\)/);
+});
