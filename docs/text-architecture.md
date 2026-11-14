@@ -308,7 +308,9 @@ CreateDIBSection / GetDIBits / StretchDIBits. TextOutA rasterises each new chara
 calls for several lines), and the engine copies cached glyphs into the frame with its own CPU code before uploading it
 to Direct3D 9. Character positions exist only inside that internal blit, so neither ① (glyph dots: cached glyphs are
 reused), layer 4 (no glyph draw reaches the GPU) nor a ③ API hook applies; it needs reverse engineering of the cache-blit
-routine. Artemis (THE SHELL HD, D3D11, 64-bit): no Lua API is exported; handed to layer 4's D3D11 path.
+routine. Artemis (THE SHELL HD, D3D11, 64-bit): no Lua API is exported. Layer 4 checked it (hide-gpu-proxy 9a8a149):
+the 64-bit hooks load, but the game stays black on this machine, and its only draw is one unit quad from a static
+vertex buffer placed by shader constants, which layer 4 cannot read. Stopped; it needs an engine-level path.
 
 Not covered yet: Unity IL2CPP (BepInEx 6 + generated interop assemblies, or XUnity's IL2CPP build), canvas web engines,
 KiriKiri games drawing through the textrender plugin (Yuzusoft) or their own message-layer class, Ren'Py text outside the say screen.
