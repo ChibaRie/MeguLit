@@ -22,7 +22,7 @@ import {stamp,floatGain,quote,manaHTML,albumHTML} from './rewards.js';
 import {pointerDrag} from './drag.js';
 import {goalBarHTML,orderByGoal} from './learning-goal.js';
 import {exAttr} from './example-ruby.js';
-import {howToHTML} from './grammar-howto.js';
+import {howToHTML,rowSpecs,pickLines,gameLineHTML,gameNoneHTML} from './grammar-howto.js';
 import {pageNav} from './page-nav.js';
 export const grammarMessages={
  zh:{level:'等级',soon:'这一级的课程还在写，先把 N5 学扎实',done:'已学完',progress:'完成度',accuracy:'练习正确率',noAnswers:'还没做练习',back:'← 课程列表',form:'接法',uses:'常见用法',pitfalls:'容易错的地方',fromGames:'你玩过的游戏里',
@@ -523,6 +523,21 @@ export async function mountGrammar(target,{api,locale,esc,toast,isCurrent=()=>tr
    transform:'none'}],{duration:300,delay:60+i*90,easing:'cubic-bezier(.2,.7,.2,1)',fill:'backwards'}));
   root.querySelector('.gm-lesson')?.scrollIntoView?.({block:'nearest'});
  }
+ /* 怎么接 (2026-11-15): one line per connection row from the games you played, checked by the tokenizer
+    (grammar_form_lines), drawn again on every visit and by 换一句, never the same line on two rows */
+ async function fillHowTo(){
+  const key=point?.id,specs=rowSpecs(point);if(!key||!root.querySelector('[data-how-row]'))return;
+  let res=null;try{res=await api('grammar_form_lines',{point:{id:point.id,group:point.group||'',final:point.final===true},rows:specs});}catch{}
+  if(!isCurrent()||view!=='lesson'||point?.id!==key)return;
+  const lists=specs.map((_,i)=>res?.rows?.[i]||[]),dict=res?res.counting!==false:true;let pick=pickLines(lists);
+  const draw=i=>{const slot=root.querySelector(`[data-how-row="${i}"]`);if(!slot)return;const e=pick[i];
+   const more=!!e&&lists[i].some(x=>x.text!==e.text&&!pick.some((o,j)=>j!==i&&o?.text===x.text));
+   slot.innerHTML=e?gameLineHTML(e,{esc,locale,more}):gameNoneHTML({esc,locale,dict});
+   slot.querySelectorAll('[data-speak]').forEach(b=>b.onclick=()=>speak(b.dataset.speak,b));
+   const again=slot.querySelector('[data-how-again]');if(again)again.onclick=()=>{const keep={};pick.forEach((o,j)=>{if(o&&j!==i)keep[j]=o.text;});
+    pick=pickLines(lists.map((l,j)=>j===i?l.filter(x=>x.text!==e.text):l),{keep});draw(i);fx.focus(slot);};};
+  lists.forEach((_,i)=>draw(i));
+ }
  function renderLesson(){
   root.innerHTML=lessonHTML(point,data||{},{locale,esc,step,reached:stepOf(point.id).max});const real=data?.examples?.[point.id]||[];
   root.querySelector('[data-back]').onclick=()=>go('list');
@@ -548,7 +563,7 @@ export async function mountGrammar(target,{api,locale,esc,toast,isCurrent=()=>tr
   root.querySelectorAll('[data-explain]').forEach(m=>{m.onclick=e=>{e.stopPropagation();explain(m);};m.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();
    explain(m);}};m.onmouseenter=()=>explain(m);});
   root.onclick=e=>{if(!e.target.closest('.gm-pop,[data-explain]'))root.querySelector('.gm-pop')?.remove();};
-  bindConj();bindParticles(real);
+  bindConj();bindParticles(real);fillHowTo();
   {const say=root.querySelector('.gm-step-intro:not([hidden]) .gm-bubble');if(say)fx.type(say,say.textContent);}
   /* practice: drag (or tap) the answer into the gap; a miss shows how it attaches, then a line of the same kind */
   const pool=exercisesFor(point,[...real,...ankiLines(point)],10);let order=pool.slice(0,4),rest=pool.slice(4),i=0,answered=null,retry=false,score=0,streak=0;

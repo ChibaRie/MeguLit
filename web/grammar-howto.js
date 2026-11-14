@@ -7,7 +7,13 @@
    - for verb patterns, which form the verb takes, shown on 行く and 食べる (行く → 行き + がてら → 行きがてら);
    - two or three example lines with their Chinese; furigana come from the shared renderer (example-ruby.js: game ruby,
      then dictionary readings, off when 假名注音 is off); one line from the learner's own reading when there is one;
-   - one 注意 line from the lesson's pitfalls or the card's notes. */
+   - one 注意 line from the lesson's pitfalls or the card's notes.
+   2026-11-15 (user: 「一个接法对一个正确的来自随机出来的玩过的gal里的正确范例」): every connection row gets exactly one line
+   from a game the learner played that really uses that connection (rowSpecs → bridge grammar_form_lines →
+   services/grammar-forms.cjs checks it with the tokenizer), picked at random on every visit and by 换一句, never the
+   same line on two rows, with its game named 原名（译名）, furigana and Chinese, and ▶ 播放 (the game's own voice when
+   MeguLit has it). A row nothing matches says so instead of showing a made-up line. A verb demo shown on one row is
+   not repeated on the next. */
 import {exAttr} from './example-ruby.js';
 
 const VERBS=[
@@ -61,8 +67,8 @@ export function formulaFromExplain(lines,word){
 export function markHTML(text,{start=-1,end=-1,esc}){const c=[...String(text||'')];if(start<0||end<=start)return esc(c.join(''));
  return esc(c.slice(0,start).join(''))+'<mark class="gm-hl">'+esc(c.slice(start,end).join(''))+'</mark>'+esc(c.slice(end).join(''));}
 const span=(text,hl)=>{if(!hl)return [-1,-1];const at=text.indexOf(hl);if(at<0)return [-1,-1];const s=[...text.slice(0,at)].length;return [s,s+[...hl].length];};
-const LABEL={zh:{speak:'朗读',place:'在句子里的位置',start:'句首',end:'句末',rule:'接法',demo:'动词这样变',examples:'例句',mine:'你读过的台词',note:'注意',from:'来自'},ja:{speak:'読み上げ',place:'文の中の位置',start:'文頭',end:'文末',rule:'接続',demo:'動詞の形',examples:'例文',mine:'あなたが読んだセリフ',note:'注意',from:''},
- en:{speak:'Read aloud',place:'Where it sits',start:'start',end:'end',rule:'How it attaches',demo:'The verb becomes',examples:'Examples',mine:'From your reading',note:'Watch out',from:'from'}};
+const LABEL={zh:{speak:'朗读',place:'在句子里的位置',start:'句首',end:'句末',rule:'接法',demo:'动词这样变',examples:'参考例句',mine:'你读过的台词',note:'注意',from:'来自',play:'播放',again:'换一句',finding:'正在从你玩过的游戏里找这种接法…',none:'你玩过的游戏里还没出现这种接法',noDict:'装好离线词典（设置 › 学习）后，这里会放你玩过的游戏里的原句',noTr:'这句还没有中文翻译'},ja:{speak:'読み上げ',place:'文の中の位置',start:'文頭',end:'文末',rule:'接続',demo:'動詞の形',examples:'参考例文',mine:'あなたが読んだセリフ',note:'注意',from:'',play:'再生',again:'別の文',finding:'プレイしたゲームから探しています…',none:'プレイしたゲームにはまだこの接続が出ていません',noDict:'オフライン辞書を入れると、プレイしたゲームの原文がここに出ます',noTr:'まだ訳がありません'},
+ en:{speak:'Read aloud',place:'Where it sits',start:'start',end:'end',rule:'How it attaches',demo:'The verb becomes',examples:'Reference examples',mine:'From your reading',note:'Watch out',from:'from',play:'Play',again:'Another line',finding:'Looking through the games you played…',none:'This connection has not come up in the games you played yet',noDict:'Install the offline dictionary to see original lines from your games here',noTr:'No translation yet'}};
 /* all the pieces of 怎么接 for one lesson; never empty: at least one rule and one example */
 export function howTo(point,real=[]){
  const cards=point.source==='anki'?[]:point.anki||[];
@@ -87,10 +93,60 @@ export function howTo(point,real=[]){
  const note=String((point.pitfalls||[])[0]||cards.flatMap(c=>c.notes||[])[0]||'').trim();
  return {rows,examples:ex,mine,note};
 }
-export function howToHTML(point,real,{esc,locale='zh',source=e=>e.title||''}){
- const L=LABEL[locale]||LABEL.zh,h=howTo(point,real);
- const rows=h.rows.map((r,i)=>`<li class="gm-how-row" style="--row:${i}">${r.place?`<p class="gm-how-demo"><small>${esc(L.place)}</small></p>`:''}<div class="gm-formula">${r.formula.split(/\s+\+\s+/).map((part,k)=>`${k?'<i class="gm-plus" aria-hidden="true">+</i>':''}<span class="gm-block" style="--i:${k}"${r.place?' lang="ja"':''}>${esc(part==='{start}'?L.start:part==='{end}'?L.end:part)}</span>`).join('')}</div>${r.example?`<span class="gm-arrow" aria-hidden="true">→</span><button type="button" class="gm-formula-ex" data-speak="${esc(r.example)}" lang="ja"${exAttr(r.example,null,esc)}>${esc(r.example)}</button>`:''}${r.demo.length?`<p class="gm-how-demo"><small>${esc(L.demo)}</small>${r.demo.map(d=>`<span lang="ja">${esc(d.from)}${d.mid&&d.mid+''!==d.from?` → ${esc(d.mid)}`:''} → <b>${esc(d.to)}</b></span>`).join('')}</p>`:''}${r.rule?`<p class="gm-how-rule">${esc(r.rule)}</p>`:''}</li>`).join('');
+/* ---- one real line per row ---- */
+/* what the word right before the grammar must be, from the row's own words (Chinese plain formula or 蓝宝书 shorthand) */
+const NEED_RE=[[/名詞修飾形|名词修饰形/,['plain','noun','na']],[/普通形|简体/,['plain']],[/名词|名詞|人名|^名$|名(?![词詞修])|^人$/,['noun']],[/な形|ナ形|形容动词|形状词/,['na']],
+ [/い形|イ形/,['i']],[/(?<![なナい])形容词|(?<![なナイ])形容詞/,['i','na']]];
+export function needOf(part){const p=String(part||'');if(!p)return [];const out=new Set();
+ for(const k of KINDS)if(k.re.test(p)&&k.k!=='plain')out.add('v:'+k.k);
+ for(const [re,n] of NEED_RE)if(re.test(p))n.forEach(x=>out.add(x));
+ if(/动词|動詞|動/.test(p)&&![...out].some(n=>n.startsWith('v:')))out.add('verb');
+ /* 一类 (五段) / 二类 (一段) narrow the verb, they are not a choice of their own */
+ if(/一类|Ⅰ类|五段/.test(p))out.add('c:godan');if(/二类|Ⅱ类|一段/.test(p))out.add('c:ichidan');
+ return [...out];}
+/* the lesson's own forms (never its wrong-answer options) */
+const hitsOf=point=>[...new Set((point.hits?.length?point.hits:point.source==='anki'?[]:point.choices?.slice(0,1)||[]).filter(h=>h&&!/\s/.test(h)))];
+/* the rows of 怎么接 as the bridge wants them: {find, need, lit, avoid} (services/grammar-forms.cjs) */
+export function rowSpecs(point,rows=howTo(point).rows){
+ const hits=hitsOf(point),out=rows.map(r=>{
+  /* 名词 / な形 + だったら: the word side is before the last +, the grammar side after it; 二类：る → れば and
+     い形容词 → かったら have an arrow instead; 古风：とあらば only a label */
+  const raw=String(r.raw||r.formula||''),plus=raw.split(/\s*[＋+]\s*/),arrow=raw.split(/\s*[→⇒]\s*/);
+  const side=plus.length>1?plus.at(-1):arrow.length>1?arrow.at(-1):raw.replace(/^[^：:]*[：:]/,''),word=plus.length>1?plus.slice(0,-1).join(' + '):arrow.length>1?arrow[0]:'';
+  /* what is looked for: the whole kana run of the grammar side that holds one of the lesson's forms (だったら, のように,
+     ますように, かったら), else the form itself when the side is its ending (た形 + ら → たら) */
+  const runs=String(side).replace(/[（(][^）)]*[）)]/g,'').match(/[\u3041-\u3096\u30a1-\u30fa\u30fcー]+/g)||[];
+  let find=[...new Set(hits.flatMap(h=>runs.filter(x=>x.includes(h))))];
+  if(!find.length)find=hits.filter(h=>runs.some(x=>h.endsWith(x)));
+  if(!find.length)find=hits.filter(h=>raw.includes(h)||String(r.example||'').includes(h));
+  if(!find.length){const head=headOf(raw);find=head&&!hits.length?[head]:hits;}
+  const core=hits.filter(h=>find.some(f=>f.includes(h)));
+  return {find,core:core.length?core:find,need:r.place?[]:needOf(word)};});
+ /* a row about ので must not take a line that is really another row's longer form (なので) */
+ for(const r of out)r.avoid=[...new Set(out.filter(o=>o!==r).flatMap(o=>o.find).filter(x=>r.find.some(f=>x!==f&&x.includes(f))))];
+ return out;
+}
+/* one line per row, at random, no line twice; rows with fewer lines choose first. keep: {row:text} to leave as is */
+export function pickLines(lists,{keep={},random=Math.random}={}){
+ const used=new Set(Object.values(keep)),pick=lists.map(()=>null);
+ for(const [i,t] of Object.entries(keep)){const e=(lists[i]||[]).find(x=>x.text===t);if(e)pick[i]=e;}
+ const order=lists.map((l,i)=>i).filter(i=>!pick[i]).sort((a,b)=>(lists[a]||[]).length-(lists[b]||[]).length);
+ for(const i of order){const free=(lists[i]||[]).filter(e=>!used.has(e.text));if(!free.length)continue;
+  /* translated lines first: a line the learner cannot check is a weaker example */
+  const good=free.filter(e=>e.translation),from=good.length?good:free,e=from[Math.floor(random()*from.length)];pick[i]=e;used.add(e.text);}
+ return pick;
+}
+export function gameLineHTML(e,{esc,locale='zh',more=false}){
+ const L=LABEL[locale]||LABEL.zh;if(!e)return '';
+ const tr=e.translation?`<p class="gm-tr">${esc(e.translation)}</p>`:`<p class="gm-tr gm-none">${esc(L.noTr)}</p>`;
+ return `<p class="gm-ja" lang="ja"${exAttr(e.text,e.ruby,esc)}>${markHTML(e.text,{start:e.start,end:e.end,esc})}</p>${tr}<div class="gm-how-game-meta"><span class="gm-cap">${esc(L.from)}《${esc(e.label||e.title||'')}》</span><span class="gm-ex-actions"><button type="button" class="gm-link" data-speak="${esc(e.text)}">${esc(L.play)}</button>${more?`<button type="button" class="gm-link" data-how-again>${esc(L.again)}</button>`:''}</span></div>`;
+}
+export const gameNoneHTML=({esc,locale='zh',dict=true})=>{const L=LABEL[locale]||LABEL.zh;return `<p class="gm-how-none">${esc(dict?L.none:L.noDict)}</p>`;};
+export function howToHTML(point,real,{esc,locale='zh'}){
+ const L=LABEL[locale]||LABEL.zh,h=howTo(point,real),shown=new Set();
+ /* the same verb demo twice (名词 / 普通形 + とあれば and 动词普通形 … + とあれば) is shown once, on the first row */
+ const demoOnce=r=>{const k=r.demo.map(d=>d.from+'>'+d.to).join('|');if(!k||shown.has(k))return [];shown.add(k);return r.demo;};
+ const rows=h.rows.map((r,i)=>{const demo=demoOnce(r);return `<li class="gm-how-row" style="--row:${i}">${r.place?`<p class="gm-how-demo"><small>${esc(L.place)}</small></p>`:''}<div class="gm-formula">${r.formula.split(/\s+\+\s+/).map((part,k)=>`${k?'<i class="gm-plus" aria-hidden="true">+</i>':''}<span class="gm-block" style="--i:${k}"${r.place?' lang="ja"':''}>${esc(part==='{start}'?L.start:part==='{end}'?L.end:part)}</span>`).join('')}</div>${demo.length?`<p class="gm-how-demo"><small>${esc(L.demo)}</small>${demo.map(d=>`<span lang="ja">${esc(d.from)}${d.mid&&d.mid+''!==d.from?` → ${esc(d.mid)}`:''} → <b>${esc(d.to)}</b></span>`).join('')}</p>`:''}${r.rule?`<p class="gm-how-rule">${esc(r.rule)}</p>`:''}<div class="gm-how-game" data-how-row="${i}" aria-live="polite"><p class="gm-cap">${esc(L.finding)}</p></div></li>`;}).join('');
  const exs=h.examples.map(e=>`<li><p class="gm-ja" lang="ja"${exAttr(e.ja,null,esc)}>${markHTML(e.ja,{start:e.start,end:e.end,esc})}</p>${e.zh?`<p class="gm-tr">${esc(e.zh)}</p>`:''}<button type="button" class="gm-link" data-speak="${esc(e.ja)}">${esc(L.speak)}</button></li>`).join('');
- const m=h.mine,mine=m?`<section class="gm-how-mine"><h4>${esc(L.mine)}</h4><p class="gm-ja" lang="ja"${exAttr(m.text,m.ruby,esc)}>${markHTML(m.text,{start:m.start,end:m.end,esc})}</p>${m.translation?`<p class="gm-tr">${esc(m.translation)}</p>`:''}<p class="gm-cap">${esc(source(m))}</p></section>`:'';
- return `<section class="gm-how"><h4>${esc(L.rule)}</h4><ol class="gm-formulas gm-how-rows">${rows}</ol>${exs?`<h4>${esc(L.examples)}</h4><ol class="gm-how-ex">${exs}</ol>`:''}${mine}${h.note?`<p class="gm-how-note"><b>${esc(L.note)}</b>${esc(h.note)}</p>`:''}</section>`;
+ return `<section class="gm-how"><h4>${esc(L.rule)}</h4><ol class="gm-formulas gm-how-rows">${rows}</ol>${exs?`<h4>${esc(L.examples)}</h4><ol class="gm-how-ex">${exs}</ol>`:''}${h.note?`<p class="gm-how-note"><b>${esc(L.note)}</b>${esc(h.note)}</p>`:''}</section>`;
 }
