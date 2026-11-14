@@ -49,9 +49,14 @@ const html = `<!doctype html><html><head><meta charset="utf-8"><style>
     assert.deepStrictEqual(await page.evaluate(() => [document.body.classList.contains('megulit-placed'), document.body.classList.contains('megulit-place-fallback')]), [false, true]);
     assert.deepStrictEqual(await box('.sentence-window'), [100, 546, 804, 154], 'reader keeps its own box');
     assert.strictEqual(await page.evaluate(() => getComputedStyle(document.querySelector('.sentence-window')).backgroundColor), 'rgba(0, 0, 0, 0)', 'fallback: no plate');
+    /* name plate and a choice drawn on their boxes, click-through */
+    await page.evaluate(() => window.__tomoyoChinese.textPlaceExtra({ client: [1280, 720], items: [{ id: 1, kind: 'n', text: '朋也', rects: [[80, 450, 28, 30], [108, 450, 28, 30]] }, { id: 2, kind: 'o', text: 'はい', rects: [[600, 200, 32, 34], [632, 200, 32, 34]] }] })); await frame();
+    assert.deepStrictEqual(await box('.megulit-place-name span:nth-child(2)'), [108, 450, 28, 30], 'name plate on its boxes');
+    assert.deepStrictEqual(await box('.megulit-place-choice span'), [600, 200, 32, 34], 'choice on its boxes');
+    assert.strictEqual(await page.evaluate(() => getComputedStyle(document.getElementById('megulit-place-extras')).pointerEvents), 'none', 'click-through');
     /* off: everything back */
     await page.evaluate(() => window.__tomoyoChinese.textPlaceMode({ on: false })); await frame();
-    assert.deepStrictEqual(await page.evaluate(() => document.body.className), '');
+    assert.deepStrictEqual(await page.evaluate(() => [document.body.className, !!document.getElementById('megulit-place-extras')]), ['', false]);
     console.log('PASS text-place DOM');
   } finally { await browser.close(); }
 })().catch(e => { console.error(e); process.exit(1); });

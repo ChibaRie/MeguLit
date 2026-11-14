@@ -34,6 +34,11 @@ assert.deepStrictEqual(gm.rects, [[100, 500, 28, 30]], 'anchor = left/top of the
 }
 p.glyph({ seq: 9, text: 'たち', dots: [{ i: 0, ch: 'た', h: 30, a: 28, k: 'd', at: { x: 10, y: 10, space: 'c' } }] });
 gm = sent.shift(); assert.deepStrictEqual(gm.rects, [[10, 10, 28, 30], null], 'not yet drawn = not placed (typing)');
+/* extra lines: name (n) and choices (o) placed only when complete */
+p.extras({ 3: { id: 3, kind: 'n', text: '朋也', dots: [{ i: 0, ch: '朋', h: 30, a: 28, k: 'n', at: { x: 80, y: 450, space: 'c' } }, { i: 1, ch: '也', h: 30, a: 28, k: 'n', at: { x: 108, y: 450, space: 'c' } }] },
+  4: { id: 4, kind: 'o', text: 'いいえ', dots: [{ i: 0, ch: 'い', h: 30, a: 28, k: 'o', at: { x: 1, y: 1, space: 'c' } }] } });
+let ex = sent.shift(); assert.strictEqual(ex.type, 'textPlaceExtra'); assert.deepStrictEqual(ex.items.map(i => i.text), ['朋也'], 'incomplete option not placed');
+assert.deepStrictEqual(ex.items[0].rects[1], [108, 450, 28, 30]);
 const { HookNative } = require('../core/hook-native.cjs'), hn = Object.create(HookNative.prototype);
 hn.state = {}; hn.emit = () => {}; hn.notify = v => { hn.state = { ...hn.state, ...v }; };
 hn.glyphDots({ state: 'line', seq: 1, text: 'あ' });

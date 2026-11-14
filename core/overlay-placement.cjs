@@ -31,7 +31,7 @@ class OverlayPlacement {
     const size = state?.layout?.clientWidth ? state.layout : state;
     if (size?.clientWidth && size?.clientHeight) this.client = [size.clientWidth, size.clientHeight];
     const on = this.wanted(preferences) && state?.bound === true;
-    if (on !== this.on) { this.on = on; if (!on) this.clear(); this.send({ type: 'textPlaceMode', on }); }
+    if (on !== this.on) { this.on = on; if (!on) { this.clear(); if (this.extraKey && this.extraKey !== '[]') this.send({ type: 'textPlaceExtra', items: [] }); this.extraKey = ''; } this.send({ type: 'textPlaceMode', on }); }
   }
   clear() { if (this.current) { this.current = null; this.send({ type: 'textPlace', clear: true }); } }
   hook(m) {
@@ -58,21 +58,7 @@ class OverlayPlacement {
      right after the previous placed one on the same row (advance), as long as a later character of the line was drawn. */
   glyph(table) {
     if (!this.on || !table || typeof table.text !== 'string' || !table.text) return;
-    const chars = [...table.text], rects = new Array(chars.length).fill(null), kinds = new Array(chars.length).fill(''), [cw, ch] = this.client;
-    const drawn = new Set(), sizes = [];
-    for (const d of Array.isArray(table.dots) ? table.dots : []) {
-      if (!d || !(d.k === 'd' || d.k === 'c') || !(d.i >= 0 && d.i < chars.length)) continue;
-      if (d.ch && d.ch !== chars[d.i]) continue;
-      drawn.add(d.i); if (d.h > 0) sizes.push([d.h, d.a > 0 ? d.a : d.h, d.b > 0 ? d.b : 0]);
-      if (!d.at || kinds[d.i] === 'd') continue; /* first kind-d record of an index wins (shadow / outline passes, redraws) */
-      const sp = String(d.at.space || ''), m = /^[mt](\d+)x(\d+)$/.exec(sp);
-      let kx = 1, ky = 1;
-      if (m) { const w = +m[1], h = +m[2]; if (!(w > 0 && h > 0 && cw > 0 && ch > 0)) continue; kx = cw / w; ky = ch / h; }
-      else if (sp !== 'c') continue;
-      const hgt = d.h > 0 ? d.h : 0, adv = d.a > 0 ? d.a : hgt;
-      if (!hgt) continue;
-      rects[d.i] = [d.at.x * kx, d.at.y * ky, adv * kx, hgt * ky]; kinds[d.i] = d.k;
-    }
+    const chars = [...table.text], { rects, drawn, sizes } = this.rectsOf(table, ['d', 'c']);
     let last = -1; for (let i = rects.length - 1; i >= 0; i--) if (rects[i]) { last = i; break; }
     const id = 'glyph:' + (Number(table.seq) || 0);
     if (last >= 0) {
@@ -85,6 +71,41 @@ class OverlayPlacement {
        anchor's width; only characters the game has drawn so far (typing). Without an anchor: fallback. */
     if (this.anchorBox) return this.emitLine({ id, engine: 'glyph', text: table.text, rects: this.estimate(chars, drawn, sizes), client: this.client.slice(), approx: true });
     this.emitLine({ id, engine: 'glyph', text: table.text, fallback: true, client: this.client.slice() });
+  }
+  /* one box per character of a glyph table (null = no record / no device position); kinds: record kinds that count */
+  rectsOf(table, accept) {
+    const chars = [...table.text], rects = new Array(chars.length).fill(null), kinds = new Array(chars.length).fill(''), [cw, ch] = this.client;
+    const drawn = new Set(), sizes = [];
+    for (const d of Array.isArray(table.dots) ? table.dots : []) {
+      if (!d || !accept.includes(d.k) || !(d.i >= 0 && d.i < chars.length)) continue;
+      if (d.ch && d.ch !== chars[d.i]) continue;
+      drawn.add(d.i); if (d.h > 0) sizes.push([d.h, d.a > 0 ? d.a : d.h, d.b > 0 ? d.b : 0]);
+      if (!d.at || kinds[d.i] === accept[0]) continue; /* first kind-d record of an index wins (shadow / outline passes, redraws) */
+      const sp = String(d.at.space || ''), m = /^[mt](\d+)x(\d+)$/.exec(sp);
+      let kx = 1, ky = 1;
+      if (m) { const w = +m[1], h = +m[2]; if (!(w > 0 && h > 0 && cw > 0 && ch > 0)) continue; kx = cw / w; ky = ch / h; }
+      else if (sp !== 'c') continue;
+      const hgt = d.h > 0 ? d.h : 0, adv = d.a > 0 ? d.a : hgt;
+      if (!hgt) continue;
+      rects[d.i] = [d.at.x * kx, d.at.y * ky, adv * kx, hgt * ky]; kinds[d.i] = d.k;
+    }
+    return { rects, drawn, sizes };
+  }
+  /* ① extra lines (glyph-dots records 4, hook-native state.hookGlyphExtras): name plate (kind n) and choices (kind o),
+     blanked by the game like the line. Placed only when every character has a box (no guessing: a wrong name or option
+     is worse than the game's blank); the reader draws them click-through, so a click on an option reaches the game's
+     own (blank) button. */
+  extras(all) {
+    if (!this.on) return;
+    const items = [];
+    for (const t of Object.values(all || {}).sort((p, q) => p.id - q.id)) {
+      if (!t || typeof t.text !== 'string' || !t.text || !(t.kind === 'n' || t.kind === 'o')) continue;
+      const { rects } = this.rectsOf(t, [t.kind]);
+      if (rects.every(Boolean)) items.push({ id: t.id, kind: t.kind, text: t.text, rects });
+    }
+    const key = JSON.stringify(items);
+    if (key === this.extraKey) return; this.extraKey = key;
+    this.send({ type: 'textPlaceExtra', items, client: this.client.slice() });
   }
   /* the dialogue area learned from an exactly placed line: left edge, first row top, row pitch, width, size */
   learn(rects) {
@@ -119,7 +140,7 @@ class OverlayPlacement {
     if (key === this.lastKey) return; this.lastKey = key; this.current = line;
     this.send({ type: 'textPlace', ...line });
   }
-  stop() { this.clear(); this.on = false; }
+  stop() { this.clear(); if (this.extraKey && this.extraKey !== '[]') this.send({ type: 'textPlaceExtra', items: [] }); this.extraKey = ''; this.on = false; }
 }
 
 module.exports = { OverlayPlacement };
