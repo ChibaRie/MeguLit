@@ -135,7 +135,10 @@ html:not(#u):not(#v):not(#w):not(#x) body .game-detail-hero .detail-title{grid-t
 html:not(#u):not(#v):not(#w):not(#x) body .game-detail-hero .detail-title>.detail-engine{grid-row:2!important;grid-column:1!important}
 html:not(#u):not(#v):not(#w):not(#x) body .game-detail-hero .detail-title>h1{grid-row:3!important;grid-column:1!important}
 html:not(#u):not(#v):not(#w):not(#x) body .game-detail-hero .detail-title>p.settings-help{grid-row:4!important;grid-column:1!important;font-size:14px!important;color:color-mix(in srgb,var(--g-t1,#f1e0d2) 76%,transparent)!important}
-html:not(#u):not(#v):not(#w):not(#x) body .game-detail-hero .detail-title>.detail-actions{grid-row:5!important;grid-column:1!important;align-self:start!important;margin-top:30px!important}
+/* a second note under "last played" (game missing / launch problem) gets its own row; sharing row 4 painted both lines on top of each other */
+html:not(#u):not(#v):not(#w):not(#x) body .game-detail-hero .detail-title>p.settings-help[role=status]{grid-row:5!important;margin-top:8px!important}
+html:not(#u):not(#v):not(#w):not(#x) body .game-detail-hero .detail-title>.detail-actions{grid-row:6!important;grid-column:1!important;align-self:start!important;margin-top:30px!important}
+html:not(#u):not(#v):not(#w):not(#x) body .game-detail-hero .detail-title:has(>p.settings-help[role=status])>.detail-actions{margin-top:14px!important}
 html:not(#u):not(#v):not(#w):not(#x) body .game-detail-hero .detail-title>.detail-statistics{grid-column:2!important;grid-row:1/-1!important}
 html:not(#u):not(#v):not(#w):not(#x) body .game-detail-hero .detail-engine .embed-status{display:inline-block;padding:3px 10px;margin-left:6px;border:1px solid color-mix(in srgb,var(--g-gold,#edb56e) 45%,transparent);background:color-mix(in srgb,var(--g-gold,#edb56e) 10%,transparent);letter-spacing:.06em!important;font-size:12px!important}
 html:not(#u):not(#v):not(#w):not(#x) body .game-detail-hero .detail-engine{font-size:12px!important}
@@ -200,7 +203,7 @@ html:not(#u):not(#v):not(#w):not(#x) body .tv-home .tv-index{display:none!import
 html:not(#u):not(#v):not(#w):not(#x) body #library-results.lib-field::after{content:"";position:absolute;inset:0;pointer-events:none;z-index:3;background:radial-gradient(120% 95% at 50% 50%,transparent 52%,rgba(8,6,8,.55) 82%,rgba(8,6,8,.9) 100%)}
 html:not(#u):not(#v):not(#w):not(#x) body .lib-field .game-caption .mq{font-family:"Segoe UI Variable Text","Microsoft YaHei UI","Yu Gothic UI",system-ui,sans-serif!important;font-weight:600!important}
 /* detail: title block sits on the cover's baseline; numbers as a 2 x 2 grid; quieter synopsis measure; cards more opaque */
-html:not(#u):not(#v):not(#w):not(#x) body .game-detail-hero .detail-title{grid-template-rows:1fr auto auto auto auto 14px!important}
+html:not(#u):not(#v):not(#w):not(#x) body .game-detail-hero .detail-title{grid-template-rows:1fr auto auto auto auto auto 14px!important}
 html:not(#u):not(#v):not(#w):not(#x) body .game-detail-hero .detail-title>.detail-statistics{display:grid!important;grid-template-columns:1fr 1fr;align-content:center;gap:26px 22px!important;padding-left:30px!important}
 html:not(#u):not(#v):not(#w):not(#x) body .game-detail-hero .detail-statistics .stat-card{padding:0!important;border:0!important;width:auto!important}
 html:not(#u):not(#v):not(#w):not(#x) body .game-detail-hero .detail-statistics .stat-card strong{font-size:34px!important;font-variant-numeric:tabular-nums}
