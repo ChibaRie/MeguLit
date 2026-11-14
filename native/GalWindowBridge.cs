@@ -401,6 +401,14 @@ public class GalWindowBridge {
             ThreadPool.QueueUserWorkItem(delegate{string jpeg="",hash="";double score=0;try{Rect rect;if(target!=IntPtr.Zero&&GetClientRect(target,out rect))jpeg=GameAudio.SceneShot(target,rect.Right,rect.Bottom,out score,out hash);}catch{}
                 try{Emit(new{type="sceneShot",id=id,jpeg=jpeg,score=score,hash=hash});}catch{}});}
         /* 2026-11-13 collected sentence pictures: a full clean frame (asked only while the dialogue box is hidden) and a cheap probe of the top hash */
+        /* 2026-11-15 overlay placement (core/glyph-locate-host.cjs): one lossless BGRA picture of the game window (GameCapture:
+           window DC first, rate-limited PrintWindow, never the screen) written raw to a .megulit-frame file under the cache;
+           asked twice per line and only while a game's text position is being learned */
+        else if(type=="rawFrame"){string id=Str(d,"id"),file=Str(d,"file");IntPtr target=Target;
+            ThreadPool.QueueUserWorkItem(delegate{bool ok=false;int w=0,h=0;try{Rect rect;if(target!=IntPtr.Zero&&file.EndsWith(".megulit-frame",StringComparison.OrdinalIgnoreCase)&&GetClientRect(target,out rect)&&rect.Right>0&&rect.Bottom>0&&rect.Right<=8192&&rect.Bottom<=8192){w=rect.Right;h=rect.Bottom;
+                using(var bmp=new System.Drawing.Bitmap(w,h,System.Drawing.Imaging.PixelFormat.Format32bppArgb)){if(GameCapture.Picture(target,bmp)){var data=bmp.LockBits(new System.Drawing.Rectangle(0,0,w,h),System.Drawing.Imaging.ImageLockMode.ReadOnly,System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+                var bytes=new byte[w*h*4];try{for(int y=0;y<h;y++)Marshal.Copy(new IntPtr(data.Scan0.ToInt64()+(long)y*data.Stride),bytes,y*w*4,w*4);}finally{bmp.UnlockBits(data);}File.WriteAllBytes(file,bytes);ok=true;}}}}catch{}
+                try{Emit(new{type="rawFrame",id=id,ok=ok,file=ok?file:"",width=w,height=h});}catch{}});}
         else if(type=="sceneFrame"){string id=Str(d,"id");IntPtr target=Target;
             ThreadPool.QueueUserWorkItem(delegate{string jpeg="",hash="";double score=0;try{Rect rect;if(target!=IntPtr.Zero&&GetClientRect(target,out rect))jpeg=GameAudio.SceneFrame(target,rect.Right,rect.Bottom,out score,out hash);}catch{}
                 try{Emit(new{type="sceneFrame",id=id,jpeg=jpeg,score=score,topHash=hash});}catch{}});}

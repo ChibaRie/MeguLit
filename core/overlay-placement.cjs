@@ -69,6 +69,9 @@ class OverlayPlacement {
     /* no device position at all (GetGlyphOutline engines: Siglus, AdvHD...): lay the line out from the anchor (the last
        exactly placed line of this game, or an outside locator: anchor()), one advance per character, wrapping at the
        anchor's width; only characters the game has drawn so far (typing). Without an anchor: fallback. */
+    /* glyph-dots' locating marks learned this game's text position (core/glyph-locate-host.cjs) */
+    const located = this.locator?.(table);
+    if (Array.isArray(located) && located.length === chars.length && located.some(Boolean)) { this.learn(located); return this.emitLine({ id, engine: 'glyph', text: table.text, rects: located, client: this.client.slice(), located: true }); }
     if (this.anchorBox) return this.emitLine({ id, engine: 'glyph', text: table.text, rects: this.estimate(chars, drawn, sizes), client: this.client.slice(), approx: true });
     this.emitLine({ id, engine: 'glyph', text: table.text, fallback: true, client: this.client.slice() });
   }

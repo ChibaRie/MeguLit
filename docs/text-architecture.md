@@ -563,12 +563,19 @@ line blank, the reader overlay draws MeguLit's text at the sources' character bo
    client; first kind-`d` record of an index wins; a character drawn from the engine's glyph cache (no record) is put one
    advance after the previous one, as long as a later character was drawn. Same rule as `core/glyph-place.cjs` on
    feat/glyph-dots, but it also places a line while it is being typed.
-3. Anchor estimate (`approx`): engines whose glyphs come from GetGlyphOutline (Siglus, AdvHD, ISLAND: `space -`).
+3. Locating marks (`located`, GetGlyphOutline engines, needs feat/glyph-dots 2e58da4+ `core/glyph-locate.cjs`):
+   `core/glyph-locate-host.cjs`. Only while the game's position is not known: line A complete → one lossless frame of
+   the game window (GalWindowBridge `rawFrame`: GameCapture window DC / rate-limited PrintWindow, never the screen, raw
+   BGRA file under cacheglyph-locate) → MARK on → line B complete → second frame → findMarks / locate / merge → MARK off.
+   Two agreeing lines confirm; the calibration is saved per game (dataglyph-place) and MARK stays off from then on; the
+   next run starts from it with no marks at all. Three lines without a fit give up for the run (no GRAY8 glyphs, glyph
+   cache): the line falls to 4./5. Two frames per learning line, nothing per frame.
+4. Anchor estimate (`approx`): engines whose glyphs come from GetGlyphOutline (Siglus, AdvHD, ISLAND: `space -`).
    The anchor is the dialogue area learned from the last exactly placed line of this game (left, top, row pitch, width,
    size), else an engine position hook (`hookTextPos`, game-screen px), else an outside locator calling
    `placement.anchor({x,y,size,width,pitch})` (e.g. OCR of the first character: reading only, never masking). Characters
    advance by the records' median advance (half for ASCII/half-width), wrap at the width; only drawn characters show.
-4. Fallback: no anchor at all → `fallback` (above).
+5. Fallback: no anchor at all → `fallback` (above).
 
 ### Reader (web/reader/modules/text-place.js)
 Lays the hook reader's own `.sentence-text` (tokens, ruby bases, translation row) on the boxes. Tokens stay the reader's,
@@ -583,6 +590,8 @@ found inside the record text (a record may start with a speaker or 「), so a le
 ### Tests (offline, no game)
 - `validation/overlay-placement.test.cjs`: ③ rects, glyph spec 3 (client / memory surface / cache gap / g, -), anchor
   estimate with wrap and typing, fallback, hook-native keeps `at`.
+- `validation/glyph-locate-host.test.cjs`: synthetic captures, base/marked cycle, confirm + save, MARK off for good,
+  located placement also while typing, a new run starts from the saved calibration, give-up after three misses.
 - `validation/text-place-dom.test.cjs` (headless Edge via playwright-core; skipped without it): tokens on boxes, ruby union,
   translation under the line with no plate, translation-only, surface offset + scale, undrawn characters hidden,
   fallback keeps the reader's place without a plate, off restores everything.
