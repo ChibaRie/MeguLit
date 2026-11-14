@@ -563,7 +563,8 @@ Done (commit ffb28ea and this note):
 
 Not done / not verified live (the owner came back before the screen slot was free; nothing was run on screen):
 - No game has been checked against the acceptance list (a)–(g) yet. Rig ready: portable `H:\MeguLit-Work\portable-op`
-  (hot-update serves only the changed reader files), `H:\MeguLit-Work\overlay-placeun.ps1` (start / launch / key /
+  (hot-update serves only the changed reader files), `H:\MeguLit-Work\overlay-place
+un.ps1` (start / launch / key /
   click / shot, `shot <name> 300` = 60 fps 5 s flicker count), new HookBridge built there.
 - Glyph sources (CLANNAD, サイコロジック) have no positions in blank mode: asked glyph-dots for MeguLitFont v4 records in blank
   mode with the cell's DC position (`px:py`, `dc=WxH`). Until then glyph games get blank text but no placed line.
