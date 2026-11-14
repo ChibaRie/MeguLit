@@ -11,7 +11,7 @@ game side confirmed a hidden draw (a "hit").
 | 1 | Write-back embed through LunaHook (blank or translated text written into the engine's buffer) | `native/megulithook`, LunaHook embed hooks | engine embed callback |
 | 2 | Engine-specific DLLs (KiriKiri, Ren'Py, ...) | `native/krkrtext`, `native/renpytext`, `native/MeguLitRenpy.py` | `ToMe_CHARS hidden=1` |
 | 3 | Windows glyph layer: GDI / GDI+ / Direct2D glyphs and strings (E578, E667) | `native/megulithook/MeguLitGdiHide.h`, `native/fontprobe` | `MeguLit_GDIHIDE hit`, `ToMe_GLYPHHIDE hit` |
-| 4 | "Fake GPU": glyph quads of Direct3D 9 / 11 draws and glyph blits of GDI software renderers | `native/gpuhide` (MeguLitGpu32/64.dll), `native/GpuHideLayer.cs` | `ToMe_GPUHIDE hit` |
+| 4 | "Fake GPU": glyph quads of Direct3D 9 / 11 and OpenGL draws and glyph blits of GDI software renderers | `native/gpuhide` (MeguLitGpu32/64.dll), `native/GpuHideLayer.cs` | `ToMe_GPUHIDE hit` |
 
 ## Layer 4: fake GPU (`MeguLitGpu32.dll`, `MeguLitGpu64.dll`)
 
@@ -40,6 +40,14 @@ for a glyph, so layer 3 sees nothing.
   coordinate float2 in the last 8 bytes of the stride) and only ever acts through the count match. Shaders decide the
   real transform: positions that all lie in [-1, 1] are read as normalised device coordinates through the viewport,
   others as pixels. Triangle lists and single-quad strips.
+- **OpenGL.** `glDrawArrays` / `glDrawElements` (opengl32) and `SwapBuffers` (gdi32) are hooked in place; the DLL never
+  imports opengl32.dll (GL 1.1 calls go through pointers from the game's own copy). Buffer functions come from the driver
+  (`wglGetProcAddress`), so on the first draw, in the game's render thread, `glBufferData` / `glBufferSubData` /
+  `glMapBuffer(Range)` / `glUnmapBuffer` (and ARB names) are resolved and hooked for read-only shadows. Each draw is read
+  with GL's getters: with a GLSL program, the active attribute whose name contains "pos" (vec2–vec4) and the one with
+  "tex" / "uv" / "coord" (vec2); fixed function, the vertex and texture-coordinate arrays through projection × modelview.
+  Texture: `GL_TEXTURE_BINDING_2D` and its level-0 size; target: the bound framebuffer object (0 = the window). GL's y
+  axis points up: NDC positions are flipped through the viewport.
 - **GDI blits.** `BitBlt`, `StretchBlt`, `GdiTransparentBlt`, `GdiAlphaBlend`, `StretchDIBits`, `SetDIBitsToDevice`. The
   source bitmap (or DIB memory) is the atlas, the destination bitmap the render target; a back-buffer bitmap copied to
   the window maps its glyphs to the screen.
@@ -85,8 +93,8 @@ turns layer 4 **off** for that game (`off`, `reason`); every later launch skips 
 Report pipe `\\.\pipe\MeguLitGpu-<pid>` (DLL → HookBridge, UTF-8 lines):
 
 ```
-ToMe_GPUHIDE ready version=1 apis=d3d9,d3d11,gdi
-ToMe_GPUHIDE status gdi hooked=6 | status d3d9 hooked gdi=6 | status d3d11 hooked | status no d3d gdi=6
+ToMe_GPUHIDE ready version=1 apis=d3d9,d3d11,opengl,gdi
+ToMe_GPUHIDE status gdi hooked=6 | status d3d9 hooked gdi=6 | status d3d11 hooked | status opengl hooked | status no d3d gdi=6
 ToMe_GPUHIDE learn seq=N area=x,y,w,h atlas=WxH glyphs=K chars=C atlases=A
 ToMe_GPUHIDE hit seq=N quads=Q chars=C
 ToMe_CHARS engine=gpu line=N hidden=0|1 sw=W sh=H vx=0 vy=0 vw=W vh=H n=K rects=x,y,w,h;... text=<line without blanks>
@@ -103,7 +111,7 @@ the same path as the GDI hide (`GdiHideHit`).
 
 | Member | Meaning |
 |--------|---------|
-| `string[] GpuCapabilities()` | APIs the DLL can hook (`d3d9`, `d3d11`, `gdi`); empty until the DLL reported `ready`. |
+| `string[] GpuCapabilities()` | APIs the DLL can hook (`d3d9`, `d3d11`, `opengl`, `gdi`); empty until the DLL reported `ready`. |
 | `void GpuArm(string streamId, string line)` | Hide that line of that stream from now on (60 s, renewed by every call). Learns first; never hides when unsure. |
 | `void GpuDisarm()` | Stop hiding at once (`OFF`). |
 | `void GpuReadOnly(bool on)` | Learn and report rectangles only. |
@@ -117,8 +125,9 @@ probing; `GlyphLine` → `GpuLine`, `GlyphOff` → `GpuDisarm`). The orchestrato
 
 `native/gpuhide/selftest/run.cmd [dll folder]`: x86 and x64 hosts render a scene quad, a 3-glyph name and an
 8-glyph line from one atlas through Direct3D 9 (`DrawPrimitiveUP`; a dynamic vertex buffer through an orthographic
-projection; indexed buffers), Direct3D 11 (NDC positions, `Map` / `Unmap`, an input layout made before the DLL loads)
-and through GDI (`BitBlt` from an atlas DIB into a back-buffer DIB, then to the window),
+projection; indexed buffers), Direct3D 11 (NDC positions, `Map` / `Unmap`, an input layout made before the DLL loads),
+OpenGL (a GLSL program fed by `glBufferData`; fixed function with client arrays and `glOrtho`, both into a framebuffer
+object) and through GDI (`BitBlt` from an atlas DIB into a back-buffer DIB, then to the window),
 load the DLL after the device exists, and act as HookBridge over the real pipes. Asserted: learning reports the text
 area and 8 rectangles at the drawn places with `hidden=0`; from then on the 8 glyphs are left out (pixels), the name
 and the scene unchanged, `hit` and `ToMe_CHARS hidden=1` with the same rectangles for the next line; after `OFF` the
@@ -171,5 +180,5 @@ line is drawn again. Built and run by `Build.ps1` and CI through `native/native-
   quads (4 quads for one line, the glow box included), so there are no per-glyph quads either. A "line texture" mode
   (hide the tile quads that appeared with the line in the text band) would be the next step for this family; it is
   not built because it cannot tell text tiles from other new tiles as safely as glyph quads.
-- Not covered yet: OpenGL and Direct3D 12 (same learner, `GlyphQuads.h`, needs the API side), Direct3D 9 vertex shaders /
+- Not covered yet: Direct3D 12, OpenGL vertex array objects bound before the DLL arrived with buffers never written again (same learner, `GlyphQuads.h`, needs the API side), Direct3D 9 vertex shaders /
   declarations, Direct3D 11 instanced / indirect draws, engines that bake the whole text into one texture per line (one quad per line, not per glyph).
