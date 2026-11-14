@@ -13,8 +13,8 @@ const cell = d => {
   const m = days[d - 1].match(/grid-column:(\d+);grid-row:(\d+)/);
   return {col: +m[1] - 1, row: +m[2] - 1};
 };
-const level = d => (days[d - 1].match(/class="(?:today )?(l\d|later)?/) || [])[1] || '';
-const todayIndex = days.findIndex(c => c.includes('today'));
+const level = d => (days[d - 1].match(/class="(?:is-today )?(l\d|later)?/) || [])[1] || '';
+const todayIndex = days.findIndex(c => c.includes("is-today"));
 console.log(JSON.stringify({
   days: days.length, firstCol: cell(1).col, firstRow: cell(1).row, secondCol: cell(2).col, secondRow: cell(2).row,
   todayDay: todayIndex + 1, todayRow: cell(15).row, todayCol: cell(15).col,

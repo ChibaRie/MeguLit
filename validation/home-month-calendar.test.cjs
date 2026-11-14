@@ -29,3 +29,10 @@ test('every day carries its own grid cell (automatic placement let days 2 and 3 
   const src = require('node:fs').readFileSync(path.join(__dirname, '..', 'web', 'home-tv.js'), 'utf8');
   assert.ok(src.includes('grid-column:${at%7+1};grid-row:${Math.floor(at/7)+1}'));
 });
+
+test('the calendar cells never use the bare class "today" (grimoire.css has a global .today{grid-area:today;display:flex;padding-left:28px} that stretched that cell)', () => {
+  const src = require('node:fs').readFileSync(path.join(__dirname, '..', 'web', 'home-tv.js'), 'utf8');
+  const month = src.slice(src.indexOf('export function monthHTML'), src.indexOf('export function stopHomeTV'));
+  assert.ok(!/class="\$\{d===td\?'today /.test(month));
+  assert.ok(month.includes("'is-today '"));
+});
