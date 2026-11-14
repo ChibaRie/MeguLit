@@ -40,23 +40,30 @@ static inline bool Blank(wchar_t c) { return c <= 0x20 || c == 0x3000 || c == 0x
 struct GlyphLearner {
  struct Rect { float x0, y0, x1, y1; };
  struct Seen { Rect r; unsigned firstAt, lastFrame; };
- struct Group { void *rt; unsigned tw, th, rtW, rtH; std::map<long long, Seen> keys; std::vector<Rect> frame, prev; unsigned prevFrame; };
+ struct Group { void *rt, *tex; unsigned tw, th, rtW, rtH; std::map<long long, Seen> keys; std::vector<Rect> frame, prev; unsigned prevFrame; };
  std::function<void(const std::string &)> emit; void (*log)(const char *, ...) = nullptr;
  bool readOnly = false;
  // line
+ std::vector<bool> blankAt; unsigned nb = 0; // the line with its interior blanks (engines that draw a blank glyph for a space)
  std::wstring text; unsigned n = 0, seq = 0, lineAt = 0, prevLineAt = 0, armedUntil = 0; bool reported = false, hitSent = false, hiddenSent = false; unsigned hiddenQuads = 0;
  // learned
  bool learned = false; void *areaRt = nullptr; unsigned areaW = 0, areaH = 0; Rect area{}; std::set<long long> atlases; unsigned learnedSeq = 0; float glyphH = 0;
+ std::map<void *, unsigned> texFirst; // texture -> first time a glyph quad used it
  std::map<long long, Group> groups; unsigned frameNo = 0, bbW = 0, bbH = 0;
  std::map<void *, std::pair<Rect, Rect>> rtMap; // rt texture -> (uv rect, screen rect)
 
- static long long GroupKey(void *rt, unsigned tw, unsigned th) { return ((long long)(size_t)rt * 1315423911LL) ^ ((long long)tw << 20) ^ th; }
- static long long AtlasKey(void *rt, unsigned tw, unsigned th) { return GroupKey(rt, tw, th); }
+ // one group per (render target, texture): two atlases of the same size (glyph sheet and UI sheet) never mix
+ static long long GroupKey(void *rt, void *tex) { return ((long long)(size_t)rt * 1315423911LL) ^ (long long)(size_t)tex; }
+ static long long AtlasKey(void *rt, void *tex) { return GroupKey(rt, tex); }
+ // a glyph sheet made for one line is sized to that line (e.g. 76 x 88), unlike UI / font atlases (powers of two)
+ static bool LineSized(unsigned w, unsigned h) { auto p2 = [](unsigned v) { return v && !(v & (v - 1)); }; return !(p2(w) && p2(h)) && w * h <= 1024u * 256u; }
  bool Armed(unsigned now) const { return n > 0 && (int)(armedUntil - now) > 0; }
 
  void Line(const std::wstring &t, unsigned now) {
   std::wstring s; for (wchar_t c : t) if (!Blank(c)) s += c; if (s.empty()) return;
   if (s == text && Armed(now)) { armedUntil = now + 60000; return; } // the same line again (re-read): keep its state
+  { size_t a = 0, b = t.size(); while (a < b && Blank(t[a])) a++; while (b > a && Blank(t[b - 1])) b--; blankAt.clear(); nb = 0;
+    for (size_t i = a; i < b; i++) { if (t[i] == L'\n' || t[i] == L'\r' || t[i] == 0x1F) continue; bool bl = Blank(t[i]); blankAt.push_back(bl); if (bl) nb++; } }
   prevLineAt = lineAt; text = s; n = (unsigned)s.size(); seq++; lineAt = now; armedUntil = now + 60000; reported = hitSent = hiddenSent = false; hiddenQuads = 0;
   if (log) log("LINE seq=%u n=%u", seq, n);
  }
@@ -77,11 +84,13 @@ struct GlyphLearner {
 
  // One draw call: returns the indices of the quads to leave out.
  std::vector<int> Draw(void *tex, unsigned tw, unsigned th, void *rt, unsigned rtW, unsigned rtH, unsigned backW, unsigned backH, const std::vector<Quad> &q, unsigned now) {
-  std::vector<int> drop; (void)tex; bbW = backW; bbH = backH;
-  long long gk = GroupKey(rt, tw, th); Group *g = nullptr; bool armed = Armed(now);
+  std::vector<int> drop; bbW = backW; bbH = backH;
+  long long gk = GroupKey(rt, tex); Group *g = nullptr; bool armed = Armed(now);
+  // a texture first used for this line (per-line glyph sheets); UI sheets in use before the line never count as sheets
+  bool freshTex = false; { auto ft = texFirst.find(tex); if (ft == texFirst.end()) { if (texFirst.size() > 8192) texFirst.clear(); texFirst[tex] = now; ft = texFirst.find(tex); } freshTex = (int)(ft->second - (lineAt - 3000)) >= 0; }
   for (size_t i = 0; i < q.size(); i++) {
    const Quad &x = q[i]; if (!GlyphLike(x, tw, th)) continue;
-   if (!g) { g = &groups[gk]; g->rt = rt; g->tw = tw; g->th = th; g->rtW = rtW; g->rtH = rtH; if (groups.size() > 64) { groups.clear(); g = &groups[gk]; g->rt = rt; g->tw = tw; g->th = th; g->rtW = rtW; g->rtH = rtH; } }
+   if (!g) { g = &groups[gk]; g->rt = rt; g->tex = tex; g->tw = tw; g->th = th; g->rtW = rtW; g->rtH = rtH; if (groups.size() > 64) { groups.clear(); g = &groups[gk]; g->rt = rt; g->tex = tex; g->tw = tw; g->th = th; g->rtW = rtW; g->rtH = rtH; } }
    Rect r{ x.x0, x.y0, x.x1, x.y1 };
    if (g->prevFrame != frameNo) { g->prev.swap(g->frame); g->frame.clear(); g->prevFrame = frameNo; }
    if (g->frame.size() < 4096) g->frame.push_back(r);
@@ -89,10 +98,12 @@ struct GlyphLearner {
    auto it = g->keys.find(k); if (it == g->keys.end()) { if (g->keys.size() > 20000) g->keys.clear(); g->keys[k] = Seen{ r, now, frameNo }; } else it->second.lastFrame = frameNo;
    // learned atlas on the learned target; or, for engines that build a small glyph sheet per line (a new texture every
    // line), any glyph quad of the learned glyph height on a target of the learned size (effect buffers drawn twice)
-   bool sameAtlas = rt == areaRt && atlases.count(AtlasKey(rt, tw, th)), sheet = rtW == areaW && rtH == areaH && std::fabs((x.y1 - x.y0) - glyphH) <= glyphH * 0.25f;
-   if (learned && armed && !readOnly && (sameAtlas || sheet)) {
+   bool sameAtlas = rt == areaRt && atlases.count(AtlasKey(rt, tex)), sheet = freshTex && LineSized(tw, th) && rtW == areaW && rtH == areaH && std::fabs((x.y1 - x.y0) - glyphH) <= glyphH * 0.25f;
+   // glyph height only: a wait cursor or icon drawn from the same sheet inside the area stays
+   bool glyphSize = std::fabs((x.y1 - x.y0) - glyphH) <= glyphH * 0.2f;
+   if (learned && armed && !readOnly && glyphSize && (sameAtlas || sheet)) {
     float cx = (x.x0 + x.x1) / 2, cy = (x.y0 + x.y1) / 2;
-    if (cx >= area.x0 && cx <= area.x1 && cy >= area.y0 && cy <= area.y1) { drop.push_back((int)i); hiddenQuads++; }
+    if (cx >= area.x0 && cx <= area.x1 && cy >= area.y0 && cy <= area.y1) { drop.push_back((int)i); hiddenQuads++; if (log && hiddenQuads < 60) log("drop %s tex=%p %ux%u [%.0f,%.0f %.0fx%.0f uv %.3f,%.3f %.3fx%.3f]", sameAtlas ? "atlas" : "sheet", tex, tw, th, x.x0, x.y0, x.x1 - x.x0, x.y1 - x.y0, x.u0, x.v0, x.u1 - x.u0, x.v1 - x.v0); }
    }
   }
   if (!drop.empty() && !hitSent) { hitSent = true; char b[128]; snprintf(b, sizeof b, "ToMe_GPUHIDE hit seq=%u quads=%u chars=%u", seq, (unsigned)drop.size(), n); if (emit) emit(b); }
@@ -120,6 +131,25 @@ struct GlyphLearner {
   std::vector<Rect> out; for (size_t i = 0; i < c.size(); i++) if (id[i] == best) out.push_back(c[i]); return out;
  }
 
+ // The glyph positions of the line: exactly its characters, or its characters plus its interior blanks drawn as blank
+ // glyphs (reading order; the blank positions are dropped from the result).
+ const std::vector<Rect> *Match(const std::vector<Rect> &a, const std::vector<Rect> &b, std::vector<Rect> &keep) const {
+  if (a.size() == n) return &a; if (b.size() == n) return &b;
+  if (!nb) return nullptr;
+  for (const std::vector<Rect> *src : { &a, &b }) if (src->size() > n && src->size() <= n + nb && Blanks(*src, keep)) return &keep;
+  return nullptr;
+ }
+ // Walk the line (with its interior blanks) over the glyph positions in reading order: a character takes the next
+ // position; a blank takes one too (a blank glyph the engine drew) unless that position starts a new row (the engine
+ // wrapped at the blank and drew nothing for it). Succeeds only when both run out together.
+ bool Blanks(const std::vector<Rect> &r, std::vector<Rect> &keep) const {
+  keep.clear(); size_t k = 0;
+  auto rowStart = [&](size_t j) { if (j == 0 || j >= r.size()) return j == 0; float h = r[j].y1 - r[j].y0; return r[j].y0 > r[j - 1].y0 + h * 0.5f; };
+  for (size_t i = 0; i < blankAt.size(); i++) {
+   if (blankAt[i]) { if (k < r.size() && !rowStart(k)) k++; continue; }
+   if (k >= r.size()) return false; keep.push_back(r[k++]); }
+  return k == r.size() && keep.size() == n;
+ }
  void Frame(unsigned now, unsigned backW, unsigned backH) {
   frameNo++; bbW = backW; bbH = backH; if (!Armed(now)) return;
   if (reported && hiddenSent == (hitSent && !readOnly)) return;
@@ -130,8 +160,8 @@ struct GlyphLearner {
    const std::vector<Rect> &last = g.prevFrame == frameNo - 1 ? g.frame : g.prev; live = last;
    std::vector<Rect> a = Chars(Cluster(Chars(live))), b = Chars(Cluster(Chars(fresh)));
    if (log && (now / 500) != ((now - 17) / 500)) log("frame %u group rt=%p %ux%u live=%u fresh=%u n=%u", frameNo, g.rt, g.tw, g.th, (unsigned)a.size(), (unsigned)b.size(), n);
-   const std::vector<Rect> *hit = a.size() == n ? &a : b.size() == n ? &b : nullptr; if (!hit) continue;
-   if (learned && (g.rt != areaRt || !atlases.count(AtlasKey(g.rt, g.tw, g.th)))) continue;
+   std::vector<Rect> keep; const std::vector<Rect> *hit = Match(a, b, keep); if (!hit) continue;
+   if (learned && (g.rt != areaRt || !atlases.count(AtlasKey(g.rt, g.tex)))) continue;
    Report(g, *hit);
    return;
   }
@@ -144,7 +174,7 @@ struct GlyphLearner {
     for (auto &s : g->keys) if ((int)(s.second.firstAt - since) >= 0) fresh.push_back(s.second.r); }
    std::vector<Rect> a = Chars(Cluster(Chars(live))), b = Chars(Cluster(Chars(fresh)));
    if (log && (now / 500) != ((now - 17) / 500)) log("frame %u target rt=%p pages=%u live=%u fresh=%u n=%u", frameNo, kv.first, (unsigned)kv.second.size(), (unsigned)a.size(), (unsigned)b.size(), n);
-   const std::vector<Rect> *hit = a.size() == n ? &a : b.size() == n ? &b : nullptr; if (!hit) continue;
+   std::vector<Rect> keep; const std::vector<Rect> *hit = Match(a, b, keep); if (!hit) continue;
    Report(*big, *hit);
    return;
   }
@@ -154,8 +184,12 @@ struct GlyphLearner {
   char b[256];
   if (!learned) {
    learned = true; areaRt = g.rt; areaW = g.rtW; areaH = g.rtH; glyphH = h; learnedSeq = seq; area = Rect{ box.x0 - h, box.y0 - h, box.x1 + h * 8, box.y1 + h * 2 };
-   // atlases that drew inside the area during this line (other pages, outline / shadow sheets)
-   for (auto &kv : groups) { if (kv.second.rt != g.rt) continue; int in = 0; for (auto &r : kv.second.frame) { float cx = (r.x0 + r.x1) / 2, cy = (r.y0 + r.y1) / 2; if (cx >= area.x0 && cx <= area.x1 && cy >= area.y0 && cy <= area.y1) in++; } if (in >= 1 || &kv.second == &g) atlases.insert(AtlasKey(kv.second.rt, kv.second.tw, kv.second.th)); }
+   // atlases whose quads line up with the matched glyphs (other pages, outline / shadow sheets: top-left within 3 px of a
+   // glyph for at least 60 % of their quads in the area); a UI sheet drawing the box frame or body under the text is not
+   auto aligned = [&](const Rect &r) { for (auto &c : cs) if (std::fabs(r.x0 - c.x0) <= 3 && std::fabs(r.y0 - c.y0) <= 3) return true; return false; };
+   auto inArea = [&](const Rect &r) { float cx = (r.x0 + r.x1) / 2, cy = (r.y0 + r.y1) / 2; return cx >= area.x0 && cx <= area.x1 && cy >= area.y0 && cy <= area.y1; };
+   for (auto &kv : groups) { if (kv.second.rt != g.rt) continue; int in = 0, on = 0; for (const std::vector<Rect> *v : { &kv.second.frame, &kv.second.prev }) for (auto &r : *v) if (inArea(r)) { in++; if (aligned(r)) on++; }
+    if (&kv.second == &g || (on >= 1 && on * 10 >= in * 6)) atlases.insert(AtlasKey(kv.second.rt, kv.second.tex)); }
    snprintf(b, sizeof b, "ToMe_GPUHIDE learn seq=%u area=%.0f,%.0f,%.0f,%.0f atlas=%ux%u glyphs=%u chars=%u atlases=%u", seq, area.x0, area.y0, area.x1 - area.x0, area.y1 - area.y0, g.tw, g.th, (unsigned)cs.size(), n, (unsigned)atlases.size()); if (emit) emit(b);
   } else {
    // grow the area when a longer line spills over it

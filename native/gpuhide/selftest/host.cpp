@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Self-test for MeguLitGpu32/64.dll (hide layer 4). Usage: host.exe <dll> <d3d9-up|d3d9-vb|d3d9-ivb|d3d9-decl|d3d11|gdi> [png prefix]
+// Self-test for MeguLitGpu32/64.dll (hide layer 4). Usage: host.exe <dll> <d3d9-up|d3d9-vb|d3d9-ivb|d3d9-decl|d3d11|gl|gl-ff|gdi> [png prefix]
 // The host plays the game and HookBridge at once: it renders a scene (one full-screen quad), a "name" (3 glyph quads
 // above the text box) and an 8-character dialogue line (8 glyph quads in a row) from one glyph atlas, loads the DLL
 // after its device exists (like a late injection), and talks to it over the real pipes.
@@ -12,6 +12,7 @@
 #include <d3d9.h>
 #include <d3d11.h>
 #include <d3dcompiler.h>
+#include <gl/GL.h>
 #include <stdio.h>
 #include <string>
 #include <vector>
@@ -31,7 +32,7 @@ static int TextX(int i) { return GX + i * GA; }
 // --------------------------------------------------------------------------------------------------------------- D3D9
 struct V { float x, y, z, w, u, v; };
 struct V3 { float x, y, z, u, v; };
-static IDirect3DDevice9 *Dev; static IDirect3DTexture9 *Atlas, *Scene; static IDirect3DVertexBuffer9 *Vb; static IDirect3DIndexBuffer9 *Ib; static std::string Mode;
+static IDirect3DDevice9 *Dev; static IDirect3DTexture9 *Atlas, *Scene, *Ui; static IDirect3DVertexBuffer9 *Vb; static IDirect3DIndexBuffer9 *Ib; static std::string Mode;
 static void Cell(int c, float &u0, float &v0, float &u1, float &v1) { int cx = c % 8, cy = c / 8; u0 = cx * 32 / 256.f; v0 = cy * 32 / 256.f; u1 = u0 + 32 / 256.f; v1 = v0 + 32 / 256.f; }
 static void QuadList(std::vector<V> &out, float x, float y, float s, int cell) { float u0, v0, u1, v1; Cell(cell, u0, v0, u1, v1); V a = { x, y, 0, 1, u0, v0 }, b = { x + s, y, 0, 1, u1, v0 }, c = { x, y + s, 0, 1, u0, v1 }, d = { x + s, y + s, 0, 1, u1, v1 }; out.insert(out.end(), { a, b, c, b, d, c }); }
 static void Glyphs(std::vector<V> &q, int first) { for (int i = 0; i < 3; i++) QuadList(q, (float)NameX(i), (float)NY, GS, 40 + i); for (int i = 0; i < 8; i++) QuadList(q, (float)TextX(i), (float)GY, GS, first + i); }
@@ -40,6 +41,9 @@ static void FrameD3D(int first, DWORD *pixels) {
  Dev->SetRenderState(D3DRS_ALPHABLENDENABLE, TRUE); Dev->SetRenderState(D3DRS_SRCBLEND, D3DBLEND_SRCALPHA); Dev->SetRenderState(D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA); Dev->SetRenderState(D3DRS_LIGHTING, FALSE); Dev->SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE);
  Dev->SetFVF(D3DFVF_XYZRHW | D3DFVF_TEX1); Dev->SetTexture(0, Scene);
  V s[4] = { { 0, 0, 0, 1, 0, 0 }, { (float)W, 0, 0, 1, 1, 0 }, { 0, (float)H, 0, 1, 0, 1 }, { (float)W, (float)H, 0, 1, 1, 1 } }; Dev->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, 2, s, sizeof(V));
+ // the text box: a row of glyph-sized frame tiles from a UI atlas, under and around the line (must never be hidden)
+ { std::vector<V> f; for (int x = GX - 14; x < TextX(7) + GS + 14; x += 28) { V a = { (float)x, (float)GY - 2, 0, 1, 0, 0 }, b = { (float)x + 28, (float)GY - 2, 0, 1, 28 / 256.f, 0 }, c = { (float)x, (float)GY + 26, 0, 1, 0, 28 / 256.f }, d = { (float)x + 28, (float)GY + 26, 0, 1, 28 / 256.f, 28 / 256.f }; f.insert(f.end(), { a, b, c, b, d, c }); }
+   Dev->SetFVF(D3DFVF_XYZRHW | D3DFVF_TEX1); Dev->SetTexture(0, Ui); Dev->DrawPrimitiveUP(D3DPT_TRIANGLELIST, (UINT)f.size() / 3, f.data(), sizeof(V)); }
  std::vector<V> q; Glyphs(q, first); Dev->SetTexture(0, Atlas);
  if (Mode == "d3d9-up") Dev->DrawPrimitiveUP(D3DPT_TRIANGLELIST, (UINT)q.size() / 3, q.data(), sizeof(V));
  else if (Mode == "d3d9-vb") {
@@ -142,14 +146,66 @@ static bool Init11() {
  AtlasV = Tex11(256, true); SceneV = Tex11(64, false); return true;
 }
 
+// ------------------------------------------------------------------------------------------------------------ OpenGL
+// "gl": a GLSL program (attributes a_pos / a_uv, positions in NDC) fed from a vertex buffer written with glBufferData
+// every frame; "gl-ff": fixed function, client-side vertex / texture-coordinate arrays through glOrtho (pixels).
+// Both render into a framebuffer object of the window's size (read back with glReadPixels).
+typedef char GLchar;
+#define GLX(r, n, a) typedef r(WINAPI *n##_t) a; static n##_t n;
+GLX(void, glGenFramebuffers, (GLsizei, GLuint *)) GLX(void, glBindFramebuffer, (GLenum, GLuint)) GLX(void, glFramebufferTexture2D, (GLenum, GLenum, GLenum, GLuint, GLint))
+GLX(GLuint, glCreateShader, (GLenum)) GLX(void, glShaderSource, (GLuint, GLsizei, const GLchar *const *, const GLint *)) GLX(void, glCompileShader, (GLuint)) GLX(GLuint, glCreateProgram, ())
+GLX(void, glAttachShader, (GLuint, GLuint)) GLX(void, glLinkProgram, (GLuint)) GLX(void, glUseProgram, (GLuint)) GLX(void, glBindAttribLocation, (GLuint, GLuint, const GLchar *))
+GLX(void, glGenBuffers, (GLsizei, GLuint *)) GLX(void, glBindBuffer, (GLenum, GLuint)) GLX(void, glBufferData, (GLenum, ptrdiff_t, const void *, GLenum))
+GLX(void, glVertexAttribPointer, (GLuint, GLint, GLenum, GLboolean, GLsizei, const void *)) GLX(void, glEnableVertexAttribArray, (GLuint))
+static HDC GlDc; static GLuint GlAtlas, GlScene, GlProgId, GlVbo;
+static GLuint GlTex(int size, bool atlas) { std::vector<DWORD> px(size * size); for (int y = 0; y < size; y++) for (int x = 0; x < size; x++) { int cx = x % 32, cy = y % 32; px[y * size + x] = !atlas ? 0xFF800000 : (cx >= 4 && cx < 28 && cy >= 4 && cy < 28) ? 0xFFFFFFFF : 0; }
+ GLuint t; glGenTextures(1, &t); glBindTexture(GL_TEXTURE_2D, t); glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST); glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST); glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, size, size, 0, GL_RGBA, GL_UNSIGNED_BYTE, px.data()); return t; }
+struct V4 { float x, y, u, v; };
+static void GlQuad(std::vector<V4> &o, float x, float y, float w, float h, float u0, float v0, float u1, float v1, bool ndc) {
+ auto nx = [&](float p) { return ndc ? p / W * 2 - 1 : p; }; auto ny = [&](float p) { return ndc ? 1 - p / H * 2 : p; };
+ V4 a = { nx(x), ny(y), u0, v0 }, b = { nx(x + w), ny(y), u1, v0 }, c = { nx(x), ny(y + h), u0, v1 }, d = { nx(x + w), ny(y + h), u1, v1 }; o.insert(o.end(), { a, b, c, b, d, c }); }
+static void GlDraw(const std::vector<V4> &v) {
+ if (Mode == "gl") { glBindBuffer(0x8892, GlVbo); glBufferData(0x8892, v.size() * sizeof(V4), v.data(), 0x88E8 /* DYNAMIC_DRAW */); glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(V4), (void *)0); glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(V4), (void *)8); }
+ else { glVertexPointer(2, GL_FLOAT, sizeof(V4), &v[0].x); glTexCoordPointer(2, GL_FLOAT, sizeof(V4), &v[0].u); }
+ glDrawArrays(GL_TRIANGLES, 0, (GLsizei)v.size());
+}
+static void FrameGL(int first, DWORD *pixels) {
+ bool ndc = Mode == "gl"; glViewport(0, 0, W, H); glClearColor(0, 0, 0, 1); glClear(GL_COLOR_BUFFER_BIT); glEnable(GL_TEXTURE_2D); glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+ std::vector<V4> s; GlQuad(s, 0, 0, W, H, 0, 0, 1, 1, ndc); glBindTexture(GL_TEXTURE_2D, GlScene); GlDraw(s);
+ std::vector<V4> g; for (int i = 0; i < 3; i++) { float u0, v0, u1, v1; Cell(40 + i, u0, v0, u1, v1); GlQuad(g, (float)NameX(i), (float)NY, GS, GS, u0, v0, u1, v1, ndc); }
+ for (int i = 0; i < 8; i++) { float u0, v0, u1, v1; Cell(first + i, u0, v0, u1, v1); GlQuad(g, (float)TextX(i), (float)GY, GS, GS, u0, v0, u1, v1, ndc); }
+ glBindTexture(GL_TEXTURE_2D, GlAtlas); GlDraw(g); glFinish();
+ if (pixels) { std::vector<DWORD> raw(W * H); glReadPixels(0, 0, W, H, GL_RGBA, GL_UNSIGNED_BYTE, raw.data()); for (int y = 0; y < H; y++) for (int x = 0; x < W; x++) { DWORD c = raw[(H - 1 - y) * W + x]; pixels[y * W + x] = (c & 0xFF00FF00) | ((c & 0xFF) << 16) | ((c >> 16) & 0xFF); } }
+ SwapBuffers(GlDc);
+}
+static bool InitGL() {
+ GlDc = GetDC(Win); PIXELFORMATDESCRIPTOR pfd = { sizeof pfd, 1, PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL | PFD_DOUBLEBUFFER, PFD_TYPE_RGBA, 32 }; int pf = ChoosePixelFormat(GlDc, &pfd); if (!pf || !SetPixelFormat(GlDc, pf, &pfd)) return false;
+ HGLRC rc = wglCreateContext(GlDc); if (!rc || !wglMakeCurrent(GlDc, rc)) return false;
+#define GLL(n) n = (n##_t)wglGetProcAddress(#n); if (!n) return false;
+ GLL(glGenFramebuffers) GLL(glBindFramebuffer) GLL(glFramebufferTexture2D) GLL(glCreateShader) GLL(glShaderSource) GLL(glCompileShader) GLL(glCreateProgram) GLL(glAttachShader) GLL(glLinkProgram) GLL(glUseProgram) GLL(glBindAttribLocation)
+ GLL(glGenBuffers) GLL(glBindBuffer) GLL(glBufferData) GLL(glVertexAttribPointer) GLL(glEnableVertexAttribArray)
+ GLuint color, fbo; glGenTextures(1, &color); glBindTexture(GL_TEXTURE_2D, color); glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, W, H, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL); glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+ glGenFramebuffers(1, &fbo); glBindFramebuffer(0x8D40, fbo); glFramebufferTexture2D(0x8D40, 0x8CE0, GL_TEXTURE_2D, color, 0);
+ GlAtlas = GlTex(256, true); GlScene = GlTex(64, false);
+ if (Mode == "gl") {
+  const char *vs = "attribute vec2 a_pos; attribute vec2 a_uv; varying vec2 v_uv; void main(){ v_uv = a_uv; gl_Position = vec4(a_pos, 0.0, 1.0); }";
+  const char *fs = "uniform sampler2D t; varying vec2 v_uv; void main(){ gl_FragColor = texture2D(t, v_uv); }";
+  GLuint a = glCreateShader(0x8B31), b = glCreateShader(0x8B30); glShaderSource(a, 1, &vs, NULL); glShaderSource(b, 1, &fs, NULL); glCompileShader(a); glCompileShader(b);
+  GlProgId = glCreateProgram(); glAttachShader(GlProgId, a); glAttachShader(GlProgId, b); glBindAttribLocation(GlProgId, 0, "a_pos"); glBindAttribLocation(GlProgId, 1, "a_uv"); glLinkProgram(GlProgId); glUseProgram(GlProgId);
+  glGenBuffers(1, &GlVbo); glEnableVertexAttribArray(0); glEnableVertexAttribArray(1);
+ } else { glMatrixMode(GL_PROJECTION); glLoadIdentity(); glOrtho(0, W, H, 0, -1, 1); glMatrixMode(GL_MODELVIEW); glLoadIdentity(); glEnableClientState(GL_VERTEX_ARRAY); glEnableClientState(GL_TEXTURE_COORD_ARRAY); }
+ return true;
+}
+
 // ----------------------------------------------------------------------------------------------------------- the test
-static void Frame(int first, DWORD *px) { if (Mode == "gdi") { FrameGdi(first, px); Sleep(40); } else if (Mode == "d3d11") { FrameD3D11(first, px); Sleep(16); } else if (Mode == "d3d9-decl") { FrameDecl(first, px); Sleep(16); } else { FrameD3D(first, px); Sleep(16); } }
+static void Frame(int first, DWORD *px) { if (Mode == "gdi") { FrameGdi(first, px); Sleep(40); } else if (Mode == "d3d11") { FrameD3D11(first, px); Sleep(16); } else if (Mode == "d3d9-decl") { FrameDecl(first, px); Sleep(16); } else if (Mode == "gl" || Mode == "gl-ff") { FrameGL(first, px); Sleep(16); } else { FrameD3D(first, px); Sleep(16); } }
 static bool White(DWORD c) { return (c & 0xFFFFFF) == 0xFFFFFF; }
 static bool Blue(DWORD c) { return (c & 0xFFFFFF) == 0x000080; }
 static void Pixels(int first, bool textShown, const char *label) {
  std::vector<DWORD> px(W * H); Frame(first, px.data()); int text = 0, name = 0; for (int i = 0; i < 8; i++) text += White(px[(GY + GS / 2) * W + TextX(i) + GS / 2]); for (int i = 0; i < 3; i++) name += White(px[(NY + GS / 2) * W + NameX(i) + GS / 2]);
- bool scene = Blue(px[5 * W + 5]) && Blue(px[(GY + GS / 2) * W + TextX(0) - 4]); char b[200];
- snprintf(b, sizeof b, "%s: dialogue glyphs %s (%d/8 white), name kept (%d/3), scene kept", label, textShown ? "drawn" : "left out", text, name); Check((textShown ? text == 8 : text == 0) && name == 3 && scene, b);
+ bool framed = Mode == "d3d9-up" || Mode == "d3d9-vb" || Mode == "d3d9-ivb";
+ bool scene = Blue(px[5 * W + 5]) && (framed ? ((px[(GY + GS / 2) * W + TextX(0) - 4] & 0xFFFFFF) == 0x00A000 && (px[(GY + 1) * W + TextX(3) + GS / 2] & 0xFFFFFF) == 0x00A000) : Blue(px[(GY + GS / 2) * W + TextX(0) - 4])); char b[200];
+ snprintf(b, sizeof b, "%s: dialogue glyphs %s (%d/8 white), name kept (%d/3), scene and box frame kept", label, textShown ? "drawn" : "left out", text, name); Check((textShown ? text == 8 : text == 0) && name == 3 && scene, b);
 }
 static bool WaitFor(const char *needle, int first, int frames, std::string *out = nullptr) { for (int i = 0; i < frames; i++) { if (Has(needle, out)) return true; Frame(first, nullptr); } return Has(needle, out); }
 static bool RectsOk(const std::string &r) {
@@ -158,16 +214,18 @@ static bool RectsOk(const std::string &r) {
  return ok == 8;
 }
 int wmain(int argc, wchar_t **argv) {
- if (argc < 3) { printf("usage: host <dll> <d3d9-up|d3d9-vb|d3d9-ivb|d3d9-decl|d3d11|gdi>\n"); return 2; }
+ if (argc < 3) { printf("usage: host <dll> <d3d9-up|d3d9-vb|d3d9-ivb|d3d9-decl|d3d11|gl|gl-ff|gdi>\n"); return 2; }
  char m[32]; WideCharToMultiByte(CP_UTF8, 0, argv[2], -1, m, sizeof m, NULL, NULL); Mode = m; printf("mode %s (%d-bit)\n", m, (int)sizeof(void *) * 8);
  WNDCLASSW wc = {}; wc.lpfnWndProc = DefWindowProcW; wc.hInstance = GetModuleHandleW(NULL); wc.lpszClassName = L"GpuHideTest"; RegisterClassW(&wc);
  Win = CreateWindowExW(WS_EX_TOOLWINDOW, wc.lpszClassName, L"gpu hide test", WS_POPUP, -32000, -32000, W, H, NULL, NULL, wc.hInstance, NULL); // never shown
  if (Mode == "gdi") { DWORD *ab; AtlasDc = Dib(256, 256, &ab); for (int y = 0; y < 256; y++) for (int x = 0; x < 256; x++) { int cx = x % 32, cy = y % 32; ab[y * 256 + x] = (cx >= 4 && cx < 28 && cy >= 4 && cy < 28) ? 0xFFFFFF : 0; } BackDc = Dib(W, H, &BackBits); }
+ else if (Mode == "gl" || Mode == "gl-ff") { if (!InitGL()) { printf("SKIP no OpenGL 2 context on this machine\n"); return 0; } }
  else if (Mode == "d3d11") { if (!Init11()) { printf("SKIP no Direct3D11 device on this machine\n"); return 0; } }
  else {
   IDirect3D9 *d = Direct3DCreate9(D3D_SDK_VERSION); D3DPRESENT_PARAMETERS pp = {}; pp.Windowed = TRUE; pp.SwapEffect = D3DSWAPEFFECT_DISCARD; pp.hDeviceWindow = Win; pp.BackBufferWidth = W; pp.BackBufferHeight = H; pp.BackBufferFormat = D3DFMT_X8R8G8B8;
   if (!d || FAILED(d->CreateDevice(D3DADAPTER_DEFAULT, D3DDEVTYPE_HAL, Win, D3DCREATE_SOFTWARE_VERTEXPROCESSING, &pp, &Dev))) { printf("SKIP no Direct3D9 device on this machine (CI runner without a display adapter)\n"); return 0; }
   Atlas = MakeTex(256, true); Scene = MakeTex(64, false);
+  { Dev->CreateTexture(256, 256, 1, 0, D3DFMT_A8R8G8B8, D3DPOOL_MANAGED, &Ui, NULL); D3DLOCKED_RECT r; Ui->LockRect(0, &r, NULL, 0); for (int y = 0; y < 256; y++) for (int x = 0; x < 256; x++) ((DWORD *)((char *)r.pBits + y * r.Pitch))[x] = 0xFF00A000; Ui->UnlockRect(0); }
   Dev->CreateVertexBuffer(64 * 6 * sizeof(V), D3DUSAGE_DYNAMIC | D3DUSAGE_WRITEONLY, 0, D3DPOOL_DEFAULT, &Vb, NULL); Dev->CreateIndexBuffer(64 * 6 * 2, D3DUSAGE_DYNAMIC | D3DUSAGE_WRITEONLY, D3DFMT_INDEX16, D3DPOOL_DEFAULT, &Ib, NULL);
   Dev->SetSamplerState(0, D3DSAMP_MINFILTER, D3DTEXF_POINT); Dev->SetSamplerState(0, D3DSAMP_MAGFILTER, D3DTEXF_POINT);
   if (Mode == "d3d9-decl" && !InitDecl()) { printf("SKIP no vertex shader support\n"); return 0; }
@@ -179,7 +237,7 @@ int wmain(int argc, wchar_t **argv) {
  std::thread([rep] { ConnectNamedPipe(rep, NULL); std::string buf; char b[4096]; DWORD got; while (ReadFile(rep, b, sizeof b, &got, NULL) && got) { buf.append(b, got); size_t at; while ((at = buf.find('\n')) != std::string::npos) { std::string l = buf.substr(0, at); buf.erase(0, at + 1); printf("  < %s\n", l.c_str()); std::lock_guard<std::mutex> g(Mu); Reports.push_back(l); } } }).detach();
  std::atomic<bool> ctlUp(false); std::thread([&] { ConnectNamedPipe(Ctl, NULL); ctlUp = true; }).detach();
  if (!LoadLibraryW(argv[1])) { printf("FAIL cannot load %ls (%lu)\n", argv[1], GetLastError()); return 1; }
- Check(WaitFor(Mode == "gdi" ? "status gdi hooked=6" : Mode == "d3d11" ? "status d3d11 hooked" : "status d3d9 hooked", 0, 400), "DLL hooked the API after the device existed");
+ Check(WaitFor(Mode == "gdi" ? "status gdi hooked=6" : Mode == "d3d11" ? "status d3d11 hooked" : Mode.compare(0, 2, "gl") == 0 ? "status opengl hooked" : "status d3d9 hooked", 0, 400), "DLL hooked the API after the device existed");
  for (int i = 0; i < 200 && !ctlUp; i++) Frame(0, nullptr); Check(ctlUp, "control pipe connected");
  Pixels(0, true, "before any line");
  // 1. learn

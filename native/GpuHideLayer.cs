@@ -49,18 +49,29 @@ public static partial class HookBridge {
  static System.Collections.Generic.Dictionary<string,object> GpuCanaryRead(string f){try{if(f!=""&&File.Exists(f))return Json.Deserialize<System.Collections.Generic.Dictionary<string,object>>(File.ReadAllText(f));}catch{}return new System.Collections.Generic.Dictionary<string,object>();}
  static void GpuCanaryWrite(string f,System.Collections.Generic.Dictionary<string,object> d){try{if(f=="")return;Directory.CreateDirectory(Path.GetDirectoryName(f));File.WriteAllText(f+".tmp",Json.Serialize(d));if(File.Exists(f))File.Delete(f);File.Move(f+".tmp",f);}catch{}}
  /// <summary>Why the layer is off for the bound game ("" = allowed).</summary>
- public static string GpuCanaryOff(){var d=GpuCanaryRead(GpuCanaryFile());object v;return d.TryGetValue("off",out v)&&Convert.ToBoolean(v)?(d.ContainsKey("reason")?Convert.ToString(d["reason"]):"off"):"";}
+ public static string GpuCanaryOff(){return GpuCanaryOffFile(GpuCanaryFile());}
  /// <summary>The user turns the layer on again for the bound game.</summary>
  public static void GpuCanaryReset(){string f=GpuCanaryFile();if(f!=""&&File.Exists(f))try{File.Delete(f);}catch{}}
- // Returns false when the layer must not load into this game.
- static bool GpuCanaryArm(){string f=GpuCanaryFile();if(f=="")return true;var d=GpuCanaryRead(f);object v;
-  if(d.TryGetValue("off",out v)&&Convert.ToBoolean(v)){string why=d.ContainsKey("reason")?Convert.ToString(d["reason"]):"";Diagnostic("gpu hide off for this game (canary): "+why);Emit(new{type="hookGpuHide",state="off",reason=why});return false;}
+ static string GpuCanaryOffFile(string f){var d=GpuCanaryRead(f);object v;return d.TryGetValue("off",out v)&&Convert.ToBoolean(v)?(d.ContainsKey("reason")?Convert.ToString(d["reason"]):"off"):"";}
+ // Arms the file for a run (false = the layer is off for this game). Pure file logic, self-tested.
+ static bool GpuCanaryArmFile(string f,long pid){if(f=="")return true;var d=GpuCanaryRead(f);object v;if(d.TryGetValue("off",out v)&&Convert.ToBoolean(v))return false;
   if(d.TryGetValue("armed",out v)&&Convert.ToBoolean(v))Diagnostic("gpu hide canary: the previous run was not seen to its end (bridge stopped first); keeping the layer on");
-  d["armed"]=true;d["pid"]=(long)Pid;d["at"]=DateTime.UtcNow.ToString("o");GpuCanaryWrite(f,d);
-  new Thread(()=>{IntPtr h=OpenProcess(0x00100000|0x1000,false,Pid);if(h==IntPtr.Zero)return;try{WaitForSingleObject(h,0xFFFFFFFF);uint code;if(!GetExitCodeProcess(h,out code))return;var e=GpuCanaryRead(f);e["armed"]=false;e["exit"]=(long)code;
-   if(code>=0xC0000000u){e["off"]=true;e["reason"]="game exited with exception 0x"+code.ToString("X8")+" while layer 4 was loaded ("+DateTime.UtcNow.ToString("o")+")";Diagnostic("gpu hide canary: "+e["reason"]+"; layer 4 is off for this game from now on");}
-   GpuCanaryWrite(f,e);}finally{CloseHandle(h);}}){IsBackground=true}.Start();
+  d["armed"]=true;d["pid"]=pid;d["at"]=DateTime.UtcNow.ToString("o");GpuCanaryWrite(f,d);return true;}
+ // The game ended with this exit code: an exception code turns the layer off for the game, anything else clears the arm.
+ static void GpuCanaryExitFile(string f,uint code){if(f=="")return;var e=GpuCanaryRead(f);e["armed"]=false;e["exit"]=(long)code;
+  if(code>=0xC0000000u){e["off"]=true;e["reason"]="game exited with exception 0x"+code.ToString("X8")+" while layer 4 was loaded ("+DateTime.UtcNow.ToString("o")+")";Diagnostic("gpu hide canary: "+e["reason"]+"; layer 4 is off for this game from now on");}
+  GpuCanaryWrite(f,e);}
+ // Returns false when the layer must not load into this game.
+ static bool GpuCanaryArm(){string f=GpuCanaryFile();if(f=="")return true;
+  if(!GpuCanaryArmFile(f,(long)Pid)){string why=GpuCanaryOffFile(f);Diagnostic("gpu hide off for this game (canary): "+why);Emit(new{type="hookGpuHide",state="off",reason=why});return false;}
+  new Thread(()=>{IntPtr h=OpenProcess(0x00100000|0x1000,false,Pid);if(h==IntPtr.Zero)return;try{WaitForSingleObject(h,0xFFFFFFFF);uint code;if(GetExitCodeProcess(h,out code))GpuCanaryExitFile(f,code);}finally{CloseHandle(h);}}){IsBackground=true}.Start();
   return true;}
+ /// <summary>HookBridge --self-test: arm, crash, refuse, reset, clean exit.</summary>
+ public static bool GpuCanarySelfTest(){string dir=Path.Combine(Path.GetTempPath(),"megulit-gpu-canary-"+Guid.NewGuid().ToString("N"));string f=Path.Combine(dir,"game.exe-1.json");
+  try{if(!GpuCanaryArmFile(f,1)||GpuCanaryOffFile(f)!="")return false;GpuCanaryExitFile(f,0);if(GpuCanaryOffFile(f)!=""||!GpuCanaryArmFile(f,2))return false;
+   GpuCanaryExitFile(f,1);if(GpuCanaryOffFile(f)!="")return false; /* an ordinary non-zero exit is not a crash */
+   if(!GpuCanaryArmFile(f,3))return false;GpuCanaryExitFile(f,0xC0000005u);if(GpuCanaryOffFile(f).IndexOf("0xC0000005",StringComparison.Ordinal)<0||GpuCanaryArmFile(f,4))return false;
+   File.Delete(f);return GpuCanaryArmFile(f,5);}catch{return false;}finally{try{Directory.Delete(dir,true);}catch{}}}
  static void GpuHide(string bit,string loader,string[] args){try{string dll=Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"MeguLitGpu"+bit+".dll");if(!File.Exists(dll)){Diagnostic("gpu hide unavailable: "+Path.GetFileName(dll)+" missing");return;}
   if(!GpuCanaryArm())return;
   new Thread(()=>{while(!Quit){try{using(var pipe=new System.IO.Pipes.NamedPipeServerStream("MeguLitGpu-"+Pid,System.IO.Pipes.PipeDirection.In,1)){pipe.WaitForConnection();using(var reader=new StreamReader(pipe,new System.Text.UTF8Encoding(false))){string line;while((line=reader.ReadLine())!=null)GpuReport(line);}}}catch(Exception e){Diagnostic("gpu pipe "+e.Message);Thread.Sleep(1000);}}}){IsBackground=true}.Start();
