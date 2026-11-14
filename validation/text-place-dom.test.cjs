@@ -34,6 +34,7 @@ const html = `<!doctype html><html><head><meta charset="utf-8"><style>
     assert.strictEqual(await page.evaluate(() => getComputedStyle(document.querySelector('.tomoyo-cn-row')).backgroundColor), 'rgba(0, 0, 0, 0)', 'no plate');
     assert.strictEqual(await page.evaluate(() => getComputedStyle(document.querySelector('.sentence-window')).backgroundColor), 'rgba(0, 0, 0, 0)', 'no window plate');
     assert.strictEqual(await page.evaluate(() => getComputedStyle(document.querySelector('.megulit-ruby-base .char-token')).fontSize), '30px', 'size from the boxes');
+    assert.deepStrictEqual(await page.evaluate(() => [getComputedStyle(document.querySelector('.char-token')).pointerEvents, getComputedStyle(document.querySelector('.sentence-window')).pointerEvents]), ['auto', 'none'], 'words take the click, the rest of the full-screen window does not');
     /* translation only: the Chinese in the Japanese's place */
     await page.evaluate(() => document.body.classList.add('tomoyo-gal-zh-only')); await page.evaluate(() => window.__tomoyoChinese.textPlace({ text: '「今日は晴れ', client: [1280, 720], rects: [[60, 500, 30, 32], [100, 500, 30, 32], [130, 500, 30, 32], [160, 500, 30, 32], [100, 540, 30, 32], [131, 540, 30, 32]] })); await frame();
     assert.strictEqual((await box('.tomoyo-cn-row'))[1], 500, 'translation-only: top of the line');

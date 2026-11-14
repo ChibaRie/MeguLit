@@ -59,7 +59,7 @@
     let layer = document.getElementById('megulit-place-extras');
     const key = on ? JSON.stringify(extras) + innerWidth + 'x' + innerHeight + JSON.stringify(b.galLayoutInfo?.() || null) : '';
     if (key === extraKey) return; extraKey = key;
-    if (!on || !extras.items.length) { layer?.remove(); return; }
+    if (!on || !extras.items.length) { if (layer) { layer.remove(); window.__tomoyoHitRegionsRefresh?.(true); } return; }
     if (!layer) { layer = document.createElement('div'); layer.id = 'megulit-place-extras'; layer.setAttribute('aria-hidden', 'true'); document.body.append(layer); }
     const ref = document.querySelector('.sentence-window .char-token'), cs = ref ? getComputedStyle(ref) : null, map = mapper(extras.client);
     layer.replaceChildren();
@@ -73,6 +73,7 @@
         group.append(span); });
       layer.append(group);
     }
+    window.__tomoyoHitRegionsRefresh?.(true);
   }
   function set(n, p, v) { if (n.style.getPropertyValue(p) !== v) n.style.setProperty(p, v, 'important'); }
   function apply() {
