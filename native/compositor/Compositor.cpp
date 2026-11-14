@@ -163,7 +163,7 @@ static void MouseThread() {
 
 // ---------------------------------------------------------------- compositor
 struct Options {
-  HWND game = nullptr; bool scale = false; bool headless = false; bool demo = false;
+  HWND game = nullptr; bool scale = false; bool headless = false; bool demo = false; bool trace = false; // --trace: diagnostic events
   int windowAlpha = 255;  // test aid: an invisible (alpha 1) but composited window for off-screen live tests
   bool autoLines = false; // test aid: without line messages, every run of dots between empty frames is a line
   std::wstring shotDir; int shotEvery = 0; int frames = 0; double statsEveryMs = 2000; int at[2] = { 0, 0 }; bool atSet = false;
@@ -190,6 +190,11 @@ public:
   void Command(const Json &j) {
     const std::string t = j["t"].str();
     if (t == "line") {
+      // The same line pushed again by the stream (repeated, or the text twice over) while it is still being shown: one line.
+      {
+        const std::u32string nt = U32(Wide(j["text"].str()));
+        if (cur.id && !j["page"].truthy() && !nt.empty() && (nt == cur.text || nt == cur.text + cur.text)) { alias[int(j["id"].num(-1))] = cur.id; return; }
+      }
       if (j["page"].truthy()) { tracker.EndPage(); kept.clear(); }
       if (cur.id && !cur.undot) kept[cur.id] = cur;
       cur = LineMsg{}; cur.id = int(j["id"].num(++autoId)); cur.started = NowMs();
@@ -202,10 +207,13 @@ public:
       if (opt.demo) cur.demoCells = cur.cells;
       cur.metric.assign(cur.dotChar.size(), {});
       MergeMetrics(cur, j["glyphs"]);
+      // ① may report a line's dots before the line itself (engines that draw before their text hook fires)
+      for (auto p = earlyGlyphs.find(cur.id); p != earlyGlyphs.end(); p = earlyGlyphs.end()) { for (const Json &g : p->second) MergeMetrics(cur, g); earlyGlyphs.erase(p); }
       if (!cur.rec.empty()) dotsSeen = true;
       cur.lastChange = NowMs();
       LineSpec s; s.id = cur.id; s.expected = !cur.rec.empty() ? -1 : j.has("expected") ? int(j["expected"].num()) : int(cur.dotChar.size()); s.vertical = cur.vertical; s.em = cur.em; s.colorKnown = cur.colorKnown; s.color = cur.color; if (!opt.demo) s.cells = cur.cells;
-      tracker.BeginLine(s); choicesOn = false; layouts.clear();
+      s.hint = int(cur.rec.size()); tracker.BeginLine(s); choicesOn = false; layouts.clear(); recheck = 8;
+      if (opt.trace) Emit("{\"e\":\"trace\",\"what\":\"line\",\"id\":" + std::to_string(cur.id) + ",\"hint\":" + std::to_string(s.hint) + ",\"expected\":" + std::to_string(s.expected) + ",\"dotsSeen\":" + (dotsSeen ? "true" : "false") + "}");
     } else if (t == "annotate") { // translation / furigana that arrive after the line: {"t":"annotate","id":7,"tl":"…","ruby":[[s,e,"よみ"],...]}
       const int id = int(j["id"].num());
       LineMsg *l = cur.id == id ? &cur : kept.count(id) ? &kept[id] : nullptr;
@@ -229,11 +237,14 @@ public:
       }
       cur.rectHidden = j["hidden"].truthy();
       if (j.has("tl")) cur.tl = Wide(j["tl"].str());
-    } else if (t == "glyphs") { // later ① dot records of a line: {"t":"glyphs","id":7,"glyphs":[{"i":0,"h":28,"b":24,"a":28,"x":1,"y":2},...]}
+      recheck = 8;
+    } else if (t == "glyphs") { recheck = 8; if (alias.count(int(j["id"].num()))) { Json k = j, n; n.kind = Json::Num; n.n = alias[int(j["id"].num())]; k.o["id"] = n; Command(k); return; } // later ① dot records of a line: {"t":"glyphs","id":7,"glyphs":[{"i":0,"h":28,"b":24,"a":28,"x":1,"y":2},...]}
       const int id = int(j["id"].num());
       if (j["glyphs"].size()) dotsSeen = true;
+      if (opt.trace) Emit("{\"e\":\"trace\",\"what\":\"glyphs\",\"id\":" + std::to_string(id) + ",\"cur\":" + std::to_string(cur.id) + ",\"n\":" + std::to_string(j["glyphs"].size()) + ",\"rec\":" + std::to_string(cur.rec.size()) + ",\"chars\":" + std::to_string(cur.metric.size()) + "}");
       if (cur.id == id) { MergeMetrics(cur, j["glyphs"]); if (!cur.rec.empty()) { tracker.SetExpected(-1); tracker.SetHint(int(cur.rec.size())); } } // counts judged here (Targets)
       else if (kept.count(id)) MergeMetrics(kept[id], j["glyphs"]);
+      else if (id > cur.id) { earlyGlyphs[id].push_back(j["glyphs"]); while (earlyGlyphs.size() > 16) earlyGlyphs.erase(earlyGlyphs.begin()); }
     } else if (t == "choices") {
       std::vector<ChoiceText> next; std::vector<int> counts;
       for (size_t i = 0; i < j["items"].size(); ++i) { ChoiceText c; c.text = U32(Wide(j["items"][i]["text"].str())); c.tl = Wide(j["items"][i]["tl"].str()); next.push_back(c); counts.push_back(int(DotCharIndex(c.text).size())); }
@@ -270,6 +281,7 @@ public:
     ctx->CopySubresourceRegion(staging.get(), 0, 0, 0, 0, tex.get(), 0, &box);
     frame.Close();
 
+    lastFrameAt = NowMs(); haveFrame = true;
     D3D11_MAPPED_SUBRESOURCE map{};
     if (SUCCEEDED(ctx->Map(staging.get(), 0, D3D11_MAP_READ_WRITE, 0, &map))) {
       Image im{ static_cast<uint8_t *>(map.pData), srcW, srcH, int(map.RowPitch) };
@@ -290,10 +302,22 @@ public:
     if (opt.frames && frames >= opt.frames) quit = true;
   }
 
+  // A still game window delivers no new frames: line data (a line, ① dot records) that arrived after the last frame is
+  // tracked against that frame again (what is already erased stays erased).
+  void Recheck() {
+    D3D11_MAPPED_SUBRESOURCE map{};
+    if (FAILED(ctx->Map(staging.get(), 0, D3D11_MAP_READ_WRITE, 0, &map))) return;
+    Image im{ static_cast<uint8_t *>(map.pData), srcW, srcH, int(map.RowPitch) };
+    Track(im); Erase(im, map);
+    ctx->Unmap(staging.get(), 0);
+    Compose(); Present();
+  }
+
   void Tick() {
     if (!IsWindow(opt.game)) { Emit("{\"e\":\"exit\",\"reason\":\"game-closed\"}"); quit = true; return; }
     FollowGame();
     const double now = NowMs();
+    if (recheck && haveFrame && now - lastFrameAt > 250 && now - recheckAt > 250) { recheckAt = now; if (--recheck >= 0) Recheck(); }
     if (now - statsAt >= opt.statsEveryMs) { Stats(now); statsAt = now; }
   }
 
@@ -324,7 +348,8 @@ private:
   struct Glyph { com_ptr<IDWriteTextLayout> layout; float w = 0, h = 0, baseline = 0; };
   std::map<uint64_t, Glyph> layouts;
   // tracking
-  int flood = 0, starve = 0; DotTracker tracker; ChoiceTracker choiceTracker; TrackResult lastResult; ChoiceTracker::Out lastChoices;
+  double lastFrameAt = 0, recheckAt = 0; bool haveFrame = false; int recheck = 0; // Recheck(): passes left over the last frame
+  std::map<int, std::vector<Json>> earlyGlyphs; std::map<int, int> alias; /* repeated line id → the line it repeats */ int flood = 0; double starveSince = 0; DotTracker tracker; ChoiceTracker choiceTracker; TrackResult lastResult; ChoiceTracker::Out lastChoices;
   bool dotsSeen = false; // ① reported at least one dot in this game session
   LineMsg cur; std::map<int, LineMsg> kept; int autoId = 0, autoMax = 0, autoEmpty = 0;
   std::vector<ChoiceText> choices; bool choicesOn = false, choiceUndot = false; double choiceStart = 0;
@@ -592,7 +617,9 @@ private:
     // No dot search before ① has reported a real dot in this game: an engine ① cannot dot (own rasteriser, Unity, web)
     // would only offer false dots (petals, sparkles) to erase and draw over.
     if (!dotsSeen && !opt.demo && !opt.autoLines) { lastResult = TrackResult{}; return; }
+    const bool knew = tracker.HasColor();
     lastResult = tracker.Update(im);
+    if (opt.trace && tracker.HasColor() != knew) { const Rgb c = tracker.Color(); Emit("{\"e\":\"trace\",\"what\":\"color\",\"known\":" + std::string(tracker.HasColor() ? "true" : "false") + ",\"rgb\":[" + std::to_string(c.r) + "," + std::to_string(c.g) + "," + std::to_string(c.b) + "]}"); }
     if (opt.autoLines && cur.text.empty()) {
       const int f = int(lastResult.dots.size()); autoMax = std::max(autoMax, f);
       autoEmpty = f ? 0 : autoEmpty + 1;
@@ -606,7 +633,7 @@ private:
     // the same colour) — forget it and learn again from the next change.
     if (!cur.complete && !cur.rec.empty() && found > 3 * int(cur.rec.size()) + 5) { if (++flood > 15) { tracker.ForgetColor(); flood = 0; } } else flood = 0;
     // Or far fewer for a while although ① drew them all (the colour of a blinking cursor or UI mark): learn again.
-    if (!cur.complete && cur.rec.size() >= 4 && tracker.HasColor() && found * 10 < int(cur.rec.size()) * 3) { if (++starve > 60) { tracker.ForgetColor(); starve = 0; } } else starve = 0;
+    if (!cur.complete && cur.rec.size() >= 4 && tracker.HasColor() && found * 10 < int(cur.rec.size()) * 3) { if (!starveSince) starveSince = NowMs(); else if (NowMs() - starveSince > 1200) { tracker.ForgetColor(); starveSince = 0; recheck = std::max(recheck, 4); } } else starveSince = 0; // timed: a still screen sends few frames
     LineStatus st = r.status;
     if (!cur.rec.empty() && found > 0 && st != LineStatus::Fading) {
       // With ① reports the tracker does not know the count: complete once the reported span is covered, mismatch when
@@ -944,6 +971,7 @@ int wmain(int argc, wchar_t **argv) {
     else if (a == L"--window-alpha") o.windowAlpha = std::clamp(std::stoi(next()), 1, 255);
     else if (a == L"--shots") o.shotDir = next();
     else if (a == L"--shot-every") o.shotEvery = std::stoi(next());
+    else if (a == L"--trace") o.trace = true;
     else if (a == L"--frames") o.frames = std::stoi(next());
     else if (a == L"--stats-ms") o.statsEveryMs = std::stod(next());
     else if (a == L"--at") { o.at[0] = std::stoi(next()); o.at[1] = std::stoi(next()); o.atSet = true; }

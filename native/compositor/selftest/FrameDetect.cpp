@@ -28,7 +28,7 @@ int wmain(int argc, wchar_t **argv) {
     for (size_t i = 0; i < o.items.size(); ++i) std::printf("%s{\"dots\":%zu,\"missing\":%d,\"box\":[%d,%d,%d,%d]}", i ? "," : "", o.items[i].dots.size(), o.items[i].missing, o.items[i].box.x0, o.items[i].box.y0, o.items[i].box.x1, o.items[i].box.y1);
     std::printf("]}\n"); return 0;
   }
-  LineSpec s; s.expected = argc > 3 ? _wtoi(argv[3]) : -1;
+  LineSpec s; s.expected = argc > 3 ? _wtoi(argv[3]) : -1; s.hint = s.expected > 0 ? s.expected : 0; // like ①'s reported count
   if (argc > 2 && wcslen(argv[2]) == 7) { const unsigned long v = wcstoul(argv[2] + 1, nullptr, 16); s.colorKnown = true; s.color = { int(v >> 16 & 255), int(v >> 8 & 255), int(v & 255) }; }
   DotTracker t; t.BeginLine(s); t.Update(im); const TrackResult &r = t.Update(im);
   std::printf("{\"size\":[%u,%u],\"color\":\"#%02x%02x%02x\",\"status\":\"%s\",\"dots\":[", W, H, t.Color().r, t.Color().g, t.Color().b, StatusName(r.status));

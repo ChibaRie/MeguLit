@@ -388,7 +388,7 @@ public:
     // The old line stays a candidate "kept" line (NVL) until the next frame shows whether it is still on screen.
     prevLine = cur.dots;
     if (!cur.dots.empty()) { pendingKeep = cur.dots; pendingId = spec.id; pendingFrames = 0; pendingStable = 0; pendingLastTotal = -1; }
-    spec = s;
+    spec = s; wholeTried = false;
     if (s.colorKnown) { color = s.color; colorKnown = true; }
     if (cur.pitch > 0) lastPitch = cur.pitch;
     const bool vert = cur.vertical;
@@ -401,7 +401,7 @@ public:
   // Fallback for the current line: forget its dots so they are neither kept nor inpainted.
   void DropCurrent() { cur.dots.clear(); pendingKeep.clear(); }
   bool HasColor() const { return colorKnown; }
-  void ForgetColor() { colorKnown = false; dotSize = 0; }
+  void ForgetColor() { colorKnown = false; dotSize = 0; wholeTried = false; }
   Rgb Color() const { return color; }
   const LineSpec &Spec() const { return spec; }
 
@@ -458,6 +458,13 @@ public:
     }
     std::vector<Dot> mine, still;
     for (size_t j = 0; j < found.size(); ++j) if (!used[j]) (Static(found[j]) ? still : mine).push_back(found[j]);
+    // Engines that draw the glyphs before the line's text arrives (the dots are already in the base frame): when ① has
+    // reported this line's dots and nothing new appeared, the unchanged dots are the line, not static UI.
+    if (mine.empty() && spec.hint > 0 && !still.empty()) {
+      mine.swap(still);
+      // Earlier lines of the page (NVL) are pre-drawn too: the line is the last `hint` dots in reading order.
+      if (int(mine.size()) > spec.hint) { const float pk = lastPitch > 0 ? lastPitch : Pitch(mine); ReadingOrder(mine, cur.vertical, pk); still.assign(mine.begin(), mine.end() - spec.hint); mine.erase(mine.begin(), mine.end() - spec.hint); }
+    }
     if (!still.empty() && !mine.empty()) {
       const float pk = cur.pitch > 0 ? cur.pitch : lastPitch > 0 ? lastPitch : Pitch(mine);
       for (bool grew = true; grew && !still.empty();) {
@@ -539,7 +546,7 @@ public:
   }
 
 private:
-  Options opt; LineSpec spec; TrackResult cur; Rgb color; bool colorKnown = false; float dotSize = 0;
+  Options opt; LineSpec spec; TrackResult cur; Rgb color; bool colorKnown = false, wholeTried = false; int wholeWait = 0; float dotSize = 0;
   std::vector<TrackResult::Kept> keptLines; std::vector<Dot> pendingKeep, prevLine; int pendingId = 0, pendingFrames = 0, pendingStable = 0, pendingLastTotal = -1; Box area;
   // The dot right after the old line's last one in reading order (same row, next cell).
   bool Continues(const std::vector<Dot> &old, const Dot &f, float pk) const {
@@ -631,9 +638,15 @@ private:
   void Learn(const Image &im) {
     Box roi = ChangedBox(im);
     if (!spec.cells.empty()) { roi = spec.cells[0]; for (auto &c : spec.cells) { roi.x0 = std::min(roi.x0, c.x0); roi.y0 = std::min(roi.y0, c.y0); roi.x1 = std::max(roi.x1, c.x1); roi.y1 = std::max(roi.y1, c.y1); } }
+    // Nothing changes (a fully shown line, a colour forgotten as wrong) or everything does (an animated background), but
+    // ① reported this line's dots: once per line,
+    // the whole frame is searched (the hint keeps out colours with far fewer dots).
+    bool whole = false;
+    const bool busy = !roi.empty() && spec.cells.empty() && double(roi.w()) * roi.h() > .5 * im.w * im.h; // an animated background
+    if ((roi.empty() || busy) && spec.hint >= 4 && (!wholeTried || ++wholeWait >= 30)) { wholeTried = whole = true; wholeWait = 0; roi = { 0, 0, im.w, im.h }; } // again every 30 frames: the line may not be drawn yet
     if (roi.empty()) return;
     // A whole-screen change (scene switch) is not a typewriter step: skip it, the next frames will be calmer.
-    if (spec.cells.empty() && double(roi.w()) * roi.h() > .5 * im.w * im.h) return;
+    if (!whole && spec.cells.empty() && double(roi.w()) * roi.h() > .5 * im.w * im.h) return;
     roi.x0 -= opt.smax; roi.y0 -= opt.smax; roi.x1 += opt.smax; roi.y1 += opt.smax;
     PlateauBlobs(im, roi, opt.smin, opt.smax, blobs, parent);
     // Candidate colours: full (unclipped) dots only, most frequent first, at most 8 per frame — a dithered or noisy
@@ -641,6 +654,7 @@ private:
     std::vector<std::pair<Rgb, int>> colours;
     for (const Blob &cand : blobs) {
       if (std::min(cand.box.w(), cand.box.h()) < 2) continue;
+      if (!DotShaped(cand, opt.smin, opt.smax)) continue; // a text colour comes from dot-shaped plateaus (not from the background's flat areas)
       const Rgb c = cand.mean(); bool hit = false;
       for (auto &t : colours) if (ColorDist(t.first, c) <= 30) { ++t.second; hit = true; break; }
       if (!hit) colours.push_back({ c, 1 });
@@ -667,7 +681,8 @@ private:
       }
       double score = lined;
       if (d.size() == 1 && spec.expected == 1) score = 1;
-      if (spec.expected > 0 && int(d.size()) > spec.expected) score = 0; // more dots than the line has: not ours
+      // More dots than the line has: not ours — except in a whole-frame search, where an NVL page keeps earlier lines.
+      if (spec.expected > 0 && int(d.size()) > (whole ? spec.expected * 8 + 8 : spec.expected)) score = 0;
       if (spec.hint >= 4 && d.size() * 5 < size_t(spec.hint) * 3) score = 0; // far fewer than ① drew (a blinking cursor, a UI mark)
       if (spec.em > 0 && p > 0 && std::fabs(p - spec.em) > spec.em * .5f) score = 0;
       if (score > bestScore) { bestScore = score; bestColor = c; bestSize = size; }
