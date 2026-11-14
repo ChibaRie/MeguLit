@@ -28,7 +28,7 @@ $ErrorActionPreference='Stop'
 Set-StrictMode -Version 2
 $Repo='ilynthn/MeguLit'
 $Author=-join [char[]](0x9B5A,0x9B5A,0x68DF)
-$Email='ilymegumin1204@gmail.com'
+$Email=if($env:MEGULIT_GIT_EMAIL){$env:MEGULIT_GIT_EMAIL}else{(& git -C $PSScriptRoot config user.email)}
 $Root=$PSScriptRoot
 Set-Location $Root
 Add-Type -AssemblyName System.IO.Compression,System.IO.Compression.FileSystem
