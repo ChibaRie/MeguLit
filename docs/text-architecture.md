@@ -27,7 +27,7 @@ version, a line in this log, and stays backward compatible where possible (new f
 | 1    | 2026-11-14 | Compatible addition: `glyphMode` `all:true` (write-back streams on dots too).                    |
 | 1    | 2026-11-14 | Compatible addition: in dot mode `ToMe_GLYPHDOT line` is sent when the line is pushed, before any dot. |
 | ③ 1  | 2026-11-14 | Non-dot paths: `ToMe_CHARS` records, `hookCharRects` events, crash canary (`feat/text-paths`).    |
-| ② 1  | 2026-11-14 | Compositor heartbeat (`Local\MeguLitCompositorBeat-<game pid>`): marks only while it is fresh; the DLL side is ①'s. |
+| 2    | 2026-11-14 | Compatible addition: path `conv` (MultiByteToWideChar source, mark U+30FB, h=0, map by reading order); switches on by itself after two lines without dots, remembered in `cache| ② 1  | 2026-11-14 | Compositor heartbeat (`Local\MeguLitCompositorBeat-<game pid>`): marks only while it is fresh; the DLL side is ①'s. |
 
 ## Owner rule: the player never sees marks
 
@@ -89,6 +89,8 @@ These are drawn by the game into its own images or windows that the compositor d
 | Window captures by other tools (OBS window capture, PrintWindow, Alt-Tab thumbnails, Steam screenshots) | they read the game window, not the compositor's window above it | tell users to capture the screen or the compositor window |
 | The first frames after the compositor stops (≤ 1 s, heartbeat) | the DLL notices the stale beat on its next check | shorter check, or the compositor writes `presenting = 0` before exiting (done for normal exits) |
 | Glyphs cached as marks inside the engine after the beat stops | engines keep rasterised glyphs | flush or `needs-relaunch` (heartbeat rule 3) |
+
+ont-probe<hash>source.txt`, canary `conv-trial` → `conv-off`. |
 
 ## ① Glyph dots
 
@@ -247,7 +249,7 @@ Covered: GetGlyphOutlineA/W (all formats, glyph indices), TextOutA/W, ExtTextOut
 DrawText/DrawTextEx (through ExtTextOut), GdipDrawString, GdipDrawDriverString (character mode),
 ID2D1RenderTarget::DrawText / DrawTextLayout / DrawGlyphRun.
 
-Not covered (left to blank fallback or to ③): ID2D1DeviceContext's own DrawGlyphRun overload, IDWriteTextLayout::Draw
+Not covered (left to blank fallback or to ③): IDWriteTextLayout::Draw
 with a game-supplied renderer, IDWriteBitmapRenderTarget, Direct3D/OpenGL text from prebuilt font textures, engines that
 blit prerendered font sheets (KiriKiri prerendered fonts, see ③). World transforms and non-`MM_TEXT` mapping modes in GDI
 draw the dot in logical units (it scales with the transform).
