@@ -53,8 +53,12 @@
     chars.forEach((c, i) => { if (!blank(c)) placeRects.push(line.rects[i]); });
     const at = readerText ? placeText.indexOf(readerText) : -1;
     if (at < 0) { release(); return; }
-    const k = innerWidth / (line.client[0] || innerWidth), ky = innerHeight / (line.client[1] || innerHeight);
-    const boxes = shown.map((t, j) => { const r = placeRects[[...placeText.slice(0, at)].length + j]; return r && [r[0] * k, r[1] * ky, r[2] * k, r[3] * ky]; });
+    /* record px are game-client px; the reader surface may be larger than the game (galLayoutInfo: client origin and size
+       in physical px), CSS px = physical / devicePixelRatio */
+    const info = b.galLayoutInfo?.(), dpr = devicePixelRatio || 1, cw = line.client[0] || innerWidth, ch = line.client[1] || innerHeight;
+    const ox = info?.clientWidth ? (info.clientX || 0) / dpr : 0, oy = info?.clientHeight ? (info.clientY || 0) / dpr : 0;
+    const k = info?.clientWidth ? info.clientWidth / cw / dpr : innerWidth / cw, ky = info?.clientHeight ? info.clientHeight / ch / dpr : innerHeight / ch;
+    const boxes = shown.map((t, j) => { const r = placeRects[[...placeText.slice(0, at)].length + j]; return r && [ox + r[0] * k, oy + r[1] * ky, r[2] * k, r[3] * ky]; });
     const cjk = boxes.filter((r, j) => r && /[^\x00-\x7f｡-ﾟ]/.test(shown[j].textContent)).map(r => r[2]);
     const size = Math.max(6, median(cjk) || median(boxes.filter(Boolean).map(r => r[3])));
     document.body.classList.add('megulit-placed');
