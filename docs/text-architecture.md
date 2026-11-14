@@ -538,3 +538,40 @@ stayed dots, as documented). Not yet run from the real app with the real composi
 
 Not covered yet: canvas web engines (RenJS / Phaser), KiriKiri games with their own message-layer class that use
 neither KAG `processCh` nor TextRender, Ren'Py text outside the say screen, YU-RIS and Artemis (see above).
+
+## Overlay placement (replaces the capture compositor as default, branch `feat/overlay-placement`, 2026-11-14)
+
+Owner decision after the live test of ②: the capture compositor stole clicks and focus and its marks showed. It stays in
+the code but is **off unless `MEGULIT_CAPTURE_COMPOSITOR=1`** (tests). 文字显示 = 画进游戏画面 now means: the game draws the
+line blank, the reader overlay draws MeguLit's text at the sources' character boxes.
+
+Done (commit ffb28ea and this note):
+- `core/overlay-placement.cjs`: ③ `hookCharRects` (hidden lines only, one rect per character) → client px →
+  `{"type":"textPlace",id,text,rects,client}` / `{"type":"textPlace","clear":true}` / `{"type":"textPlaceMode","on"}` to the reader.
+  Wired in `core/gal-native.cjs`; `hooks.ownTextFn` turns replacement (= ③ hiding) on while placement is wanted.
+- `web/reader/modules/text-place.js`: lays the hook reader's own `.sentence-text` (tokens, ruby bases, translation row) on
+  those boxes. Tokens stay the reader's, so word card, drag-select and hit regions (click-through elsewhere) are the usual
+  ones; ruby is the shared rule (gal.js paint) measured on the placed boxes; translation under the last row, no plate;
+  translation-only (`tomoyo-gal-zh-only`) puts it in the Japanese's place at the Japanese size. Size = median CJK box width.
+- No marks by default: glyph mode `blank` for the early launcher and HookBridge (`MEGULIT_GLYPH_MODE=blank`,
+  `MEGULIT_GLYPH_ALL=1`); the front end sends `glyphMode blank` with `all:true` when placement is on, and HookBridge's
+  write-back pass-through now works with `all` in blank mode too (was dot only), so the game lays out the real text and
+  draws it blank. Dot font (`fontDot`) and ④ text marks only with the capture compositor.
+- Tests: `validation/overlay-placement.test.cjs` (new); compositor / glyph-dots / text-paths tests run with
+  `MEGULIT_CAPTURE_COMPOSITOR=1`. Pre-existing failure on feat/text-arch, not from this branch: glyph-dots.test 3
+  expects `DotsOwn` without `&&!MarksMode`.
+
+Not done / not verified live (the owner came back before the screen slot was free; nothing was run on screen):
+- No game has been checked against the acceptance list (a)–(g) yet. Rig ready: portable `H:\MeguLit-Work\portable-op`
+  (hot-update serves only the changed reader files), `H:\MeguLit-Work\overlay-placeun.ps1` (start / launch / key /
+  click / shot, `shot <name> 300` = 60 fps 5 s flicker count), new HookBridge built there.
+- Glyph sources (CLANNAD, サイコロジック) have no positions in blank mode: asked glyph-dots for MeguLitFont v4 records in blank
+  mode with the cell's DC position (`px:py`, `dc=WxH`). Until then glyph games get blank text but no placed line.
+  Siglus/YU-RIS cache glyphs: a blanked character stays blank wherever the engine reuses it.
+- Dot font → blank font (same metrics, empty outlines) in `native/fontdot` not written; until then Ren'Py/Artemis
+  (THE SHELL) get no hiding in placement mode.
+- BRUNS: blank (U+3000) instead of 「・」 replacement and the per-character hook's line split are not done.
+- Font face/colour come from the reader's game style, not from the source; KiriKiri rects are advance × line height,
+  so vertical placement is centred in the line box (check live).
+- Heartbeat: blank mode is not gated by a MeguLit heartbeat (as before); a crashed MeguLit leaves ③ hiding to each path's
+  own pipe-closed rule.
