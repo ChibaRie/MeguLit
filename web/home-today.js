@@ -5,10 +5,11 @@
    never a partial or mixed string. A year without any reading gets an honest empty state instead of a grey grid. */
 
 const STORE='megulit-home-hl-tr-v1',KEEP=40;
+const BLOCKED=/僕のヒーロー|ヒーローアカデミア|ヒロアカ|My\s*Hero\s*Academia|Boku\s*no\s*Hero|BNHA|我的英雄学[院园]|我的英雄学院|MHA\b/i;/* same filter as services/daily.cjs, for copies cached before it existed */
 const hasPicture=x=>!!x&&/^data:image\//.test(String(x.image||''))&&!!x.link&&!x.flat;
 
 /* the top story of the chosen daily tab (gal/acg) for the big picture, and up to three other pictured stories for the small row */
-export function pickHeadline(items,cat='gal',count=3){const list=(Array.isArray(items)?items:[]).filter(hasPicture);
+export function pickHeadline(items,cat='gal',count=3){const list=(Array.isArray(items)?items:[]).filter(hasPicture).filter(x=>!BLOCKED.test(String(x.title||'')+' '+String(x.summary||'')));
  const top=list.find(x=>(x.cat||'gal')===cat)||list[0]||null;return {top,small:list.filter(x=>x!==top).slice(0,count)};}
 
 /* 'zh' | 'en' for a UI that needs the Japanese title translated, '' for a Japanese UI */
