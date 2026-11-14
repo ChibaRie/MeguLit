@@ -235,8 +235,12 @@ public:
       if (cur.id == id) { MergeMetrics(cur, j["glyphs"]); if (!cur.rec.empty()) tracker.SetExpected(-1); } // counts judged here (Targets)
       else if (kept.count(id)) MergeMetrics(kept[id], j["glyphs"]);
     } else if (t == "choices") {
-      choices.clear(); std::vector<int> counts;
-      for (size_t i = 0; i < j["items"].size(); ++i) { ChoiceText c; c.text = U32(Wide(j["items"][i]["text"].str())); c.tl = Wide(j["items"][i]["tl"].str()); choices.push_back(c); counts.push_back(int(DotCharIndex(c.text).size())); }
+      std::vector<ChoiceText> next; std::vector<int> counts;
+      for (size_t i = 0; i < j["items"].size(); ++i) { ChoiceText c; c.text = U32(Wide(j["items"][i]["text"].str())); c.tl = Wide(j["items"][i]["tl"].str()); next.push_back(c); counts.push_back(int(DotCharIndex(c.text).size())); }
+      // Same menu again with translations filled in: keep what was learned, only take the translations.
+      bool same = choicesOn && next.size() == choices.size(); for (size_t i = 0; same && i < next.size(); ++i) same = next[i].text == choices[i].text;
+      if (same) { for (size_t i = 0; i < next.size(); ++i) if (!next[i].tl.empty()) choices[i].tl = next[i].tl; return; }
+      choices = next;
       std::vector<Rgb> known; if (tracker.HasColor()) known.push_back(tracker.Color()); Rgb c; if (ParseColor(j["color"].str(), c)) known.push_back(c);
       choiceTracker.Begin(counts, known); choicesOn = !choices.empty(); choiceUndot = false; choiceStart = NowMs();
     } else if (t == "choicesEnd") { choicesOn = false; }
@@ -619,8 +623,8 @@ private:
   }
 
   void Erase(Image &im, const D3D11_MAPPED_SUBRESOURCE &map) {
-    auto patch = [&](const Box &dot) {
-      const Box db = EraseBox(im, dot);
+    auto patch = [&](const Box &dot, bool whole = false) {
+      const Box db = whole ? dot : EraseBox(im, dot);
       Inpaint(im, db);
       D3D11_BOX b{ UINT(std::max(0, db.x0 - 1)), UINT(std::max(0, db.y0 - 1)), 0, UINT(std::min(srcW, db.x1 + 1)), UINT(std::min(srcH, db.y1 + 1)), 1 };
       if (b.right <= b.left || b.bottom <= b.top) return;
@@ -628,7 +632,10 @@ private:
     };
     if (!cur.rectMode) for (const Dot &d : lastResult.dots) patch(d.box); // ③ lines: the game drew nothing to erase
     for (const auto &k : lastResult.kept) if (kept.count(k.id)) for (const Dot &d : k.dots) patch(d.box);
-    if (choicesOn && lastChoices.ok && !choiceUndot) for (const auto &it : lastChoices.items) for (const Dot &d : it.dots) patch(d.box);
+    if (choicesOn && lastChoices.ok && !choiceUndot) for (const auto &it : lastChoices.items) {
+      if (it.missing > 0) { const int p = int(lastChoices.pitch * .3f) + 2; patch(Box{ it.box.x0 - p, it.box.y0 - p, it.box.x1 + p, it.box.y1 + p }, true); } // real cached glyphs too
+      else for (const Dot &d : it.dots) patch(d.box);
+    }
   }
 
   // ---------------- composition
@@ -801,7 +808,14 @@ private:
       brush->SetColor(D2D1::ColorF(0, 0, 0, it.highlighted ? .7f : .5f));
       d2->FillRoundedRectangle(D2D1::RoundedRect(D2D1::RectF(a.x, a.y, b.x, b.y), em * .3f, em * .3f), brush.get());
       if (it.highlighted) { brush->SetColor(D2D1::ColorF(it.color.r / 255.f, it.color.g / 255.f, it.color.b / 255.f, .9f)); d2->DrawRoundedRectangle(D2D1::RoundedRect(D2D1::RectF(a.x, a.y, b.x, b.y), em * .3f, em * .3f), brush.get(), std::max(1.f, em / 16)); }
-      if (style.mode != 2) {
+      if (style.mode != 2 && it.missing > 0) {
+        // Not every character has a dot: the Japanese as one run centred on the item's row.
+        com_ptr<IDWriteTextLayout> jl; DWRITE_TEXT_METRICS jm{};
+        const std::wstring jt = W16(ct.text); dw->CreateTextLayout(jt.c_str(), UINT32(jt.size()), Format(style.jpFont, em, lastChoices.vertical), float(outW), 4096, jl.put()); jl->GetMetrics(&jm);
+        const D2D1_POINT_2F c0 = Map((it.box.x0 + it.box.x1) / 2.f, (it.box.y0 + it.box.y1) / 2.f);
+        Text(jl.get(), { c0.x - jm.width / 2, c0.y - jm.height / 2 }, it.color, 1);
+        if (tl) Text(tl.get(), { (a.x + b.x) / 2 - m.width / 2, Map(0, float(it.box.y1)).y + em * .3f }, it.highlighted ? it.color : style.tlColor, 1);
+      } else if (style.mode != 2) {
         const std::vector<int> idx = DotCharIndex(ct.text);
         for (size_t k = 0; k < it.dots.size() && k < idx.size(); ++k) {
           const Dot &d = it.dots[k]; const Glyph &g = GlyphFor(ct.text[idx[k]], em, lastChoices.vertical); const D2D1_POINT_2F c = Map(d.cx, d.cy);
@@ -809,6 +823,11 @@ private:
         }
         if (tl) Text(tl.get(), { (a.x + b.x) / 2 - m.width / 2, Map(0, float(it.box.y1)).y + em * .3f }, it.highlighted ? it.color : style.tlColor, 1);
       } else if (tl) Text(tl.get(), { (a.x + b.x) / 2 - m.width / 2, (a.y + b.y) / 2 - m.height / 2 }, it.color, 1);
+      else { // translation only, but no translation yet: the item's own text, never an empty plate
+        com_ptr<IDWriteTextLayout> jl; DWRITE_TEXT_METRICS jm{}; const std::wstring jt = W16(ct.text);
+        dw->CreateTextLayout(jt.c_str(), UINT32(jt.size()), Format(style.jpFont, em, lastChoices.vertical), float(outW), 4096, jl.put()); jl->GetMetrics(&jm);
+        Text(jl.get(), { (a.x + b.x) / 2 - jm.width / 2, (a.y + b.y) / 2 - jm.height / 2 }, it.color, 1);
+      }
     }
   }
 

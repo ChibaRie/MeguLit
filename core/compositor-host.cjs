@@ -5,7 +5,7 @@
    window and feeds it:
      - ①'s hookGlyphDots events (line text, per-character metrics) and ③'s hookCharRects (cells of engines without dots),
      - the reader's translation of each line (Reader.message → annotate), the menu choices (choice locate),
-     - the reader's mode: interfaceMode 'translation' = translation only in the game's text area.
+     - the 显示内容 setting (display): chinese/english = translation only in the game's text area, japanese = Japanese only.
    While the compositor draws the current line, the reader page hides its own line (compositorDrawing) so text is never
    doubled; a line the compositor hands back ('undot') or a compositor that cannot capture ('fallback', or exit) gives
    the line straight back to the overlay. A game whose capture failed stays on the overlay until it restarts. */
@@ -27,7 +27,7 @@ class CompositorHost {
   constructor({ root, onEvent = () => {}, make } = {}) {
     this.root = root; this.onEvent = onEvent;
     this.make = make || (opts => new CaptureCompositor({ root, ...opts }));
-    this.cc = null; this.hwnd = ''; this.failedFor = ''; this.lines = new Map(); this.drawing = false; this.mode = '';
+    this.cc = null; this.hwnd = ''; this.failedFor = ''; this.lines = new Map(); this.drawing = false; this.mode = ''; this.recent = new Map(); this.choiceItems = [];
     this.client = [0, 0];
   }
   trace(line) { try { require('node:fs').appendFileSync(path.join(this.root || '.', 'logs', 'compositor.log'), new Date().toISOString() + ' ' + line + '\n'); } catch {} }
@@ -36,7 +36,7 @@ class CompositorHost {
   wanted(preferences) {
     if (this.root) try {
       const fs = require('node:fs'), file = path.join(this.root, 'data', 'config', 'gal-preferences.json'), t = fs.statSync(file).mtimeMs;
-      if (t !== this.settingTime) { this.settingTime = t; this.setting = JSON.parse(fs.readFileSync(file, 'utf8')).textRenderer; }
+      if (t !== this.settingTime) { this.settingTime = t; this.setting = JSON.parse(fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, '')).textRenderer; }
       if (this.setting) return this.setting === 'compositor';
     } catch {}
     return preferences?.textRenderer === 'compositor';
@@ -56,7 +56,7 @@ class CompositorHost {
       if (!cc.start({ hwnd: Number(hwnd) })) { this.failedFor = identity; return; }
       this.cc = cc; this.identity = identity; this.hwnd = hwnd; this.mode = '';
     }
-    const mode = preferences?.interfaceMode === 'translation' ? 'translation' : 'bilingual';
+    const mode = ['chinese', 'english'].includes(preferences?.display) ? 'translation' : preferences?.display === 'japanese' ? 'jp' : 'bilingual';
     if (mode !== this.mode) { this.mode = mode; this.cc.style({ mode, ruby: preferences?.furigana !== false, lookup: true }); }
   }
   // ① / ③ events from HookBridge (GalNative.hookEvent).
@@ -80,10 +80,17 @@ class CompositorHost {
     let id = null;
     for (const [k, v] of [...this.lines.entries()].reverse()) if (v === s || v.includes(s) || (v && s.includes(v))) { id = k; break; }
     if (id !== null) this.cc.annotate({ id, tl: translation });
+    // Menu items arrive as text only: their translations come through here like any line (before or after the menu).
+    this.recent.set(s, translation); if (this.recent.size > 48) this.recent.delete(this.recent.keys().next().value);
+    const item = this.choiceItems.find(x => !x.tl && strip(x.text).text === s);
+    if (item) { item.tl = translation; this.cc.choices(this.choiceItems); }
+    this.trace('translation ' + (id !== null ? 'for line ' + id : item ? 'for a choice' : 'unmatched: ' + s.slice(0, 24)));
   }
   choices(options) {
     if (!this.cc || !Array.isArray(options) || !options.length) return;
-    this.cc.choices(options.map(o => typeof o === 'string' ? { text: o } : { text: String(o?.text || o?.source || ''), tl: String(o?.translation || o?.tl || '') }));
+    this.choiceItems = options.map(o => typeof o === 'string' ? { text: o } : { text: String(o?.text || o?.source || ''), tl: String(o?.translation || o?.tl || '') });
+    for (const x of this.choiceItems) { const tl = !x.tl && this.recent.get(strip(x.text).text); if (tl) x.tl = tl; }
+    this.cc.choices(this.choiceItems);
   }
   event(e) {
     if (e.e !== 'stats' && (e.e !== 'line' || e.status !== this.lastStatus)) this.trace('event ' + JSON.stringify(e).slice(0, 300));

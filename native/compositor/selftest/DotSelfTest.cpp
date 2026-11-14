@@ -295,6 +295,20 @@ int main() {
     std::printf("{\"scenario\":\"choices-runs\",\"frames\":1,\"ok\":%d,\"rate\":%d,\"runs\":%zu}\n", ok ? 1 : 0, ok ? 1 : 0, rs.size());
     rateSum += ok; ++n; if (!ok) ++failed;
   }
+  { // 10b. Choices with cached glyphs (Siglus): item 1 has 10 characters but only 6 dots, item 2 all 5 -> one item per
+    // row, item 1 widened by the 4 missing characters; a wrong row count is still rejected.
+    Canvas cv; Scene(cv, 9, { 0, 0, 0, 0 });
+    const auto r1 = Layout(10, 30, 700, 400, 30, false, false, 0), r2 = Layout(5, 30, 700, 470, 30, false, false, 0);
+    // The items are dim grey (unselected) and already on screen: only the line's white is known, nothing changes.
+    const Rgb dim{ 188, 188, 190 };
+    for (int i : { 0, 2, 3, 4, 5, 7 }) DrawDot(cv, r1[i].x, r1[i].y, 5, dim, 1);
+    for (auto &g : r2) DrawDot(cv, g.x, g.y, 5, dim, 1);
+    ChoiceTracker ct; ct.Begin({ 10, 5 }, { white }); Image im = cv.img(); ct.Update(im); ct.Update(im); auto co = ct.Update(im);
+    const bool ok = co.ok && co.items.size() == 2 && co.items[0].missing == 4 && co.items[1].missing == 0 && co.items[0].box.x1 - co.items[0].box.x0 >= 9 * 30;
+    ChoiceTracker bad; bad.Begin({ 10, 5, 4 }, { dim }); Image im2 = cv.img(); const bool ok2 = !bad.Update(im2).ok;
+    std::printf("{\"scenario\":\"choices-cached-glyphs\",\"frames\":1,\"ok\":%d,\"rate\":%d}\n", int(ok) + int(ok2), ok && ok2 ? 1 : 0);
+    rateSum += (ok && ok2); ++n; if (!(ok && ok2)) ++failed;
+  }
   { // 11. Timing at 1080p: colour learning on a full frame, then tracking in the learned area
     Canvas cv; Scene(cv, 7, adv); const auto g = Layout(52, 32, 220, 830, 40, false, false, 0);
     for (auto &x : g) DrawDot(cv, x.x, x.y, 5, white, 1);

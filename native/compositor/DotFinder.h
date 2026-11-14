@@ -698,70 +698,162 @@ inline std::vector<Run> SplitRuns(const std::vector<Dot> &ordered, bool vertical
 // runs, and runs are assigned to the menu items in order by their dot counts (an item may wrap into several runs).
 class ChoiceTracker {
 public:
-  struct Item { std::vector<Dot> dots; Box box; Rgb color; bool highlighted = false; };
+  // missing > 0: the item has fewer dots than characters (glyphs the engine rasterised before dot mode stay real in its
+  // glyph cache): its box is widened over them and erased whole, its text drawn as one run.
+  struct Item { std::vector<Dot> dots; Box box; Rgb color; bool highlighted = false; int missing = 0; };
   struct Out { bool ok = false; std::vector<Item> items; bool vertical = false; float pitch = 0; };
-  void Begin(const std::vector<int> &itemDots, const std::vector<Rgb> &known) { counts = itemDots; colors = known; prevW = prevH = 0; total = 0; for (int c : counts) total += c; }
+  void Begin(const std::vector<int> &itemDots, const std::vector<Rgb> &known) { counts = itemDots; colors = known; prevW = prevH = 0; total = 0; wholeTried = false; for (int c : counts) total += c; }
   Out Update(const Image &im) {
-    Out o;
-    std::vector<Dot> all;
-    for (const Rgb &c : colors) {
-      ColorBlobs(im, { 0, 0, im.w, im.h }, c, 36, 14, blobs, seen, stack);
-      for (const Blob &b : blobs) {
-        if (!DotShaped(b, 2, 14)) continue;
-        Dot d; d.cx = b.cx(); d.cy = b.cy(); d.box = b.box; d.color = b.mean();
-        bool dup = false; for (auto &x : all) dup = dup || (std::fabs(x.cx - d.cx) < 1.5f && std::fabs(x.cy - d.cy) < 1.5f);
-        if (!dup) all.push_back(d);
-      }
-    }
-    if (all.size() > 1500) { Remember(im); return o; } // a texture in one of the colours, not a menu
-    if (int(all.size()) < total && colors.size() < 4) LearnColor(im);
+    // Dots of every known colour; matched together (normal + highlight), else each colour alone (a line colour such as
+    // white may also hit background texture), else learn a new colour.
+    std::vector<std::vector<Dot>> per; for (const Rgb &c : colors) per.push_back(DotsOf(im, c));
+    Out o = MatchAll(im, per);
+    if (!o.ok && colors.size() < 4 && LearnColor(im)) { per.push_back(DotsOf(im, colors.back())); o = MatchAll(im, per); }
     Remember(im);
-    if (all.empty()) return o;
+    return o;
+  }
+  const std::vector<Rgb> &Colors() const { return colors; }
+private:
+  std::vector<Dot> DotsOf(const Image &im, const Rgb &c) {
+    std::vector<Dot> v;
+    ColorBlobs(im, { 0, 0, im.w, im.h }, c, 36, 14, blobs, seen, stack);
+    for (const Blob &b : blobs) { if (!DotShaped(b, 2, 14) || !Isolated(im, b.box, c, 12)) continue; /* texture in the menu colour is never a lone dot */ Dot d; d.cx = b.cx(); d.cy = b.cy(); d.box = b.box; d.color = b.mean(); v.push_back(d); }
+    return v;
+  }
+  Out MatchAll(const Image &im, const std::vector<std::vector<Dot>> &per) {
+    std::vector<Dot> all;
+    for (const auto &v : per) for (const Dot &d : v) { bool dup = false; for (auto &x : all) dup = dup || (std::fabs(x.cx - d.cx) < 1.5f && std::fabs(x.cy - d.cy) < 1.5f); if (!dup) all.push_back(d); }
+    Out o = Match(im, all);
+    if (!o.ok && per.size() > 1) for (const auto &v : per) { o = Match(im, v); if (o.ok) break; }
+    if (!o.ok) o = MatchGroups(im, all);
+    if (!o.ok && per.size() > 1) for (const auto &v : per) { o = MatchGroups(im, v); if (o.ok) break; }
+    return o;
+  }
+  // A group found among stray dots must look like a menu: most characters dotted, every item one straight row (column)
+  // whose dots follow each other at one to three pitches (a gap = characters without a dot).
+  bool Rowlike(const Out &o) const {
+    if (o.pitch <= 0) return false;
+    int got = 0; for (const Item &it : o.items) got += int(it.dots.size());
+    if (got * 5 < total * 3) return false; // at least 60 % of the characters carry a dot
+    for (const Item &it : o.items) {
+      if (it.missing && it.dots.size() < 3) return false; // two dots of an incomplete item: too little to place it
+      std::vector<Dot> d = it.dots; float lo = 1e9f, hi = -1e9f;
+      for (auto &x : d) { const float c = o.vertical ? x.cx : x.cy; lo = std::min(lo, c); hi = std::max(hi, c); }
+      if (hi - lo > o.pitch * .5f) return false;
+      std::sort(d.begin(), d.end(), [&](const Dot &a, const Dot &b) { return o.vertical ? a.cy < b.cy : a.cx < b.cx; });
+      for (size_t i = 1; i < d.size(); ++i) { const float g = o.vertical ? d[i].cy - d[i - 1].cy : d[i].cx - d[i - 1].cx; if (g < o.pitch * .6f || g > o.pitch * 3.2f) return false; }
+    }
+    return true;
+  }
+  // Stray dots of the same colour elsewhere in the picture (texture that happens to look like lone dots): the menu is a
+  // compact group, so try each group of dots linked within 3 %, 5 % or 8 % of the frame size that could hold it.
+  Out MatchGroups(const Image &im, const std::vector<Dot> &all) const {
+    Out o; const size_t n = all.size();
+    if (n < 2 || n > 1500) return o;
+    for (float f : { .03f, .05f, .08f }) {
+      const float d = f * std::max(im.w, im.h), d2 = d * d;
+      std::vector<int> up(n); for (size_t i = 0; i < n; ++i) up[i] = int(i);
+      auto root = [&](int i) { while (up[i] != i) i = up[i] = up[up[i]]; return i; };
+      for (size_t i = 0; i < n; ++i) for (size_t j = i + 1; j < n; ++j) { const float dx = all[i].cx - all[j].cx, dy = all[i].cy - all[j].cy; if (dx * dx + dy * dy <= d2) up[root(int(i))] = root(int(j)); }
+      std::vector<std::vector<Dot>> groups(n); for (size_t i = 0; i < n; ++i) groups[root(int(i))].push_back(all[i]);
+      std::sort(groups.begin(), groups.end(), [](const std::vector<Dot> &x, const std::vector<Dot> &y) { return x.size() > y.size(); }); // fullest group first
+      for (auto &g : groups) if (int(g.size()) * 2 >= total && int(g.size()) <= total && int(g.size()) < int(n)) { o = Match(im, g); if (o.ok && Rowlike(o)) return o; }
+    }
+    return Out{};
+  }
+  Out Match(const Image &im, std::vector<Dot> all) const {
+    Out o;
+    if (all.empty() || all.size() > 1500) return o; // > 1500: a texture in one of the colours, not a menu
     const float p = all.size() >= 2 ? Pitch(all) : 0;
+    // A glyph cell is several dot sides wide (dot side <= cell / 10, at least 2 px): a tighter pitch is texture.
+    if (all.size() >= 2) { int side = 0; for (auto &d : all) side = std::max(side, std::max(d.box.w(), d.box.h())); if (p < std::max({ 8.f, 3.f * side, .015f * std::min(im.w, im.h) })) return o; }
     o.vertical = all.size() >= 2 && InferVertical(all); o.pitch = p;
     ReadingOrder(all, o.vertical, p);
     const auto runs = SplitRuns(all, o.vertical, p);
-    size_t r = 0;
+    size_t r = 0; bool exact = true;
     for (int want : counts) {
       Item it; int got = 0;
       while (r < runs.size() && got < want) { const Run &x = runs[r++]; it.dots.insert(it.dots.end(), x.dots.begin(), x.dots.end()); got += int(x.dots.size()); }
-      if (got != want) return o;
-      it.box = it.dots[0].box; long cr = 0, cg = 0, cb = 0;
-      for (auto &d : it.dots) { it.box.x0 = std::min(it.box.x0, d.box.x0); it.box.y0 = std::min(it.box.y0, d.box.y0); it.box.x1 = std::max(it.box.x1, d.box.x1); it.box.y1 = std::max(it.box.y1, d.box.y1); cr += d.color.r; cg += d.color.g; cb += d.color.b; }
-      const long n = long(it.dots.size()); it.color = { int(cr / n), int(cg / n), int(cb / n) };
-      o.items.push_back(it);
+      if (got != want) { exact = false; break; }
+      Finish(it); o.items.push_back(it);
     }
-    if (r != runs.size()) return o;
+    if (!exact || r != runs.size()) { o.items.clear(); if (!Partial(runs, o, im)) return o; }
     // Highlight = the item whose colour differs from the colour most items share.
     for (auto &it : o.items) { int same = 0; for (auto &x : o.items) same += ColorDist(x.color, it.color) <= 40; it.highlighted = o.items.size() > 1 && same * 2 <= int(o.items.size()); }
     o.ok = true;
     return o;
   }
-  const std::vector<Rgb> &Colors() const { return colors; }
-private:
-  std::vector<int> counts; std::vector<Rgb> colors; int total = 0;
+  static void Finish(Item &it) {
+    it.box = it.dots[0].box; long cr = 0, cg = 0, cb = 0;
+    for (auto &d : it.dots) { it.box.x0 = std::min(it.box.x0, d.box.x0); it.box.y0 = std::min(it.box.y0, d.box.y0); it.box.x1 = std::max(it.box.x1, d.box.x1); it.box.y1 = std::max(it.box.y1, d.box.y1); cr += d.color.r; cg += d.color.g; cb += d.color.b; }
+    const long n = long(it.dots.size()); it.color = { int(cr / n), int(cg / n), int(cb / n) };
+  }
+  // Counts do not add up (some characters were never dotted): one item per row (column) when the rows match the items
+  // and each row holds between half and all of its item's characters. The box grows by the missing characters' pitch
+  // on both ends (where they are is unknown), within the frame.
+  bool Partial(const std::vector<Run> &runs, Out &o, const Image &im) const {
+    if (o.pitch <= 0) return false;
+    auto mid = [&](const Box &b) { return o.vertical ? (b.x0 + b.x1) / 2.f : (b.y0 + b.y1) / 2.f; };
+    std::vector<std::vector<const Run *>> rows;
+    for (const Run &x : runs) { if (!rows.empty() && std::fabs(mid(x.box) - mid(rows.back().back()->box)) < o.pitch * .75f) rows.back().push_back(&x); else rows.push_back({ &x }); }
+    if (rows.size() != counts.size()) return false;
+    for (size_t i = 0; i < rows.size(); ++i) {
+      Item it; for (const Run *x : rows[i]) it.dots.insert(it.dots.end(), x->dots.begin(), x->dots.end());
+      const int got = int(it.dots.size()), want = counts[i];
+      if (got > want || got * 2 < want) { o.items.clear(); return false; }
+      Finish(it); it.missing = want - got;
+      o.items.push_back(it);
+    }
+    // Where the undotted characters are: a row starting where a complete row starts (left aligned) or centred like the
+    // complete rows spans want pitches from there; otherwise the box grows by the missing pitches on both ends.
+    // Dots sit at the top-left of their cells, so the box also takes one pitch across (the glyphs' height or width).
+    const float p = o.pitch;
+    auto lo = [&](const Box &b) { return o.vertical ? b.y0 : b.x0; }; auto hi = [&](const Box &b) { return o.vertical ? b.y1 : b.x1; };
+    for (size_t i = 0; i < o.items.size(); ++i) {
+      Item &it = o.items[i]; if (!it.missing) continue;
+      const int want = counts[i]; float a = float(lo(it.box)), b = float(hi(it.box)); bool placed = false;
+      for (const Item &c : o.items) if (!c.missing && std::fabs(lo(c.box) - a) < p * .5f) { b = a + want * p; placed = true; break; }
+      if (!placed) for (const Item &c : o.items) if (!c.missing) {
+        const float cc = (lo(c.box) + hi(c.box)) / 2.f, half = want * p / 2.f;
+        if (a >= cc - half - p * .5f && b <= cc + half + p * .5f) { a = cc - half; b = cc + half; placed = true; break; }
+      }
+      if (!placed) { a -= it.missing * p; b += it.missing * p; }
+      const int A = std::max(0, int(a - 2)), B = std::min(o.vertical ? im.h : im.w, int(b + 2));
+      if (o.vertical) { it.box.y0 = A; it.box.y1 = B; it.box.x0 = std::max(0, it.box.x0 - 2); it.box.x1 = std::min(im.w, it.box.x0 + int(p) + 2); }
+      else { it.box.x0 = A; it.box.x1 = B; it.box.y0 = std::max(0, it.box.y0 - 2); it.box.y1 = std::min(im.h, it.box.y0 + int(p) + 2); }
+    }
+    return true;
+  }
+  std::vector<int> counts; std::vector<Rgb> colors; int total = 0; bool wholeTried = false;
   std::vector<Blob> blobs; Visit seen; std::vector<int> stack, parent; std::vector<uint8_t> prev; int prevW = 0, prevH = 0;
   void Remember(const Image &im) { prev.resize(size_t(im.w) * im.h * 4); prevW = im.w; prevH = im.h; for (int y = 0; y < im.h; ++y) memcpy(&prev[size_t(y) * im.w * 4], im.at(0, y), size_t(im.w) * 4); }
-  void LearnColor(const Image &im) {
+  // Returns true when a colour was added (the last of colors).
+  bool LearnColor(const Image &im) {
     Box b{ im.w, im.h, 0, 0 };
     if (prevW == im.w && prevH == im.h) for (int y = 0; y < im.h; y += 2) {
       const uint8_t *p = im.at(0, y), *q = &prev[size_t(y) * im.w * 4];
       for (int x = 0; x < im.w; x += 2, p += 8, q += 8) if (std::abs(p[0] - q[0]) + std::abs(p[1] - q[1]) + std::abs(p[2] - q[2]) > 40) { b.x0 = std::min(b.x0, x); b.y0 = std::min(b.y0, y); b.x1 = std::max(b.x1, x + 2); b.y1 = std::max(b.y1, y + 2); }
     }
-    if (b.empty()) return;
-    if (double(b.w()) * b.h() > .5 * im.w * im.h && !colors.empty()) return;
+    // A menu already on screen before the choices arrived (no change to learn from, e.g. unselected items in a dim
+    // colour): once per menu, every dot-shaped plateau of the whole frame is a candidate.
+    bool whole = false;
+    if (b.empty()) { if (wholeTried || prevW != im.w || prevH != im.h) return false; wholeTried = whole = true; b = { 0, 0, im.w, im.h }; }
+    else if (double(b.w()) * b.h() > .5 * im.w * im.h && !colors.empty()) return false;
     b.x0 -= 14; b.y0 -= 14; b.x1 += 14; b.y1 += 14;
     PlateauBlobs(im, b, 2, 14, blobs, parent);
     const std::vector<Blob> cands = blobs; int tries = 0;
     for (const Blob &c : cands) {
       if (std::min(c.box.w(), c.box.h()) < 2) continue; // 1 px plateaus (dither, noise) are never a colour to learn from
+      if (whole && !DotShaped(c, 2, 14)) continue;
       const Rgb m = c.mean(); bool known = false; for (auto &k : colors) known = known || ColorDist(k, m) <= 36;
       if (known) continue;
-      if (++tries > 8) return;
+      if (++tries > (whole ? 40 : 8)) return false;
+      if (whole) { const auto v = DotsOf(im, m); if (Match(im, v).ok || MatchGroups(im, v).ok) { colors.push_back(m); return true; } continue; } // only a colour that forms the menu
       std::vector<Blob> same; ColorBlobs(im, { 0, 0, im.w, im.h }, m, 36, 14, same, seen, stack);
       int shaped = 0; for (auto &x : same) shaped += DotShaped(x, 2, 14);
-      if (shaped >= 2 && shaped <= total) { colors.push_back(m); if (colors.size() >= 4) return; }
+      if (shaped >= 2 && shaped <= total) { colors.push_back(m); return true; }
     }
+    return false;
   }
 };
 

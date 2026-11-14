@@ -102,14 +102,16 @@ test('runtime: textRenderer setting, compositor with the bound game, overlay hid
   const host = new CompositorHost({ onEvent: m => ui.push(m), make: o => { evt = o.onEvent; return fake; } });
   host.configure({ textRenderer: 'overlay' }, { bound: true, gameHwnd: '123' });
   assert.strictEqual(started, null, 'overlay setting: no compositor');
-  host.configure({ textRenderer: 'compositor', interfaceMode: 'translation' }, { bound: true, gameHwnd: '123', gameStarted: 'a', clientWidth: 1280, clientHeight: 720 });
+  host.configure({ textRenderer: 'compositor', display: 'chinese' }, { bound: true, gameHwnd: '123', gameStarted: 'a', clientWidth: 1280, clientHeight: 720 });
   assert.deepStrictEqual(started, { hwnd: 123 });
-  assert.strictEqual(sent.find(x => x.t === 'style').mode, 'translation', 'translation-only follows the reader mode');
+  assert.strictEqual(sent.find(x => x.t === 'style').mode, 'translation', 'translation-only follows 显示内容');
   host.hook({ type: 'hookGlyphDots', state: 'line', seq: 4, text: '＄名前＿渚真っ白な手。' });
   host.text('真っ白な 手。', '雪白的手。');
   assert.deepStrictEqual(sent.find(x => x.t === 'annotate'), { t: 'annotate', id: 4, tl: '雪白的手。' }, 'translation reaches the line that shows it (stream junk before it)');
   host.choices(['はい', 'いいえ']);
   assert.deepStrictEqual(sent.find(x => x.t === 'choices').i, [{ text: 'はい' }, { text: 'いいえ' }]);
+  host.text('いいえ', '不');
+  assert.deepStrictEqual(sent.filter(x => x.t === 'choices').at(-1).i[1], { text: 'いいえ', tl: '不' }, 'menu items get their translation when it arrives');
   evt({ e: 'line', id: 4, status: 'complete', found: 6 });
   assert.deepStrictEqual(ui.at(-1), { compositorDrawing: true });
   evt({ e: 'undot', id: 4 });

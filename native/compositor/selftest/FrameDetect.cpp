@@ -21,6 +21,13 @@ int wmain(int argc, wchar_t **argv) {
       FAILED(cv->Initialize(fr, GUID_WICPixelFormat32bppBGRA, WICBitmapDitherTypeNone, nullptr, 0, WICBitmapPaletteTypeCustom))) return 3;
   UINT W, H; cv->GetSize(&W, &H); std::vector<uint8_t> px(size_t(W) * H * 4); cv->CopyPixels(nullptr, W * 4, UINT(px.size()), px.data());
   Image im{ px.data(), int(W), int(H), int(W) * 4 };
+  if (argc > 3 && !wcscmp(argv[2], L"--choices")) { // FrameDetect.exe <frame.png> --choices 10,5 : ChoiceTracker on a static menu
+    std::vector<int> counts; for (wchar_t *p = argv[3]; *p;) { counts.push_back(int(wcstol(p, &p, 10))); if (*p == L',') ++p; }
+    ChoiceTracker ct; ct.Begin(counts, { { 255, 255, 255 } }); ct.Update(im); ct.Update(im); const auto o = ct.Update(im);
+    std::printf("{\"ok\":%d,\"pitch\":%.1f,\"colors\":%zu,\"items\":[", int(o.ok), o.pitch, ct.Colors().size());
+    for (size_t i = 0; i < o.items.size(); ++i) std::printf("%s{\"dots\":%zu,\"missing\":%d,\"box\":[%d,%d,%d,%d]}", i ? "," : "", o.items[i].dots.size(), o.items[i].missing, o.items[i].box.x0, o.items[i].box.y0, o.items[i].box.x1, o.items[i].box.y1);
+    std::printf("]}\n"); return 0;
+  }
   LineSpec s; s.expected = argc > 3 ? _wtoi(argv[3]) : -1;
   if (argc > 2 && wcslen(argv[2]) == 7) { const unsigned long v = wcstoul(argv[2] + 1, nullptr, 16); s.colorKnown = true; s.color = { int(v >> 16 & 255), int(v >> 8 & 255), int(v & 255) }; }
   DotTracker t; t.BeginLine(s); t.Update(im); const TrackResult &r = t.Update(im);
