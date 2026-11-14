@@ -356,14 +356,11 @@
 
 /* 2026-11-15 owner review: no numbers on the lines, script column apart from the cover, sensible title breaks, selected card never crosses the divider */
 .tv-sno{display:none!important}
-.tv-script{top:9%;height:50%;width:calc(17% - 28px);min-width:0;overflow:hidden}
+.tv-script{top:9%;height:50%;left:auto;right:calc(42% + 28px);width:max-content;min-width:0;max-width:34vw;overflow:visible}
 .tv-lines-edit{top:calc(59% + 34px)!important}
 .tv-seg{display:block;text-wrap:balance}
 .tv-chip:hover{transform:none;opacity:1}
 @media (max-height:800px){.tv-chip{width:46px;height:62px}.tv-chip.on{width:68px;height:92px}}
-.tv-script p,.tv-script .tv-stxt{white-space:nowrap!important}
-.tv-script p{flex:none;overflow:hidden;text-overflow:ellipsis}
-.tv-script .tv-stxt{display:inline;overflow:visible}
 
 /* 2026-11-15 owner: title lower, "上次" note left of the bottom line, GSAP title transition (the old .in/translate rules no longer drive the title) */
 .tv-title{bottom:calc(8vh + 18px)}
@@ -377,3 +374,9 @@
 html:not(#u):not(#v):not(#w):not(#x):not(#y) body .tv-home .tv-title{bottom:calc(8vh + 18px)!important;max-width:min(34vw,660px)!important}
 .tv-title .tv-seg{text-wrap:pretty}
 .tv-title .tv-h1{text-wrap:pretty}
+/* each sentence is as tall as the column area and wraps into extra columns (max three, checked in swapScript) */
+.tv-script p,.tv-script .tv-stxt{white-space:normal!important;text-overflow:clip}
+.tv-script p{flex:none;height:100%;max-height:none;overflow:visible;box-sizing:content-box}
+.tv-script .tv-stxt{display:inline;overflow:visible}
+.tv-script.is-empty::after{content:none}
+.tv-script p,.tv-script p:first-child{border-left:0!important;padding:0 7px}

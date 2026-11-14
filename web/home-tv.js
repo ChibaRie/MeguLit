@@ -105,13 +105,18 @@ const PILE_IN=620;
    transform animate (Web Animations, on the compositor), the text is written once per change */
 function swapScript(script,lines,onPick){if(!script)return;const esc2=t=>String(t).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]);
  (script._anims||[]).forEach(x=>{try{x.cancel();}catch{}});script._anims=[];
- lines=lines.slice(-5);const next=lines.map(t=>/^[「『（("]/.test(t)?t:'「'+t+'」'),olds=[...script.querySelectorAll('p')];
+ lines=lines.slice(0,8);const next=lines.map(t=>/^[「『（("]/.test(t)?t:'「'+t+'」'),olds=[...script.querySelectorAll('p')];
  const bind=()=>script.querySelectorAll('p').forEach(el=>el.addEventListener('pointerenter',()=>{const n=+el.dataset.n;if(!lines[n])return;script.querySelectorAll('p').forEach(x=>x.classList.toggle('on',
   x===el));onPick(lines[n]);}));
  const paint=texts=>{script.innerHTML=texts.map((t,n)=>`<p class="${n?'':'on'}" data-n="${n}"><span class="tv-stxt" lang="ja"${exAttr(t,null,esc2)}>${esc2(t)}</span></p>`).join('');
+  /* 2026-11-15 (user: 句子列数不对，每句最多三列，不要空列) a sentence wraps into 1-3 columns by itself; one that needs more, or no longer fits the room, is skipped for a shorter one; no empty slots remain */
+  const first=script.querySelector('p');if(first){const fs=parseFloat(getComputedStyle(first).fontSize)||16,lh=fs*1.8,room=innerWidth*.31;let used=0,kept=0;
+   script.querySelectorAll('p').forEach(el=>{const w=el.offsetWidth,cols=Math.round((w-6)/lh);if(w>0&&(cols>3||used+w>room||kept>=5)){el.remove();return;}used+=w;kept++;});
+   const left=script.querySelector('p');if(left)script.querySelectorAll('p').forEach(el=>el.classList.toggle('on',el===left));
+   const cv=script.closest('.tv-home')?.querySelector('.tv-cover');if(cv){script.style.right='';const gap=cv.getBoundingClientRect().left-script.getBoundingClientRect().right;if(Number.isFinite(gap)&&gap!==0)script.style.right=`calc(42% + 28px - ${(gap-32).toFixed(1)}px)`;}const lab=script.parentElement?.querySelector('.tv-lines-edit');if(lab)lab.style.left=script.offsetLeft+'px';}
   script.classList.toggle('is-empty',!texts.length);bind();};
  script.classList.remove('is-fading');const token=String(Math.random());script.dataset.timer=token;
- if(olds.length===next.length&&olds.every((el,k)=>{const x=el.querySelector('.tv-stxt');return (x?.dataset.exr??x?.textContent)===next[k];}))return;
+ if(olds.length&&script._cand===next.join('|'))return;script._cand=next.join('|');
  if(matchMedia('(prefers-reduced-motion:reduce)').matches||typeof Element.prototype.animate!=='function'){paint(next);return;}
  const OUT=300,GAP=45,keep=x=>(script._anims.push(x),x);
  /* start after the frame that paints the new cover and ring, so the first frames of the fade are not swallowed by it */
@@ -300,7 +305,7 @@ export function renderHomeTV(main,ctx){
   $('[data-act="add"]')?.addEventListener('click',onAdd);root.classList.add('empty');}
  {const b=$('.tv-lines-edit'),label=LINES_EDIT[locale]||LINES_EDIT.zh;b.querySelector('span').textContent=label;b.title=label;b.setAttribute('aria-label',label);
   b.addEventListener('click',()=>{const g=shown;if(!g)return;openLinesPicker({api,locale,esc,game:g,shown:shownLines,relativeTime,onSave:async chosen=>{const d=await detail(api,
-   g.id,locale);d.homeLines=chosen;if(shown!==g||!live||live.root!==root)return;const pick=homeLinesFor(d);shownLines=pick.lines.slice(-5);b.classList.toggle('custom',
+   g.id,locale);d.homeLines=chosen;if(shown!==g||!live||live.root!==root)return;const pick=homeLinesFor(d);shownLines=pick.lines.slice(0,8);b.classList.toggle('custom',
    pick.custom);swapScript($('.tv-script'),shownLines,type);type(pick.lines[0]||'');}});});}
  /* 2026-11-13 (user: no 「继续游玩」 button on home cards, 禁止) covers stay artwork and title only; launching lives on the detail page */
  $('[data-act="detail"]')?.addEventListener('click',()=>shown&&onDetail(shown.id));
@@ -327,7 +332,7 @@ export function renderHomeTV(main,ctx){
   ring.innerHTML=`<svg viewBox="0 0 100 100"><defs><linearGradient id="tvgrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff6e4"/><stop offset=".45" stop-color="var(--g-gold)"/><stop offset="1" stop-color="var(--tv-a)"/></linearGradient><filter id="tvglow" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="1.4"/></filter></defs>${Array.from({length:N},(_,t)=>{const a=t/N*2*Math.PI-Math.PI/2,big=t%5===0,r1=big?38.6:39.4,r2=40.4;return `<line class="etch${big?' big':''}${t<Math.round(pct*N)?' on':''}" style="--d:${t*18}ms" x1="${(50+r1*Math.cos(a)).toFixed(2)}" y1="${(50+r1*Math.sin(a)).toFixed(2)}" x2="${(50+r2*Math.cos(a)).toFixed(2)}" y2="${(50+r2*Math.sin(a)).toFixed(2)}"/>`;}).join('')}<circle class="track" cx="50" cy="50" r="44"/><g transform="rotate(-90 50 50)"><circle class="glow" cx="50" cy="50" r="44" stroke-dasharray="${C}" stroke-dashoffset="${C}" filter="url(#tvglow)"/><circle class="prog" cx="50" cy="50" r="44" stroke-dasharray="${C}" stroke-dashoffset="${C}"/></g><circle class="head" cx="50" cy="8.4" r=".9" style="transform-origin:50px 50px;transform:rotate(0deg)"/></svg>`;
    requestAnimationFrame(()=>requestAnimationFrame(()=>{const off=C*(1-pct);ring.querySelectorAll('.prog,.glow').forEach(c=>c.style.strokeDashoffset=off);const h=ring.querySelector('.head');
    if(h)h.style.transform=`rotate(${pct*360}deg)`;}));
-  swapScript($('.tv-script'),sentences.slice(-5),type);shownLines=sentences.slice(-5);$('.tv-lines-edit').classList.toggle('custom',picked.custom);
+  swapScript($('.tv-script'),sentences.slice(0,8),type);shownLines=sentences.slice(0,8);$('.tv-lines-edit').classList.toggle('custom',picked.custom);
   const now=Date.now(),span=40*864e5,big=Math.max(1,...sessions.map(s=>s.active_seconds||0))*.6;$('.tv-tl').innerHTML=sessions.filter(s=>now-s.started_at*1000<span).map(s=>{
    const y=10+((now-s.started_at*1000)/span)*70,long=(s.active_seconds||0)>=big;return `<b class="${long?'big':''}" style="top:${y}%"></b>`+(long?`<span style="top:${y}%">${new Date(s.started_at*1000).toLocaleDateString(undefined,{month:'numeric',day:'numeric'})} · ${Math.round((s.active_seconds||0)/60)}${w.min}</span>`:'');
    }).join('');
