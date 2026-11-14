@@ -120,7 +120,7 @@ test('Artemis multi-language (The Shell layout): an added archive fixes the text
  const ar=require('../core/artemis-language.cjs'),sc=require('../services/original-engines/scenes.cjs'),{pf8}=ar._internal;
  const root=tmp('root'),g=tmp('artemis');
  const ast='astver = 2.0\nast = {\n'+Array.from({length:60},(_,i)=>'\t["0001_'+i+'"] = {\n\t\t{"text"},\n\t\ttext = {\n\t\t\tja = {{"しんと静まりかえった講堂。'+i+'"}},\n\t\t\ten = {{"The auditorium, silent as the grave. '+i+'"}},\n\t\t\ttw = {{"寂靜無聲的禮堂。'+i+'"}},\n\t\t},\n\t},').join('\n')+'\n}';
- const lua='function get_language(flag)\n\tlocal r = flag and conf and conf.language or init.game_language or "ja"\n\treturn r\nend\n';
+ const lua='function get_scriptText(block)\n\tlocal l = get_language(true)\n\tlocal v = ast.text[block]\n\tif l and v then v = v[l] end\n\treturn v\nend\nfunction ui_path()\n\tlocal ln = get_language(true)\n\treturn "ui/"..ln\nend\n';
  fs.writeFileSync(path.join(g,'Game.pfs'),pf8([{name:'script\\a.ast',data:Buffer.from(ast)},{name:'system\\msg\\lang.lua',data:Buffer.from(lua)}]));
  fs.writeFileSync(path.join(g,'Game.pfs.000'),pf8([{name:'system\\x.png',data:Buffer.from('png')}]));
  fs.writeFileSync(path.join(g,'Game.pfs.060'),pf8([{name:'system\\table\\list_windows_en.tbl',data:Buffer.from('lang={}')}]));
@@ -129,7 +129,7 @@ test('Artemis multi-language (The Shell layout): an added archive fixes the text
  const r=auto.run(root,'ar1',g);assert.equal(r.done,true);
  for(const [n,b] of before)assert.ok(fs.readFileSync(path.join(g,n)).equals(b),n+' untouched');
  const f=path.join(g,'Game.pfs.061'),l=sc.pfsList(f),t=sc.pfsRead(f,l.files[0],l.key).toString();
- assert.equal(l.files[0].name,'system\\msg\\lang.lua');assert.match(t,/function get_language\(flag\)\n\tif flag then return "ja" end/);
+ assert.equal(l.files[0].name,'system\\msg\\lang.lua');assert.match(t,/\tlocal l = "ja" --\[\[MeguLit ja\]\]\n\tlocal v = ast\.text\[block\]\n\tif l and v then v = v\[l\]/);assert.match(t,/\tlocal ln = get_language\(true\)\n\treturn "ui\/"\.\.ln/,'image/UI paths keep the game language');
  assert.equal(auto.verifyFiles(g).ok,true);assert.equal(jr.detect(g).state,'applied');
  /* launch never reached a window -> the added archive is removed */
  auto.selfCheck(root,'ar1',g);auto.launchResult(root,'ar1',false);
