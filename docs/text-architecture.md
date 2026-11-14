@@ -116,7 +116,12 @@ MeguLitLaunch32.exe <path to MeguLitFont32.dll> <game.exe> [args]
 
 In MeguLit (core/glyph-dots.cjs) this is automatic when 文字显示 is `compositor` (gal-preferences.json `textRenderer`):
 the library's 启动 starts a plain-process game through the launcher with the remembered font, and HookBridge starts with
-`MEGULIT_GLYPH_MODE=dot`, `MEGULIT_GLYPH_ALL=1`, `MEGULIT_GLYPH_BLIND=1`. Steam, Locale Emulator and shell-open launches keep the late attach.
+`MEGULIT_GLYPH_MODE=dot`, `MEGULIT_GLYPH_ALL=1`, `MEGULIT_GLYPH_BLIND=1`.
+日文环境 (Locale Emulator): the launcher creates the game through LE's own `LoaderDll!LeCreateProcess` (ja-JP, cp932,
+JST; LE's registry redirection is not requested) with `MEGULIT_LAUNCH_LE=<LE folder>`, still suspended, so the dots are
+in place before the first glyph too. LoaderDll looks for LocaleEmulator.dll beside the calling process, so MeguLit runs a
+copy of MeguLitLaunch32.exe kept in the LE folder (core/glyph-dots.cjs `earlyLocale`); any failure falls back to LEProc
+with the late attach. Steam direct starts are part ③'s (`steamDirect`, feat/text-paths). Shell-open launches keep the late attach.
 Live (2026-11-14): CLANNAD started from MeguLit's launch service went through MeguLitLaunch32; its first line was 8/8 dots from the first glyph (game window only, live\clannad-app-launch-dots.png).
 
 The DLL reads both variables at start (no HookBridge yet) and serves dots from the first glyph. HookBridge attaches
