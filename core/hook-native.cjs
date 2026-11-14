@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 'use strict';
 const fs=require('node:fs'),path=require('node:path'),{spawn}=require('node:child_process'),{createInterface}=require('node:readline');
-const {parseGlyphPos}=require('./gpu-glyph-pos.cjs');const {identifierNoise}=require('./text-noise.cjs');const {ChoiceCapture,placeChoices,SYMBOL_OPTION}=require('./choice-capture.cjs');const {DoubleLine}=require('./double-line.cjs');
+const {parseGlyphPos,fillPlaces}=require('./gpu-glyph-pos.cjs');const {identifierNoise}=require('./text-noise.cjs');const {ChoiceCapture,placeChoices,SYMBOL_OPTION}=require('./choice-capture.cjs');const {DoubleLine}=require('./double-line.cjs');
 /* #148 (WHITE ALBUM2, AQUAPLUS: phone lines came as 「<F16「やぁ…」>」): inline engine tags of one ASCII letter (+ up to 3
    digits) wrapped straight around Japanese text are unwrapped for every engine; <R漢字|かな> keeps its base. HTML-like tags
    (<br>, <b>) are never touched: the letter must be followed by non-ASCII text. */
@@ -127,7 +127,7 @@ class HookNative{
    if(m.type==='hookGlyphHide'){this.glyphHide(m);return;}
    /* 2026-11-15 layer 4 glyph trace: where the GetGlyphOutline glyphs of the line were drawn (core/gpu-glyph-pos.cjs fills the
       positions of ① records whose space is "-"); the latest is kept in state without a UI broadcast. */
-   if(m.type==='hookGlyphPos'&&typeof m.line==='string'&&m.line.length<=40000){const p=parseGlyphPos(m.line);if(p){this.state={...this.state,hookGlyphPos:p};this.emit({type:'hookGlyphPos',...p});}return;}
+   if(m.type==='hookGlyphPos'&&typeof m.line==='string'&&m.line.length<=40000){const p=parseGlyphPos(m.line);if(p){const dots=this.state.hookGlyphDots;/* ① records without a position (GetGlyphOutline engines) get the traced places; the overlay reads state.hookGlyphDots directly */this.state={...this.state,hookGlyphPos:p,...(dots?{hookGlyphDots:fillPlaces(dots,p)}:{})};this.emit({type:'hookGlyphPos',...p});}return;}
    if(m.type==='hookRender'){this.notify({hookDrawCount:Number(m.count)||0,hookDrawAt:Number(m.at)||0});return;}
    if(m.type==='waitMarkerDrawn'){this.emit({type:'waitMarkerDrawn'});return;}
    if(m.type==='waitMarkerStatus'){this.notify({waitMarkerMessage:String(m.message||'').slice(0,300),waitMarkerHookActive:m.active===true});return;}

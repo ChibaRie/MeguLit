@@ -45,7 +45,7 @@ test('HookBridge passes ToMe_GLYPHPOS on and hook-native keeps the latest', () =
   const cs = fs.readFileSync(path.join(__dirname, '../native/GpuHideLayer.cs'), 'utf8');
   assert.match(cs, /ToMe_GLYPHPOS /); assert.match(cs, /type="hookGlyphPos",line=s/);
   const hn = fs.readFileSync(path.join(__dirname, '../core/hook-native.cjs'), 'utf8');
-  assert.match(hn, /hookGlyphPos/);
+  assert.match(hn, /hookGlyphPos/); assert.match(hn, /hookGlyphDots:fillPlaces\(dots,p\)/, 'traced places filled into the stored ① table');
   const c = fs.readFileSync(path.join(__dirname, '../native/gpuhide/GpuHide.cpp'), 'utf8');
   assert.match(c, /h\("GetGlyphOutlineW", \(void \*\)HGgoW/); assert.match(c, /Hook<519>\(tv\[19\], HTexLock\)/); assert.match(c, /Hook<31>\(vt\[31\], HUpdateTexture\)/);
   const run = fs.readFileSync(path.join(__dirname, '../native/gpuhide/selftest/run.cmd'), 'utf8');

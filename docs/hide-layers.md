@@ -126,10 +126,12 @@ the screen. Generic, read-only, always on (it costs nothing while no GetGlyphOut
      fits; inside it the bitmap is located by content when it has ink, else the written rectangle is the cell.
    - A bigger write (the whole atlas) is searched for each queued glyph: its strongest pixel as anchor, then the whole
      box compared (mean difference at most 20 of 255, at most 10 % of the ink missing). A blank glyph (MeguLitFont blank
-     mode) is found by its **mark pixel**: coverage 1..48 at the box's top-left with an empty box after it (① writes
-     coverage 1 of 64 at index 0 of a blanked bitmap). The mark search is also the fallback for a glyph with ink, because
-     the DLL's hook may run inside MeguLitFont's (then it saw the real bitmap but the engine got the blank). Places taken
-     earlier in the same write are skipped.
+     mode) can be found there only by a **mark pixel** (coverage 1..48 at the box's top-left, empty box after it), and ①
+     marks very little (owner consent 2026-11-15: GRAY8 only, the first, second and last character of the two lines a
+     game is learned from, never on engines that cache glyphs, e.g. Siglus). So for whole-atlas engines assume blank
+     glyphs carry no mark: **the one-glyph upload path above is the one that matters** and needs no mark. The mark search
+     is also the fallback for a glyph with ink (the DLL's hook may run inside MeguLitFont's). Places taken earlier in the
+     same write are skipped.
    - Texel formats read: A8R8G8B8 / A8B8G8R8 (alpha), X8R8G8B8 / X8B8G8R8 (brightest channel), A8, L8, A8L8, A4R4G4B4;
      D3D11 R8G8B8A8 / B8G8R8A8 / B8G8R8X8 / A8 / R8. Not covered: D3D11 Map/Unmap of textures, OpenGL glTexSubImage2D,
      engines that change the bitmap beyond a linear coverage scale (then only the one-glyph-upload path matches).
@@ -142,7 +144,7 @@ the screen. Generic, read-only, always on (it costs nothing while no GetGlyphOut
    matches in text order.
 
 HookBridge passes it on as `{"type":"hookGlyphPos","line":...}`; `core/hook-native.cjs` keeps the parsed record in
-`state.hookGlyphPos` and emits `{type:'hookGlyphPos', line, sw, sh, glyphs:[{ch,x,y,w,h}]}`. `core/gpu-glyph-pos.cjs
+`state.hookGlyphPos`, fills the stored ① table (`state.hookGlyphDots = fillPlaces(...)`, which overlay-placement reads directly) and emits `{type:'hookGlyphPos', line, sw, sh, glyphs:[{ch,x,y,w,h}]}`. After merging with feat/glyph-dots, its `glyphDots()` must also call fillPlaces with the latest `hookGlyphPos` when it stores a new line. `core/gpu-glyph-pos.cjs
 fillPlaces(table, pos)` fills ① records (state.hookGlyphDots) whose space is `-`: characters matched in order to the
 entries, `at` = (ink left, top of the entry's row) in space `m<sw>x<sh>` (the back buffer, scaled to the client by
 `core/glyph-place.cjs` like a GDI memory surface); a character without a ① record (cached glyph) gets one. A character
