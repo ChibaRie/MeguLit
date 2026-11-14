@@ -99,6 +99,26 @@ would never reach the dots.
 - **Erase rule for ②**: everything inside a found dot square is the dot; nothing else of the game's text is drawn for a
   matched character (the rest of the cell shows the game's background).
 
+### Early injection (engines that fill a glyph cache before MeguLit attaches)
+
+HookBridge attaches about a second after the game starts. Engines that rasterise their glyph cache at start-up (YU-RIS)
+or once per character (Siglus, BGI) keep real glyphs for everything they cached before that. `MeguLitLaunch<bit>.exe`
+(native/, built by `native/fontprobe/build.cmd`, bitness must match the game) starts the game suspended, loads
+`MeguLitFont<bit>.dll` into it before the main thread runs, waits for the DLL's `MeguLitFontReady-<pid>` event and then
+resumes it; it prints the game's pid.
+
+```
+set MEGULIT_GLYPH_MODE=dot-blind          (or dot)
+set MEGULIT_GLYPH_FONT=<px> <face>        (the remembered dialogue font, data\glyph-hide\<exe>-<size>.json)
+MeguLitLaunch32.exe <path to MeguLitFont32.dll> <game.exe> [args]
+```
+
+The DLL reads both variables at start (no HookBridge yet) and serves dots from the first glyph. HookBridge attaches
+later as usual (the same DLL path is not loaded twice) and takes over with `MODE`/`LINE`. The late attach stays the
+fallback for every other launch path (Steam, Locale Emulator, shell open). The first launch of a game has no remembered
+font yet unless the line stream taught one; HookBridge stores the probe's dialogue font (`BlindSeed`) for the next one.
+Self-test: `run-dots.cmd` starts `earlyhost.exe` through the launcher (x86 and x64); its first glyph must be a dot.
+
 ### Reports (DLL → HookBridge, pipe `\\.\pipe\MeguLitFont-<pid>`, UTF-8 lines)
 
 ```

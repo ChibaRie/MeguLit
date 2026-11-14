@@ -629,6 +629,11 @@ DWORD WINAPI Run(void *) {
  n += Hook(gdi, "AddFontResourceExW", (void *)&HAddFontResourceExW, (void **)&OAddFontResourceExW);
  n += Hook(gdi, "AddFontResourceExA", (void *)&HAddFontResourceExA, (void **)&OAddFontResourceExA);
  Send("ToMe_FONT status gdi hooks " + std::to_string(n) + "/11");
+ // Early injection (MeguLitLaunch<bit>.exe, docs/text-architecture.md): the starting mode and dialogue font come from the
+ // game's environment, since HookBridge connects only later; then the launcher is told the hooks are in place.
+ { wchar_t v[128]; if (GetEnvironmentVariableW(L"MEGULIT_GLYPH_MODE", v, 128) && (!wcscmp(v, L"dot") || !wcscmp(v, L"dot-blind"))) Command(std::string("MODE ") + Utf8(v));
+  if (GetEnvironmentVariableW(L"MEGULIT_GLYPH_FONT", v, 128) && v[0]) Command("FONT " + Utf8(v));
+  wchar_t ready[64]; swprintf_s(ready, L"MeguLitFontReady-%lu", GetCurrentProcessId()); HANDLE e = OpenEventW(EVENT_MODIFY_STATE, FALSE, ready); if (e) { SetEvent(e); CloseHandle(e); } }
  HANDLE ctl = CreateThread(NULL, 0, Control, NULL, 0, NULL); if (ctl) CloseHandle(ctl); // after the hooks: a pushed line always meets them
  for (;;) { LateHooks(); Report(); if (!GgoReported && GgoChar + GgoIndex + GgoMetrics >= 200) { GgoReported = 1; std::string top; EnterCriticalSection(&Gate); for (auto &sc : Scores) if (top.size() < 300) top += " " + sc.src + ":" + Utf8(sc.face.name) + "/" + std::to_string(sc.face.size) + "=" + std::to_string(sc.chars); LeaveCriticalSection(&Gate); Send("ToMe_FONT status ggo char=" + std::to_string(GgoChar) + " index=" + std::to_string(GgoIndex) + " metrics=" + std::to_string(GgoMetrics) + " scores" + top); } Sleep(1000); }
 }

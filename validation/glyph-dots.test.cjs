@@ -41,8 +41,11 @@ test('DLL: dot mode keeps metrics, draws one square per character, reports every
  const h=read('native/fontprobe/selftest/dothost.cpp');
  for(const s of ['"ggo-gray8"','"ggo-native"','"ggo-bezier"','"ggo-mono"','Dots("textouta-sjis"','Dots("exttextoutw-glyphindex"','Dots("drawtextw"','Dots("gdip-drawstring"','Dots("gdip-drawdriverstring"','Dots("d2d-drawtext"','Dots("d2d-drawtextlayout"','Dots("d2d-drawglyphrun"','dot glyph keeps the original metrics and buffer size','nothing else','every index once','Dots("blind-ggo"','blind: the same text in another size is drawn normally'])assert.ok(h.includes(s),s);
  assert.doesNotMatch(h,/CreateWindow/,'self-test never opens a window');
+ const l=read('native/fontprobe/Launch.cpp');assert.ok(l.includes('CREATE_SUSPENDED')&&l.includes('MeguLitFontReady-%lu')&&l.includes('ResumeThread(pi.hThread);'),'launcher: suspended start, waits for hooks, always resumes');
+ assert.ok(c.includes('GetEnvironmentVariableW(L"MEGULIT_GLYPH_MODE"')&&c.includes('swprintf_s(ready, L"MeguLitFontReady-%lu"'),'DLL: starting mode from the environment, ready event');
+ assert.ok(read('native/fontprobe/selftest/run-dots.cmd').includes('earlyhost.exe')||read('native/fontprobe/selftest/run-dots.cmd').includes('early.exe'),'early-injection self-test wired');
  const nb=JSON.parse(read('native/native-builds.json')).find(e=>e.name==='fontprobe');
- assert.ok(nb.selftests.includes('native/fontprobe/selftest/run-dots.cmd'),'run-dots wired into Build.ps1 and CI');assert.equal(nb.marker,'MeguLitFont version=3');assert.equal(nb.ci,true);});
+ assert.ok(nb.selftests.includes('native/fontprobe/selftest/run-dots.cmd'),'run-dots wired into Build.ps1 and CI');assert.equal(nb.marker,'MeguLitFont version=3');assert.ok(nb.outputs.includes('native/MeguLitLaunch32.exe')&&nb.outputs.includes('native/MeguLitLaunch64.exe'));assert.equal(nb.ci,true);});
 
 test('HookBridge: MODE on connect and on change, LunaHook GDI hide off for dot streams, dots forwarded',()=>{
  const b=read('native/HookBridge.cs');
