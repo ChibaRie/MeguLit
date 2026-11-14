@@ -1060,6 +1060,9 @@ function dictionary(target){
      loadDetail:lastOnline&&onlineSource==='moji'?async item=>{try{return await api('moji_word',{id:item.id});}catch(error){
       if(String(error?.message||error).includes('MOJI_SESSION_EXPIRED')){toast(L.expiredSession);showStatus({});}throw error;}}:null,
      onPlay:async item=>{try{const r=await api('moji_audio',{id:item.id});await new Audio(r.audio).play();}catch{toast(L.audioFail);}},
+     onAnki:async(item,example)=>{try{await api('dictionary_anki',{word:item.spelling||item.reading,...example});
+      toast(`${{zh:'已加入 Anki',ja:'Anki に追加しました',en:'Added to Anki'}[locale]} · ${item.spelling||item.reading}`);
+      savedSet=null;}catch(error){toast(errorMessage(error));throw error;}},
      onSave:async item=>{try{const r=await api('reading_save_word',{key:item.spelling||item.reading,base:item.spelling||item.reading});
       toast(`${{zh:'已加入单词本',ja:'単語帳に追加しました',en:'Added to your words'}[locale]} · ${r?.spelling||item.spelling}`);}catch(error){toast(errorMessage(error));throw error;}}});
   };

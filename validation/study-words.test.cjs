@@ -71,6 +71,17 @@ test('词典 results (MOJi and local) use the same layout: mountEntries, click t
  assert.match(web('detail-collect.css'),/\.study-words,\.dict-entries\)/);
 });
 
+test('词典 「加入 Anki」 goes through the in-game card path without game context',()=>{
+ const bridge=fs.readFileSync(path.join(__dirname,'..','services','bridge.cjs'),'utf8'),reader=fs.readFileSync(path.join(__dirname,'..','services','reader.cjs'),'utf8');
+ assert.match(bridge,/case 'dictionary_anki':\{if\(!runtime\)throw Error\('PERSISTENT_RUNTIME_REQUIRED'\)/);
+ assert.match(bridge,/reader\.v4\('anki',\{dictionary:true,text:word/);
+ assert.match(reader,/if\(args\.dictionary\)\{word\.sentence=String\(args\.sentence\|\|''\)/,'the card sentence is the passed example, never the word');
+ assert.match(reader,/if\(config\.ankiGameMedia!==false&&!args\.dictionary\)\{/,'no game picture or voice');
+ assert.match(reader,/args:args\.dictionary\?\{\.\.\.args,text:''\}:args/,'no example line or saved sentence is written');
+ const app=web('app.js');assert.match(app,/api\('dictionary_anki',\{word:item\.spelling\|\|item\.reading,\.\.\.example\}\)/);
+ assert.match(web('detail-collect.js'),/data-anki/);
+});
+
 test('the detail-collect module still parses as an ES module',async()=>{
  const {pathToFileURL}=require('node:url');const mod=await import(pathToFileURL(path.join(__dirname,'..','web','detail-collect.js')));
  assert.equal(typeof mod.mountWords,'function');

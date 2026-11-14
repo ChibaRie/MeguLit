@@ -331,6 +331,10 @@ async function dispatch(request,runtime=null) {
         if(cached){fresh.catch(()=>{});return cached;}return (await fresh)||[];})();
       case 'feedback_send':return require('./feedback.cjs').send(root,{kind:String(request.kind||''),text:String(request.text||''),contact:String(request.contact||''),lang:String(request.lang||'zh'),version:String(request.version||'')}); /* E394 in-app feedback through the relay */
       case 'diagnostics_upload':{const file=require('./diagnostics.cjs').ownPackage(root,request.path),m=request.meta||{};return require('./diagnostics-upload.cjs').upload(file,{version:m.version,game:m.game,note:m.note},{root});}
+      /* 2026-11-15 学习 › 词典 「加入 Anki」: the in-game card path (reader v4 'anki') with a dictionary entry and no game context */
+      case 'dictionary_anki':{if(!runtime)throw Error('PERSISTENT_RUNTIME_REQUIRED');const word=String(request.word||'').trim().slice(0,40);if(!word)throw Error('WORD_NOT_FOUND');
+        const reader=runtime.reader??=new(require('./reader.cjs').Reader)(runtime);
+        return await reader.v4('anki',{dictionary:true,text:word,start:0,end:[...word].length,sentence:String(request.sentence||'').slice(0,1000),translation:String(request.translation||'').slice(0,1000)});}
       case 'study_words':return require('./game-detail.cjs').studyWords(db,root);
       case 'game_detail':return require('./game-detail.cjs').detail(db,root,String(request.id),request.locale);
       case 'home_lines':return require('./home-lines.cjs').list(db,root,String(request.id),{query:request.query,limit:request.limit});

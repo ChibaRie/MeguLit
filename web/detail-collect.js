@@ -284,14 +284,14 @@ export function mountWords(target,{words=[],lookupOnly=[],counts,locale='zh',esc
    meaning with examples, 加入单词本, MOJi audio). Same rules as the word list: only a click, ↑ ↓ or Enter changes the entry, every row keeps the
    same height, the wheel scrolls the list itself. MOJi details are fetched once per entry (loadDetail); local entries carry their meanings. */
 const D={zh:{results:'查词结果',moji:'MOJi 辞書',jisho:'Jisho.org',local:'本地词典',order:'点击或 ↑ ↓ 选中，滚轮浏览',current:'当前词条',save:'加入单词本',saved:'已在单词本',
-  saveDone:'已加入单词本',saveFail:'暂时无法加入单词本',play:'播放发音',examples:'例句',notes:'MOJi 用户笔记',loading:'正在载入详情',detailFail:'详情暂时无法打开，先显示摘要'},
+  saveDone:'已加入单词本',anki:'加入 Anki',ankiDone:'已加入 Anki',ankiBusy:'正在制卡',saveFail:'暂时无法加入单词本',play:'播放发音',examples:'例句',notes:'MOJi 用户笔记',loading:'正在载入详情',detailFail:'详情暂时无法打开，先显示摘要'},
  ja:{results:'検索結果',moji:'MOJi 辞書',jisho:'Jisho.org',local:'ローカル辞書',order:'クリックか ↑ ↓ で選択、ホイールでスクロール',current:'選択中の項目',save:'単語帳に追加',saved:'単語帳にあります',
-  saveDone:'単語帳に追加しました',saveFail:'単語帳に追加できませんでした',play:'発音を再生',examples:'例文',notes:'MOJi ユーザーノート',loading:'詳細を読み込み中',detailFail:'詳細を開けません。概要を表示します'},
+  saveDone:'単語帳に追加しました',anki:'Anki に追加',ankiDone:'Anki に追加済み',ankiBusy:'カード作成中',saveFail:'単語帳に追加できませんでした',play:'発音を再生',examples:'例文',notes:'MOJi ユーザーノート',loading:'詳細を読み込み中',detailFail:'詳細を開けません。概要を表示します'},
  en:{results:'Results',moji:'MOJi',jisho:'Jisho.org',local:'Offline dictionary',order:'Click or ↑ ↓ to select, scroll to browse',current:'Current entry',save:'Add to words',saved:'In your words',
-  saveDone:'Added to your words',saveFail:'Could not add it',play:'Play audio',examples:'Examples',notes:'MOJi user notes',loading:'Loading the entry',detailFail:'Could not open the entry; showing the summary'}};
+  saveDone:'Added to your words',anki:'Add to Anki',ankiDone:'Added to Anki',ankiBusy:'Making the card',saveFail:'Could not add it',play:'Play audio',examples:'Examples',notes:'MOJi user notes',loading:'Loading the entry',detailFail:'Could not open the entry; showing the summary'}};
 const firstReading=r=>String(r||'').split(/\s*[·・,，、]\s*|\s+/)[0].trim();
-export function mountEntries(target,{items=[],source='local',locale='zh',esc,loadDetail,onSave,onPlay,wanted='',savedSpellings}){
- const t=D[locale]||D.zh,life=lifecycle(target),cache=new Map();
+export function mountEntries(target,{items=[],source='local',locale='zh',esc,loadDetail,onSave,onPlay,onAnki,wanted='',savedSpellings}){
+ const t=D[locale]||D.zh,life=lifecycle(target),cache=new Map(),carded=new Set();
  const list=items.map((w,i)=>({...w,key:i,means:meanings(String(w.definition||'').split(/\n+|[；;]/)),ruby:w.pron||firstReading(w.reading)}));
  let cur=Math.max(0,list.findIndex(w=>wanted&&(w.spelling===wanted||w.reading===wanted)));
  const tags=w=>[w.jlpt?'JLPT '+w.jlpt:'',w.common?'common':'',...(w.partOfSpeech||[]),w.verbType,w.verbGroup].filter(Boolean);
@@ -316,7 +316,7 @@ export function mountEntries(target,{items=[],source='local',locale='zh',esc,loa
    <i class="esr-bar" aria-hidden="true"></i>
    ${tags(head).length?`<div class="ent-tags">${tags(head).map(x=>`<span class="moji-tag">${esc(x)}</span>`).join('')}</div>`:''}
    <ol class="esr-mean ent-mean">${ms}</ol>
-   <div class="esr-act">${onSave?`<button type="button" class="secondary" data-save${saved?' disabled':''}>${IC.book}${esc(saved?t.saved:t.save)}</button>`:''}${onPlay&&w.id&&source==='moji'?`<button type="button" class="secondary" data-play aria-label="${esc(t.play)}">${IC.play}${esc(t.play)}</button>`:''}</div>
+   <div class="esr-act">${onAnki?`<button type="button" class="primary" data-anki${carded.has(w.key)?' disabled':''}>${IC.copy}${esc(carded.has(w.key)?t.ankiDone:t.anki)}</button>`:''}${onSave?`<button type="button" class="secondary" data-save${saved?' disabled':''}>${IC.book}${esc(saved?t.saved:t.save)}</button>`:''}${onPlay&&w.id&&source==='moji'?`<button type="button" class="secondary" data-play aria-label="${esc(t.play)}">${IC.play}${esc(t.play)}</button>`:''}</div>
    ${notes?`<section class="ent-notes"><p class="esr-k">${esc(t.notes)}</p><ul>${notes}</ul></section>`:''}`;}
  let ticket=0;
  async function paint(){const w=list[cur];if(!w){side.innerHTML='';return;}const mine=++ticket;
@@ -338,6 +338,10 @@ export function mountEntries(target,{items=[],source='local',locale='zh',esc,loa
  vp.addEventListener('scroll',edge,{passive:true});
  side.addEventListener('click',async e=>{const w=list[cur];if(!w)return;
   const s=e.target.closest('[data-save]');if(s&&onSave){s.disabled=true;try{await onSave(w);savedSpellings?.add(w.spelling);side.innerHTML=body(w,cache.get(w.key));}catch{s.disabled=false;}return;}
+  /* 加入 Anki: the card's example is the first example of this entry (MOJi detail), with its translation; none for a local entry */
+  const a=e.target.closest('[data-anki]');if(a&&onAnki){const d=cache.get(w.key),ex=d?.meanings?.flatMap(m=>m.examples||[]).find(x=>x?.ja)||null;
+   a.disabled=true;const label=a.innerHTML;a.innerHTML=IC.copy+esc(t.ankiBusy);
+   try{await onAnki(w,ex?{sentence:ex.ja,translation:ex.zh||''}:{});carded.add(w.key);savedSpellings?.add(w.spelling);side.innerHTML=body(w,d);}catch{a.disabled=false;a.innerHTML=label;}return;}
   const p=e.target.closest('[data-play]');if(p&&onPlay){p.disabled=true;try{await onPlay(w);}finally{p.disabled=false;}}});
  const ro=new ResizeObserver(()=>edge());ro.observe(vp);life.off(()=>ro.disconnect());
  paint();reveal(l.querySelector('.esr-row.is-cur'),false);edge();
