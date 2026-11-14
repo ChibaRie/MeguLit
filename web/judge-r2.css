@@ -203,7 +203,7 @@ html:not(#u):not(#v):not(#w):not(#x) body .tv-home .tv-index{display:none!import
 html:not(#u):not(#v):not(#w):not(#x) body #library-results.lib-field::after{content:"";position:absolute;inset:0;pointer-events:none;z-index:3;background:radial-gradient(120% 95% at 50% 50%,transparent 52%,rgba(8,6,8,.55) 82%,rgba(8,6,8,.9) 100%)}
 html:not(#u):not(#v):not(#w):not(#x) body .lib-field .game-caption .mq{font-family:"Segoe UI Variable Text","Microsoft YaHei UI","Yu Gothic UI",system-ui,sans-serif!important;font-weight:600!important}
 /* detail: title block sits on the cover's baseline; numbers as a 2 x 2 grid; quieter synopsis measure; cards more opaque */
-html:not(#u):not(#v):not(#w):not(#x) body .game-detail-hero .detail-title{grid-template-rows:1fr auto auto auto auto auto 14px!important}
+html:not(#u):not(#v):not(#w):not(#x) body .game-detail-hero .detail-title{grid-template-rows:1fr auto auto auto 30px auto 14px!important}
 html:not(#u):not(#v):not(#w):not(#x) body .game-detail-hero .detail-title>.detail-statistics{display:grid!important;grid-template-columns:1fr 1fr;align-content:center;gap:26px 22px!important;padding-left:30px!important}
 html:not(#u):not(#v):not(#w):not(#x) body .game-detail-hero .detail-statistics .stat-card{padding:0!important;border:0!important;width:auto!important}
 html:not(#u):not(#v):not(#w):not(#x) body .game-detail-hero .detail-statistics .stat-card strong{font-size:34px!important;font-variant-numeric:tabular-nums}
@@ -261,3 +261,16 @@ html body .dict-home .dh-often small{color:color-mix(in srgb,var(--g-t1,#f1e0d2)
 html:not(#u):not(#v):not(#w):not(#x) body .settings-content .tr-shared-head{margin-top:30px!important;padding-top:0!important}
 /* 2026-11-14: while dict-home loads, its two lists keep their room so nothing below jumps when the rows arrive */
 html body .dict-home[data-loading] :is(.dh-often,.dh-recent)>ol{min-height:min(330px,36vh)}
+
+/* Detail header geometry is the same for every game: one card size and ratio (3:4, picture cropped to fill, subject kept high),
+   a title box of exactly two lines (game-detail.js shrinks long titles to fit), and a fixed header height, so the tag line,
+   last-played note, buttons, numbers and tabs sit at the same spot whatever the game or its cover looks like. */
+html:not(#u):not(#v):not(#w):not(#x) body .main{--dcw:clamp(200px,13.5vw,248px);--dh1:clamp(30px,3vw,60px)}
+html:not(#u):not(#v):not(#w):not(#x) body .game-detail-hero{grid-template-columns:var(--dcw) minmax(0,1fr)!important;height:calc(var(--dcw)*4/3)!important;align-items:stretch!important}
+html:not(#u):not(#v):not(#w):not(#x) body .game-detail-hero .detail-cover{width:var(--dcw)!important;height:100%!important;aspect-ratio:3/4!important;align-self:start!important}
+html:not(#u):not(#v):not(#w):not(#x) body .game-detail-hero .detail-cover .tv-face{height:100%!important;aspect-ratio:3/4}
+html:not(#u):not(#v):not(#w):not(#x) body .game-detail-hero .detail-cover .cover,html:not(#u):not(#v):not(#w):not(#x) body .game-detail-hero .detail-cover img{width:100%!important;height:100%!important;object-fit:cover!important;object-position:50% 18%!important}
+html:not(#u):not(#v):not(#w):not(#x) body .game-detail-hero .detail-title{height:100%!important;min-height:0}
+html:not(#u):not(#v):not(#w):not(#x) body .game-detail-hero .detail-title>h1{font-size:var(--dfit,var(--dh1))!important;line-height:1.08!important;height:calc(2.16*var(--dh1))!important;margin:0!important;overflow:visible;align-self:start;word-break:break-word}
+html:not(#u):not(#v):not(#w):not(#x) body .game-detail-hero .detail-title>.detail-actions{margin-top:14px!important}
+html:not(#u):not(#v):not(#w):not(#x) body .game-detail-hero{margin-bottom:18px!important}
