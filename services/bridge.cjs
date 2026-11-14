@@ -65,6 +65,8 @@ async function launch(db,id,runtime=null,windowsLaunch=false,{retried=false,redi
   runtime?.prepareGame(game.executable,{enter:false});
   /* E370: a first launch with nothing saved here starts from a matching shared adaptation record (stream memory before the Hook starts, locale mode for this launch) */
   try{const before=profile.localeMode,shared=require('./shared-adaptation.cjs');shared.importFor(root,{executable:game.executable,engine:profile.engine||'',library:profile,styleSync:runtime?.reader?.gal?.styleSync});if(profile.localeMode!==before){original.library=profile;db.prepare('UPDATE games SET original=? WHERE id=?').run(JSON.stringify(original),id);}}catch{}
+  /* E590 automatic Japanese: self-check an earlier automatic switch, then switch a localized build once */
+  if(!retried)require('./japanese-auto-run.cjs').beforeLaunch(root,id,path.dirname(game.executable),trace);
   /* Japanese restore tables written before 1.2.2 crash Siglus games on start: rewrite them before launching */
   try{const fix=require('../core/japanese-restore.cjs').repairShared(path.dirname(game.executable));if(fix.repaired||fix.skipped)trace('japanese-restore-repaired',fix);}catch(error){trace('japanese-restore-repair-failed',{error:String(error?.message||error).slice(0,200)});}
   /* E333 (user 2026-11-10, 女装山脈): a YU-RIS Chinese patch (update*.ypf) is still in place while the Japanese program is started: the game shows the Chinese text as garbage. Say so instead of launching. */
@@ -85,7 +87,7 @@ async function launch(db,id,runtime=null,windowsLaunch=false,{retried=false,redi
   if(focused==='focused'||focused==='running') {
     // An earlier instance that never showed (or lost) its window blocks single-instance games: say so (E215.2, user:
     // サノバウィッチ 'would not start' while a hidden copy from a Japanese-locale launch kept running).
-    let readyState=null;try{const state=await ready();readyState=state;trace('existing-window-ready',state);}catch(error){trace('existing-window-not-ready',{error:error.message});throw error.message==='GAME_WINDOW_NOT_READY'?Object.assign(Error('GAME_RUNNING_HIDDEN'),{detail:path.basename(game.executable)}):error;}
+    let readyState=null;try{const state=await ready();readyState=state;trace('existing-window-ready',state);try{require('../core/japanese-auto.cjs').launchResult(root,id,true);}catch{}}catch(error){trace('existing-window-not-ready',{error:error.message});throw error.message==='GAME_WINDOW_NOT_READY'?Object.assign(Error('GAME_RUNNING_HIDDEN'),{detail:path.basename(game.executable)}):error;}
     db.prepare('UPDATE games SET last_launched_at=? WHERE id=?').run(Math.floor(Date.now()/1000),id);
     runtime?.prepareGame(game.executable);runtime?.bindLaunched?.(readyState?.pid);return {action:focused,connected:false};
   }
@@ -161,7 +163,7 @@ async function launch(db,id,runtime=null,windowsLaunch=false,{retried=false,redi
    if(textPath){try{const tp=require('../core/text-paths-launch.cjs');const join=(n=0)=>{const hook=runtime?.reader?.gal?.hooks;if(hook){tp.attach(textPath,hook);return;}if(n<20)setTimeout(()=>join(n+1),1500).unref?.();};join();textPath.connect().catch(()=>{});
     const exitWatch=setInterval(()=>{if(child.exit){clearInterval(exitWatch);try{textPath.session.exited(child.exit.code??-1);textPath.session.stop();}catch{}}},2000);exitWatch.unref?.();}catch(error){trace('text-paths-attach-failed',{error:String(error?.message||error).slice(0,160)});}}
   }
-  trace('new-window-ready',state);
+  trace('new-window-ready',state);try{require('../core/japanese-auto.cjs').launchResult(root,id,true);}catch{}
   {const watch=featureWatch;featureWatch=null;setTimeout(()=>watch.stop(),30000).unref?.();}
   db.prepare('UPDATE games SET last_launched_at=? WHERE id=?').run(Math.floor(Date.now()/1000),id);
   runtime?.prepareGame(game.executable);runtime?.bindLaunched?.(state?.pid);return {action:'launched',connected:false};
@@ -175,7 +177,7 @@ async function launch(db,id,runtime=null,windowsLaunch=false,{retried=false,redi
      neededFeature.set(id,feature);error=Object.assign(Error(/^directplay$/i.test(feature)?'DIRECTPLAY_REQUIRED':'WINDOWS_FEATURE_REQUIRED'),{detail:feature});}}
    /* E299: a boxed release whose protection plug-in wants the original DVD quits on start; say so (disc-check.cjs). */
    if(['GAME_PROCESS_EXITED','GAME_WINDOW_NOT_READY'].includes(error.message)&&game.executable&&require('./disc-check.cjs').discProtected(path.dirname(game.executable)))error=Object.assign(Error('GAME_DISC_REQUIRED'),{detail:error.message});
-   trace('launch-failed',{phase:stage,error:error.message,detail:error.detail||error.code});throw error;}
+   trace('launch-failed',{phase:stage,error:error.message,detail:error.detail||error.code});try{require('../core/japanese-auto.cjs').launchResult(root,id,false);}catch{}throw error;}
 }
 function deleteWord(db,id) {
   const word=db.prepare('SELECT * FROM vocabulary WHERE id=?').get(id);
@@ -282,6 +284,12 @@ async function dispatch(request,runtime=null) {
         throw Error('CN_GUIDE_FIX');}
       case 'game_original_executable':{const result=require('./game-language.cjs').originalExecutable(db,String(request.id),root,request.mode,request.executable);const row=db.prepare('SELECT original FROM games WHERE id=?').get(String(request.id));return {...result,localeJapanese:JSON.parse(row?.original||'{}').library?.localeMode==='japanese'};}
       // E237 Japanese restore (Tools page): list library games that ship Japanese data, then apply or undo per game.
+      /* E590 automatic Japanese: notices, global and per-game switch, status, undo */
+      case 'jp_auto_notices':{const ja=require('../core/japanese-auto.cjs');return ja.takeNotices(root).map(n=>({...n,title:db.prepare('SELECT title FROM games WHERE id=?').get(n.id)?.title||''}));}
+      case 'jp_auto_get':return {enabled:require('../core/japanese-auto.cjs').read(root).enabled};
+      case 'jp_auto_set':{const ja=require('../core/japanese-auto.cjs');if(request.id!=null){ja.setGameOff(root,String(request.id),request.off===true);return {ok:true};}return ja.setEnabled(root,request.enabled!==false);}
+      case 'jp_auto_status':case 'jp_auto_undo':{const id=String(request.id),row=db.prepare('SELECT executable FROM games WHERE id=? AND removed_at IS NULL').get(id);if(!row?.executable)throw Error('GAME_NOT_FOUND');const dir=path.dirname(row.executable),ja=require('../core/japanese-auto.cjs');
+       if(request.action==='jp_auto_status')return ja.status(root,id,dir);if(require('../core/japanese-restore.cjs')._internal.gameRunning(dir))throw Error('GAME_RUNNING');return ja.undo(root,id,dir);}
       case 'jp_restore_list':{const fs=require('node:fs'),path=require('node:path');return db.prepare('SELECT id,title,executable FROM games WHERE removed_at IS NULL ORDER BY title').all().map(g=>{const dir=g.executable?path.dirname(g.executable):'';let hint='';try{if(dir&&(fs.existsSync(path.join(dir,'.megulit-japanese'))||fs.existsSync(path.join(dir,'.megulit-japanese-import'))))hint='applied';else if(dir&&require('../core/japanese-import.cjs').translatedOnly(dir,g.executable))hint='translated';else if(dir&&fs.existsSync(path.join(dir,'dat'))&&fs.readdirSync(path.join(dir,'dat')).some(f=>/\.dbs$/i.test(f)))hint='candidate';else if(dir&&fs.readdirSync(dir).some(n=>/^(scene|gameexe)(jp|ja|en|zh|cn|tw)?\.(pck|dat)$/i.test(n)||/_(jp|ja)\.(xp3|pck|arc|dat)$/i.test(n)))hint='unsupported';}catch{}return dir?{id:g.id,title:g.title,hint:hint||'import',dir:dir.toLowerCase()}:null;}).filter(Boolean).filter((g,i,all)=>all.findIndex(o=>o.dir===g.dir)===i).map(({dir,...g})=>g);}
       case 'jp_restore_steam':case 'jp_restore_detect':case 'jp_restore_apply':case 'jp_restore_undo':case 'jp_import_apply':case 'jp_import_preview':case 'jp_import_cancel':case 'jp_import_reveal':{const id=String(request.id),row=db.prepare('SELECT executable FROM games WHERE id=? AND removed_at IS NULL').get(id);if(!row?.executable)throw Error('GAME_NOT_FOUND');const dir=require('node:path').dirname(row.executable),jr=require('../core/japanese-restore.cjs'),ji=require('../core/japanese-import.cjs');
        /* E525 Steam store languages (cached by the Chinese-build guide, fetched in the background when missing) */
@@ -340,6 +348,7 @@ async function dispatch(request,runtime=null) {
       case 'daily_anki':return await require('./daily.cjs').anki(root,runtime,request);
       case 'daily_open':{const url=String(request.url||'');if(!require('./daily.cjs').canOpen(url))throw Error('URL_NOT_ALLOWED');const child=spawn('explorer.exe',[new URL(url).href],{windowsHide:true,detached:true,stdio:'ignore'});child.on('error',()=>{});child.unref();return {opened:true};}
       /* E377 opt-in leaderboard (services/leaderboard.cjs) */
+      case 'profile_chip':return require('./leaderboard.cjs').chip(root);
       case 'leaderboard_view':return await require('./leaderboard.cjs').view(root,db,{period:String(request.period||''),metric:String(request.metric||''),game:typeof request.game==='string'?request.game:'',submit:request.submit===true,tab:String(request.tab||''),week:String(request.week||''),category:String(request.category||'')});
       /* E379 avatars (moderated on the relay) and reports */
       case 'leaderboard_avatar_set':return await require('./leaderboard.cjs').setAvatar(root,String(request.data||''));
@@ -521,6 +530,12 @@ async function dispatch(request,runtime=null) {
         const grammar=require('./grammar.cjs'),learning=runtime&&typeof runtime.learning==='function'?runtime.learning():null,ready=!!learning?.installed?.();
         const result=await grammar.report(db,{root,scriptPairs:require('./original-text.cjs').scriptPairs,tokenize:ready&&request.count!==false?text=>learning.tokenize(text):null,deadline:Date.now()+8000});
         return {...result,counting:ready};
+      }
+      /* 学习 → 语法 › 怎么接: lines from the games you played that use each connection row (services/grammar-forms.cjs) */
+      case 'grammar_form_lines':{
+        const learning=runtime&&typeof runtime.learning==='function'?runtime.learning():null,ready=!!learning?.installed?.();
+        return require('./grammar-forms.cjs').formLines(db,{root,scriptPairs:require('./original-text.cjs').scriptPairs,tokenize:ready?text=>learning.tokenize(text):null,
+          point:request.point||{},rows:Array.isArray(request.rows)?request.rows:[],deadline:Date.now()+8000});
       }
       /* 学习 → 语法: grammar cards from the learner's own Anki decks (read here, never shipped), with lines read that contain them */
       case 'grammar_bluebook':{const B=require('./bluebook.cjs'),r=await B.readAll(root,{anki:new(require('../core/anki.cjs').Anki)(),config:runtime?.config?.()||store.readJSON(path.join(root,'data','config','v4-preferences.json'))});return r.available?{...r,examples:await B.examplesForAsync(r.points,await require('./grammar.cjs').candidatesCached(db,{root,scriptPairs:require('./original-text.cjs').scriptPairs}))}:r;}

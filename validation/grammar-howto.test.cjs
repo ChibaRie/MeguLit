@@ -46,12 +46,13 @@ test('a 蓝宝书 card without a connection field gets one from its explanation,
  g.useAnkiCards([]);
 });
 
-test('examples go through the shared furigana renderer, the grammar stays marked, a line from your own reading is shown',async()=>{
+test('examples go through the shared furigana renderer, the grammar stays marked, a line from your own games keeps its game ruby',async()=>{
  const h=await import(web('grammar-howto.js'));
  assert.equal(h.markHTML('先輩は',{start:2,end:3,esc}),'先輩<mark class="gm-hl">は</mark>');
  const g=await import(web('grammar.js')),p=g.pointsOf('N4')[0];
- const html=h.howToHTML(p,[{text:'もし雨が降ったら、帰ろう。',start:5,end:7,translation:'下雨就回去',title:'ATRI',origin:'game',ruby:[['雨','あめ']]}],{esc,source:e=>e.title});
- assert.match(html,/gm-how-mine[\s\S]*data-exr="もし雨が降ったら、帰ろう。" data-exr-ruby="\[\[&quot;雨&quot;,&quot;あめ&quot;\]\]"[\s\S]*下雨就回去[\s\S]*ATRI/,'your own line keeps the game ruby');
+ /* 2026-11-15: the line from your own games sits under its connection row (grammar_form_lines), not in a separate box */
+ const html=h.howToHTML(p,[],{esc})+h.gameLineHTML({text:'もし雨が降ったら、帰ろう。',start:5,end:7,translation:'下雨就回去',title:'ATRI',label:'ATRI -My Dear Moments-（亚托莉）',origin:'script',ruby:[['雨','あめ']]},{esc});
+ assert.match(html,/data-exr="もし雨が降ったら、帰ろう。" data-exr-ruby="\[\[&quot;雨&quot;,&quot;あめ&quot;\]\]"[\s\S]*下雨就回去[\s\S]*ATRI -My Dear Moments-（亚托莉）/,'your own line keeps the game ruby');
  assert.doesNotMatch(html,/<ruby>/,'no second furigana path');
  for(const level of ['N5','N1'])for(const pt of g.pointsOf(level)){const x=h.howToHTML(pt,[],{esc});assert.ok((x.match(/class="gm-ja" lang="ja" data-exr=/g)||[]).length>=1,pt.id);}
  assert.ok(!fs.existsSync(path.join(__dirname,'..','web','grammar-ruby.js')),'no generated furigana table beside the shared renderer');

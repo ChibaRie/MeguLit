@@ -60,7 +60,8 @@ function rubyPairs(text){const out=[];String(text||'').replace(/<r([^>]+)>([^<]+
 /* ---- database ---- */
 function ensure(db){
   db.exec(`CREATE TABLE IF NOT EXISTS grammar_lines(text TEXT PRIMARY KEY,hits TEXT NOT NULL,checked_at INTEGER NOT NULL);
-CREATE TABLE IF NOT EXISTS grammar_progress(point TEXT PRIMARY KEY,learned_at INTEGER,attempts INTEGER NOT NULL DEFAULT 0,correct INTEGER NOT NULL DEFAULT 0,updated_at INTEGER NOT NULL DEFAULT 0);`);
+CREATE TABLE IF NOT EXISTS grammar_progress(point TEXT PRIMARY KEY,learned_at INTEGER,attempts INTEGER NOT NULL DEFAULT 0,correct INTEGER NOT NULL DEFAULT 0,updated_at INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE IF NOT EXISTS grammar_answer_events(id INTEGER PRIMARY KEY AUTOINCREMENT,point TEXT NOT NULL,correct INTEGER NOT NULL,at INTEGER NOT NULL);`);
 }
 const fitLength=t=>{const n=[...t].length;return n>=6&&n<=60;};
 /* Lines to look in: recorded lines first (newest first), then the script up to the furthest line reached. */
@@ -137,7 +138,9 @@ const validPoint=p=>POINTS.includes(p)||/^n[0-4]-[a-z0-9-]{1,40}$/.test(p)||/^bb
 function setLearned(db,point,learned=true){if(!validPoint(point))throw Error('INVALID_GRAMMAR_POINT');ensure(db);const now=Math.floor(Date.now()/1000);
   db.prepare('INSERT INTO grammar_progress(point,learned_at,updated_at) VALUES(?,?,?) ON CONFLICT(point) DO UPDATE SET learned_at=excluded.learned_at,updated_at=excluded.updated_at').run(point,learned?now:null,now);return progress(db)[point];}
 function recordAnswer(db,point,correct){if(!validPoint(point))throw Error('INVALID_GRAMMAR_POINT');ensure(db);const now=Math.floor(Date.now()/1000);
-  db.prepare('INSERT INTO grammar_progress(point,attempts,correct,updated_at) VALUES(?,1,?,?) ON CONFLICT(point) DO UPDATE SET attempts=attempts+1,correct=correct+excluded.correct,updated_at=excluded.updated_at').run(point,correct?1:0,now);return progress(db)[point];}
+  db.prepare('INSERT INTO grammar_progress(point,attempts,correct,updated_at) VALUES(?,1,?,?) ON CONFLICT(point) DO UPDATE SET attempts=attempts+1,correct=correct+excluded.correct,updated_at=excluded.updated_at').run(point,correct?1:0,now);
+  /* 2026-11-15 one timestamped row per answer for the 学习练习 board (services/leaderboard.cjs studyTimes) */
+  db.prepare('INSERT INTO grammar_answer_events(point,correct,at) VALUES(?,?,?)').run(point,correct?1:0,now);return progress(db)[point];}
 /* Completion of a level: a point counts once it is marked learned; accuracy over all answers. */
 function completion(prog,points=POINTS){let learned=0,attempts=0,correct=0;for(const p of points){const r=prog[p];if(r?.learned)learned++;attempts+=r?.attempts||0;correct+=r?.correct||0;}return {learned,total:points.length,share:points.length?learned/points.length:0,accuracy:attempts?correct/attempts:null};}
 /* ---- 体系图的台词 (2026-11-11, user: every example comes from the games you played, the part you reached) ----
@@ -205,7 +208,7 @@ async function levels(){if(!levelsMod){try{levelsMod=await import(require('url')
    clause after a word it can attach to. Each match gets a confidence; below MIN it is not an example (one line fewer
    beats a wrong one). Without the tokenizer only long, clearly bounded forms pass. Results are kept per line in
    grammar_level_lines so each line is tokenized once. */
-const MATCH_V=1,MIN_CONF=0.6;
+const MATCH_V=2,MIN_CONF=0.6;
 const CONTENT=new Set(['名詞','代名詞','感動詞','副詞','接続詞','連体詞','形状詞']);
 const ATTACH=new Set(['名詞','代名詞','動詞','形容詞','形状詞','助動詞','接尾辞']);
 const FINAL_GROUPS=new Set(['ending']);
@@ -225,7 +228,9 @@ const POINT_RULES={
   /* として, not 〜ようとして (trying to) */
   'n2-toshite':({prev})=>!/意志推量形/.test(form(prev))&&!(prev&&/^(う|よう)$/.test(prev.surface)),
   /* ので／んで: の or ん followed by the auxiliary で (したいので, 途中なんで), not a te-form (痛んで) or なんで (why) */
-  'n4-node':({core,after,P})=>core.surface==='ので'||['の','ん'].includes(core.surface)&&P(core)!=='動詞'&&after?.surface==='で'&&P(after)==='助動詞',
+  'n4-node':({core,after,next,P})=>(core.surface==='ので'||['の','ん'].includes(core.surface)&&P(core)!=='動詞'&&after?.surface==='で'&&P(after)==='助動詞')&&
+    /* のである／のであれば／のではない／のでもいい: の + で…, not the reason ので (2026-11-15, 証なのであろうか) */
+    !(next&&/^(あ|は|も|しょ|す|ござ)/.test(next.surface)),
   /* そう (looks like / I hear) after a stem or a plain form, not the adverb そう (そうだそうだ, そりゃそうだ) */
   'n4-sou':({prev,P})=>!!prev&&['動詞','形容詞','形状詞','助動詞'].includes(P(prev)),
 };

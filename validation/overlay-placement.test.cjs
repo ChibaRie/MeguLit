@@ -54,5 +54,5 @@ assert.strictEqual(new OverlayPlacement({}).wanted({ textRenderer: 'compositor' 
 delete process.env.MEGULIT_CAPTURE_COMPOSITOR;
 assert.strictEqual(new OverlayPlacement({}).wanted({ textRenderer: 'compositor' }), true);
 const gd = require('../core/glyph-dots.cjs');
-assert.strictEqual(gd.capture(), false);
+assert.strictEqual(gd.mode(require('node:os').tmpdir()), '', 'no glyph mode without the setting');
 console.log('PASS overlay placement');

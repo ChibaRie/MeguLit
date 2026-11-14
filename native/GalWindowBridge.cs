@@ -383,7 +383,7 @@ public class GalWindowBridge {
     }
     static void Command(Dictionary<string,object> d){
         string type=Str(d,"type");object value;
-        if(type=="dialogConfig"){VisualDetection=Bool(d,"active");SceneDetection=Bool(d,"scene");if(!SceneDetection)Scene.Reset();if(WaitMarker!=null)WaitMarker.PresenceWanted=Bool(d,"marker");if(!VisualDetection){Dialog.Reset();DialogVisible=true;}}
+        if(type=="dialogConfig"){VisualDetection=Bool(d,"active");SceneDetection=Bool(d,"scene");Scene.Full=SceneDetection;if(WaitMarker!=null)WaitMarker.PresenceWanted=Bool(d,"marker");if(!VisualDetection){Dialog.Reset();DialogVisible=true;}}
         else if(type=="dialogCalibrate"){Rect rect;if(Target!=IntPtr.Zero&&GetClientRect(Target,out rect)){bool success=Dialog.Calibrate(Target,rect.Right,rect.Bottom,Num(d,"x",2),Num(d,"y",58),Num(d,"width",96),Num(d,"height",2));Emit(new{type="dialogCalibration",success=success,message=success?"已记录对话框边缘，请勿把人物或字幕放入检测区域":"无法取得游戏画面"});}}
         else if(type=="windows")ThreadPool.QueueUserWorkItem(delegate{try{Emit(new{type="windows",windows=Windows()});}catch{}}); // read-only and slow (a process lookup per window): kept off the loop so the menu's region is not held up
         else if(type=="gameUi"){object rows;GameUi.Set(Target,d.TryGetValue("items",out rows)?rows as System.Collections.ArrayList:null,Bool(d,"preview"));}
@@ -499,14 +499,15 @@ public class GalWindowBridge {
         bool foregroundGame=TranslationMode&&Target!=IntPtr.Zero&&IsWindow(Target)&&!IsIconic(Overlay)&&GetAncestor(GetForegroundWindow(),3)==GetAncestor(Target,3);
         ReaderInputTick(foregroundGame);
         bool sceneInput=foregroundGame&&!MenuOpen&&!LookupOpen&&((GetAsyncKeyState(0x01)<0||GetAsyncKeyState(0x02)<0)&&!ReaderOwnsPointer()||GetAsyncKeyState(0x1B)<0||GetAsyncKeyState(0x20)<0||GetAsyncKeyState(0x0D)<0);
-        if(sceneInput&&!ReaderMenuDown){GameUi.Clear();if(SceneDetection)Scene.Input();}ReaderMenuDown=sceneInput;
-        if(SceneDetection&&foregroundGame&&GetAsyncKeyState(0x11)<0)Scene.Input();
+        if(sceneInput&&!ReaderMenuDown){GameUi.Clear();Scene.Input();}ReaderMenuDown=sceneInput;
+        if(foregroundGame&&GetAsyncKeyState(0x11)<0)Scene.Input();
         Rect uiRect;var uiOrigin=new Point();
         if(Target!=IntPtr.Zero&&GetClientRect(Target,out uiRect)&&ClientToScreen(Target,ref uiOrigin))GameUi.Tick(Target,new System.Drawing.Rectangle(uiOrigin.X,uiOrigin.Y,uiRect.Right,uiRect.Bottom),foregroundGame&&!MenuOpen&&!LookupOpen&&!IsIconic(Target));
         else GameUi.Clear();
-        if(SceneDetection&&foregroundGame&&!MenuOpen&&!LookupOpen&&CoverEnabled&&Target!=IntPtr.Zero&&!GameCapture.Busy(Target)){
+        /* E578: the text-window probe runs with immersion off too (Scene.Full limits the rest to immersion) */
+        if(foregroundGame&&!MenuOpen&&!LookupOpen&&CoverEnabled&&Target!=IntPtr.Zero&&!GameCapture.Busy(Target)){
             Rect sceneRect;var sceneOrigin=new Point();if(GetClientRect(Target,out sceneRect)&&ClientToScreen(Target,ref sceneOrigin)){
-                /* E322: the game window itself, never the screen with MeguLit's own layer on it */string kept=Scene.Reason;bool? present=Scene.Tick(Target,sceneRect.Right,sceneRect.Bottom);if(present.HasValue)Emit(new{type="dialogScene",visible=present.Value,reason=Scene.Reason});else if(Scene.Reason!=kept&&Scene.Reason.StartsWith("kept"))Emit(new{type="dialogSceneKept",reason=Scene.Reason});
+                /* E322: the game window itself, never the screen with MeguLit's own layer on it */string kept=Scene.Reason;bool? present=Scene.Tick(Target,sceneRect.Right,sceneRect.Bottom);if(present.HasValue)Emit(new{type="dialogScene",visible=present.Value,reason=Scene.Reason,box=Scene.Box});else if(Scene.Reason!=kept&&Scene.Reason.StartsWith("kept"))Emit(new{type="dialogSceneKept",reason=Scene.Reason});
             }
         }
         // Alt+T menu open over a bound game: the layer stays above the game whatever is in front (user, 2026-11-03: dragging

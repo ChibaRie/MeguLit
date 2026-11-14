@@ -5,6 +5,9 @@
 // square of at most DotSide x DotSide pixels at the expected position (the character's black box top-left for GDI, its
 // layout box top-left for GDI+ and Direct2D, +-1 px), and no other ink. Then checks the ToMe_GLYPHDOT report of every
 // case (index, character, kind) and that menu text and metrics stay untouched.
+// Placement (MODE blank, MODE blank-blind; "place" is an alias): the same lines leave no ink at all (blank glyphs, metrics kept) and every
+// character is still reported once, with its cell top-left in the right space: a memory DIB (m<W>x<H>), a hidden
+// window's client area mapped to its top-level window (c), a Direct2D DC target (t<W>x<H>); GetGlyphOutline has none (-).
 // Usage: dothost.exe <MeguLitFont dll> [folder for the PNGs]   (spec: docs/text-architecture.md)
 #include <windows.h>
 #include <gdiplus.h>
@@ -15,7 +18,8 @@
 #include <vector>
 #include <map>
 #include <algorithm>
-static std::string Got;
+static std::string Got; static SRWLOCK GotLock = SRWLOCK_INIT;
+static bool Has(const char *t) { AcquireSRWLockShared(&GotLock); bool r = Got.find(t) != std::string::npos; ReleaseSRWLockShared(&GotLock); return r; }
 static HANDLE Ctl = INVALID_HANDLE_VALUE;
 static int Failed = 0;
 static void Check(bool ok, const std::string &what) { printf("%s %s\n", ok ? "ok  " : "FAIL", what.c_str()); if (!ok) Failed++; }
@@ -23,7 +27,7 @@ DWORD WINAPI Listen(void *) {
  wchar_t name[64]; swprintf_s(name, L"\\\\.\\pipe\\MeguLitFont-%lu", GetCurrentProcessId());
  HANDLE p = CreateNamedPipeW(name, PIPE_ACCESS_INBOUND, PIPE_TYPE_BYTE, 1, 0, 65536, 0, NULL);
  if (p == INVALID_HANDLE_VALUE || !ConnectNamedPipe(p, NULL) && GetLastError() != ERROR_PIPE_CONNECTED) return 1;
- char buf[4096]; DWORD n; while (ReadFile(p, buf, sizeof buf, &n, NULL) && n) Got.append(buf, n);
+ char buf[4096]; DWORD n; while (ReadFile(p, buf, sizeof buf, &n, NULL) && n) { AcquireSRWLockExclusive(&GotLock); Got.append(buf, n); ReleaseSRWLockExclusive(&GotLock); }
  return 0;
 }
 static std::string Utf8(const std::wstring &w) { int n = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), NULL, 0, NULL, NULL); std::string s(n, 0); WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), &s[0], n, NULL, NULL); return s; }
@@ -93,6 +97,11 @@ static void DrawGgo(const std::wstring &s, UINT format, int x, int base, std::ve
 }
 static std::wstring A = L"吾輩は猫である。名前はまだ無い。", B = L"どこで生れたかとんと見当がつかぬ。";
 static int Seq = 0; static std::map<int, std::wstring> SeqText; static std::map<int, std::string> SeqPath;
+struct Place { std::vector<POINT> at; std::string sp; }; static std::map<int, Place> Placed; // seq -> expected cell origins (MODE blank)
+// A live compositor heartbeat for the whole run (the DLL's 20 s no-heartbeat grace must not decide the dot cases on a
+// slow machine); the heartbeat case pauses the ticker and drives the beat by hand.
+struct Beat { DWORD magic, version, pid, presenting; unsigned long long tick, frames; }; static Beat *Bt; static volatile LONG Ticking = 1;
+DWORD WINAPI Ticker(void *) { for (;;) { if (Ticking && Bt) { Bt->presenting = 1; Bt->tick = GetTickCount64(); Bt->frames++; } Sleep(100); } }
 static const std::wstring &Next(const char *path) { const std::wstring &l = (++Seq % 2) ? A : B; SeqText[Seq] = l; SeqPath[Seq] = path; Push("LINE " + Utf8(l)); return l; }
 int wmain(int argc, wchar_t **argv) {
  if (argc < 2) return 2;
@@ -100,6 +109,8 @@ int wmain(int argc, wchar_t **argv) {
  ULONG_PTR token; Gdiplus::GdiplusStartupInput in; Gdiplus::GdiplusStartup(&token, &in, NULL);
  ID2D1Factory *d2 = NULL; D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, &d2); IDWriteFactory *dw = NULL; DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory), (IUnknown **)&dw);
  CreateThread(NULL, 0, Listen, NULL, 0, NULL);
+ { wchar_t bn[64]; swprintf_s(bn, L"Local\\MeguLitCompositorBeat-%lu", GetCurrentProcessId()); HANDLE bm = CreateFileMappingW(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE, 0, sizeof(Beat), bn);
+  Bt = bm ? (Beat *)MapViewOfFile(bm, FILE_MAP_WRITE, 0, 0, sizeof(Beat)) : NULL; if (Bt) { *Bt = {0x4243474D, 1, GetCurrentProcessId(), 1, GetTickCount64(), 1}; { HANDLE tk = CreateThread(NULL, 0, Ticker, NULL, 0, NULL); if (tk) SetThreadPriority(tk, THREAD_PRIORITY_TIME_CRITICAL); } } }
  wchar_t name[64]; swprintf_s(name, L"\\\\.\\pipe\\MeguLitFontCtl-%lu", GetCurrentProcessId());
  Ctl = CreateNamedPipeW(name, PIPE_ACCESS_OUTBOUND, PIPE_TYPE_BYTE, 1, 65536, 0, 0, NULL);
  Sleep(100);
@@ -108,7 +119,10 @@ int wmain(int argc, wchar_t **argv) {
  Check(version >= 3, "exports MeguLitFontVersion >= 3 (glyph dots)"); printf("version %lu\n", version);
  if (version < 3) { printf("FAIL old DLL\n"); return 5; }
  if (!ConnectNamedPipe(Ctl, NULL) && GetLastError() != ERROR_PIPE_CONNECTED) { printf("control pipe not connected\n"); return 4; }
- Sleep(1500); // late hooks (GDI+, DirectWrite, Direct2D) run once a second
+ // Late hooks (GDI+, DirectWrite, Direct2D) are set up by the DLL once a second: wait until all three say so (a loaded
+ // machine can take many seconds), otherwise the GDI+/Direct2D cases would be drawn before their hooks exist.
+ for (int i = 0; i < 600 && !(Has("status gdiplus hooked") && Has("status dwrite hooked") && Has("status d2d1 hooked")); i++) Sleep(100);
+ Check(Has("status d2d1 hooked text run") && Has("status gdiplus hooked"), "late hooks in place (GDI+, Direct2D text and glyph runs)");
  BITMAPINFO bi{}; bi.bmiHeader = {sizeof(BITMAPINFOHEADER), W, -H, 1, 32, BI_RGB};
  Dc = CreateCompatibleDC(NULL); Bmp = CreateDIBSection(Dc, &bi, DIB_RGB_COLORS, (void **)&Bits, NULL, 0); SelectObject(Dc, Bmp);
  bool japanese = false;
@@ -167,11 +181,9 @@ int wmain(int argc, wchar_t **argv) {
  // Blind dots (MODE dot-blind): text never pushed, dialogue font -> dots (kind b); another size -> untouched.
  { Push("MODE dot-blind"); const std::wstring blind = L"見知らぬ天井だった"; Measure(blind); Clear(); std::vector<POINT> e; bool same = true; DrawGgo(blind, GGO_GRAY8_BITMAP, X0, base, e, same); (void)same; Dots("blind-ggo", e);
   HFONT tiny = CreateFontW(-16, 0, 0, 0, 400, 0, 0, 0, SHIFTJIS_CHARSET, 0, 0, ANTIALIASED_QUALITY, 0, Face); SelectObject(Dc, tiny); Clear(); TextOutW(Dc, X0, Y0, blind.c_str(), (int)blind.size()); Check(Ink() > 100, "blind: the same text in another size is drawn normally"); SelectObject(Dc, dialogue); DeleteObject(tiny);
-  Push("MODE dot"); Sleep(200); Check(Got.find(":b;") != std::string::npos || Got.find(":b\n") != std::string::npos, "blind dots reported with kind b"); }
+  Push("MODE dot"); Sleep(200); Check(Got.find(":b:") != std::string::npos, "blind dots reported with kind b"); }
  // Compositor heartbeat (owner rule: the player never sees marks): dots only while the beat says presenting and fresh.
- { struct Beat { DWORD magic, version, pid, presenting; unsigned long long tick, frames; };
-  wchar_t bn[64]; swprintf_s(bn, L"Local\\MeguLitCompositorBeat-%lu", GetCurrentProcessId());
-  HANDLE bm = CreateFileMappingW(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE, 0, sizeof(Beat), bn); Beat *bt = bm ? (Beat *)MapViewOfFile(bm, FILE_MAP_WRITE, 0, 0, sizeof(Beat)) : NULL;
+ { InterlockedExchange(&Ticking, 0); Sleep(150); Beat *bt = Bt;
   auto inked = [&](wchar_t c) { MAT2 m = {{0, 1}, {0, 0}, {0, 0}, {0, 1}}; GLYPHMETRICS gm{}; DWORD n = GetGlyphOutlineW(Dc, c, GGO_GRAY8_BITMAP, &gm, 0, NULL, &m); if (n == GDI_ERROR || !n) return -1; std::vector<BYTE> b(n); GetGlyphOutlineW(Dc, c, GGO_GRAY8_BITMAP, &gm, n, b.data(), &m); int k = 0; for (BYTE x : b) k += x != 0; return k; };
   if (bt) {
    *bt = {0x4243474D, 1, GetCurrentProcessId(), 1, GetTickCount64(), 1};
@@ -180,13 +192,76 @@ int wmain(int argc, wchar_t **argv) {
    Sleep(500); Check(Got.find("ToMe_GLYPHDOT status needs-relaunch") != std::string::npos, "lapse after served dots: needs-relaunch reported");
    bt->presenting = 1; bt->tick = GetTickCount64(); Check(inked(L'馬') > 0 && inked(L'馬') <= 16, "heartbeat back: new glyphs are dots again");
    bt->tick = GetTickCount64() - 5000; Check(inked(L'羊') > 30, "stale heartbeat (5 s): real glyph");
-   bt->tick = GetTickCount64(); UnmapViewOfFile(bt); CloseHandle(bm); Sleep(50);
+   bt->tick = GetTickCount64(); InterlockedExchange(&Ticking, 1); Sleep(150);
    Push("MODE dot"); }
   else Check(false, "heartbeat mapping created"); }
+
+ // Placement (MODE blank): blank glyphs + per-character records with the cell origin (docs/text-architecture.md).
+ { Push("MODE blank");
+  auto cells = [&](const std::wstring &l, int x, int y, const std::vector<int> *dx) { std::vector<POINT> e; int pen = x; for (size_t i = 0; i < l.size(); i++) { e.push_back({pen, y}); pen += dx ? (*dx)[i] : Metrics[l[i]].adv; } return e; };
+  char mem[32]; sprintf_s(mem, "m%dx%d", W, H);
+  { const std::wstring &l = Next("text"); Clear(); TextOutW(Dc, X0, Y0, l.c_str(), (int)l.size()); Save("place-textoutw"); Check(Ink() == 0, "place textoutw: no ink (blank glyphs)"); Placed[Seq] = {cells(l, X0, Y0, NULL), mem}; }
+  { const std::wstring &l = Next("text"); Clear(); std::vector<int> dx(l.size(), 31); ExtTextOutW(Dc, X0, Y0, 0, NULL, l.c_str(), (UINT)l.size(), dx.data()); Check(Ink() == 0, "place exttextoutw lpDx: no ink"); Placed[Seq] = {cells(l, X0, Y0, &dx), mem}; }
+  { const std::wstring &l = Next("text"); Clear(); SetTextAlign(Dc, TA_BASELINE); TextOutW(Dc, X0, base, l.c_str(), (int)l.size()); SetTextAlign(Dc, TA_TOP); Check(Ink() == 0, "place textoutw baseline: no ink"); Placed[Seq] = {cells(l, X0, Y0, NULL), mem}; }
+  { const std::wstring &l = Next("ggo"); Clear(); std::vector<POINT> e; bool same = true; DrawGgo(l, GGO_GRAY8_BITMAP, X0, base, e, same); Save("place-ggo"); Check(Ink() == 0 && same, "place ggo: no ink, metrics and buffer size kept"); Placed[Seq] = {{}, "-"}; }
+  // A hidden window (never shown) with a child at (50,30): the child's DC origin maps to the top-level client area.
+  { WNDCLASSW wc{}; wc.lpfnWndProc = DefWindowProcW; wc.hInstance = GetModuleHandleW(NULL); wc.lpszClassName = L"MeguLitDotHost"; RegisterClassW(&wc);
+   HWND top = CreateWindowExW(WS_EX_TOOLWINDOW, wc.lpszClassName, L"", WS_POPUP, -32000, -32000, 900, 200, NULL, NULL, wc.hInstance, NULL);
+   HWND child = top ? CreateWindowExW(0, wc.lpszClassName, L"", WS_CHILD | WS_VISIBLE, 50, 30, 800, 120, top, NULL, wc.hInstance, NULL) : NULL;
+   if (child) { HDC wdc = GetDC(child); SelectObject(wdc, dialogue); SetBkMode(wdc, TRANSPARENT); const std::wstring &l = Next("text"); TextOutW(wdc, X0, Y0, l.c_str(), (int)l.size()); ReleaseDC(child, wdc); Placed[Seq] = {cells(l, 50 + X0, 30 + Y0, NULL), "c"}; }
+   else Check(false, "place: hidden window created");
+   if (top) DestroyWindow(top); }
+  { D2D1_RENDER_TARGET_PROPERTIES props = D2D1::RenderTargetProperties(D2D1_RENDER_TARGET_TYPE_DEFAULT, D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_IGNORE), 96, 96);
+   ID2D1DCRenderTarget *rt = NULL; d2->CreateDCRenderTarget(&props, &rt); RECT r = {0, 0, W, H}; ID2D1SolidColorBrush *brush = NULL;
+   IDWriteFontCollection *sys = NULL; dw->GetSystemFontCollection(&sys); UINT32 at = 0; BOOL exists = FALSE; sys->FindFamilyName(Face, &at, &exists); IDWriteFontFamily *fam = NULL; sys->GetFontFamily(at, &fam); IDWriteFont *f = NULL; fam->GetFirstMatchingFont(DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STRETCH_NORMAL, DWRITE_FONT_STYLE_NORMAL, &f); IDWriteFontFace *ff = NULL; f->CreateFontFace(&ff);
+   const std::wstring &l = Next("run"); std::vector<UINT32> cps(l.begin(), l.end()); std::vector<UINT16> gi(l.size()); ff->GetGlyphIndices(cps.data(), (UINT32)cps.size(), gi.data()); std::vector<DWRITE_GLYPH_METRICS> gm(l.size()); ff->GetDesignGlyphMetrics(gi.data(), (UINT32)gi.size(), gm.data(), FALSE); DWRITE_FONT_METRICS fm; ff->GetMetrics(&fm);
+   float em = 28.f / fm.designUnitsPerEm, asc = fm.ascent * em; std::vector<FLOAT> adv(l.size()); std::vector<POINT> e; float pen = (FLOAT)X0; for (size_t i = 0; i < l.size(); i++) { adv[i] = gm[i].advanceWidth * em; e.push_back({(LONG)(pen + .5f), (LONG)(base - asc + .5f)}); pen += adv[i]; }
+   DWRITE_GLYPH_RUN run{ff, 28.f, (UINT32)gi.size(), gi.data(), adv.data(), NULL, FALSE, 0}; Clear(); rt->BindDC(Dc, &r); rt->BeginDraw(); rt->Clear(D2D1::ColorF(1, 1, 1)); rt->CreateSolidColorBrush(D2D1::ColorF(0, 0, 0), &brush); rt->DrawGlyphRun(D2D1::Point2F((FLOAT)X0, (FLOAT)base), &run, brush); rt->EndDraw();
+   Check(Ink() == 0, "place d2d drawglyphrun: no ink"); char t[32]; sprintf_s(t, "t%dx%d", W, H); Placed[Seq] = {e, t};
+   brush->Release(); ff->Release(); f->Release(); fam->Release(); sys->Release(); rt->Release(); }
+  // Locating marks (MARK on): GRAY8 glyphs of the first, second and last character keep one pixel of coverage 1/64 at
+  // their black box top-left (white background, black text: 255 - 255/64 = 252), nothing else; GRAY4 gets none.
+  { Push("MARK on");
+   const std::wstring &l = Next("ggo"); Clear(); std::vector<POINT> e; bool same = true; DrawGgo(l, GGO_GRAY8_BITMAP, X0, base, e, same); GdiFlush();
+   std::vector<POINT> got; int faintest = 255, darkest = 255; for (int y = 0; y < H; y++) for (int x = 0; x < W; x++) { int v = Bits[y * W + x] & 0xff; if (v < 255) { got.push_back({x, y}); faintest = (std::min)(faintest, 255 - v); darkest = (std::min)(darkest, v); } }
+   size_t n = l.size(); bool at = got.size() == 3; for (size_t k : {(size_t)0, (size_t)1, n - 1}) { bool hit = false; for (auto &g : got) hit = hit || (g.x == e[k].x && g.y == e[k].y); at = at && hit; }
+   Save("mark-ggo"); Check(at && darkest >= 251 && same, "marks: exactly 3 pixels (first, second, last character) at their black box top-left, at most 4 levels from the background (" + std::to_string(got.size()) + " found, darkest " + std::to_string(darkest) + ")");
+   const std::wstring &l4 = Next("ggo"); Clear(); e.clear(); DrawGgo(l4, GGO_GRAY4_BITMAP, X0, base, e, same); GdiFlush(); int any = 0; for (int i = 0; i < W * H; i++) any += (Bits[i] & 0xff) < 255;
+   Check(any == 0, "marks: none in GRAY4 (1/16 would be visible)");
+   Sleep(200); AcquireSRWLockShared(&GotLock); std::string g = Got; ReleaseSRWLockShared(&GotLock);
+   std::string tag = "ToMe_GLYPHDOT dots seq=" + std::to_string(Seq - 1) + " "; size_t p0 = g.find(tag); int ones = 0; while (p0 != std::string::npos) { size_t eol = g.find('\n', p0); std::string m = g.substr(p0, eol - p0); for (size_t q = 0; (q = m.find(":1:d:", q)) != std::string::npos; q++) ones++; p0 = g.find(tag, eol); }
+   Check(ones == 3, "marks: the three marked characters are reported with s = 1 (" + std::to_string(ones) + ")");
+   // MARK on covers two lines only: the third line after it gets no mark although MARK off was never sent
+   const std::wstring &l3 = Next("ggo"); Clear(); e.clear(); DrawGgo(l3, GGO_GRAY8_BITMAP, X0, base, e, same); GdiFlush(); int third = 0; for (int i = 0; i < W * H; i++) third += (Bits[i] & 0xff) < 255;
+   Check(third == 0, "marks: stop by themselves after two lines (third line: " + std::to_string(third) + " pixels)");
+   Placed.erase(Seq - 2); Placed[Seq - 1] = {{}, "-"}; Placed[Seq] = {{}, "-"}; SeqPath.erase(Seq - 2); SeqText.erase(Seq - 2); Push("MARK off"); }
+  // Extra lines (names, choices): whole-string draws of a pushed name / choice are blank and reported with their
+  // origin (kind n / o, index into the extra), in any font size; other strings stay drawn.
+  { HFONT plate = CreateFontW(-20, 0, 0, 0, 400, 0, 0, 0, SHIFTJIS_CHARSET, 0, 0, ANTIALIASED_QUALITY, 0, Face); SelectObject(Dc, plate);
+   Push("EXTRA n 古河 渚"); Push("EXTRA o 上書きで何か吹き込む"); Push("EXTRA o やめておく");
+   Clear(); TextOutW(Dc, 300, 40, L"古河渚", 3); Check(Ink() == 0, "extra name: no ink");
+   Clear(); TextOutW(Dc, 100, 10, L"やめておく", 5); Check(Ink() == 0, "extra choice: no ink");
+   Clear(); TextOutW(Dc, 100, 10, L"セーブ", 3); Check(Ink() > 30, "extra: an unrelated string is drawn normally");
+   std::vector<int> nameAdv; for (wchar_t c : std::wstring(L"古河渚")) { SIZE z{}; GetTextExtentPoint32W(Dc, &c, 1, &z); nameAdv.push_back(z.cx); }
+   Sleep(300); size_t at = 0; int named = 0, chosen = 0; bool where = true;
+   AcquireSRWLockShared(&GotLock); std::string got = Got; ReleaseSRWLockShared(&GotLock);
+   while ((at = got.find("ToMe_GLYPHDOT xdots ", at)) != std::string::npos) { size_t eol = got.find('\n', at); std::string msg = got.substr(at, eol - at); at = eol; std::string list = msg.substr(msg.find("list=") + 5); size_t a = 0;
+    while (a < list.size()) { size_t b = list.find(';', a); if (b == std::string::npos) b = list.size(); int i, h, bl, ad, x, y, sd, px, py; unsigned ch; char k; char sp[24] = {};
+     if (sscanf_s(list.substr(a, b - a).c_str(), "%d:%x:%d:%d:%d:%d:%d:%d:%c:%d:%d:%23[^;]", &i, &ch, &h, &bl, &ad, &x, &y, &sd, &k, 1, &px, &py, sp, (unsigned)sizeof sp) == 12) {
+      if (k == 'n') { named++; int ex = 300; for (int j = 0; j < i && j < 3; j++) ex += nameAdv[j]; if (i < 0 || i > 2 || abs(px - ex) > 1 || abs(py - 40) > 1 || strcmp(sp, mem)) { where = false; printf("     name index %d at %d,%d %s, expected %d,40 %s\n", i, px, py, sp, ex, mem); } }
+      if (k == 'o') chosen++; }
+     a = b + 1; } }
+   Check(got.find("ToMe_GLYPHDOT extra id=1 kind=n text=古河渚") != std::string::npos && got.find("kind=o text=やめておく") != std::string::npos, "extra lines announced (blanks stripped)");
+   Check(named == 3 && chosen == 5 && where, "extra records: 3 name characters at their cell origins, 5 choice characters (" + std::to_string(named) + "/" + std::to_string(chosen) + ")");
+   Push("EXTRA-CLEAR o"); Clear(); TextOutW(Dc, 100, 10, L"やめておく", 5); Check(Ink() > 100, "choices cleared: drawn normally again");
+   SelectObject(Dc, dialogue); DeleteObject(plate); }
+  // Blind placement: a line never pushed, dialogue font -> blank, kind b.
+  { Push("MODE blank-blind"); const std::wstring blind = L"見知らぬ天井だった"; Measure(blind); Clear(); std::vector<POINT> e; bool same = true; DrawGgo(blind, GGO_GRAY8_BITMAP, X0, base, e, same); Check(Ink() == 0, "place-blind ggo: no ink"); }
+  Push("MODE dot"); }
  Push("OFF"); Sleep(400);
  { Clear(); TextOutW(Dc, X0, Y0, A.c_str(), (int)A.size()); Save("after-off"); Check(Ink() > 500, "after OFF: the line is drawn in full again"); }
  printf("%s", Got.c_str());
- Check(Got.find("ToMe_GLYPHHIDE ready version=3 modes=blank,dot") != std::string::npos, "control connection answered with version 3 and the modes");
+ Check(Got.find("ToMe_GLYPHHIDE ready version=3 modes=blank,dot,place records=4") != std::string::npos, "control connection answered with version 3 and the modes");
  // Every case: one ToMe_GLYPHDOT line + its dots, each index of the line exactly once, the right character, kind d.
  for (auto &kv : SeqText) {
   int seq = kv.first; const std::wstring &l = kv.second; std::string tag = "seq=" + std::to_string(seq) + " ";
@@ -196,10 +271,15 @@ int wmain(int argc, wchar_t **argv) {
    bool onlyBlind = msg.find(":d") == std::string::npos && msg.find(":c") == std::string::npos && msg.find(":p") == std::string::npos && msg.find(":r") == std::string::npos;
    if (!onlyBlind && msg.find("path=" + SeqPath[seq] + " ") == std::string::npos) path = false;
    std::string list = msg.substr(msg.find("list=") + 5); size_t a = 0;
-   while (a < list.size()) { size_t b = list.find(';', a); if (b == std::string::npos) b = list.size(); int i, h, bl, ad, x, y, s; unsigned ch; char k;
-    if (sscanf_s(list.substr(a, b - a).c_str(), "%d:%x:%d:%d:%d:%d:%d:%d:%c", &i, &ch, &h, &bl, &ad, &x, &y, &s, &k, 1) == 9) { if (k == 'b') { a = b + 1; continue; } count[i]++; if (i < 0 || i >= (int)l.size() || l[i] != (wchar_t)ch || k != 'd' || s != Side || h <= 0) chars = false; } else chars = false; a = b + 1; } }
+   while (a < list.size()) { size_t b = list.find(';', a); if (b == std::string::npos) b = list.size(); int i, h, bl, ad, x, y, s, px, py; unsigned ch; char k; char sp[24] = {};
+    if (sscanf_s(list.substr(a, b - a).c_str(), "%d:%x:%d:%d:%d:%d:%d:%d:%c:%d:%d:%23[^;]", &i, &ch, &h, &bl, &ad, &x, &y, &s, &k, 1, &px, &py, sp, (unsigned)sizeof sp) == 12) {
+     if (k != 'd') { a = b + 1; continue; } /* c, p: redraws and the previous line; b: blind */ count[i]++; bool place = Placed.count(seq) != 0;
+     if (i < 0 || i >= (int)l.size() || l[i] != (wchar_t)ch || k != 'd' || s != (place ? 0 : Side) || h <= 0) chars = false;
+     if (place && i >= 0 && i < (int)l.size()) { const Place &e = Placed[seq]; if (e.sp != sp) { chars = false; printf("     seq %d index %d space %s, expected %s\n", seq, i, sp, e.sp.c_str()); }
+      else if (!e.at.empty() && (abs(e.at[i].x - px) > 1 || abs(e.at[i].y - py) > 1)) { chars = false; printf("     seq %d index %d at %d,%d, expected %ld,%ld\n", seq, i, px, py, e.at[i].x, e.at[i].y); } } }
+    else chars = false; a = b + 1; } }
   bool all = count.size() == l.size(); for (auto &c : count) all = all && c.second == 1;
-  Check(line && all && chars && path, "report " + tag + "(" + SeqPath[seq] + "): line text, every index once, character and kind d, dot side 3");
+  Check(line && all && chars && path, "report " + tag + "(" + SeqPath[seq] + (Placed.count(seq) ? ", place " + Placed[seq].sp : "") + "): line text, every index once, character and kind d, " + (Placed.count(seq) ? "no dot, cell origin in the right space" : "dot side 3"));
  }
  printf(Failed ? "FAIL %d\n" : "PASS\n", Failed); return Failed ? 1 : 0;
 }

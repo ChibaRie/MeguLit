@@ -1,8 +1,8 @@
 import {activityCells} from './learning-activity.js';
 import {openLinesPicker} from './home-lines.js';
 import {createDepth,markFlat,cachedDaily,rememberDaily,dailyIsFresh,dailySignature,cachedActivity,rememberActivity} from './home-depth.js';
-import {createHand} from './home-hand.js';
 import {exAttr,setExample} from './example-ruby.js';
+import {loadGsap} from './gsap-loader.js';
 import {createDock,openHandPicker,HAND_MAX} from './home-picker.js';
 import {pickHeadline,cachedHeadline,translateHeadline,headlineLabel,activitySummary,emptyActivityHTML} from './home-today.js';
 
@@ -105,13 +105,18 @@ const PILE_IN=620;
    transform animate (Web Animations, on the compositor), the text is written once per change */
 function swapScript(script,lines,onPick){if(!script)return;const esc2=t=>String(t).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]);
  (script._anims||[]).forEach(x=>{try{x.cancel();}catch{}});script._anims=[];
- lines=lines.slice(-5);const next=lines.map(t=>/^[「『（("]/.test(t)?t:'「'+t+'」'),olds=[...script.querySelectorAll('p')];
+ lines=lines.slice(0,8);const next=lines.map(t=>/^[「『（("]/.test(t)?t:'「'+t+'」'),olds=[...script.querySelectorAll('p')];
  const bind=()=>script.querySelectorAll('p').forEach(el=>el.addEventListener('pointerenter',()=>{const n=+el.dataset.n;if(!lines[n])return;script.querySelectorAll('p').forEach(x=>x.classList.toggle('on',
   x===el));onPick(lines[n]);}));
- const paint=texts=>{script.innerHTML=texts.map((t,n)=>`<p class="${n?'':'on'}" data-n="${n}"><span class="tv-sno">${String(n+1).padStart(2,'0')}</span><span class="tv-stxt" lang="ja"${exAttr(t,null,esc2)}>${esc2(t)}</span></p>`).join('');
+ const paint=texts=>{script.innerHTML=texts.map((t,n)=>`<p class="${n?'':'on'}" data-n="${n}"><span class="tv-stxt" lang="ja"${exAttr(t,null,esc2)}>${esc2(t)}</span></p>`).join('');
+  /* 2026-11-15 (user: 句子列数不对，每句最多三列，不要空列) a sentence wraps into 1-3 columns by itself; one that needs more, or no longer fits the room, is skipped for a shorter one; no empty slots remain */
+  const first=script.querySelector('p');if(first){const fs=parseFloat(getComputedStyle(first).fontSize)||16,lh=fs*1.8,room=innerWidth*.31;let used=0,kept=0;
+   script.querySelectorAll('p').forEach(el=>{const w=el.offsetWidth,cols=Math.round((w-6)/lh);if(w>0&&(cols>3||used+w>room||kept>=5)){el.remove();return;}used+=w;kept++;});
+   const left=script.querySelector('p');if(left)script.querySelectorAll('p').forEach(el=>el.classList.toggle('on',el===left));
+   const cv=script.closest('.tv-home')?.querySelector('.tv-cover');if(cv){script.style.right='';const gap=cv.getBoundingClientRect().left-script.getBoundingClientRect().right;if(Number.isFinite(gap)&&gap!==0)script.style.right=`calc(42% + 28px - ${(gap-32).toFixed(1)}px)`;}const lab=script.parentElement?.querySelector('.tv-lines-edit');if(lab)lab.style.left=script.offsetLeft+'px';}
   script.classList.toggle('is-empty',!texts.length);bind();};
  script.classList.remove('is-fading');const token=String(Math.random());script.dataset.timer=token;
- if(olds.length===next.length&&olds.every((el,k)=>{const x=el.querySelector('.tv-stxt');return (x?.dataset.exr??x?.textContent)===next[k];}))return;
+ if(olds.length&&script._cand===next.join('|'))return;script._cand=next.join('|');
  if(matchMedia('(prefers-reduced-motion:reduce)').matches||typeof Element.prototype.animate!=='function'){paint(next);return;}
  const OUT=300,GAP=45,keep=x=>(script._anims.push(x),x);
  /* start after the frame that paints the new cover and ring, so the first frames of the fade are not swallowed by it */
@@ -216,8 +221,23 @@ export const DRAW_NAMES=Object.keys(DRAWS);
 /* 2026-11-13 judges round 2: a title like "English (日本語)" shows the first part big and the bracketed name as a line under it; the big title stays at two lines at most and no larger than ~5vw */
 function splitTitle(t){const m=String(t||'').match(/^(.+?)\s*[（(]([^（）()]+)[）)]\s*$/u);return m&&m[1].trim().length>1?[m[1].trim(),m[2].trim()]:[String(t||''),''];}
 /* 2026-11-13 (user: "不要左侧这么大一个作品名了") the game name is only the fallback when there is no daily headline, and it stays mid-sized */
-function fitTitle(h){const max=Math.min(56,Math.max(30,innerWidth*.03));let size=max;h.style.fontSize=size+'px';const limit=()=>h.scrollHeight>size*1.12*2+size*.3||h.scrollWidth>h.clientWidth+2;
- while(limit()&&size>26){size-=4;h.style.fontSize=size+'px';}}
+/* 2026-11-15 (user: 最左下角只要作品的随机一句话，不要和背景的句子同步，单独随机) the bottom-left line is its own random pick from every line the game has, never tied to the background script */
+const quoted=s=>/^[「『（("]/.test(s)?s:'「'+s+'」';
+function titleHTML(t){const esc3=x=>String(x).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]),ch=c=>`<span class="tv-ch">${esc3(c)}</span>`;
+ return String(t).split(/[\s\u3000]+(?=[～〜~]|-\S)/u).map(seg=>`<span class="tv-seg">${(seg.match(/[A-Za-z0-9'’!?.,:;&\-]+|[\s\u3000]+|[\s\S]/gu)||[]).map(tok=>/^[A-Za-z0-9'’!?.,:;&\-]+$/.test(tok)?`<span class="tv-w">${[...tok].map(ch).join('')}</span>`:/^[\s\u3000]+$/.test(tok)?' ':ch(tok)).join('')}</span>`).join('');}
+/* 2026-11-15 (user: 不同作品的标题过渡动画) old title leaves character by character (up, blur, fade), the new one rises from the mask below; the line and the last-played note follow. GSAP, transform/opacity/filter only; a new switch kills the running timeline first so nothing stacks */
+const calm=()=>matchMedia('(prefers-reduced-motion:reduce)').matches;
+function titleOut(root,lv){const g=window.gsap;if(!g||calm())return Promise.resolve();lv.tl?.kill();const t=root.querySelector('.tv-title'),chars=t.querySelectorAll('.tv-ch'),rest=[t.querySelector('.tv-meta'),root.querySelector('.tv-who'),root.querySelector('.tv-line')].filter(Boolean);
+ return new Promise(res=>{const tl=g.timeline();lv.tl=tl;if(chars.length)tl.to(chars,{y:-18,opacity:0,filter:'blur(6px)',duration:.26,ease:'power2.in',stagger:{amount:.16}},0);tl.to(rest,{y:-6,opacity:0,duration:.22,ease:'power2.in'},0);tl.call(res);});}
+function titleIn(root,lv){const g=window.gsap;if(!g||calm())return;lv.tl?.kill();const t=root.querySelector('.tv-title'),chars=t.querySelectorAll('.tv-ch'),rest=[t.querySelector('.tv-meta'),root.querySelector('.tv-who'),root.querySelector('.tv-line')].filter(Boolean);
+ const tl=g.timeline({onComplete:()=>g.set([...chars,...rest],{clearProps:'filter,willChange'})});lv.tl=tl;
+ if(chars.length)tl.fromTo(chars,{y:'110%',opacity:0,filter:'blur(0px)'},{y:0,opacity:1,duration:.55,ease:'expo.out',stagger:{amount:.32}},0);
+ tl.fromTo(rest,{y:8,opacity:0},{y:0,opacity:1,duration:.4,ease:'power2.out',stagger:.06},.18);}
+function randomLine(d,background){const all=[...new Set([...(d?.sentences||[]).map(s=>String(s.text||'').trim()),...(d?.recentLines||[]).map(s=>String(s.text||'').trim()),...(Array.isArray(d?.homeAuto)?d.homeAuto:[]).map(t=>String(t||'').trim())].filter(Boolean).map(t=>t.replace(/\[[^\]]*\]/g,'').trim()).filter(t=>t.length>=6&&t.length<=56&&storyLine(t)))];
+ const free=all.filter(t=>!background.slice(0,1).includes(t)),pool=free.length?free:all;return pool.length?pool[Math.floor(Math.random()*pool.length)]:'';}
+/* prefer two lines (down to 44px), fall back to three lines (down to 28px); never clipped */
+function fitTitle(h){const max=Math.min(76,Math.max(36,innerWidth*.04));for(const [lines,floor] of [[2,Math.max(34,innerWidth*.023)],[3,28]]){let size=max;h.style.fontSize=size+'px';const limit=()=>h.scrollHeight>size*1.18*lines+size*.3||h.scrollWidth>h.clientWidth+2;
+ while(limit()&&size>floor){size-=2;h.style.fontSize=size+'px';}if(!limit())return;}}
 
 function tweenFig(el,to,fmt){if(!el)return;const from=+el.dataset.v||0;el.dataset.v=to;cancelAnimationFrame(+el.dataset.raf||0);if(matchMedia('(prefers-reduced-motion:reduce)').matches||from===to){
  el.textContent=fmt(to);return;}const t0=performance.now(),dur=900;const tick=now=>{const k=Math.min(1,(now-t0)/dur),e=1-Math.pow(1-k,4);el.textContent=fmt(from+(to-from)*e);
@@ -237,8 +257,8 @@ function fitLeft(root){const left=root.querySelector('.tv-left'),title=root.quer
  let top=Infinity;const walk=document.createTreeWalker(title,NodeFilter.SHOW_TEXT),range=document.createRange();for(let n=walk.nextNode();n;n=walk.nextNode()){if(!n.nodeValue.trim())continue;
  range.selectNodeContents(n);for(const r of range.getClientRects())if(r.width>0&&r.height>0)top=Math.min(top,r.top);}return Number.isFinite(top)?top:title.getBoundingClientRect().top;
  })(),fits=()=>left.getBoundingClientRect().bottom<=inkTop-14,hot=left.querySelector('.tv-hot-news'),parts=['.tv-heatsum','.tv-daily','.tv-hot-news','.tv-heat-card'].map(s=>left.querySelector(s)).filter(Boolean);
- parts.forEach(p=>p.style.display='');hot?.classList.remove('is-compact');for(const p of parts){if(fits())break;if(p===hot&&!hot.classList.contains('is-compact')){
- hot.classList.add('is-compact');if(fits())break;}p.style.display='none';}}
+ /* 2026-11-15 (user: 每日热点的四个封面都要完整显示，没有例外) nothing is hidden or cropped any more: when the column is taller than the room above the title it is scaled down as a whole, covers keep their ratio */
+ parts.forEach(p=>p.style.display='');hot?.classList.remove('is-compact');left.style.zoom='';let z=1;for(let k=0;k<3;k++){const r=left.getBoundingClientRect(),room=inkTop-14-r.top;if(r.bottom<=inkTop-14||room<=0)break;z=Math.max(.35,z*room/r.height);left.style.zoom=String(z);}}
 
 export function cardify(card){const face=card.querySelector('.tv-face');let pressed=false,last=null;
  const set=(x,y)=>{if(card.dataset.busy){face.style.transform='';return;}card.classList.add('touch');const depth=pressed?1.6:1,rx=(.5-y)*20*depth,ry=(x-.5)*20*depth;
@@ -252,7 +272,14 @@ export function cardify(card){const face=card.querySelector('.tv-face');let pres
  card.addEventListener('pointerleave',()=>{pressed=false;last=null;card.classList.remove('touch');face.style.transition='transform .7s cubic-bezier(.2,1.6,.4,1)';
   face.style.transform='';});}
 
-export function stopHomeTV(){if(!live)return;clearTimeout(live.timer);clearInterval(live.beat);clearInterval(live.typer);live.depth?.stop();live.hand?.stop();live=null;}
+/* 2026-11-15 (user: 热力图重新设计，只展示当月) this month as a calendar (Monday first, today marked, later days faint, four tiers of reading) with the month's totals beside it */
+function monthHTML(all,locale,esc,w,fmtNum,today=new Date()){const y=today.getFullYear(),m=today.getMonth(),pre=`${y}-${String(m+1).padStart(2,'0')}`,N=new Date(y,m+1,0).getDate(),first=(new Date(y,m,1).getDay()+6)%7,td=today.getDate();
+ const by=new Map(all.filter(c=>String(c.day).startsWith(pre)).map(c=>[+String(c.day).slice(8),c]));let run=0,best=0,chars=0,looks=0,active=0;const days=[];
+ for(let d=1;d<=N;d++){const c=by.get(d),lv=d>td?-1:(c?.level||0);if(d<=td){run=lv>0?run+1:0;best=Math.max(best,run);}chars+=c?.characters||0;looks+=c?.lookups||0;if(lv>0)active++;
+  days.push(`<i class="${d===td?'today ':''}${lv<0?'later':lv?'l'+lv:''}"${d===1?` style="grid-column:${first+1}"`:''} data-day="${pre}-${String(d).padStart(2,'0')}" data-min="${Math.round((c?.seconds||0)/60)}"></i>`);}
+ const wd=locale==='en'?'MTWTFSS':'一二三四五六日',lk={zh:'查词',ja:'辞書引き',en:'lookups'}[locale]||'查词';
+ return {active,month:m+1,html:`<div class="tv-month-cal"><div class="tv-month-wd">${[...wd].map(x=>`<span>${x}</span>`).join('')}</div><div class="tv-month-days">${days.join('')}</div></div><div class="tv-month-sum"><span><b>${fmtNum(chars)}</b>${esc(w.chars)}</span><span><b>${fmtNum(looks)}</b>${esc(lk)}</span><span><b>${best}</b>${esc(w.days)}${esc(w.streak)}</span></div>`};}
+export function stopHomeTV(){if(!live)return;live.tl?.kill();clearTimeout(live.timer);clearInterval(live.beat);clearInterval(live.typer);live.depth?.stop();live.hand?.stop();live=null;}
 
 export function homeTVSignature(model){return JSON.stringify([model.games.map(g=>[g.id,g.available,g.cover?.length,g.title,g.lastPlayedAt,g.readingSeconds,g.characters,
  g.learnedWords]),model.stats,model.preferences.homeShowcase,model.preferences.username]);}
@@ -274,10 +301,10 @@ export function renderHomeTV(main,ctx){
   
   <div class="tv-figs"><button class="tv-fig" data-go="statistics"><b data-fig="time">0m</b><small>${w.figRead}</small></button><button class="tv-fig" data-go="detail"><b data-fig="chars">0</b><small>${w.figChars}</small></button><button class="tv-fig" data-go="words"><b data-fig="words">0</b><small>${w.figWords}</small></button><button class="tv-more" data-go="statistics">${w.full} →</button></div>
   <div class="tv-title"><div class="tv-h1" role="heading" aria-level="1"></div><div class="tv-meta"></div></div>
-  <div class="tv-hand"></div><div class="tv-ghosts" aria-hidden="true"></div>
+  <div class="tv-rail"></div>
   <div class="tv-dialog"><span class="tv-who"></span><span class="tv-line"></span><div class="tv-act"></div></div></div>`;
  const root=main.querySelector('.tv-home'),$=s=>root.querySelector(s);
- live={root,timer:0,beat:0,typer:0,depth:null};
+ live={root,timer:0,beat:0,typer:0,depth:null};loadGsap().catch(()=>{});
  const art=(g,p)=>g.cover?`url("${String(g.cover).replace(/"/g,'%22')}") center/cover`:`linear-gradient(160deg,${p[0]},${p[2]} 70%)`;
  root.querySelectorAll('[data-go]').forEach(b=>b.addEventListener('click',()=>{const to=b.dataset.go;if(to==='detail'){if(shown)onDetail(shown.id);return;}if(to==='words')navigate('learning',
   'words');else if(to==='activity')navigate('statistics');else navigate(to);}));
@@ -285,17 +312,16 @@ export function renderHomeTV(main,ctx){
   $('[data-act="add"]')?.addEventListener('click',onAdd);root.classList.add('empty');}
  {const b=$('.tv-lines-edit'),label=LINES_EDIT[locale]||LINES_EDIT.zh;b.querySelector('span').textContent=label;b.title=label;b.setAttribute('aria-label',label);
   b.addEventListener('click',()=>{const g=shown;if(!g)return;openLinesPicker({api,locale,esc,game:g,shown:shownLines,relativeTime,onSave:async chosen=>{const d=await detail(api,
-   g.id,locale);d.homeLines=chosen;if(shown!==g||!live||live.root!==root)return;const pick=homeLinesFor(d);shownLines=pick.lines.slice(-5);b.classList.toggle('custom',
+   g.id,locale);d.homeLines=chosen;if(shown!==g||!live||live.root!==root)return;const pick=homeLinesFor(d);shownLines=pick.lines.slice(0,8);b.classList.toggle('custom',
    pick.custom);swapScript($('.tv-script'),shownLines,type);type(pick.lines[0]||'');}});});}
  /* 2026-11-13 (user: no 「继续游玩」 button on home cards, 禁止) covers stay artwork and title only; launching lives on the detail page */
  $('[data-act="detail"]')?.addEventListener('click',()=>shown&&onDetail(shown.id));
  /* 2026-11-13 (user: "左下角显示小字作品名 … 把之前删掉的那个动效…拿回来 放左下角最下面 点缀一下") the bottom bar is back as a quiet accent: the game name in
     small type rises in letter by letter, then one of its lines types itself out */
  const type=s=>{clearInterval(live.typer);let n=0;const line=$('.tv-line');if(!line)return;setExample(line,'');line.textContent='';line.classList.toggle('typing',!!s);if(!s)return;
-  if(matchMedia('(prefers-reduced-motion:reduce)').matches){line.textContent='「'+s+'」';line.classList.remove('typing');setExample(line,s);return;}
-  live.typer=setInterval(()=>{line.textContent='「'+s.slice(0,++n)+(n<s.length?'':'」');if(n>=s.length){clearInterval(live.typer);line.classList.remove('typing');setExample(line,s);}},55);};
- const nameIn=g=>{const who=$('.tv-who');if(!who)return;who.classList.remove('in');who.innerHTML=[...String(g.title||'')].map((c,i)=>`<i style="transition-delay:${Math.min(i,40)*22}ms">${esc(c)}</i>`).join('');
-  who.title=g.title+(g.lastPlayedAt?` · ${w.last} · ${relativeTime(g.lastPlayedAt)}`:'');void who.offsetWidth;requestAnimationFrame(()=>who.classList.add('in'));};
+  if(matchMedia('(prefers-reduced-motion:reduce)').matches){line.textContent=quoted(s);line.classList.remove('typing');setExample(line,s);return;}
+  live.typer=setInterval(()=>{n++;line.textContent=n>=s.length?quoted(s):(/^[「『（("]/.test(s)?'':'「')+s.slice(0,n);if(n>=s.length){clearInterval(live.typer);line.classList.remove('typing');setExample(line,s);}},55);};
+ const nameIn=g=>{const who=$('.tv-who');if(!who)return;who.textContent=g.lastPlayedAt?`${w.last} · ${relativeTime(g.lastPlayedAt)}`:'';who.title=g.title;};
  const max=Math.max(1,...model.games.map(g=>g.characters||0));
  async function paint(i,flash=true,mode='draw'){
   const g=typeof i==='object'?i:list[i];if(!root.isConnected){if(live?.root===root)stopHomeTV();return;}if(!g||!live||live.root!==root)return;shown=g;cur=list.indexOf(g);
@@ -313,36 +339,27 @@ export function renderHomeTV(main,ctx){
   ring.innerHTML=`<svg viewBox="0 0 100 100"><defs><linearGradient id="tvgrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff6e4"/><stop offset=".45" stop-color="var(--g-gold)"/><stop offset="1" stop-color="var(--tv-a)"/></linearGradient><filter id="tvglow" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="1.4"/></filter></defs>${Array.from({length:N},(_,t)=>{const a=t/N*2*Math.PI-Math.PI/2,big=t%5===0,r1=big?38.6:39.4,r2=40.4;return `<line class="etch${big?' big':''}${t<Math.round(pct*N)?' on':''}" style="--d:${t*18}ms" x1="${(50+r1*Math.cos(a)).toFixed(2)}" y1="${(50+r1*Math.sin(a)).toFixed(2)}" x2="${(50+r2*Math.cos(a)).toFixed(2)}" y2="${(50+r2*Math.sin(a)).toFixed(2)}"/>`;}).join('')}<circle class="track" cx="50" cy="50" r="44"/><g transform="rotate(-90 50 50)"><circle class="glow" cx="50" cy="50" r="44" stroke-dasharray="${C}" stroke-dashoffset="${C}" filter="url(#tvglow)"/><circle class="prog" cx="50" cy="50" r="44" stroke-dasharray="${C}" stroke-dashoffset="${C}"/></g><circle class="head" cx="50" cy="8.4" r=".9" style="transform-origin:50px 50px;transform:rotate(0deg)"/></svg>`;
    requestAnimationFrame(()=>requestAnimationFrame(()=>{const off=C*(1-pct);ring.querySelectorAll('.prog,.glow').forEach(c=>c.style.strokeDashoffset=off);const h=ring.querySelector('.head');
    if(h)h.style.transform=`rotate(${pct*360}deg)`;}));
-  swapScript($('.tv-script'),sentences.slice(-5),type);shownLines=sentences.slice(-5);$('.tv-lines-edit').classList.toggle('custom',picked.custom);
+  swapScript($('.tv-script'),sentences.slice(0,8),type);shownLines=sentences.slice(0,8);$('.tv-lines-edit').classList.toggle('custom',picked.custom);
   const now=Date.now(),span=40*864e5,big=Math.max(1,...sessions.map(s=>s.active_seconds||0))*.6;$('.tv-tl').innerHTML=sessions.filter(s=>now-s.started_at*1000<span).map(s=>{
    const y=10+((now-s.started_at*1000)/span)*70,long=(s.active_seconds||0)>=big;return `<b class="${long?'big':''}" style="top:${y}%"></b>`+(long?`<span style="top:${y}%">${new Date(s.started_at*1000).toLocaleDateString(undefined,{month:'numeric',day:'numeric'})} · ${Math.round((s.active_seconds||0)/60)}${w.min}</span>`:'');
    }).join('');
   $('.tv-slices').innerHTML=Array.from({length:5},(_,j)=>`<i style="background:${art(g,p)};background-size:500% 100%;background-position:${j*25}% 0;transform:translateZ(${j%2?40:-20}px) translateY(${(j-2)*12}px)"></i>`).join('');
 
   const no=String(Math.max(1,pool.indexOf(g)+1)).padStart(2,'0');
-  const t=$('.tv-title');t.classList.remove('in');setTimeout(()=>{if(mine!==token)return;let n=0;const [mainTitle,subTitle]=splitTitle(g.title);$('.tv-h1').innerHTML=(String(mainTitle).match(/[A-Za-z0-9À-ɏ'’:;!?.,&\-]+|\s+|./gu)||[]).map(word=>/^\s+$/.test(word)?' ':`<i class="w">${[...word].map(c=>`<span style="transition-delay:${(n++)*28}ms">${esc(c)}</span>`).join('')}</i>`).join('');
-   $('.tv-h1').title=g.title;$('.tv-meta').innerHTML=(subTitle?`<span class="tv-sub" lang="ja">${esc(subTitle)}</span>`:'')+(g.lastPlayedAt?`<span>${w.last} · ${esc(relativeTime(g.lastPlayedAt))}</span>`:'');void t.offsetWidth;fitTitle($('.tv-h1'));
-   fitLeft(root);setTimeout(()=>t.classList.add('in'),30);/* measure again once the new title has settled, so a block hidden mid-change comes back */setTimeout(()=>{
+  const t=$('.tv-title');t.classList.remove('in');const outP=flash?titleOut(root,live):Promise.resolve();setTimeout(async()=>{await outP;if(mine!==token||!live||live.root!==root)return;const [mainTitle,subTitle]=splitTitle(g.title);$('.tv-h1').innerHTML=titleHTML(mainTitle);
+   $('.tv-h1').title=g.title;$('.tv-meta').innerHTML=(subTitle?`<span class="tv-sub" lang="ja">${esc(subTitle)}</span>`:''); void t.offsetWidth;fitTitle($('.tv-h1'));
+   fitLeft(root);nameIn(g);type(randomLine(d,sentences));t.classList.add('in');if(flash)titleIn(root,live);/* measure again once the new title has settled, so a block hidden mid-change comes back */setTimeout(()=>{
    if(live&&live.root===root)fitLeft(root);},900);},flash?Math.max(0,reveal-(performance.now()-started)):0);
   tweenFig($('[data-fig="time"]'),g.readingSeconds||0,v=>mins(v));tweenFig($('[data-fig="chars"]'),g.characters||0,v=>number(Math.round(v)));tweenFig($('[data-fig="words"]'),
    g.learnedWords||0,v=>number(Math.round(v)));
-  nameIn(g);type(sentences[0]||'');
   
   rail();
  }
- /* 2026-11-13 (user) the cover strip became a hand of cards; picking one plays it onto the field (see home-hand.js) */
- function rail(){hand.render(list.map(g=>({id:g.id,title:g.title,cover:g.cover,pinned:setting.pinned.includes(g.id),g})),shown?.id||null);placeCover();}
- /* 2026-11-13 (user: "你要保证展示的卡要一直在手牌上方居中") the field card is centred over the fan of cards at every window size, measured on the
-    untilted scene; if it would reach into the fan it moves up. Never while a card is in flight (its landing pose is already fixed). */
- /* measured on the card's resting box (hand.restRect), never on the card mid-animation; a touch left of the fan's centre (user: "往左边移动一点点") */
- function placeCover(){const c=$('.tv-cover');if(!c||!live||live.root!==root||hand.flying())return;const fan=hand.extent();if(!fan)return;
-  const run=fn=>live.depth?live.depth.neutral(fn):fn();run(()=>{c.style.left='';c.style.top='';c.style.width='';const rr=root.getBoundingClientRect(),aim=fan.cx-Math.min(48,rr.width*.025);
-   /* (user: the card's top was cut off) a window too short for the card between the top and the fan gets a smaller card, it is never pushed off the top */
-   const minTop=Math.max(16,rr.height*.04),room=fan.top-14-minTop,r0=hand.restRect();if(r0.height>room&&room>80)c.style.width=(c.offsetWidth*room/r0.height)+'px';
-   for(let i=0;i<4;i++){const r=hand.restRect(),k=r.width/(c.offsetWidth||1)||1,dx=(aim-(r.left+r.width/2-rr.left))/k;if(Math.abs(dx)<.5)break;c.style.left=(c.offsetLeft+dx)+'px';}
-   const r=hand.restRect(),ky=r.height/(c.offsetHeight||1)||1,over=r.bottom-rr.top-(fan.top-14);if(over>0)c.style.top=(c.offsetTop-over/ky)+'px';
-   const r2=hand.restRect(),under=minTop-(r2.top-rr.top);if(under>0)c.style.top=(c.offsetTop+under/ky)+'px';
-   /* the deck a random draw is dealt from sits with the card */const pile=root.querySelector(':scope>.tv-pile');if(pile){/* the card's plane is 6% larger than the page on every side (.tv-canvas inset -6%) */pile.style.left=c.style.left?(c.offsetLeft-rr.width*.06)+'px':'';pile.style.top=c.style.top?(c.offsetTop-rr.height*.06)+'px':'';pile.style.width=c.style.width;}});}
+ /* 2026-11-14 (user: "右边下面不是卡牌，是正常选的那种") the games are picked from the cover strip again (thumbnails, the current one wider with its timer bar); the card hand is gone */
+ function rail(){const r=$('.tv-rail');r.innerHTML='<div class="tv-rail-in"></div>';const track=r.firstElementChild;track.innerHTML=list.map((g,i)=>`<button class="tv-chip${g===shown?' on':''}" data-i="${i}" title="${esc(g.title)}" aria-label="${esc(g.title)}" style="--dur:${DUR}ms">${g.cover?`<img src="${esc(g.cover)}" alt="">`:''}${setting.pinned.includes(g.id)?'<span class="pin"></span>':''}<span class="bar"></span></button>`).join('');
+  track.querySelectorAll('.tv-chip').forEach(b=>b.addEventListener('click',()=>{const i=+b.dataset.i;if(list[i]&&list[i]!==shown)paint(i,true,'fade');}));centerRail(r);}
+ /* 2026-11-15 (user: 展示的卡不管任何尺寸都要在下面牌的中心稍微偏左) the current card always sits at the same spot, a little left of the strip's centre; the strip slides under it */
+ function centerRail(r){const track=r.firstElementChild,on=track?.querySelector('.tv-chip.on');if(!on)return;const fresh=!track.dataset.set;track.dataset.set='1';if(fresh)track.style.transition='none';track.style.transform=`translateX(${(r.clientWidth*.46-(on.offsetLeft+on.offsetWidth/2)).toFixed(1)}px)`;if(fresh)requestAnimationFrame(()=>requestAnimationFrame(()=>{track.style.transition='';}));}
  function commit(){model.preferences.homeShowcase=setting;savePreferences({homeShowcase:setting});const id=shown?.id;list=showcaseGames(model.games,setting);
   paint(Math.max(0,list.findIndex(g=>g.id===id)),false);}
  /* 2026-11-13 (user: "不要全部作品 … 把＋卡移到最右边 不要是卡牌了 鼠标放上去再出来") the hand editor is a tab docked on the right edge that slides out
@@ -353,10 +370,10 @@ export function renderHomeTV(main,ctx){
     quietly and repaints only when the news really changed; flat one-colour pictures are never shown (user: "缩略图不要展示纯色图") */
   let dailySig='';const showDaily=(v,instant)=>{if(!live||live.root!==root)return;const sig=dailySignature(v);if(sig===dailySig)return;dailySig=sig;if(instant)root.classList.add('tv-instant');const n=(v?.news?.items||[]).find(x=>!x.flat)||v?.news?.items?.[0],h=v?.words?.words?.[0],t=$('.tv-daily-t'),dailyCat=(()=>{try{return localStorage.getItem('megulit-daily-cat')==='acg'?'acg':'gal';}catch{return 'gal';}})(),{top,small:pics}=pickHeadline(v?.news?.items,dailyCat),box=$('.tv-daily-pics');if(box){box.innerHTML=pics.map(x=>`<button type="button" class="tv-daily-pic${x.sensitive?' is-sensitive':''}" data-link="${esc(x.link)}" title="${esc(x.title)}" style="background-image:url(&quot;${x.image}&quot;)">${x.sensitive?`<span class="tv-sensitive">${esc(SENSITIVE_WORD())}</span>`:''}</button>`).join('');
   box.querySelectorAll('[data-link]').forEach(b=>b.addEventListener('click',()=>{try{sessionStorage.setItem('megulit-daily-focus',b.dataset.link);}catch{}navigate('daily');
-  }));}if(n){t.textContent=n.title;t.title=n.title+(n.source?' · '+n.source:'');}else if(h){t.textContent=h.term+(h.gloss?' · '+h.gloss:'');}/* 2026-11-13 (user: "左侧热力图卡片下面有第四张尺寸更大的第一头条", "左下角不要字") under the activity card the day's top story is a fourth,
+  }));}const lead=top||n;if(lead){t.textContent=lead.title;t.title=lead.title+(lead.source?' · '+lead.source:'');}else if(h){t.textContent=h.term+(h.gloss?' · '+h.gloss:'');}/* 2026-11-13 (user: "左侧热力图卡片下面有第四张尺寸更大的第一头条", "左下角不要字") under the activity card the day's top story is a fourth,
      larger picture, picture only; its title (in the UI language) labels it for the tooltip and screen readers. An adult one is blurred with a note */
   {const left=$('.tv-left'),card=left?.querySelector('.tv-heat-card');let big=left?.querySelector('.tv-hot-news');if(!top||!card){big?.remove();}else{
-   if(!big){big=document.createElement('button');big.type='button';card.after(big);}big.className='tv-hot-news'+(top.sensitive?' is-sensitive':'');
+   if(!big){big=document.createElement('button');big.type='button';}if(box&&big.nextElementSibling!==box)box.before(big);/* 2026-11-15 (user: 大封面要和小封面连起来) the big cover sits in the same container as the three small ones, same width, same gaps */big.className='tv-hot-news'+(top.sensitive?' is-sensitive':'');
    big.innerHTML=`<span class="tv-hot-img" style="background-image:url(&quot;${top.image}&quot;)"></span>${top.sensitive?`<span class="tv-sensitive">${esc(SENSITIVE_WORD())}</span>`:''}`;
    big.onclick=()=>{try{sessionStorage.setItem('megulit-daily-focus',top.link);}catch{}navigate('daily');};
    const label=r=>{const text=headlineLabel(r,top.title);big.title=text+(top.source?'\n'+top.source:'');big.setAttribute('aria-label',HOT_WORD()+' · '+text.split('\n')[0]);};
@@ -369,21 +386,15 @@ export function renderHomeTV(main,ctx){
   all.length-20*7);while(from>0&&all[from].weekday!==0)from--;const cells=all.slice(from),sum=activitySummary(cells,all),active=sum.active,card=$('.tv-heat-card'),none=$('.tv-heat-none');
   card?.classList.toggle('is-empty',sum.empty);if(none){none.hidden=!sum.empty;none.innerHTML=sum.empty?emptyActivityHTML(locale,esc):'';}$('.tv-heat').innerHTML=cells.map((c,
   i)=>`<i style="grid-row:${c.weekday+1};grid-column:${Math.floor(i/7)+1}" class="${i===cells.length-1?'today':c.level?'l'+Math.min(3,c.level):''}" data-day="${esc(c.day)}" data-min="${Math.round((c.seconds||0)/60)}"></i>`).join('');
-  $('.tv-heatlink').textContent=sum.empty?`${w.activity} →`:`${w.activity} · ${active} ${w.days} →`;const best=sum.best,secs=sum.secs;$('.tv-heatsum').innerHTML=`<span><b>${active}</b>${w.days}</span><span><b>${esc(duration(secs))}</b>${w.total}</span><span><b>${best}</b>${w.streak}</span>`;
+  {const mo=monthHTML(all,locale,esc,w,v=>number(Math.round(v)));let box=$('.tv-month');if(!box){box=document.createElement('div');box.className='tv-month';$('.tv-heat').before(box);}box.innerHTML=mo.html;card?.classList.add('heat-a');
+   $('.tv-heatlink').textContent=sum.empty?`${w.activity} →`:`${w.activity} · ${mo.month}${locale==='en'?'':'月'} · ${mo.active} ${w.days} →`;}const best=sum.best,secs=sum.secs;$('.tv-heatsum').innerHTML=`<span><b>${active}</b>${w.days}</span><span><b>${esc(duration(secs))}</b>${w.total}</span><span><b>${best}</b>${w.streak}</span>`;
   fitLeft(root);};
  {let actSig=JSON.stringify(cachedActivity()||null);if(cachedActivity())showActivity(cachedActivity());api('learning_activity',{range:'year'}).then(r=>{rememberActivity(r);const n=JSON.stringify(r||null);if(n!==actSig){actSig=n;showActivity(r);}}).catch(()=>{});}
- const hand=createHand({root,box:$('.tv-hand'),layer:$('.tv-ghosts'),cover:$('.tv-cover'),reduced:matchMedia('(prefers-reduced-motion:reduce)').matches,
-  back:`<img src="${LOGO}" alt="">`,art:h=>art(h.g||h,['#3b2a26','#5a3a30','#1a1110']),neutral:fn=>live?.depth?live.depth.neutral(fn):fn(),field:()=>shown,
-  onBusy:on=>live?.depth?.hold(on),
-  onPlay:(h,kind,ms)=>{if(kind!=='plain'){root.classList.add('tv-fly');/* the field card's table shadow grows in as the flying card comes down onto it */
-   $('.tv-cshadow')?.animate([{opacity:0},{opacity:0,offset:.55},{opacity:1}],{duration:ms||800,easing:'cubic-bezier(.3,0,.2,1)'});}paint(h.g,kind==='plain','fade');},
-  onLand:()=>{root.classList.remove('tv-fly');placeCover();}});live.hand=hand;
- hand.state&&requestAnimationFrame(()=>placeCover());
  const canvas=$('.tv-canvas'),planes=[...root.querySelectorAll('.tv-plane')],reduced=matchMedia('(prefers-reduced-motion:reduce)').matches;
  /* 2026-11-13 (user) every layer has its own depth: the far headline picture drifts against the pointer, near ones (cards, figures, rail, bottom bar) lead it */
  {const L=(sel,z)=>{const el=$(sel);return el?{el,z}:null;};live.depth=createDepth(root,{canvas,planes,layers:[L('.tv-left',7),L('.tv-figs',8),
-  L('.tv-hand',24),L('.tv-dialog',5),L('.tv-title',9),L('.tv-marks',3),L('.tv-cshadow',-22)].filter(Boolean)});}
- const onResize=()=>{if(live&&live.root===root){fitLeft(root);hand.relayout();placeCover();}else removeEventListener('resize',onResize);};addEventListener('resize',onResize);
+  L('.tv-rail',24),L('.tv-dialog',5),L('.tv-title',9),L('.tv-marks',3),L('.tv-cshadow',-22)].filter(Boolean)});}
+ const onResize=()=>{if(live&&live.root===root){fitLeft(root);const rr=root.querySelector('.tv-rail');if(rr)centerRail(rr);}else removeEventListener('resize',onResize);};addEventListener('resize',onResize);
  root.querySelectorAll('.tv-cover,.tv-heat-card').forEach(cardify);
  const coverEl=$('.tv-cover');let clickTimer=0,pressAt=0,pressXY=[0,0];coverEl.setAttribute('aria-label',w.coverHint);const pop=document.createElement('div');pop.className='tv-pop';
   pop.innerHTML=`<p><i class="m1"></i><b>${w.tipClick}</b><span>${w.tipDetail}</span></p><p><i class="m2"></i><b>${w.tipDbl}</b><span>${w.tipDraw}</span></p>`;root.appendChild(pop);
@@ -393,10 +404,7 @@ export function renderHomeTV(main,ctx){
   pressXY=[e.clientX,e.clientY];});coverEl.addEventListener('click',e=>{/* (user 2026-11-12) a long press or a drag only plays with the card; letting go never opens the detail */if(e.detail&&(performance.now()-pressAt>350||Math.hypot(e.clientX-pressXY[0],
   e.clientY-pressXY[1])>6))return;clearTimeout(clickTimer);clickTimer=setTimeout(()=>shown&&onDetail(shown.id),260);});coverEl.addEventListener('dblclick',e=>{e.preventDefault();
   clearTimeout(clickTimer);if(pool.length>1)draw(randomGame());});
- /* 2026-11-13 (user: "再补一个随机抽卡出来的封面 和手牌选取的过渡动画") a random draw is tied to the hand: a game that is in the hand is played out of it like a
-    picked card (the field card flies home); any other game is drawn off the deck while the field card flies back into its slot in the hand */
- function draw(g){if(!g||!live||live.root!==root)return;if(list.includes(g)){hand.play(g.id);return;}const prev=shown;
-  if(prev&&list.includes(prev)&&!matchMedia('(prefers-reduced-motion:reduce)').matches&&hand.stow(prev.id,g.id))$('.tv-cover').dataset.stow='1';paint(g);}
+ function draw(g){if(!g||!live||live.root!==root)return;paint(g);}
  if(list.length)paint(0,false);
  return stopHomeTV;
 }

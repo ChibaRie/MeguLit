@@ -56,12 +56,23 @@ test('reader: each menu row gets its own translation, never the script snap',asy
 });
 test('scene probe: the text window alone going away hides MeguLit\'s line, and its return shows it (native self-test)',()=>{
  const s=read('native/GameSceneProbe.cs');
- assert.match(s,/const double BoxOnly=\.5, StillPicture=\.13;/);
+ assert.match(s,/const double BoxOnly=\.4, StillPicture=\.13;/);assert.match(s,/const int BandCell=48;/);
  assert.match(s,/if\(delta<=StillPicture&&bandDelta>=BoxOnly\)\{if\(boxAt==DateTime\.MinValue\)boxAt=now;else if\(\(now-boxAt\)\.TotalMilliseconds>=BoxSettleMs\)\{hidden=boxHidden=true;/);
- assert.match(s,/returned=\(boxHidden\?Difference\(baseBox,box\):delta\)<=Returned\?returned\+1:0;/);
+ assert.match(s,/returned=\(boxHidden\?Difference\(baseBox,box,BandCell\):delta\)<=Returned\?returned\+1:0;/);
  assert.match(s,/E578: the text window alone is hidden/,'covered by GameSceneProbe.SelfTest (--mode-self-test)');
 });
 test('scene probe self-test passes (when GalWindowBridge.exe is built)',{skip:!fs.existsSync(path.join(__dirname,'..','native','GalWindowBridge.exe'))},()=>{
  const r=require('node:child_process').spawnSync(path.join(__dirname,'..','native','GalWindowBridge.exe'),['--mode-self-test'],{encoding:'utf8',timeout:20000});
  assert.equal(r.status,0,r.stdout+r.stderr);
+});
+
+test('the game hiding its text window hides MeguLit\'s line with immersion off too, and its return shows it',()=>{
+ const {Immersion}=require('../core/immersion.cjs');const seen=[];const im=new Immersion(m=>seen.push(m));
+ im.configure({immersion:false,dialogDetection:'marker'});seen.length=0;
+ im.window(false,'window text window hidden');assert.equal(seen.at(-1)?.dialogVisible,false);
+ im.window(true,'window text window back');assert.equal(seen.at(-1)?.dialogVisible,true);
+ im.scene(false,'scene');assert.equal(seen.at(-1)?.dialogVisible,true,'the scene path stays an immersion feature');
+ const b=read('native/GalWindowBridge.cs');assert.match(b,/Scene\.Full=SceneDetection;/);assert.match(b,/reason=Scene\.Reason,box=Scene\.Box\}/);
+ assert.match(read('services/reader.cjs'),/if\(message\.box===true\)this\.immersion\.window\(message\.visible/);
+ assert.match(read('native/GameSceneProbe.cs'),/E578: with immersion off \(Full=false\)/);
 });

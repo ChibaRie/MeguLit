@@ -107,6 +107,8 @@ void attachFunction(uintptr_t _hook_font_flag)
         _func.second.attached = true;
         replacedfuns.push_back(_func.first);
       }
+      else
+        Msg::Log("MeguLit hijack failed flag=%x", (unsigned)_func.first);
     }
   }
 }
