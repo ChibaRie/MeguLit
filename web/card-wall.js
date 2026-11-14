@@ -375,7 +375,7 @@ export async function openCardWall(main=document.querySelector('#main')){
  /* the page covers the main area only (the top bar stays as it is) */
  const place=()=>{const r=(P.main&&P.main.isConnected?P.main:document.documentElement).getBoundingClientRect();root.style.left=r.left+'px';root.style.top=r.top+'px';root.style.width=r.width+'px';root.style.height=r.height+'px';};
  place();
- const ro=new ResizeObserver(()=>{place();measure();relayout();});if(P.main)ro.observe(P.main);ro.observe(root);
+ const ro=new ResizeObserver(()=>{place();measure();{const prev=P.zFit;layoutGrid();if(prev&&P.view.z===prev&&P.zoomTarget===prev)P.view.z=P.zoomTarget=P.zFit;}relayout();});if(P.main)ro.observe(P.main);ro.observe(root);
  /* navigating away rebuilds #main; the library's capsule going away closes the wall */
  const pod=P.main?.querySelector('.field-search');
  const mo=new MutationObserver(()=>{if(pod&&!pod.isConnected)closeCardWall({instant:true});});if(P.main)mo.observe(P.main,{childList:true,subtree:false});
@@ -439,7 +439,7 @@ function build(first=false){
  measure();layoutGrid();
  /* the first build sets the wall's view whichever mode it opens in, so switching to the wall later starts from it
     (opening in the list left the view unset: every toploader stacked in the top left corner) */
- if(first){const z=1;P.view.z=z;P.zoomTarget=z;P.view.x=(P.cols-1)*P.cw/2;P.view.y=Math.max(0,(P.height/z-P.ch)/2-60/z);}
+ if(first){const z=P.zFit||1;P.view.z=z;P.zoomTarget=z;P.view.x=(P.cols-1)*P.cw/2;P.view.y=Math.max(0,(P.height/z-P.ch)/2-60/z);}
  relayout();
  if(first&&!reduce()){let n=0;for(const cell of P.cells.values()){if(n<36&&onScreen(cell))hangMotion(cell.parts,n++*28+60);}}
 }
@@ -516,13 +516,17 @@ function layoutGrid(){
  P.cw=212;P.ch=318;
  const n=Math.max(1,P.cells.size);
  /* as many columns as fit the window at full size (none cut by its edge); the wall then runs down */
- P.cols=Math.min(n,Math.max(2,Math.floor(((P.width||1600)-96)/P.cw)));
+ /* the wall is sized to the window: 5-8 columns, and the whole wall is zoomed so the columns fill the width between the page margins
+    (a fixed 1:1 zoom left a maximised window with small cards); the wheel zooms around that fit */
+ const W=P.width||1600,margin=Math.max(40,Math.min(96,W*.05)),want=Math.max(5,Math.min(8,Math.round(W/260)));
+ P.cols=Math.min(n,want);
+ P.zFit=clamp((W-2*margin)/(Math.max(P.cols,want>n?want:P.cols)*P.cw),.7,1.35);
  P.rows=Math.ceil(n/P.cols);
 }
 function constrain(){
  const P=page,v=P.view;
  const cx0=(P.cols-1)*P.cw/2,cy0=(P.rows-1)*P.ch/2;
- const rangeX=Math.max(0,(P.cols*P.cw-P.width/v.z)/2+P.cw*.15),rangeY=Math.max(0,(P.rows*P.ch-P.height/v.z)/2+P.ch*.15+60/v.z);
+ const rangeX=Math.max(0,(P.cols*P.cw-P.width/v.z)/2+P.cw*.15),rangeY=Math.max(0,(P.rows*P.ch-P.height/v.z)/2+P.ch*.15+120/v.z);
  v.x=clamp(v.x,cx0-rangeX,cx0+rangeX);v.y=clamp(v.y,cy0-rangeY,cy0+rangeY);
 }
 function relayout(){const P=page;if(!P)return;P.painted='';if(P.mode==='a')paint();else for(const c of P.cells.values()){if(c.t){c.node.style.transform='';c.node.style.opacity='';c.t=c.o='';}}}
@@ -621,7 +625,7 @@ function wireWall(P){
   if(P.mode!=='a')return;
   e.preventDefault();if(drag)return;P.glide?.stop();coastEnd=vx=vy=0;
   const delta=e.deltaY*(e.deltaMode===1?16:e.deltaMode===2?field.clientHeight:1);
-  P.zoomTarget=clamp(P.zoomTarget*Math.exp(-delta*.0015),.45,1.8);
+  P.zoomTarget=clamp(P.zoomTarget*Math.exp(-delta*.0015),(P.zFit||1)*.6,(P.zFit||1)*1.6);
   if(!zoomAt)zoomAt=performance.now();
   P.moving(true);queue();
  },{passive:false,signal});
