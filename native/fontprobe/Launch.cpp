@@ -11,8 +11,11 @@
 #include <windows.h>
 #include <stdio.h>
 #include <string>
+// Same version tag as the DLL it loads (tools/native-stale.cjs checks every fontprobe output for it).
+extern "C" __declspec(dllexport) const char MeguLitLaunchVersionTag[] = "MeguLitFont version=3";
 
 int wmain(int argc, wchar_t **argv) {
+ (void)MeguLitLaunchVersionTag;
  if (argc < 3) { fwprintf(stderr, L"usage: MeguLitLaunch <dll> <exe> [args...]\n"); return 1; }
  std::wstring dll = argv[1], exe = argv[2], cmd = L"\"" + exe + L"\"";
  for (int i = 3; i < argc; i++) { cmd += L" \""; cmd += argv[i]; cmd += L"\""; }
