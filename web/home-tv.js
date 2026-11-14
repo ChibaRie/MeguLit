@@ -273,10 +273,11 @@ export function cardify(card){const face=card.querySelector('.tv-face');let pres
   face.style.transform='';});}
 
 /* 2026-11-15 (user: 热力图重新设计，只展示当月) this month as a calendar (Monday first, today marked, later days faint, four tiers of reading) with the month's totals beside it */
-function monthHTML(all,locale,esc,w,fmtNum,today=new Date()){const y=today.getFullYear(),m=today.getMonth(),pre=`${y}-${String(m+1).padStart(2,'0')}`,N=new Date(y,m+1,0).getDate(),first=(new Date(y,m,1).getDay()+6)%7,td=today.getDate();
+export function monthHTML(all,locale,esc,w,fmtNum,today=new Date()){const y=today.getFullYear(),m=today.getMonth(),pre=`${y}-${String(m+1).padStart(2,'0')}`,N=new Date(y,m+1,0).getDate(),first=(new Date(y,m,1).getDay()+6)%7,td=today.getDate();
  const by=new Map(all.filter(c=>String(c.day).startsWith(pre)).map(c=>[+String(c.day).slice(8),c]));let run=0,best=0,chars=0,looks=0,active=0;const days=[];
  for(let d=1;d<=N;d++){const c=by.get(d),lv=d>td?-1:(c?.level||0);if(d<=td){run=lv>0?run+1:0;best=Math.max(best,run);}chars+=c?.characters||0;looks+=c?.lookups||0;if(lv>0)active++;
-  days.push(`<i class="${d===td?'today ':''}${lv<0?'later':lv?'l'+lv:''}"${d===1?` style="grid-column:${first+1}"`:''} data-day="${pre}-${String(d).padStart(2,'0')}" data-min="${Math.round((c?.seconds||0)/60)}"></i>`);}
+  const at=first+d-1;days.push(`<i class="${d===td?'today ':''}${lv<0?'later':lv?'l'+lv:''}" style="grid-column:${at%7+1};grid-row:${Math.floor(at/7)+1}" data-day="${pre}-${String(d).padStart(2,'0')}" data-min="${Math.round((c?.seconds||0)/60)}"></i>`);}
+ /* every day carries its own grid cell: automatic placement after leading blanks was fragile (grimoire.css made days spill into extra columns and the month sat a day off) */
  const wd=locale==='en'?'MTWTFSS':'一二三四五六日',lk={zh:'查词',ja:'辞書引き',en:'lookups'}[locale]||'查词';
  return {active,month:m+1,html:`<div class="tv-month-cal"><div class="tv-month-wd">${[...wd].map(x=>`<span>${x}</span>`).join('')}</div><div class="tv-month-days">${days.join('')}</div></div><div class="tv-month-sum"><span><b>${fmtNum(chars)}</b>${esc(w.chars)}</span><span><b>${fmtNum(looks)}</b>${esc(lk)}</span><span><b>${best}</b>${esc(w.days)}${esc(w.streak)}</span></div>`};}
 export function stopHomeTV(){if(!live)return;live.tl?.kill();clearTimeout(live.timer);clearInterval(live.beat);clearInterval(live.typer);live.depth?.stop();live.hand?.stop();live=null;}
