@@ -138,6 +138,12 @@
   /* drag: a drag selection (no point-lookup result handed in) */const drag=!result;try{result=result||await b.localLookup('lookup_exact',args);if(current!==mine||!card)return;
    renderLocal(result,body);b.decorateWordActions?.(card,args,result,{drag});place();}catch(e){if(current===mine&&card){status.textContent=e.message;place();}}
  }
+ /* ② capture compositor: MeguLit draws the line itself and reports a click on one of its glyphs (screen px, char index
+    in the drawn line); the same word card opens there, anchored on the click. */
+ b.compositorLookup=async m=>{const text=String(m?.text||''),index=Number(m?.index);if(!text||!Number.isInteger(index)||index<0)return;const ticket=++pointSerial;
+  try{const result=await b.localLookup('lookup_at_position',{text,position:index});if(!result||ticket!==pointSerial)return;const dpr=devicePixelRatio||1,x=Number(m.x)/dpr-screenX,
+   y=Number(m.y)/dpr-screenY,r={left:x-10,right:x+10,top:y-14,bottom:y+14,width:20,height:28};r.__megulitPoint={x,y};lastPoint={x,y};show({text,start:result.start,end:result.end},r,result);}
+  catch(e){if(ticket===pointSerial)b.learningStatus?.({learningMessage:e.message||'本地点词失败'});}};
  async function showPoint(token){const ticket=++pointSerial;const {chars,text}=paragraphText(token),index=chars.indexOf(token);if(index<0)return;const position=chars.slice(0,
   index).reduce((n,t)=>n+[...t.textContent].length,0);try{const result=await b.localLookup('lookup_at_position',{text,position});if(result&&ticket===pointSerial&&token.isConnected&&paragraphText(token).text===text){
   const range=document.createRange();let n=0,first=null,last=null;for(const c of chars){const len=[...c.textContent].length;if(n+len>result.start&&n<result.end){
