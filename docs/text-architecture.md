@@ -31,6 +31,10 @@ version, a line in this log, and stays backward compatible where possible (new f
 
 ## Owner rule: the player never sees marks
 
+Two kinds of marks reach the compositor: ①'s glyph dots (a small square at each glyph's top-left, below) and ④'s
+text marks (the game itself draws a centred 「・」/「･」 per character, spec: [text-architecture-marks.md](text-architecture-marks.md);
+`hookTextMarks` lines go to the compositor with their mark count, and each glyph is placed centred on its mark).
+
 Dots and other markers are MeguLit's private signal between the game and the capture compositor. Two safeguards keep
 them off the player's screen.
 

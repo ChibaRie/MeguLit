@@ -321,6 +321,19 @@ int main() {
     std::printf("{\"scenario\":\"nvl-page-orphans\",\"frames\":3,\"ok\":%d,\"rate\":%d,\"line\":%zu,\"orphans\":%zu}\n", int(ok), int(ok), r.dots.size(), r.orphans.size());
     rateSum += ok; ++n; if (!ok) ++failed;
   }
+  { // 10d. ④'s text marks: the game draws a centred 「・」 per character (round, anti-aliased, with a 1 px dark outline),
+    // 14 full-width cells of 32 px; the tracker finds 14 marks at the cell centres (count known from hookTextMarks).
+    Canvas cv; Scene(cv, 7, adv);
+    std::vector<std::pair<float, float>> centres; for (int i = 0; i < 14; ++i) centres.push_back({ 240.f + 32.f * i + 16.f, 860.f });
+    for (auto &c : centres) for (int y = -5; y <= 5; ++y) for (int x = -5; x <= 5; ++x) {
+      const float r = std::sqrt(float(x * x + y * y)), px = c.first + x, py = c.second + y;
+      if (r <= 2.6f) cv.blend(int(px), int(py), { 255, 255, 255 }, 1); else if (r <= 3.2f) cv.blend(int(px), int(py), { 255, 255, 255 }, .5f); else if (r <= 4.3f) cv.blend(int(px), int(py), { 20, 20, 30 }, 1);
+    }
+    DotTracker t; LineSpec s; s.colorKnown = true; s.color = { 255, 255, 255 }; s.expected = 14; s.hint = 14; t.BeginLine(s); Image im = cv.img(); t.Update(im); const auto &r = t.Update(im);
+    bool near = r.dots.size() == 14; for (size_t i = 0; near && i < r.dots.size(); ++i) near = std::fabs(r.dots[i].cx - (centres[i].first - .5f)) <= 1.5f && std::fabs(r.dots[i].cy - (centres[i].second - .5f)) <= 1.5f;
+    std::printf("{\"scenario\":\"text-marks-middle-dot\",\"frames\":2,\"ok\":%d,\"rate\":%d,\"found\":%zu}\n", int(near), int(near), r.dots.size());
+    rateSum += near; ++n; if (!near) ++failed;
+  }
   { // 11. Timing at 1080p: colour learning on a full frame, then tracking in the learned area
     Canvas cv; Scene(cv, 7, adv); const auto g = Layout(52, 32, 220, 830, 40, false, false, 0);
     for (auto &x : g) DrawDot(cv, x.x, x.y, 5, white, 1);

@@ -87,6 +87,7 @@ struct LineMsg {
   // ③ (engines without glyph dots): the game reports where each character is and draws nothing there itself. No dot
   // search, no erasing: MeguLit's glyphs go straight onto these client rects (one per character of text, blanks too).
   bool rectMode = false; bool rectHidden = false; std::vector<Box> rects;
+  bool centered = false;      // ④'s text marks: the mark is the centre of the character's cell (not a top-left dot)
   bool bestFit = false;       // more marks than characters: all erased, the text drawn on the first ones
   bool undot = false;        // fallback chosen: the game draws this line itself, MeguLit neither erases nor draws it
   LineStatus last = LineStatus::Waiting; double lastChange = 0, started = 0; int lastFound = -1; bool complete = false, everDots = false;
@@ -209,6 +210,7 @@ public:
       for (size_t i = 0; i < j["ruby"].size(); ++i) { const Json &r = j["ruby"][i]; cur.ruby.push_back({ int(r[0].num()), int(r[1].num()), Wide(r[2].str()) }); }
       cur.vertical = j.has("vertical") ? (j["vertical"].truthy() ? 1 : 0) : -1;
       cur.em = float(j["em"].num(0));
+      cur.centered = j["marks"].str() == "middle-dot"; if (cur.centered) dotsSeen = true; // ④'s text marks: one centred mark per character, count known
       cur.colorKnown = ParseColor(j["color"].str(), cur.color);
       for (size_t i = 0; i < j["cells"].size(); ++i) { const Json &c = j["cells"][i]; cur.cells.push_back({ int(c[0].num()), int(c[1].num()), int(c[0].num() + c[2].num()), int(c[1].num() + c[3].num()) }); }
       if (opt.demo) cur.demoCells = cur.cells;
@@ -219,7 +221,7 @@ public:
       if (!cur.rec.empty()) dotsSeen = true;
       cur.lastChange = NowMs();
       LineSpec s; s.id = cur.id; s.expected = !cur.rec.empty() ? -1 : j.has("expected") ? int(j["expected"].num()) : int(cur.dotChar.size()); s.vertical = cur.vertical; s.em = cur.em; s.colorKnown = cur.colorKnown; s.color = cur.color; if (!opt.demo) s.cells = cur.cells;
-      s.hint = int(cur.rec.size()); tracker.BeginLine(s); choicesOn = false; layouts.clear(); recheck = 8;
+      s.hint = cur.centered ? std::max(0, s.expected) : int(cur.rec.size()); tracker.BeginLine(s); choicesOn = false; layouts.clear(); recheck = 8;
       if (opt.trace) Emit("{\"e\":\"trace\",\"what\":\"line\",\"id\":" + std::to_string(cur.id) + ",\"hint\":" + std::to_string(s.hint) + ",\"expected\":" + std::to_string(s.expected) + ",\"dotsSeen\":" + (dotsSeen ? "true" : "false") + "}");
     } else if (t == "annotate") { // translation / furigana that arrive after the line: {"t":"annotate","id":7,"tl":"…","ruby":[[s,e,"よみ"],...]}
       const int id = int(j["id"].num());
@@ -836,7 +838,13 @@ private:
       CharMetric m = mi < int(l.metric.size()) ? l.metric[mi] : CharMetric{};
       if (rs != 1.f) { m.h *= rs; m.b *= rs; m.a *= rs; m.x *= rs; m.y *= rs; }
       float cellX, cellY, adv, base, size = em;
-      if (m.known && !vertical) {
+      const bool half = ch < 0x80 || (ch >= 0xFF61 && ch <= 0xFF9F); // 「･」 marks a half-width character
+      if (l.centered && !m.known) {
+        // Cell centred on the mark: a full-width cell is one em, a half-width one half of it.
+        adv = half ? emSrc * .5f : emSrc; base = .88f * emSrc;
+        if (!vertical) { cellX = d.cx - adv / 2; cellY = d.cy - emSrc / 2; }
+        else { cellX = d.cx - emSrc / 2; cellY = d.cy - adv / 2; }
+      } else if (m.known && !vertical) {
         cellX = d.box.x0 - m.x; cellY = d.box.y0 - m.y; adv = m.a; base = m.b;
         if (m.a > m.h * .8f) size = m.a * Sy(); // full-width advance = the game's em
       } else if (!vertical) { cellX = d.box.x0 - .06f * emSrc; cellY = rowTop[i] - .06f * emSrc; adv = emSrc; base = .88f * emSrc; }

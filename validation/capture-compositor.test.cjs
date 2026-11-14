@@ -110,6 +110,8 @@ test('runtime: textRenderer setting, compositor with the bound game, overlay dia
   assert.deepStrictEqual(sent.find(x => x.t === 'annotate'), { t: 'annotate', id: 4, tl: '雪白的手。' }, 'translation reaches the line that shows it (stream junk before it)');
   host.hook({ type: 'hookGlyphDots', state: 'line', seq: 9, text: '雨だ' }, { seq: 9, dots: [{ i: 0, ch: '雨', h: 136, b: 120, a: 136, x: 0, y: 0, s: 14, k: 'b' }] });
   assert.deepStrictEqual(sent.filter(x => x.t === 'dots').at(-1)?.dots?.[0]?.k, 'b', 'blind dots mapped by HookNative reach the compositor with their line');
+  host.hook({ type: 'hookTextMarks', state: 'line', path: 'embed', text: '雨だ。', marks: 3, mark: 'middle-dot' });
+  assert.deepStrictEqual(sent.at(-1), { t: 'line', id: 300001, text: '雨だ。', expected: 3, marks: 'middle-dot' }, '④ text marks become a centred-mark line with its mark count');
   host.choices(['はい', 'いいえ']);
   assert.deepStrictEqual(sent.find(x => x.t === 'choices').i, [{ text: 'はい' }, { text: 'いいえ' }]);
   host.text('いいえ', '不');
@@ -136,4 +138,6 @@ test('owner rule: heartbeat for the glyph DLL, no mark handed back on a mismatch
   assert.match(c, /\\"bestFit\\":true/);
   assert.match(c, /menuMarks = \(!lastChoices\.ok && choiceUndot\) \? choiceTracker\.MenuMarks\(im\)/);
   assert.match(read('docs/text-architecture.md'), /### What still shows marks by design/);
+  assert.match(read('core/gal-native.cjs'), /message\.type==='hookTextMarks'\)this\.compositor\?\.hook\(/);
+  assert.match(c, /cur\.centered = j\["marks"\]\.str\(\) == "middle-dot"/, '④ marks: glyphs centred on the mark');
 });

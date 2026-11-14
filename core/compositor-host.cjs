@@ -72,6 +72,12 @@ class CompositorHost {
         const blind = (table.dots || []).filter(d => d && d.k === 'b' && Number.isInteger(d.i) && d.i >= 0);
         if (blind.length) this.cc.hookGlyphDots({ type: 'hookGlyphDots', state: 'dots', seq: m.seq, dots: blind });
       }
+    } else if (m.type === 'hookTextMarks' && m.state === 'line') {
+      // Text marks (④, docs/text-architecture-marks.md): the game draws one centred 「・」/「･」 per visible character of
+      // this line; the compositor finds them like dots and places each glyph centred on its mark.
+      const text = String(m.text || ''), id = 300000 + (this.markSeq = (this.markSeq || 0) + 1);
+      this.remember(id, text);
+      this.cc.send({ t: 'line', id, text, expected: Number(m.marks) || [...strip(text).text].length, marks: String(m.mark || 'middle-dot') });
     } else if (m.type === 'hookCharRects') {
       const text = String(m.text || '').replace(/\r?\n/g, ''), id = 100000 + (Number(m.line) || 0);
       this.remember(id, text);
