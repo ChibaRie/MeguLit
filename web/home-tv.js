@@ -364,7 +364,7 @@ export function renderHomeTV(main,ctx){
   }));}if(n){t.textContent=n.title;t.title=n.title+(n.source?' · '+n.source:'');}else if(h){t.textContent=h.term+(h.gloss?' · '+h.gloss:'');}/* 2026-11-13 (user: "左侧热力图卡片下面有第四张尺寸更大的第一头条", "左下角不要字") under the activity card the day's top story is a fourth,
      larger picture, picture only; its title (in the UI language) labels it for the tooltip and screen readers. An adult one is blurred with a note */
   {const left=$('.tv-left'),card=left?.querySelector('.tv-heat-card');let big=left?.querySelector('.tv-hot-news');if(!top||!card){big?.remove();}else{
-   if(!big){big=document.createElement('button');big.type='button';card.after(big);}big.className='tv-hot-news'+(top.sensitive?' is-sensitive':'');
+   if(!big){big=document.createElement('button');big.type='button';}if(box&&big.nextElementSibling!==box)box.before(big);/* 2026-11-15 (user: 大封面要和小封面连起来) the big cover sits in the same container as the three small ones, same width, same gaps */big.className='tv-hot-news'+(top.sensitive?' is-sensitive':'');
    big.innerHTML=`<span class="tv-hot-img" style="background-image:url(&quot;${top.image}&quot;)"></span>${top.sensitive?`<span class="tv-sensitive">${esc(SENSITIVE_WORD())}</span>`:''}`;
    big.onclick=()=>{try{sessionStorage.setItem('megulit-daily-focus',top.link);}catch{}navigate('daily');};
    const label=r=>{const text=headlineLabel(r,top.title);big.title=text+(top.source?'\n'+top.source:'');big.setAttribute('aria-label',HOT_WORD()+' · '+text.split('\n')[0]);};

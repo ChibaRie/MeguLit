@@ -380,3 +380,7 @@ html:not(#u):not(#v):not(#w):not(#x):not(#y) body .tv-home .tv-title{bottom:calc
 .tv-script .tv-stxt{display:inline;overflow:visible}
 .tv-script.is-empty::after{content:none}
 .tv-script p,.tv-script p:first-child{border-left:0!important;padding:0 7px}
+/* big cover joined with the small row: one container, one width, 8px between pictures */
+.tv-heat-card .tv-hot-news{margin:8px 0 0;max-width:none}
+.tv-heat-card .tv-hot-news+.tv-daily-pics{margin-top:8px}
+html:not(#u):not(#v):not(#w):not(#x):not(#y) body .tv-home .tv-heat-card .tv-hot-news{max-width:none!important;width:100%!important;margin:8px 0 0!important}
