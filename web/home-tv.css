@@ -332,3 +332,14 @@
 .tv-dialog .tv-who{display:none}
 .tv-rail{right:5vw;bottom:calc(7.5vh + 4vh + 28px)}
 @media (prefers-reduced-motion:reduce){.tv-title .tv-h1,.tv-title .tv-meta,.tv-title.in .tv-h1,.tv-title.in .tv-meta{transition:none;transform:none}}
+
+/* 2026-11-14 layout options for the owner to pick from (class lay-a / lay-b / lay-c on .tv-home; the plane box is 112% of the page, so left/top are converted) */
+.tv-home.lay-a .tv-cover,.tv-home.lay-a .tv-pile{left:calc(50% - 22vmin);top:18.5%;width:44vmin}
+.tv-home.lay-a .tv-script{left:calc(50% + 22vmin + 44px);top:20%;height:44%}
+.tv-home.lay-a .tv-figs{top:15vh}
+.tv-home.lay-b .tv-cover,.tv-home.lay-b .tv-pile{left:37.5%;top:14%;width:38vmin}
+.tv-home.lay-b .tv-script{left:calc(37.5% + 38vmin + 44px);top:18%;height:40%}
+.tv-home.lay-b .tv-figs{grid-auto-flow:column;gap:3.4vw;top:7vh;align-items:end}.tv-home.lay-b .tv-more{display:none}
+.tv-home.lay-c .tv-cover,.tv-home.lay-c .tv-pile{left:calc(75% - 19vmin);top:17%;width:38vmin}
+.tv-home.lay-c .tv-script{left:43%;top:26%;height:40%}
+.tv-home.lay-c .tv-figs{grid-auto-flow:column;gap:3.4vw;top:7vh;right:auto;left:44vw;align-items:end}.tv-home.lay-c .tv-more{display:none}
