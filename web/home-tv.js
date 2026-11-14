@@ -356,10 +356,13 @@ export function renderHomeTV(main,ctx){
   rail();
  }
  /* 2026-11-14 (user: "右边下面不是卡牌，是正常选的那种") the games are picked from the cover strip again (thumbnails, the current one wider with its timer bar); the card hand is gone */
- function rail(){const r=$('.tv-rail');r.innerHTML='<div class="tv-rail-in"></div>';const track=r.firstElementChild;track.innerHTML=list.map((g,i)=>`<button class="tv-chip${g===shown?' on':''}" data-i="${i}" title="${esc(g.title)}" aria-label="${esc(g.title)}" style="--dur:${DUR}ms">${g.cover?`<img src="${esc(g.cover)}" alt="">`:''}${setting.pinned.includes(g.id)?'<span class="pin"></span>':''}<span class="bar"></span></button>`).join('');
+ /* 2026-11-15 (user: 当前卡要在牌的正中间，两边都有牌) the strip is the library three times in a row and the current card is the one in the middle copy, so cards stand on both sides of it whichever game is current; the track element stays, so the strip slides from where it was */
+ function rail(){const r=$('.tv-rail');let track=r.firstElementChild;if(!track){track=document.createElement('div');track.className='tv-rail-in';r.append(track);}
+  const chip=(g,i,on)=>`<button class="tv-chip${on?' on':''}" data-i="${i}" title="${esc(g.title)}" aria-label="${esc(g.title)}" style="--dur:${DUR}ms">${g.cover?`<img src="${esc(g.cover)}" alt="">`:''}${setting.pinned.includes(g.id)?'<span class="pin"></span>':''}<span class="bar"></span></button>`;
+  track.innerHTML=[0,1,2].map(c=>list.map((g,i)=>chip(g,i,c===1&&g===shown)).join('')).join('');
   track.querySelectorAll('.tv-chip').forEach(b=>b.addEventListener('click',()=>{const i=+b.dataset.i;if(list[i]&&list[i]!==shown)paint(i,true,'fade');}));centerRail(r);}
  /* 2026-11-15 (user: 展示的卡不管任何尺寸都要在下面牌的中心稍微偏左) the current card always sits at the same spot, a little left of the strip's centre; the strip slides under it */
- function centerRail(r){const track=r.firstElementChild,on=track?.querySelector('.tv-chip.on');if(!on)return;const fresh=!track.dataset.set;track.dataset.set='1';if(fresh)track.style.transition='none';track.style.transform=`translateX(${(r.clientWidth*.46-(on.offsetLeft+on.offsetWidth/2)).toFixed(1)}px)`;if(fresh)requestAnimationFrame(()=>requestAnimationFrame(()=>{track.style.transition='';}));}
+ function centerRail(r){const track=r.firstElementChild,on=track?.querySelector('.tv-chip.on');if(!on)return;const fresh=!track.dataset.set;track.dataset.set='1';if(fresh)track.style.transition='none';track.style.transform=`translateX(${(r.clientWidth*.48-(on.offsetLeft+on.offsetWidth/2)).toFixed(1)}px)`;if(fresh)requestAnimationFrame(()=>requestAnimationFrame(()=>{track.style.transition='';}));}
  function commit(){model.preferences.homeShowcase=setting;savePreferences({homeShowcase:setting});const id=shown?.id;list=showcaseGames(model.games,setting);
   paint(Math.max(0,list.findIndex(g=>g.id===id)),false);}
  /* 2026-11-13 (user: "不要全部作品 … 把＋卡移到最右边 不要是卡牌了 鼠标放上去再出来") the hand editor is a tab docked on the right edge that slides out
