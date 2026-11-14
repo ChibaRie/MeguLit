@@ -61,11 +61,17 @@ class CompositorHost {
     if (mode !== this.mode) { this.mode = mode; this.cc.style({ mode, ruby: preferences?.furigana !== false, lookup: true }); }
   }
   // ① / ③ events from HookBridge (GalNative.hookEvent).
-  hook(m) {
+  hook(m, table) {
     if (!this.cc || !m) return;
     if (m.type === 'hookGlyphDots') {
       if (m.state === 'line') this.remember(Number(m.seq) || 0, String(m.text || ''));
       this.cc.hookGlyphDots(m);
+      // Blind dots (drawn before the line's text arrived) are mapped to characters by HookNative when the line comes:
+      // its line table (table) then holds them with their character index.
+      if (m.state === 'line' && table && table.seq === m.seq) {
+        const blind = (table.dots || []).filter(d => d && d.k === 'b' && Number.isInteger(d.i) && d.i >= 0);
+        if (blind.length) this.cc.hookGlyphDots({ type: 'hookGlyphDots', state: 'dots', seq: m.seq, dots: blind });
+      }
     } else if (m.type === 'hookCharRects') {
       const text = String(m.text || '').replace(/\r?\n/g, ''), id = 100000 + (Number(m.line) || 0);
       this.remember(id, text);

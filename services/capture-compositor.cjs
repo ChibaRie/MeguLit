@@ -65,7 +65,8 @@ class CaptureCompositor {
       if (this.lines.size > 64) this.lines.delete(this.lines.keys().next().value);
       this.send({ t: 'line', id, text, expected: [...text].length });
     } else if (m.state === 'dots') {
-      const glyphs = (m.dots || []).filter(d => d && (d.k === 'd' || d.k === 'c') && Number.isInteger(d.i) && d.i >= 0)
+      // d: dotted, c: cached dot, b: blind dot (drawn before its line arrived, mapped to a character by reading order)
+      const glyphs = (m.dots || []).filter(d => d && (d.k === 'd' || d.k === 'c' || d.k === 'b') && Number.isInteger(d.i) && d.i >= 0)
         .map(d => ({ i: d.i, h: d.h, b: d.b, a: d.a, x: d.x, y: d.y, k: d.k }));
       if (glyphs.length) this.send({ t: 'glyphs', id: Number(m.seq) || this.current, glyphs });
     }

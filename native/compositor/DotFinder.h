@@ -38,6 +38,7 @@ struct Dot {
 struct LineSpec {
   int id = 0;
   int expected = -1;          // dots the line will have once fully shown (non-space characters); -1 = unknown
+  int hint = 0;               // dots ① reported for the line so far (learning only: a colour with far fewer is not the text's)
   int vertical = -1;          // 1 vertical, 0 horizontal, -1 infer
   float em = 0;               // game font size in frame pixels, 0 = unknown
   bool colorKnown = false; Rgb color;
@@ -395,10 +396,12 @@ public:
   }
   // ① reports which characters became dots shortly after drawing them: the line's dot count is that, not its length.
   void SetExpected(int n) { spec.expected = n; }
+  void SetHint(int n) { spec.hint = n; }
   void EndPage() { keptLines.clear(); pendingKeep.clear(); area = {}; }
   // Fallback for the current line: forget its dots so they are neither kept nor inpainted.
   void DropCurrent() { cur.dots.clear(); pendingKeep.clear(); }
   bool HasColor() const { return colorKnown; }
+  void ForgetColor() { colorKnown = false; dotSize = 0; }
   Rgb Color() const { return color; }
   const LineSpec &Spec() const { return spec; }
 
@@ -651,7 +654,8 @@ private:
       std::vector<Blob> same; ColorBlobs(im, { 0, 0, im.w, im.h }, c, opt.colorTol, opt.smax, same, seen, stack);
       const float size = float(std::max(cand.box.w(), cand.box.h()));
       std::vector<Dot> d;
-      for (const Blob &b : same) if (DotShaped(b, opt.smin, opt.smax) && std::fabs(std::max(b.box.w(), b.box.h()) - size) <= 1.5f) d.push_back(ToDot(b, 1.f));
+      // Only lone dots count (as in tracking): specks of the colour inside artwork (eyes, hair lines) are not text.
+      for (const Blob &b : same) if (DotShaped(b, opt.smin, opt.smax) && std::fabs(std::max(b.box.w(), b.box.h()) - size) <= 1.5f && Isolated(im, b.box, c, opt.colorTol)) d.push_back(ToDot(b, 1.f));
       // A texture (dither, noise) in this colour gives thousands of dot-shaped blobs: not text, and the pairwise
       // checks below would take seconds.
       if (d.size() > size_t(std::max(200, 3 * spec.expected))) continue;
@@ -664,6 +668,7 @@ private:
       double score = lined;
       if (d.size() == 1 && spec.expected == 1) score = 1;
       if (spec.expected > 0 && int(d.size()) > spec.expected) score = 0; // more dots than the line has: not ours
+      if (spec.hint >= 4 && d.size() * 5 < size_t(spec.hint) * 3) score = 0; // far fewer than ① drew (a blinking cursor, a UI mark)
       if (spec.em > 0 && p > 0 && std::fabs(p - spec.em) > spec.em * .5f) score = 0;
       if (score > bestScore) { bestScore = score; bestColor = c; bestSize = size; }
     }

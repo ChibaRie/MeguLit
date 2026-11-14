@@ -232,7 +232,7 @@ public:
     } else if (t == "glyphs") { // later ① dot records of a line: {"t":"glyphs","id":7,"glyphs":[{"i":0,"h":28,"b":24,"a":28,"x":1,"y":2},...]}
       const int id = int(j["id"].num());
       if (j["glyphs"].size()) dotsSeen = true;
-      if (cur.id == id) { MergeMetrics(cur, j["glyphs"]); if (!cur.rec.empty()) tracker.SetExpected(-1); } // counts judged here (Targets)
+      if (cur.id == id) { MergeMetrics(cur, j["glyphs"]); if (!cur.rec.empty()) { tracker.SetExpected(-1); tracker.SetHint(int(cur.rec.size())); } } // counts judged here (Targets)
       else if (kept.count(id)) MergeMetrics(kept[id], j["glyphs"]);
     } else if (t == "choices") {
       std::vector<ChoiceText> next; std::vector<int> counts;
@@ -324,7 +324,7 @@ private:
   struct Glyph { com_ptr<IDWriteTextLayout> layout; float w = 0, h = 0, baseline = 0; };
   std::map<uint64_t, Glyph> layouts;
   // tracking
-  DotTracker tracker; ChoiceTracker choiceTracker; TrackResult lastResult; ChoiceTracker::Out lastChoices;
+  int flood = 0, starve = 0; DotTracker tracker; ChoiceTracker choiceTracker; TrackResult lastResult; ChoiceTracker::Out lastChoices;
   bool dotsSeen = false; // ① reported at least one dot in this game session
   LineMsg cur; std::map<int, LineMsg> kept; int autoId = 0, autoMax = 0, autoEmpty = 0;
   std::vector<ChoiceText> choices; bool choicesOn = false, choiceUndot = false; double choiceStart = 0;
@@ -601,6 +601,11 @@ private:
     }
     const TrackResult &r = lastResult;
     const int found = int(r.dots.size());
+    // Far more dots than ① reported for the line, frame after frame: the learned colour is not the text's (artwork in
+    // the same colour) — forget it and learn again from the next change.
+    if (!cur.complete && !cur.rec.empty() && found > 3 * int(cur.rec.size()) + 5) { if (++flood > 15) { tracker.ForgetColor(); flood = 0; } } else flood = 0;
+    // Or far fewer for a while although ① drew them all (the colour of a blinking cursor or UI mark): learn again.
+    if (!cur.complete && cur.rec.size() >= 4 && tracker.HasColor() && found * 10 < int(cur.rec.size()) * 3) { if (++starve > 60) { tracker.ForgetColor(); starve = 0; } } else starve = 0;
     LineStatus st = r.status;
     if (!cur.rec.empty() && found > 0 && st != LineStatus::Fading) {
       // With ① reports the tracker does not know the count: complete once the reported span is covered, mismatch when
@@ -728,10 +733,18 @@ private:
       for (int k = start; k < i; ++k) rowTop[k] = top; start = i;
     }
     std::vector<D2D1_POINT_2F> cellTop(n), cellEnd(n); // per glyph, output px: top-left and right/bottom of the cell
+    // ①'s metrics are in the engine's raster pixels; an engine that rasterises large and scales its frame down (e.g. at
+    // 136 px for a 28 px line) shows them smaller: scale = measured dot pitch / reported advance when clearly smaller.
+    float rs = 1.f;
+    {
+      std::vector<float> adv; for (int i = 0; i < n; ++i) { const int mi = l.rec.empty() ? i : tg[i]; if (mi < int(l.metric.size()) && l.metric[mi].known && l.metric[mi].a > l.metric[mi].h * .8f) adv.push_back(l.metric[mi].a); }
+      if (!adv.empty() && lastResult.pitch > 0) { std::nth_element(adv.begin(), adv.begin() + adv.size() / 2, adv.end()); const float a = adv[adv.size() / 2]; if (lastResult.pitch < a * .8f) rs = lastResult.pitch / a; }
+    }
     for (int i = 0; i < n; ++i) {
       const Dot &d = dots[i]; const char32_t ch = l.text[tg[i]];
       const int mi = l.rec.empty() ? i : tg[i];
-      const CharMetric m = mi < int(l.metric.size()) ? l.metric[mi] : CharMetric{};
+      CharMetric m = mi < int(l.metric.size()) ? l.metric[mi] : CharMetric{};
+      if (rs != 1.f) { m.h *= rs; m.b *= rs; m.a *= rs; m.x *= rs; m.y *= rs; }
       float cellX, cellY, adv, base, size = em;
       if (m.known && !vertical) {
         cellX = d.box.x0 - m.x; cellY = d.box.y0 - m.y; adv = m.a; base = m.b;
@@ -864,7 +877,7 @@ private:
   static void MergeMetrics(LineMsg &l, const Json &g) {
     for (size_t k = 0; k < g.size(); ++k) {
       const Json &d = g[k]; const int i = int(d["i"].num(-1)); const std::string kind = d["k"].str();
-      if (i < 0 || i >= int(l.metric.size()) || (!kind.empty() && kind != "d" && kind != "c")) continue;
+      if (i < 0 || i >= int(l.metric.size()) || (!kind.empty() && kind != "d" && kind != "c" && kind != "b")) continue; // b: blind dot, mapped to its character
       l.metric[i] = { true, float(d["h"].num()), float(d["b"].num()), float(d["a"].num()), float(d["x"].num()), float(d["y"].num()) };
       if (!std::binary_search(l.rec.begin(), l.rec.end(), i)) l.rec.insert(std::upper_bound(l.rec.begin(), l.rec.end(), i), i);
     }

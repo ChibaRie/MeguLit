@@ -88,17 +88,17 @@ test('DotSelfTest: synthetic frames (typewriter, fades, shake, scroll, NVL, spec
   assert.ok(summary.meanRate >= .99, 'mean detection rate ' + summary.meanRate);
 });
 
-test('runtime: textRenderer setting, compositor with the bound game, overlay hides only while the compositor draws', () => {
+test('runtime: textRenderer setting, compositor with the bound game, overlay dialogue is off while the compositor runs', () => {
   const { CompositorHost, rectsToClient } = require('../core/compositor-host.cjs');
   assert.strictEqual(require('../core/game-style.js').clean({}).textRenderer, undefined, 'no default in per-game styles: absent = overlay');
   assert.match(read('core/gal-native.cjs'), /if\(value&&value\.textRenderer===undefined\)/, 'reader saves keep the app-wide choice');
   assert.strictEqual(require('../core/game-style.js').clean({ textRenderer: 'compositor' }).textRenderer, 'compositor');
   assert.match(read('services/settings-schema.cjs'), /choice\('embedding','textRenderer'/);
-  assert.match(read('core/gal-native.cjs'), /this\.compositor\?\.hook\(message\)/);
+  assert.match(read('core/gal-native.cjs'), /this\.compositor\?\.hook\(message,this\.hooks\.state\?\.hookGlyphDots\)/);
   assert.match(read('services/reader.cjs'), /g\?\.compositor\?\.text\(String\(r\.text\|\|''\),translated\)/);
   assert.match(read('web/reader/modules/gal.js'), /classList\.toggle\('megulit-composited',message\.compositorDrawing\)/);
   const sent = [], ui = []; let started = null, evt = null;
-  const fake = { available: () => true, start: o => { started = o; return true; }, stop() { sent.push({ t: 'quit' }); }, send: o => sent.push(o), style: o => sent.push({ t: 'style', ...o }), hookGlyphDots: m => sent.push({ t: 'dots', seq: m.seq }), annotate: o => sent.push({ t: 'annotate', ...o }), choices: i => sent.push({ t: 'choices', i }) };
+  const fake = { available: () => true, start: o => { started = o; return true; }, stop() { sent.push({ t: 'quit' }); }, send: o => sent.push(o), style: o => sent.push({ t: 'style', ...o }), hookGlyphDots: m => sent.push({ t: 'dots', seq: m.seq, dots: m.dots }), annotate: o => sent.push({ t: 'annotate', ...o }), choices: i => sent.push({ t: 'choices', i }) };
   const host = new CompositorHost({ onEvent: m => ui.push(m), make: o => { evt = o.onEvent; return fake; } });
   host.configure({ textRenderer: 'overlay' }, { bound: true, gameHwnd: '123' });
   assert.strictEqual(started, null, 'overlay setting: no compositor');
@@ -108,6 +108,8 @@ test('runtime: textRenderer setting, compositor with the bound game, overlay hid
   host.hook({ type: 'hookGlyphDots', state: 'line', seq: 4, text: '＄名前＿渚真っ白な手。' });
   host.text('真っ白な 手。', '雪白的手。');
   assert.deepStrictEqual(sent.find(x => x.t === 'annotate'), { t: 'annotate', id: 4, tl: '雪白的手。' }, 'translation reaches the line that shows it (stream junk before it)');
+  host.hook({ type: 'hookGlyphDots', state: 'line', seq: 9, text: '雨だ' }, { seq: 9, dots: [{ i: 0, ch: '雨', h: 136, b: 120, a: 136, x: 0, y: 0, s: 14, k: 'b' }] });
+  assert.deepStrictEqual(sent.filter(x => x.t === 'dots').at(-1)?.dots?.[0]?.k, 'b', 'blind dots mapped by HookNative reach the compositor with their line');
   host.choices(['はい', 'いいえ']);
   assert.deepStrictEqual(sent.find(x => x.t === 'choices').i, [{ text: 'はい' }, { text: 'いいえ' }]);
   host.text('いいえ', '不');
