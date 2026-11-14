@@ -205,7 +205,7 @@ async function levels(){if(!levelsMod){try{levelsMod=await import(require('url')
    clause after a word it can attach to. Each match gets a confidence; below MIN it is not an example (one line fewer
    beats a wrong one). Without the tokenizer only long, clearly bounded forms pass. Results are kept per line in
    grammar_level_lines so each line is tokenized once. */
-const MATCH_V=1,MIN_CONF=0.6;
+const MATCH_V=2,MIN_CONF=0.6;
 const CONTENT=new Set(['名詞','代名詞','感動詞','副詞','接続詞','連体詞','形状詞']);
 const ATTACH=new Set(['名詞','代名詞','動詞','形容詞','形状詞','助動詞','接尾辞']);
 const FINAL_GROUPS=new Set(['ending']);
@@ -225,7 +225,9 @@ const POINT_RULES={
   /* として, not 〜ようとして (trying to) */
   'n2-toshite':({prev})=>!/意志推量形/.test(form(prev))&&!(prev&&/^(う|よう)$/.test(prev.surface)),
   /* ので／んで: の or ん followed by the auxiliary で (したいので, 途中なんで), not a te-form (痛んで) or なんで (why) */
-  'n4-node':({core,after,P})=>core.surface==='ので'||['の','ん'].includes(core.surface)&&P(core)!=='動詞'&&after?.surface==='で'&&P(after)==='助動詞',
+  'n4-node':({core,after,next,P})=>(core.surface==='ので'||['の','ん'].includes(core.surface)&&P(core)!=='動詞'&&after?.surface==='で'&&P(after)==='助動詞')&&
+    /* のである／のであれば／のではない／のでもいい: の + で…, not the reason ので (2026-11-15, 証なのであろうか) */
+    !(next&&/^(あ|は|も|しょ|す|ござ)/.test(next.surface)),
   /* そう (looks like / I hear) after a stem or a plain form, not the adverb そう (そうだそうだ, そりゃそうだ) */
   'n4-sou':({prev,P})=>!!prev&&['動詞','形容詞','形状詞','助動詞'].includes(P(prev)),
 };

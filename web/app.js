@@ -131,7 +131,7 @@ import {installExampleRuby,exAttr} from './example-ruby.js';
 const quickActions=new Set(['settings_get','vocabulary','unknown_words','home','preferences','ui_state','history','dialogue','sentences','word_trash','statistics',
  'game_detail','reader_status']);
 /* E459: the learning pages' heavier reads get a longer limit, so a page never waits on them for good */
-const slowReads=new Set(['reading_insights','grammar_report','grammar_bluebook','learning_rewards','learning_level','learning_goal','learning_activity','sentences_page']);
+const slowReads=new Set(['reading_insights','grammar_report','grammar_form_lines','grammar_bluebook','learning_rewards','learning_level','learning_goal','learning_activity','sentences_page']);
 const api=(action,params={})=>{const request=invoke('service',{request:{action,...params}});if(!quickActions.has(action)&&!slowReads.has(action)&&action!=='launch')return request;
  let timer;return Promise.race([request,new Promise((resolve,reject)=>{timer=setTimeout(()=>reject(Error('SERVICE_TIMEOUT')),action==='launch'?48000:slowReads.has(action)?40000:12000);
  })]).finally(()=>clearTimeout(timer));};
