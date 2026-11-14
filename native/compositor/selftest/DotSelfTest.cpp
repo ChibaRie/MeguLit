@@ -309,6 +309,18 @@ int main() {
     std::printf("{\"scenario\":\"choices-cached-glyphs\",\"frames\":1,\"ok\":%d,\"rate\":%d}\n", int(ok) + int(ok2), ok && ok2 ? 1 : 0);
     rateSum += (ok && ok2); ++n; if (!(ok && ok2)) ++failed;
   }
+  { // 10c. NVL page drawn before its text arrived: two earlier rows (never followed) and the current row are all in the
+    // base frame; with ①'s count for the current line (hint 9) the tracker takes the last 9 dots as the line and offers
+    // the earlier rows' dots as orphans (reading order) for the caller to give to those lines.
+    Canvas cv; Scene(cv, 7, adv);
+    const auto r1 = Layout(12, 32, 220, 840, 40, false, false, 0), r2 = Layout(10, 32, 220, 900, 40, false, false, 0), r3 = Layout(9, 32, 220, 960, 40, false, false, 0);
+    for (auto *r : { &r1, &r2, &r3 }) for (auto &g : *r) DrawDot(cv, g.x, g.y, 5, white, 1);
+    DotTracker t; LineSpec s; s.colorKnown = true; s.color = white; s.hint = 9; Image im = cv.img();
+    t.Update(im); t.BeginLine(s); t.Update(im); const auto &r = t.Update(im); // first frame seen before the line (colour still unknown): the page is in the base
+    const bool ok = r.dots.size() == 9 && r.orphans.size() == 22 && r.orphans.front().cy < r.orphans.back().cy;
+    std::printf("{\"scenario\":\"nvl-page-orphans\",\"frames\":3,\"ok\":%d,\"rate\":%d,\"line\":%zu,\"orphans\":%zu}\n", int(ok), int(ok), r.dots.size(), r.orphans.size());
+    rateSum += ok; ++n; if (!ok) ++failed;
+  }
   { // 11. Timing at 1080p: colour learning on a full frame, then tracking in the learned area
     Canvas cv; Scene(cv, 7, adv); const auto g = Layout(52, 32, 220, 830, 40, false, false, 0);
     for (auto &x : g) DrawDot(cv, x.x, x.y, 5, white, 1);

@@ -55,7 +55,8 @@ struct TrackResult {
   LineStatus status = LineStatus::Waiting;
   std::vector<Dot> dots;                 // current line, reading order: dots[i] is the i-th non-space character
   struct Kept { int id = 0; std::vector<Dot> dots; };
-  std::vector<Kept> kept;                // earlier lines still on screen (NVL), oldest first, with their line ids
+  std::vector<Kept> kept;
+  std::vector<Dot> orphans;               // page view: untracked dots of earlier lines on this page, reading order                // earlier lines still on screen (NVL), oldest first, with their line ids
   bool vertical = false;
   float pitch = 0;                       // glyph advance measured from the dots
   float lineStep = 0;                    // distance between wrapped rows / columns
@@ -398,6 +399,12 @@ public:
   void SetExpected(int n) { spec.expected = n; }
   void SetHint(int n) { spec.hint = n; }
   void EndPage() { keptLines.clear(); pendingKeep.clear(); area = {}; }
+  // The caller placed orphan dots on an earlier line of the page: from now on it is followed like any kept line.
+  void AddKept(int id, const std::vector<Dot> &d) { for (auto &k : keptLines) if (k.id == id) return; keptLines.push_back({ id, d }); std::sort(keptLines.begin(), keptLines.end(), [](const TrackResult::Kept &a, const TrackResult::Kept &b) { return a.id < b.id; }); cur.kept = keptLines; }
+  bool IsKept(int id) const { for (auto &k : keptLines) if (k.id == id) return true; return false; }
+  // More dots than the line has (an NVL page drawn ahead): keep the last n in reading order as the line, the rest are
+  // earlier lines' dots (returned for the caller to place).
+  std::vector<Dot> TrimCurrent(int n) { std::vector<Dot> rest; if (n <= 0 || int(cur.dots.size()) <= n) return rest; rest.assign(cur.dots.begin(), cur.dots.end() - n); cur.dots.erase(cur.dots.begin(), cur.dots.end() - n); return rest; }
   // Fallback for the current line: forget its dots so they are neither kept nor inpainted.
   void DropCurrent() { cur.dots.clear(); pendingKeep.clear(); }
   bool HasColor() const { return colorKnown; }
@@ -478,6 +485,15 @@ public:
           if (joins) { mine.push_back(still[k]); still.erase(still.begin() + k); grew = true; break; }
         }
       }
+    }
+    // Page view (NVL): unchanged dots on the rows before the current line are earlier lines of the page that were never
+    // tracked as lines (missed while the colour was still unknown). Offered to the caller, which knows those lines.
+    cur.orphans.clear();
+    if (spec.hint > 0 && !still.empty() && !mine.empty()) {
+      const float pk = cur.pitch > 0 ? cur.pitch : lastPitch > 0 ? lastPitch : Pitch(mine);
+      float first = 1e9f; for (const Dot &d : mine) first = std::min(first, cur.vertical ? -d.cx : d.cy);
+      for (const Dot &d : still) if ((cur.vertical ? -d.cx : d.cy) < first - pk * .5f) cur.orphans.push_back(d);
+      if (!cur.orphans.empty()) ReadingOrder(cur.orphans, cur.vertical, pk);
     }
 
     // Fade: fewer full-colour dots than last frame at the same places → read alpha where they were.

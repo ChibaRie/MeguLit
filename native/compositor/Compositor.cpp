@@ -595,6 +595,24 @@ private:
     }
   }
 
+  // Page view (NVL): dots of earlier lines on this page that were never followed (the colour was learned later, or the
+  // line was replaced before its dots showed) go to those lines, newest line first, each taking as many dots as ① drew
+  // for it (or its characters), from the end of the page's reading order. They are then followed and drawn like kept lines.
+  void AssignOrphans(std::vector<Dot> left) {
+    int taken = 0;
+    for (auto it = kept.rbegin(); it != kept.rend() && !left.empty() && taken < 8; ++it) {
+      LineMsg &l = it->second;
+      if (l.id >= cur.id || l.undot || tracker.IsKept(l.id)) continue;
+      const int want = !l.rec.empty() ? int(l.rec.size()) : int(l.dotChar.size());
+      if (want <= 0) continue;
+      const int n = std::min<int>(want, int(left.size()));
+      std::vector<Dot> d(left.end() - n, left.end()); left.erase(left.end() - n, left.end());
+      l.complete = true; tracker.AddKept(l.id, d); ++taken;
+      if (opt.trace) Emit("{\"e\":\"trace\",\"what\":\"orphans\",\"line\":" + std::to_string(l.id) + ",\"dots\":" + std::to_string(n) + ",\"want\":" + std::to_string(want) + "}");
+    }
+    if (taken) recheck = std::max(recheck, 2);
+  }
+
   void Track(const Image &im) {
     if (choicesOn) {
       lastChoices = choiceTracker.Update(im);
@@ -626,6 +644,7 @@ private:
       if (autoMax > 0 && autoEmpty >= 3) { Emit("{\"e\":\"autoLine\",\"id\":" + std::to_string(cur.id) + ",\"dots\":" + std::to_string(autoMax) + "}"); cur = LineMsg{}; }
       return;
     }
+    if (!lastResult.orphans.empty()) AssignOrphans(lastResult.orphans);
     const TrackResult &r = lastResult;
     const int found = int(r.dots.size());
     if (found > 0) cur.everDots = true;
@@ -654,6 +673,14 @@ private:
     }
     // Fallback (never double or misplace text): more dots than characters → hand the line back to the game and stop
     // erasing/drawing it.
+    // An NVL page drawn ahead of its lines: the line is its last dots, the rest belong to earlier lines of the page.
+    if (!cur.undot && st == LineStatus::Mismatch && !cur.rec.empty()) {
+      const std::vector<Dot> rest = tracker.TrimCurrent(int(cur.rec.size()));
+      if (!rest.empty()) {
+        lastResult.dots.erase(lastResult.dots.begin(), lastResult.dots.end() - int(cur.rec.size()));
+        AssignOrphans(rest); st = LineStatus::Complete; cur.complete = true; lastResult.status = st;
+      }
+    }
     if (!cur.undot && st == LineStatus::Mismatch) {
       cur.undot = true; tracker.DropCurrent(); lastResult.dots.clear();
       Emit("{\"e\":\"undot\",\"id\":" + std::to_string(cur.id) + ",\"reason\":\"" + (st == LineStatus::Mismatch ? "too-many-dots" : "reveal-stalled") + "\",\"found\":" + std::to_string(found) + "}");
