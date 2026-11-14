@@ -34,7 +34,7 @@ const driftAlpha=z=>Math.max(.22,Math.min(1,.38+.72*(1-Math.abs(z-FOCUS)*1.5)));
 const blurOf=z=>{const d=Math.abs(z-FOCUS);return d<.3?0:z>FOCUS?Math.min(2.4,(d-.3)*10):Math.min(1.4,(d-.3)*7);};
 
 function spawn(c,anywhere){
- c.x=R(-.04,1.04)*S.W;c.y=anywhere?R(-.05,1.05)*S.H:S.H+CH*.6;
+ c.x=R(-.04,1.04)*S.W;/* 2026-11-15 (user: 漂浮的搜索有的封面一直在狂抖) a respawn must land inside the wrap-around limit (below), not beyond it: far covers (small scale) were thrown past the limit, wrapped to the top, respawned again, every frame with a new random x, and never came back into view */c.y=anywhere?R(-.05,1.05)*S.H:S.H+CH*driftScale(c.z)*.84;
  c.vx=R(-3,3);c.vy=-(5+Math.random()*9)*(.45+c.z);c.sway=Math.random()*Math.PI*2;c.wx=0;c.wy=0;
 }
 /* a fresh field: jittered cells so the first frame is evenly scattered, depths shuffled across cells */
@@ -112,7 +112,7 @@ function frame(dt){
    if(!S.drag&&c.w<.5&&dm<reach&&(S.pvx||S.pvy)){const k=(1-dm/reach)*(.4+c.z*.8)*dt*6;c.wx+=(S.pvx*1.4+dx/(dm||1)*50)*k;c.wy+=(S.pvy*1.4+dy/(dm||1)*50)*k;}
    const m=CH*driftScale(c.z)*.7;
    if(c.y<-m||c.x<-CW||c.x>S.W+CW){spawn(c,false);if(c.w<.02){c.t='';}}
-   if(c.y>S.H+m*1.5)c.y=-m;
+   else if(c.y>S.H+m*1.5)c.y=-m;
   }
   let x=c.x,y=c.y,s=driftScale(c.z),a=driftAlpha(c.z);
   /* fade in and out at the top and bottom edges instead of popping */
