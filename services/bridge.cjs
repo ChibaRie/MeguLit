@@ -120,24 +120,29 @@ async function launch(db,id,runtime=null,windowsLaunch=false,{retried=false,redi
       the game with Chromium debugging switches or from MeguLit's shadow folder (Steam app id in the environment, never a restart
       through Steam). Anything failing here leaves the launch exactly as before. */
    let textPath=null;try{let prefs={};try{prefs=JSON.parse(fs.readFileSync(path.join(root,'data','preferences.json'),'utf8'))||{};}catch{}textPath=await require('../core/text-paths-launch.cjs').prepare({root,exe:game.executable,profile,enabled:prefs.ownTextOutput===true,trace});}catch(error){textPath=null;trace('text-paths-failed',{error:String(error?.message||error).slice(0,160)});}
-   const steam=steamApp&&!companion&&!textPath;
+   /* ①/③ with 文字显示 = compositor: a Steam game is started directly (SteamAppId; shadow + steam_appid.txt when the folder
+      has none, core/text-paths-launch.cjs steamDirect) so MeguLitLaunch can load the glyph dots and the dot font before
+      its first glyph. Anything failing keeps the steam:// launch. */
+   let steamDirect=null;if(steamApp&&!companion&&!textPath&&require('../core/glyph-dots.cjs').wanted(root)){try{steamDirect=require('../core/text-paths-launch.cjs').steamDirect({exe:game.executable,appid:profile.appid,trace});}catch(error){steamDirect=null;trace('steam-direct-failed',{error:String(error?.message||error).slice(0,160)});}}
+   const steam=steamApp&&!companion&&!textPath&&!steamDirect;
+   const launchExe=steamDirect?steamDirect.exe:game.executable;
    const {startProcess,waitForVisibleGame}=require('./game-readiness.cjs');
-   const directEnv=companion?{...process.env,SteamAppId:String(profile.appid),SteamGameId:String(profile.appid),SteamOverlayGameId:String(profile.appid)}:null;
+   const directEnv=companion?{...process.env,SteamAppId:String(profile.appid),SteamGameId:String(profile.appid),SteamOverlayGameId:String(profile.appid)}:steamDirect?{...process.env,...steamDirect.env}:null;
    /* Text architecture ①: with 文字显示 = compositor a direct start goes through MeguLitLaunch<bit>.exe, so the glyph dots are in place before the game's first glyph (core/glyph-dots.cjs); Steam keeps the late attach */
-   const early=steam?null:require('../core/glyph-dots.cjs').earlyStart(root,game.executable,companion?companionArgs:[],require('../core/locale-emulator.cjs').x86(game.executable),directEnv||process.env);
+   const early=steam?null:require('../core/glyph-dots.cjs').earlyStart(root,launchExe,companion?companionArgs:[],require('../core/locale-emulator.cjs').x86(game.executable),directEnv||process.env);
    if(early)trace('glyph-dots-early',{launcher:path.basename(early.file),font:early.env.MEGULIT_GLYPH_FONT||''});
    /* ③ dot font at the source (native/fontdot): with the early launcher, MeguLitFontDot<bit>.dll is loaded right after
       MeguLitFont while the game is still suspended (core/text-paths-launch.cjs fontDot: compositor mode, binaries, crash canary) */
    const fontDot=early&&!textPath?require('../core/text-paths-launch.cjs').fontDot(root,game.executable,early,trace):null;
-   const child=textPath?await startProcess(textPath.exe,[...(companionArgs||[]),...textPath.args],textPath.cwd,'GAME_LAUNCH_FAILED',undefined,{...process.env,...textPath.env}):await startProcess(early?early.file:steam?'explorer.exe':game.executable,early?early.args:steam?['steam://rungameid/'+profile.appid]:companion?companionArgs:[],path.dirname(game.executable),'GAME_LAUNCH_FAILED',undefined,early?early.env:directEnv);
+   const child=textPath?await startProcess(textPath.exe,[...(companionArgs||[]),...textPath.args],textPath.cwd,'GAME_LAUNCH_FAILED',undefined,{...process.env,...textPath.env}):await startProcess(early?early.file:steam?'explorer.exe':launchExe,early?early.args:steam?['steam://rungameid/'+profile.appid]:companion?companionArgs:[],steamDirect?steamDirect.cwd:path.dirname(game.executable),'GAME_LAUNCH_FAILED',undefined,early?early.env:directEnv);
 
-   trace('launch-process-started',{pid:child.pid,steam,steamDirect:companion||undefined});
+   trace('launch-process-started',{pid:child.pid,steam,steamDirect:companion||!!steamDirect||undefined});
    stage='window-wait';
    /* Steam may start another program in the install folder than the one on record (Summer Pockets: the library has
       SummerPocketsRB.exe, Steam runs SiglusEngine_Steam.exe; user 2026-11-09: the game was up and MeguLit said the launch
       failed). For Steam launches a game process from any program in that folder counts. */
    const siblings=steam?(()=>{try{return fs.readdirSync(path.dirname(game.executable)).filter(f=>/\.exe$/i.test(f)&&!/^(unins|setup|install|config|crash|unitycrash|vc_?redist|dxsetup|launcher)/i.test(f)).map(f=>path.join(path.dirname(game.executable),f)).filter(f=>f.toLowerCase()!==game.executable.toLowerCase()&&fs.statSync(f).size>200000).slice(0,8);}catch{return [];}})():[];
-   const anyProcess=async()=>{const own=await gameProcesses(root,game.executable);if(!own.length&&textPath&&textPath.exe!==game.executable){const shadow=await gameProcesses(root,textPath.exe).catch(()=>[]);if(shadow.length)return shadow;}if(own.length||!siblings.length)return own;for(const exe of siblings){const found=await gameProcesses(root,exe).catch(()=>[]);if(found.length){trace('steam-runs-other-program',{exe:path.basename(exe)});return found;}}return own;};
+   const anyProcess=async()=>{const own=await gameProcesses(root,game.executable);if(!own.length&&textPath&&textPath.exe!==game.executable){const shadow=await gameProcesses(root,textPath.exe).catch(()=>[]);if(shadow.length)return shadow;}if(!own.length&&steamDirect?.shadow){const shadow=await gameProcesses(root,steamDirect.exe).catch(()=>[]);if(shadow.length)return shadow;}if(own.length||!siblings.length)return own;for(const exe of siblings){const found=await gameProcesses(root,exe).catch(()=>[]);if(found.length){trace('steam-runs-other-program',{exe:path.basename(exe)});return found;}}return own;};
    /* E303: Steam may prepare a first start (cloud sync, install scripts) for longer than 15 s; wait up to 45 s for its window. */
    const startedAt=Date.now();
    try{state=await waitForVisibleGame(anyProcess,{helper:steam||!!early,indirect:steam,helperError:'GAME_LAUNCH_FAILED',exit:()=>child.exit,trace,...(steam?{attempts:180,timeout:45000}:{})});}

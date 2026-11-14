@@ -62,24 +62,25 @@ class HiddenGate{
 
 /* ---- crash canary ------------------------------------------------------------------------------------------------
    data/text-paths/<exe name>-<exe size>.json (the key HookBridge uses for its per-game memory). Before a path hides
-   anything it is armed; it is cleared once the game has run 20 s with it, or when the game quits with exit code 0. A
-   game found dead with the path still armed (non-zero exit, or MeguLit itself gone so nobody cleared it) gets that path
-   off for its next launches; switching it on again is the user's call (reset()). */
+   anything it is armed; it is cleared once the game has run 20 s with it, or when the game quits. Only an exception
+   exit code (NTSTATUS >= 0xC0000000, e.g. 0xC0000005) while armed turns that path off for the game's next launches; a
+   kill (exit 1), a normal quit or an exit nobody saw is not a crash. Switching it on again is the user's call (reset()). */
+const crash=code=>Number.isInteger(code)&&(code>>>0)>=0xC0000000&&(code>>>0)!==0xFFFFFFFF;
 const SAFE_AFTER=20000;
 function gameKey(exe){let size=0;try{size=fs.statSync(exe).size;}catch{}return path.basename(String(exe)).replace(/[^A-Za-z0-9._-]/g,'_')+'-'+size;}
 class Canary{
  constructor(root,exe,{now=()=>Date.now()}={}){this.file=path.join(root,'data','text-paths',gameKey(exe)+'.json');this.now=now;}
  read(){try{return JSON.parse(fs.readFileSync(this.file,'utf8'))||{};}catch{return {};}}
  write(d){try{fs.mkdirSync(path.dirname(this.file),{recursive:true});const t=this.file+'.'+process.pid+'.tmp';fs.writeFileSync(t,JSON.stringify(d,null,1));fs.renameSync(t,this.file);}catch{}}
- /* at launch: a path left armed by the last run means the game died with it -> off */
+ /* at launch: an arm left by the last run (exit unseen) is cleared, not counted as a crash */
  settle(){const d=this.read(),armed=d.armed||{};let changed=false;d.off=d.off||{};
-  for(const [p,a] of Object.entries(armed)){if(!a)continue;if((a.alive||a.at)-a.at<SAFE_AFTER){d.off[p]={at:this.now(),reason:'game ended '+Math.round(((a.alive||a.at)-a.at)/1000)+' s after '+p+' was switched on'};}delete armed[p];changed=true;}
+  for(const p of Object.keys(armed)){delete armed[p];changed=true;}
   d.armed=armed;if(changed)this.write(d);return d.off;}
  allowed(p){const d=this.read();return !(d.off&&d.off[p]);}
  arm(p){const d=this.read();d.armed=d.armed||{};if(!d.armed[p]){const t=this.now();d.armed[p]={at:t,alive:t};this.write(d);}}
  alive(p){const d=this.read(),a=d.armed?.[p];if(!a)return;a.alive=this.now();if(a.alive-a.at>=SAFE_AFTER)delete d.armed[p];this.write(d);}
- exited(p,code){const d=this.read(),a=d.armed?.[p];if(!a)return;if(code!==0){d.off=d.off||{};d.off[p]={at:this.now(),reason:'game exited with code '+code+' '+Math.round((this.now()-a.at)/1000)+' s after '+p+' was switched on'};}delete d.armed[p];this.write(d);}
+ exited(p,code){const d=this.read(),a=d.armed?.[p];if(!a)return;if(crash(code)){d.off=d.off||{};d.off[p]={at:this.now(),reason:'game exited with code '+code+' '+Math.round((this.now()-a.at)/1000)+' s after '+p+' was switched on'};}delete d.armed[p];this.write(d);}
  reset(p){const d=this.read();if(d.off)delete d.off[p];if(d.armed)delete d.armed[p];this.write(d);}
 }
 
-module.exports={ENGINES,formatChars,parseChars,viewportOf,toClient,HiddenGate,Canary,gameKey,SAFE_AFTER};
+module.exports={ENGINES,formatChars,parseChars,viewportOf,toClient,HiddenGate,Canary,gameKey,SAFE_AFTER,crash};
