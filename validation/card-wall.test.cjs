@@ -77,8 +77,8 @@ test('KiriKiri: a bare CG name in the save (no cg_ mark) never reaches the wall;
 test('undecoded CGs: the list answers at once and the background worker fills them in',()=>{
  const {root,db,exe}=setup();const calls=[];wall._setSpawnWarm((r,e,n)=>calls.push(n));
  try{assert.deepEqual(wall.unlocked(db,root,'g1').map(x=>x.id),['cover']);assert.deepEqual(calls,[['ev101a']]);
-  assert.deepEqual(wall.handle(db,root,{action:'cards_pending',gameId:'g1'}),{pending:1});
-  wall.warm(root,exe,['ev101a']);assert.deepEqual(wall.handle(db,root,{action:'cards_pending',gameId:'g1'}),{pending:0});
+  assert.deepEqual(wall.handle(db,root,{action:'cards_pending',gameId:'g1'}),{pending:1,total:2,paused:false});
+  wall.warm(root,exe,['ev101a']);assert.deepEqual(wall.handle(db,root,{action:'cards_pending',gameId:'g1'}),{pending:0,total:2,paused:false});
   assert.deepEqual(wall.unlocked(db,root,'g1').map(x=>x.id),['cover','save:ev101a']);}
  finally{wall._setSpawnWarm((r,e,n)=>wall.warm(r,e,n));}});
 
@@ -123,3 +123,23 @@ test('a made card can change its finish later; unknown finishes fall back to pla
  s=wall.handle(db,root,{action:'cards_set_finish',cardId:c.id,finish:'holo'});assert.equal(s.cards[0].finish,'holo');
  s=wall.handle(db,root,{action:'cards_set_finish',cardId:c.id,finish:'x'});assert.equal(s.cards[0].finish,'plain');
  assert.throws(()=>wall.handle(db,root,{action:'cards_set_finish',cardId:'nope',finish:'holo'}),/CARD_NOT_FOUND/);});
+
+/* 2026-11-15 (user: the PC froze while save CGs decoded): the polled list never draws a save CG, pictures already on
+   the page come back without their data, and a CG that cannot be decoded stops counting as pending */
+test('save CGs: the polled list never draws them inline; known ids come back without their picture',()=>{
+ const {root,db,exe}=setup();const calls=[];wall._setSpawnWarm((r,e,n)=>calls.push(n));
+ try{require('../services/game-cg.cjs').pictureFile(root,exe,'ev101a');
+  let drawn=[];wall._setRunner(jobs=>{drawn.push(...jobs.map(j=>j.in));return jobs.map(j=>{fs.mkdirSync(path.dirname(j.out),{recursive:true});fs.copyFileSync(j.in,j.out);return {ok:true,w:1280,h:720};});});
+  assert.deepEqual(wall.unlocked(db,root,'g1').map(x=>x.id),['cover']);
+  assert.ok(!drawn.some(f=>/ev101a/.test(f)),'a decoded save CG without a thumbnail goes to the worker, not the poll');
+  assert.equal(calls.length,1);assert.equal(typeof calls[0][0],'object');
+  wall.warm(root,exe,calls[0]);const list=wall.unlocked(db,root,'g1',['cover']);
+  assert.deepEqual(list.map(x=>x.id),['cover','save:ev101a']);assert.equal(list[0].src,'');assert.ok(list[1].src.startsWith('data:'));}
+ finally{wall._setSpawnWarm((r,e,n)=>wall.warm(r,e,n));wall._setRunner(jobs=>jobs.map(j=>{fs.mkdirSync(path.dirname(j.out),{recursive:true});fs.copyFileSync(j.in,j.out);return {ok:true,w:1280,h:720};}));}});
+
+test('a save CG that cannot be decoded stops counting as pending',()=>{
+ const {root,db,exe}=setup();wall._setSpawnWarm(()=>{});
+ try{fs.writeFileSync(path.join(path.dirname(exe),'image','evcg','ev101a.png'),'not a picture');wall.unlocked(db,root,'g1');
+  assert.equal(wall.handle(db,root,{action:'cards_pending',gameId:'g1'}).pending,1);
+  wall.warm(root,exe,['ev101a']);assert.equal(wall.handle(db,root,{action:'cards_pending',gameId:'g1'}).pending,0);}
+ finally{wall._setSpawnWarm((r,e,n)=>wall.warm(r,e,n));}});

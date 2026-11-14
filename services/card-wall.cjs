@@ -56,12 +56,15 @@ function stampOf(file){try{const s=fs.statSync(file);return file+'|'+s.size+'|'+
 const thumbsDir=root=>path.join(dirOf(root),'thumbs');
 function readMeta(root){try{return JSON.parse(fs.readFileSync(path.join(thumbsDir(root),'meta.json'),'utf8'))||{};}catch{return {};}}
 /* cached JPEGs of at most max px for picture files: {file -> {out,w,h}} */
+const thumbOf=(root,f,max)=>{const st=stampOf(f);if(!st)return null;const k=sha(st+'|'+max+'|v2').slice(0,24);return {k,out:path.join(thumbsDir(root),k+'.jpg')};};
+/* only what is already on disk (never draws): the list the page polls must not wait on a picture */
+function cachedThumbs(root,files,max,meta=readMeta(root)){const map=new Map();for(const f of files){const t=thumbOf(root,f,max);if(t&&meta[t.k]&&fs.existsSync(t.out))map.set(f,{out:t.out,w:meta[t.k].w,h:meta[t.k].h});}return map;}
+function noteThumbs(root,done){if(!done.length)return;withLock(root,()=>{const m=readMeta(root);for(const d of done)m[d.k]={w:d.w,h:d.h};atomicWrite(path.join(thumbsDir(root),'meta.json'),JSON.stringify(m));});}
 function scaled(root,files,max){
- const meta=readMeta(root),jobs=[],map=new Map();
- for(const f of files){const st=stampOf(f);if(!st)continue;const k=sha(st+'|'+max+'|v2').slice(0,24),out=path.join(thumbsDir(root),k+'.jpg');
-  if(meta[k]&&fs.existsSync(out))map.set(f,{out,w:meta[k].w,h:meta[k].h});else if(!jobs.some(j=>j.in===f))jobs.push({mode:'thumb',in:f,out,max,k});}
- if(jobs.length){fs.mkdirSync(thumbsDir(root),{recursive:true});const res=runner(jobs.map(({k,...j})=>j));
-  withLock(root,()=>{const m=readMeta(root);jobs.forEach((j,i)=>{if(res[i]?.ok){m[j.k]={w:res[i].w,h:res[i].h};map.set(j.in,{out:j.out,w:res[i].w,h:res[i].h});}});atomicWrite(path.join(thumbsDir(root),'meta.json'),JSON.stringify(m));});}
+ const meta=readMeta(root),map=cachedThumbs(root,files,max,meta),jobs=[];
+ for(const f of files){if(map.has(f))continue;const t=thumbOf(root,f,max);if(t&&!jobs.some(j=>j.in===f))jobs.push({mode:'thumb',in:f,out:t.out,max,k:t.k});}
+ if(jobs.length){fs.mkdirSync(thumbsDir(root),{recursive:true});const res=runner(jobs.map(({k,...j})=>j)),done=[];
+  jobs.forEach((j,i)=>{if(res[i]?.ok){done.push({k:j.k,w:res[i].w,h:res[i].h});map.set(j.in,{out:j.out,w:res[i].w,h:res[i].h});}});noteThumbs(root,done);}
  return map;}
 
 /* ---- 'seen': pictures an engine reported on screen ---- */
@@ -99,26 +102,100 @@ function sources(root,game,opts={}){
  return out;}
 function fileOf(root,game,s){if(s.file)return s.file;try{return require('./game-cg.cjs').pictureFile(root,game.executable,s.name)||null;}catch{return null;}}
 
-/* save CGs not decoded yet go to a background worker: the list answers at once with what is ready (cover, shots,
-   decoded CGs) and the page asks cards_pending, then cards_unlocked again, until pending is 0 */
+/* 2026-11-15 save CGs not decoded or not thumbnailed yet go to ONE background worker per game (user: the whole PC
+   froze while 142 save CGs decoded). The list the page polls never draws a picture itself: it answers with what is on
+   disk (thumbs/meta.json) and counts the rest as pending. The worker (this file, --warm) runs at below-normal CPU
+   priority; its thumbnailers (card-image.ps1 -Serve, half the cores, at most 4) run below normal in Windows background
+   mode (low I/O and memory priority) and set the worker's own I/O priority to very low. One picture at a time is decoded
+   to the cg-cache (pictureFile: decoded once, never again), shrunk to a THUMB jpeg and noted in meta.json right away,
+   so pictures appear one by one; nothing large stays in memory. It pauses while the game being read or a full-screen
+   program is in front, and runs one thumbnailer while a game is open behind. Pictures that cannot be decoded are
+   noted (warm-<exe>-failed.json) and stop counting as pending instead of being retried on every poll. */
 const warmFile=(root,exe)=>path.join(dirOf(root),'warm-'+exeKey(exe)+'.json');
-function warmBusy(root,exe){try{const v=JSON.parse(fs.readFileSync(warmFile(root,exe),'utf8'));if(Date.now()-v.at<10*60000){try{process.kill(v.pid,0);return true;}catch{}}}catch{}return false;}
-let spawnWarm=function(root,exe,names){
- if(warmBusy(root,exe))return;const job=path.join(dirOf(root),'warm-'+exeKey(exe)+'-job.json');atomicWrite(job,JSON.stringify({root,exe,names}));
+const failedFile=(root,exe)=>path.join(dirOf(root),'warm-'+exeKey(exe)+'-failed.json');
+const playingFile=root=>path.join(dirOf(root),'playing.json');
+const alive=pid=>{try{process.kill(pid,0);return true;}catch(e){return e.code==='EPERM';}};
+function readWarm(root,exe){try{const v=JSON.parse(fs.readFileSync(warmFile(root,exe),'utf8'));if(Date.now()-v.at<90000&&alive(v.pid))return v;}catch{}return null;}
+const warmBusy=(root,exe)=>!!readWarm(root,exe);
+function readFailed(root,exe){try{const v=JSON.parse(fs.readFileSync(failedFile(root,exe),'utf8'));return new Set(Array.isArray(v)?v:[]);}catch{return new Set();}}
+/* the reader says which game process is open (reader.cjs gameProcessId / gameClosed); the worker yields to it */
+function noteGame(root,pid){try{if(pid)atomicWrite(playingFile(root),JSON.stringify({pid:Number(pid)}));else fs.rmSync(playingFile(root),{force:true});}catch{}}
+function playingPid(root){try{const p=Number(JSON.parse(fs.readFileSync(playingFile(root),'utf8')).pid);return p&&alive(p)?p:0;}catch{return 0;}}
+let spawnWarm=function(root,exe,items){
+ if(warmBusy(root,exe))return;const job=path.join(dirOf(root),'warm-'+exeKey(exe)+'-job.json');atomicWrite(job,JSON.stringify({root,exe,items}));
  const child=require('node:child_process').spawn(process.execPath,[__filename,'--warm',job],{detached:true,stdio:'ignore',windowsHide:true});
- atomicWrite(warmFile(root,exe),JSON.stringify({pid:child.pid,at:Date.now()}));child.unref();};
-function warm(root,exe,names){const cg=require('./game-cg.cjs');/* decoded in batches of 24, each batch thumbnailed by one PowerShell run (one run per picture took minutes) */
- for(let i=0;i<names.length;i+=24){const files=[];for(const n of names.slice(i,i+24)){try{const f=cg.pictureFile(root,exe,n);if(f)files.push(f);}catch{}}if(files.length)scaled(root,files,THUMB);}}
+ atomicWrite(warmFile(root,exe),JSON.stringify({pid:child.pid,at:Date.now(),done:0,total:items.length}));child.unref();};
+const itemKey=it=>typeof it==='string'?'save:'+it:'file:'+it.file;
+function itemFile(root,exe,it){if(typeof it!=='string')return it.file;return require('./game-cg.cjs').pictureFile(root,exe,it);}
+function noteFailed(root,exe,keys){if(!keys.length)return;try{const s=readFailed(root,exe);for(const k of keys)s.add(k);atomicWrite(failedFile(root,exe),JSON.stringify([...s].slice(-5000)));}catch{}}
+/* inline version (tests, and the fallback when the pooled worker cannot start): batches through runner */
+function warm(root,exe,items){const failed=[];
+ for(let i=0;i<items.length;i+=24){const files=[];for(const it of items.slice(i,i+24)){try{const f=itemFile(root,exe,it);if(f)files.push(f);else failed.push(itemKey(it));}catch{failed.push(itemKey(it));}}if(files.length)scaled(root,files,THUMB);}
+ noteFailed(root,exe,failed);}
+/* the pooled worker: Node decodes, card-image.ps1 -Serve processes shrink */
+function thumbPool(size,parentPid,cacheDir){
+ const {spawn}=require('node:child_process'),workers=[];let seq=0,closed=false;
+ const ascii=v=>JSON.stringify(v).replace(/[\u007f-￿]/g,c=>'\\u'+c.charCodeAt(0).toString(16).padStart(4,'0'));
+ function start(){return new Promise(resolve=>{let child;try{child=spawn('powershell.exe',['-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',path.join(__dirname,'card-image.ps1'),'-Serve','-ParentPid',String(parentPid),'-CacheDir',cacheDir],{stdio:['pipe','pipe','ignore'],windowsHide:true});}catch{return resolve(null);}
+  const w={child,busy:false,wait:null,buf:'',dead:false};let ready=false;
+  child.stdout.setEncoding('utf8');child.stdout.on('data',d=>{w.buf+=d;let i;while((i=w.buf.indexOf('\n'))>=0){const line=w.buf.slice(0,i).trim();w.buf=w.buf.slice(i+1);
+   if(!ready){if(line==='READY'){ready=true;resolve(w);}continue;}const cb=w.wait;w.wait=null;w.busy=false;if(cb)cb(line.split('\t'));}});
+  const dead=()=>{w.dead=true;if(!ready)resolve(null);const cb=w.wait;w.wait=null;if(cb)cb(null);};child.on('exit',dead);child.on('error',dead);
+  setTimeout(()=>{if(!ready){try{child.kill();}catch{}}},30000);});}
+ const ask=(w,msg)=>new Promise(res=>{if(w.dead)return res(null);w.busy=true;const t=setTimeout(()=>{try{w.child.kill();}catch{}},120000);w.wait=r=>{clearTimeout(t);res(r);};try{w.child.stdin.write(ascii({...msg,seq:++seq})+'\n');}catch{clearTimeout(t);w.wait=null;w.busy=false;res(null);}});
+ return {
+  /* the first one compiles the small Win32 helper (cached as a dll) and starts working at once; the others start
+     behind it and only load the dll */
+  async open(){const first=await start();if(!first)return false;workers.push(first);for(let i=1;i<size;i++)start().then(w=>{if(w){if(closed)try{w.child.stdin.end();}catch{}else workers.push(w);}});return true;},
+  idle(limit){return workers.slice(0,limit).find(w=>!w.busy&&!w.dead)||null;},
+  live(){return workers.filter(w=>!w.dead).length;},
+  thumb:(w,job)=>ask(w,job),
+  state:w=>ask(w,{mode:'state'}),
+  close(){closed=true;for(const w of workers){try{w.child.stdin.end();}catch{}}}};}
+async function warmRun(root,exe,items){
+ const os=require('node:os');try{os.setPriority(0,os.constants.priority.PRIORITY_BELOW_NORMAL);}catch{}
+ const cores=os.availableParallelism?os.availableParallelism():os.cpus().length,size=Math.max(1,Math.min(4,Math.floor(cores/2)));
+ let done=0,paused=false,lastState=0,gate={limit:size,pause:false};const failed=[],inflight=new Set();
+ const beat=()=>{try{atomicWrite(warmFile(root,exe),JSON.stringify({pid:process.pid,at:Date.now(),done,total:items.length,paused}));}catch{}};
+ /* the heartbeat runs on a timer from the start: a slow start on a busy PC must not look dead and get a second worker */
+ beat();const heart=setInterval(beat,10000);heart.unref();
+ const pool=thumbPool(size,process.pid,path.join(dirOf(root),'bin'));if(!await pool.open()){clearInterval(heart);return warm(root,exe,items);}
+ const tick=ms=>new Promise(r=>setTimeout(r,ms));
+ async function refresh(){if(Date.now()-lastState<1500)return;lastState=Date.now();const game=playingPid(root);let fg=0,quns=5;
+  const w=pool.idle(size);if(w){const r=await pool.state(w);if(r&&r[0]==='S'){quns=Number(r[1])||5;fg=Number(r[2])||0;}}
+  /* SHQueryUserNotificationState: 2 busy (full-screen app), 3 Direct3D full screen, 4 presentation mode */
+  gate={pause:(!!game&&fg===game)||quns===2||quns===3||quns===4,limit:game?1:size};}
+ beat();
+ for(const it of items){
+  for(;;){await refresh();if(gate.pause){if(!paused){paused=true;beat();}await tick(2000);lastState=0;continue;}if(paused){paused=false;beat();}
+   if(pool.idle(gate.limit)||!pool.live())break;await Promise.race([...inflight,tick(500)]);}
+  if(!pool.live())break;
+  let f=null;try{f=itemFile(root,exe,it);}catch{}
+  const t=f&&thumbOf(root,f,THUMB);if(!t){failed.push(itemKey(it));done++;continue;}
+  if(readMeta(root)[t.k]&&fs.existsSync(t.out)){done++;continue;}
+  fs.mkdirSync(thumbsDir(root),{recursive:true});const w=pool.idle(gate.limit);
+  const p=pool.thumb(w,{mode:'thumb',in:f,out:t.out,max:THUMB}).then(r=>{inflight.delete(p);done++;
+   if(r&&r[1]==='ok')noteThumbs(root,[{k:t.k,w:Number(r[2])||0,h:Number(r[3])||0}]);else if(r)failed.push(itemKey(it));beat();});
+  inflight.add(p);await new Promise(r=>setImmediate(r));}
+ await Promise.all(inflight);clearInterval(heart);pool.close();noteFailed(root,exe,failed);}
 function split(root,g){
- const list=sources(root,g),files=new Map(),later=[];
- for(const s of list){if(s.file){files.set(s.id,s.file);continue;}const f=require('./game-cg.cjs').cachedPicture(root,g.executable,s.name);if(f)files.set(s.id,f);else later.push(s.name);}
- return {list,files,later};}
-function unlocked(db,root,gameId){
- const g=gameRow(db,gameId),{list,files,later}=split(root,g);
- const th=scaled(root,[...files.values()],THUMB),ready=list.flatMap(s=>{const t=th.get(files.get(s.id));if(!t)return [];return [{id:s.id,kind:s.kind,source:s.source,src:dataUrl(t.out),w:t.w,h:t.h}];});
- if(later.length)spawnWarm(root,g.executable,later);
- return ready;}
-function pending(db,root,gameId){const g=gameRow(db,gameId),{later}=split(root,g);if(later.length)spawnWarm(root,g.executable,later);return {pending:later.length};}
+ const list=sources(root,g),files=new Map(),later=[],need=[],cg=require('./game-cg.cjs'),failed=readFailed(root,g.executable),meta=readMeta(root);
+ for(const s of list){const f=s.file||cg.cachedPicture(root,g.executable,s.name);
+  if(f&&cachedThumbs(root,[f],THUMB,meta).size){files.set(s.id,f);continue;}
+  const it=f?{file:f}:s.name;if(failed.has(itemKey(it)))continue;(s.source==='save'?later:need).push({s,it});}
+ return {list,files,later,need};}
+/* a handful of the player's own files (cover, scene shots) are drawn inline; save CGs and anything more go to the
+   worker. known: ids the page already shows, sent back without their picture (the page keeps its copy) */
+function unlocked(db,root,gameId,known){
+ const g=gameRow(db,gameId);let {list,files,later,need}=split(root,g);
+ if(need.length&&need.length<=6){const th=scaled(root,need.map(n=>n.it.file),THUMB);for(const n of need)if(th.get(n.it.file))files.set(n.s.id,n.it.file);need=[];}
+ const queue=[...need,...later];if(queue.length)spawnWarm(root,g.executable,queue.map(n=>n.it));
+ const th=cachedThumbs(root,[...files.values()],THUMB),have=new Set(Array.isArray(known)?known.map(String):[]);
+ return list.flatMap(s=>{const t=th.get(files.get(s.id));if(!t)return [];return [{id:s.id,kind:s.kind,source:s.source,src:have.has(s.id)?'':dataUrl(t.out),w:t.w,h:t.h}];});}
+/* pending: pictures still on their way (total: every picture, for an honest count); paused while the game or a
+   full-screen program is in front */
+function pending(db,root,gameId){const g=gameRow(db,gameId),{list,later,need}=split(root,g),q=[...need,...later];if(q.length)spawnWarm(root,g.executable,q.map(n=>n.it));
+ const w=q.length?readWarm(root,g.executable):null;return {pending:q.length,total:list.length,paused:!!w?.paused};}
 /* one unlocked picture at viewing size, for the framing step */
 function image(db,root,gameId,srcId){
  const g=gameRow(db,gameId),s=sources(root,g).find(x=>x.id===String(srcId||''));if(!s)throw Error('CARD_SOURCE_LOCKED');
@@ -166,7 +243,7 @@ function handle(db,root,r){
  switch(r.action){
   case 'cards_state':return state(root);
   case 'cards_games':return games(db,root);
-  case 'cards_unlocked':return unlocked(db,root,r.gameId);
+  case 'cards_unlocked':return unlocked(db,root,r.gameId,r.known);
   case 'cards_pending':return pending(db,root,r.gameId);
   case 'cards_image':return image(db,root,r.gameId,r.srcId);
   case 'cards_create':return create(db,root,r);
@@ -179,5 +256,5 @@ function handle(db,root,r){
   case 'cards_set_mode':return setMode(root,r.mode);
  }
  throw Error('UNKNOWN_ACTION');}
-module.exports={handle,state,games,unlocked,image,create,sources,noteSeen,readState,_setRunner:f=>{runner=f;},_setSpawnWarm:f=>{spawnWarm=f;},warm,DEFAULT_TOPLOADERS};
-if(require.main===module&&process.argv[2]==='--warm'){try{const j=JSON.parse(fs.readFileSync(process.argv[3],'utf8'));try{warm(j.root,j.exe,j.names);}finally{try{fs.rmSync(warmFile(j.root,j.exe),{force:true});fs.rmSync(process.argv[3],{force:true});}catch{}}}catch{}}
+module.exports={handle,state,games,unlocked,image,create,sources,noteSeen,readState,_setRunner:f=>{runner=f;},_setSpawnWarm:f=>{spawnWarm=f;},warm,warmRun,noteGame,DEFAULT_TOPLOADERS};
+if(require.main===module&&process.argv[2]==='--warm'){setTimeout(()=>process.exit(0),30*60000).unref();try{const j=JSON.parse(fs.readFileSync(process.argv[3],'utf8'));warmRun(j.root,j.exe,j.items||j.names||[]).catch(()=>{}).finally(()=>{try{fs.rmSync(warmFile(j.root,j.exe),{force:true});fs.rmSync(process.argv[3],{force:true});}catch{}process.exit(0);});}catch{}}
