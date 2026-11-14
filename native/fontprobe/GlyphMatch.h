@@ -436,4 +436,40 @@ private:
     }
   }
 };
+// Does the engine rasterise a character again every time a line uses it, or keep the bitmap (a glyph cache)? Locating
+// marks (FontProbe.cpp, MARK on) are only allowed when it rasterises again: a cached marked glyph would come back in
+// every later line. Per finished line: the distinct characters of the line that earlier lines already used are the
+// chances; those the engine rasterised again during the line are the hits. "Rasterises again" = at least 10 chances and
+// at least 90 % hits, and the matcher never saw a cache. Lines in which nothing was rasterised (string engines) do not count.
+struct RasterVerdict
+{
+  std::set<wchar_t> seen, now;
+  std::wstring line;
+  int chances = 0, hits = 0;
+  void Rasterised(wchar_t c) { if (c) now.insert(c); }
+  void NextLine(const std::wstring &text)
+  {
+    if (!line.empty() && !now.empty())
+    {
+      std::set<wchar_t> repeat;
+      for (wchar_t c : line)
+        if (!Blank(c) && seen.count(c))
+          repeat.insert(c);
+      for (wchar_t c : repeat)
+      {
+        chances++;
+        if (now.count(c))
+          hits++;
+      }
+    }
+    for (wchar_t c : line)
+      if (!Blank(c))
+        seen.insert(c);
+    if (seen.size() > 8192)
+      seen.clear();
+    line = text;
+    now.clear();
+  }
+  bool Rerasterises(bool cached) const { return !cached && chances >= 10 && hits * 10 >= chances * 9; }
+};
 } // namespace GlyphHide

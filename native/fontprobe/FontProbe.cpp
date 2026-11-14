@@ -93,7 +93,7 @@ Face FaceOf(HDC dc) {
 // DotMode: per-character records are reported (every MODE since spec 3). PaintDots: matched glyphs become dots (MODE dot*);
 // otherwise (MODE blank*, alias place*) blank glyphs (same metrics, no coverage) plus records with the cell origin on
 // screen, for the reader overlay that draws MeguLit's text where the game's would be (docs/text-architecture.md, "Placement").
-SRWLOCK HideLock = SRWLOCK_INIT; GlyphHide::Matcher Hide; volatile LONG HideOn = 0, DotMode = 0, BlindMode = 0, PaintDots = 0, CtlConnected = 0, MarkOn = 0; long MarkLast = 0;
+SRWLOCK HideLock = SRWLOCK_INIT; GlyphHide::Matcher Hide; GlyphHide::RasterVerdict Raster; volatile LONG MarkArmed = 0; volatile LONG HideOn = 0, DotMode = 0, BlindMode = 0, PaintDots = 0, CtlConnected = 0, MarkOn = 0; long MarkLast = 0;
 bool BlindAllowed();
 struct IndexMap { HFONT font = NULL; long seq = -1; std::map<WORD, wchar_t> map; } Indexes;
 GlyphHide::Key KeyOf(const Face &f) { GlyphHide::Key k; k.face = f.name; k.size = f.size; return k; }
@@ -121,7 +121,7 @@ void Command(std::string l) {
  while (!l.empty() && (l.back() == '\r' || l.back() == '\n')) l.pop_back();
  AcquireSRWLockExclusive(&HideLock);
  long announce = -1; std::wstring text; std::string extra;
- if (l.rfind("LINE ", 0) == 0) { long before = Hide.Sequence(); Hide.SetLine(Wide(l.substr(5)), GetTickCount()); InterlockedExchange(&HideOn, Hide.Cached() ? 0 : 1); if (DotMode && Hide.Sequence() != before) { announce = Hide.Sequence(); text = Hide.Current(); } }
+ if (l.rfind("LINE ", 0) == 0) { long before = Hide.Sequence(); Hide.SetLine(Wide(l.substr(5)), GetTickCount()); if (Hide.Sequence() != before) Raster.NextLine(Hide.Current()); InterlockedExchange(&HideOn, Hide.Cached() ? 0 : 1); if (DotMode && Hide.Sequence() != before) { announce = Hide.Sequence(); text = Hide.Current(); } }
  else if (l == "OFF") { Hide.Off(); Extras.clear(); InterlockedExchange(&HideOn, 0); }
  else if (l == "MODE dot" || l == "MODE blank" || l == "MODE dot-blind" || l == "MODE blank-blind" || l == "MODE place" || l == "MODE place-blind") {
   bool report = true, paint = l.rfind("MODE dot", 0) == 0, blind = l.size() > 6 && l.compare(l.size() - 6, 6, "-blind") == 0;
@@ -129,7 +129,7 @@ void Command(std::string l) {
  else if ((l.rfind("EXTRA n ", 0) == 0 || l.rfind("EXTRA o ", 0) == 0) && l.size() > 8) { char k = l[6]; std::wstring t = Stripped(Wide(l.substr(8)));
   if (!t.empty() && t.size() <= 200) { if (k == 'n') Extras.erase(std::remove_if(Extras.begin(), Extras.end(), [](const Extra &e) { return e.kind == 'n'; }), Extras.end());
    if (Extras.size() >= 16) Extras.erase(Extras.begin()); Extras.push_back(Extra{++ExtraSeq, k, t, GetTickCount()}); extra = "ToMe_GLYPHDOT extra id=" + std::to_string(ExtraSeq) + " kind=" + std::string(1, k) + " text=" + Utf8(t); } }
- else if (l == "MARK on" || l == "MARK off") { InterlockedExchange(&MarkOn, l == "MARK on" ? 1 : 0); MarkLast = Hide.Sequence() + 2; } // the next two lines only
+ else if (l == "MARK on" || l == "MARK off") { InterlockedExchange(&MarkArmed, l == "MARK on" ? 1 : 0); InterlockedExchange(&MarkOn, 0); MarkLast = -1; } // two lines, once the engine is known to rasterise again
  else if (l == "EXTRA-CLEAR n" || l == "EXTRA-CLEAR o") { char k = l[12]; Extras.erase(std::remove_if(Extras.begin(), Extras.end(), [k](const Extra &e) { return e.kind == k; }), Extras.end()); }
  else if (l.rfind("FONT ", 0) == 0) { size_t sp = l.find(' ', 5); if (sp != std::string::npos) { GlyphHide::Key k; k.size = atoi(l.substr(5, sp - 5).c_str()); k.face = Clean(Wide(l.substr(sp + 1))); Hide.Seed(k); } }
  ReleaseSRWLockExclusive(&HideLock);
@@ -442,17 +442,29 @@ BOOL WINAPI HTextOutA(HDC dc, int x, int y, LPCSTR s, int n) {
 // (GGO_GRAY8_BITMAP only; coarser formats would be visible: GRAY4 1/16, GRAY2 1/4, mono full). The game composites it
 // like a glyph pixel: at most 255/64 = 4 levels of 255 between text colour and background, on one pixel. The reader
 // finds it by frame difference (core/glyph-locate.cjs) and learns the line origin, scale and wrap width; record s = 1.
-// MARK on covers only the next two pushed lines (owner: marks appear only in the lines a game is learned from), then
-// stops by itself even if the reader never sends MARK off.
+// MARK on covers only two lines (owner: marks appear only in the lines a game is learned from), then stops by itself
+// even if the reader never sends MARK off. And only on an engine seen to rasterise every repeated character again
+// (GlyphHide::RasterVerdict): a glyph cache would bring a marked glyph back in later lines, so such engines get none.
+// The two lines start at the first line after MARK on for which the verdict is in.
+volatile LONG MarkSaid;
+// Called for every GetGlyphOutline glyph served in blank mode; true when this glyph may carry a mark.
+bool MarkNow(long seq, wchar_t ch) {
+ AcquireSRWLockExclusive(&HideLock); Raster.Rasterised(ch); bool ok = false, cached = Hide.Cached(), again = Raster.Rerasterises(cached); int chances = Raster.chances, hits = Raster.hits;
+ if (MarkArmed && again) { if (MarkLast < 0) MarkLast = seq + 1; ok = seq <= MarkLast; if (seq > MarkLast) InterlockedExchange(&MarkArmed, 0); }
+ ReleaseSRWLockExclusive(&HideLock);
+ if (MarkArmed && !again && chances >= 10 && !InterlockedExchange(&MarkSaid, 1)) Send("ToMe_GLYPHDOT status marks-off cache=" + std::to_string(cached ? 1 : 0) + " hits=" + std::to_string(hits) + "/" + std::to_string(chances));
+ return ok;
+}
 bool MarkIndex(int i) {
  if (i == 0 || i == 1) return true; AcquireSRWLockShared(&HideLock); int n = 0; for (wchar_t c : Hide.Current()) if (!GlyphHide::Blank(c)) n++; ReleaseSRWLockShared(&HideLock);
  return i == n - 1;
 }
 DWORD ServeGlyph(HDC dc, UINT f, const GLYPHMETRICS *gm, LPVOID b, DWORD n, DWORD r, const GlyphHide::Served &sv, long seq, wchar_t ch) {
+ bool markable = sv.kind == 'd' && b && n && (f & 0x0f) != GGO_METRICS && !PaintDots && DotMode && MarkNow(seq, ch);
  if (!DotMode || !gm || !PaintDots) { if (b && n) BlankGlyph(f, b, r < n ? r : n); if (!DotMode || !gm || !b || !n || (f & 0x0f) == GGO_METRICS) return r; }
  if (!b || !n || (f & 0x0f) == GGO_METRICS) return r;
  TEXTMETRICW tm{}; Cell(dc, tm); int side = PaintDots ? DotSide(tm.tmHeight) : 0; DWORD out = PaintDots ? DotGlyph(f, *gm, b, n, r, side) : r;
- if (!PaintDots && MarkOn && (f & 0x0f) == GGO_GRAY8_BITMAP && sv.kind == 'd' && seq <= MarkLast && gm->gmBlackBoxX && gm->gmBlackBoxY && r != GDI_ERROR && r && MarkIndex(sv.index)) { ((BYTE *)b)[0] = 1; side = 1; }
+ if (markable && (f & 0x0f) == GGO_GRAY8_BITMAP && sv.kind == 'd' && gm->gmBlackBoxX && gm->gmBlackBoxY && r != GDI_ERROR && r && MarkIndex(sv.index)) { ((BYTE *)b)[0] = 1; side = 1; }
  ServeDot(seq, "ggo", Dot{sv.index, ch, (int)tm.tmHeight, (int)tm.tmAscent, (int)gm->gmCellIncX, (int)gm->gmptGlyphOrigin.x, (int)tm.tmAscent - (int)gm->gmptGlyphOrigin.y, side, sv.kind});
  return out;
 }

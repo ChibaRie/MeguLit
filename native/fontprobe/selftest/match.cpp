@@ -147,6 +147,32 @@ int main()
     c.SetLine(L"なにぬねの", 300);
     Check(dotCache && !hideCache && !c.Cached() && c.Glyph(L'な', D, 310, true, "ggo"), "dots: a glyph cache is reported (ToMe_GLYPHDOT cache) and dots go on");
   }
+  // Raster verdict (locating marks only on engines that rasterise a repeated character again)
+  {
+    const wchar_t *lines[] = {L"あいうえおかきくけこ", L"かきくけこさしすせそ", L"さしすせそあいうえお", L"あかさたなはまやらわ", L"いきしちにひみりをん"};
+    RasterVerdict again, cache, half;
+    std::set<wchar_t> had;
+    int n = 0;
+    for (const wchar_t *l : lines)
+    {
+      again.NextLine(l); cache.NextLine(l); half.NextLine(l);
+      for (const wchar_t *p = l; *p; p++)
+      {
+        again.Rasterised(*p);
+        if (had.insert(*p).second) { cache.Rasterised(*p); half.Rasterised(*p); }
+        else if (n++ % 2) half.Rasterised(*p);
+      }
+    }
+    again.NextLine(L"終"); cache.NextLine(L"終"); half.NextLine(L"終");
+    Check(again.Rerasterises(false), "raster verdict: an engine that rasterises every line in full allows marks");
+    Check(!again.Rerasterises(true), "raster verdict: never once the matcher saw a cache");
+    Check(!cache.Rerasterises(false) && cache.chances >= 10 && cache.hits == 0, "raster verdict: an engine that rasterises a character once (glyph cache) gets no marks");
+    Check(!half.Rerasterises(false), "raster verdict: a small cache that keeps half of the repeats gets no marks");
+    RasterVerdict text;
+    for (const wchar_t *l : lines) text.NextLine(l);
+    text.NextLine(L"終");
+    Check(!text.Rerasterises(false) && text.chances == 0, "raster verdict: lines drawn as strings (nothing rasterised) do not count");
+  }
   printf(Failed ? "FAIL %d\n" : "PASS\n", Failed);
   return Failed ? 1 : 0;
 }

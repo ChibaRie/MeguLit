@@ -161,7 +161,7 @@ class HookNative{
   else return;
   this.state={...this.state,hookGlyphExtras:all};this.emit(m);}
  setGlyphMode(mode){this.send({type:'glyphMode',mode:mode==='dot'?'dot':'blank'});}
- glyphDots(m){if(m?.state==='status'&&['paused','live','needs-relaunch'].includes(m.status)){this.trace('glyph dots '+m.status);this.notify({hookGlyphDotsStatus:m.status});this.emit(m);return;}if(!m||!['line','dots','cached'].includes(m.state))return;const cur=this.state.hookGlyphDots;
+ glyphDots(m){if(m?.state==='status'&&['paused','live','needs-relaunch','marks-off'].includes(m.status)){this.trace('glyph dots '+m.status);this.notify({hookGlyphDotsStatus:m.status});this.emit(m);return;}if(!m||!['line','dots','cached'].includes(m.state))return;const cur=this.state.hookGlyphDots;
   if(m.state==='cached'){if(cur)this.notify({hookGlyphDots:{...cur,cached:true}});this.emit(m);return;}
   if(!Number.isSafeInteger(m.seq))return;
   let next=cur&&cur.seq===m.seq?{...cur}:{seq:m.seq,text:'',dots:[],cached:cur?.cached===true};

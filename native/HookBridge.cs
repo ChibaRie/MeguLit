@@ -447,6 +447,8 @@ static void Deactivate(string reason){if(WaitHook!=null)WaitHook.Disable();lock(
   var dots=System.Text.RegularExpressions.Regex.Match(s,@"^dots seq=(\d{1,9}) path=(\w{1,8}) list=(.*)$");if(dots.Success){var list=GlyphList(dots.Groups[3].Value);
    Emit(new{type="hookGlyphDots",state="dots",seq=Int64.Parse(dots.Groups[1].Value),path=dots.Groups[2].Value,dots=list});return;}
   if(s.StartsWith("cache ",StringComparison.Ordinal)){Diagnostic("glyph dots: the engine reuses rasterised glyphs ("+s.Substring(6)+"); dots go on");Emit(new{type="hookGlyphDots",state="cached"});return;}
+  /* locating marks refused: the engine keeps glyphs (cache), marks would come back in later lines */
+  var mo=System.Text.RegularExpressions.Regex.Match(s,@"^status marks-off cache=([01]) hits=(\d{1,6})/(\d{1,6})$");if(mo.Success){Diagnostic("glyph marks off: the engine does not rasterise repeated characters again ("+mo.Groups[2].Value+"/"+mo.Groups[3].Value+(mo.Groups[1].Value=="1"?", cache seen":"")+")");Emit(new{type="hookGlyphDots",state="status",status="marks-off",served=0});return;}
   /* compositor heartbeat gate (docs/text-architecture.md): paused | live | needs-relaunch served=<n> */
   var st=System.Text.RegularExpressions.Regex.Match(s,@"^status (paused|live|needs-relaunch)(?: served=(\d{1,9}))?$");if(st.Success){Diagnostic("glyph dots "+s);Emit(new{type="hookGlyphDots",state="status",status=st.Groups[1].Value,served=st.Groups[2].Success?Int64.Parse(st.Groups[2].Value):0});}}
  static string GlyphKey;

@@ -245,9 +245,18 @@ learned from three marks the DLL leaves in blank mode, then every later line is 
 - **Using it** (`layout`): each character's box from its advance, the learned scale, origin, pitch and wrap width; the
   same shape as `glyph-place.glyphRects` with `space` `c`, `located: true`.
 - When to run it: on the first lines of a game, again whenever placed text and the game disagree (box moved, animated
-  box). Owner (2026-11-15): marks appear only in the lines a game is learned from. `MARK on` therefore covers the next
-  two pushed lines only and then stops by itself (`MarkLast`); `MARK off` stops it at once. An engine with a glyph cache
-  (Siglus) may reuse a marked glyph later for the same character; that pixel stays as faint as before.
+  box). Owner (2026-11-15): marks appear only in the lines a game is learned from, never again later. So:
+  - `MARK on` covers two lines only and then stops by itself (`MarkLast`); `MARK off` stops it at once.
+  - Only on an engine seen to **rasterise a repeated character again** (`GlyphHide::RasterVerdict`): per finished line,
+    the distinct characters earlier lines already used are chances, those the engine rasterised again are hits; marks
+    need at least 10 chances, at least 90 % hits and no cache ever seen by the matcher. An engine with a glyph cache
+    (Siglus: each character rasterised once) would bring a marked glyph back in later lines, so it gets no mark at all
+    and the DLL says so once: `ToMe_GLYPHDOT status marks-off cache=<0|1> hits=<h>/<c>` (event status `marks-off`).
+    Such games stay on the fallback (blank original, the overlay's own estimate or old display).
+  - The two lines start at the first line after `MARK on` for which the verdict is in.
+  - Per engine, from the records so far: Siglus (CLANNAD) caches → no marks; CatSystem2 (ISLAND) rasterises every line
+    again → marks; AdvHD (Under The Moon) no data yet → decided at run time; BGI and YU-RIS cache too but draw strings
+    with positions and need no marks.
 - Front end: `HookNative.setGlyphMarks(true|false)` → `{"type":"glyphMarks","on":…}` → `MARK on|off` (re-sent on every
   control connection while on).
 - Tests: `run-dots.cmd` (exactly three mark pixels at the expected spots, value 252 on white, none in GRAY4, records

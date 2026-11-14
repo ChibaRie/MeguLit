@@ -95,9 +95,13 @@ test('nothing to find: no marks, or records without every character', () => {
 test('wiring: DLL marks GRAY8 only (first, second, last), bridge and front end switch them; read-only streams flush fast', () => {
   const read = f => fs.readFileSync(path.join(__dirname, '..', f), 'utf8');
   const c = read('native/fontprobe/FontProbe.cpp');
-  assert.ok(c.includes('if (!PaintDots && MarkOn && (f & 0x0f) == GGO_GRAY8_BITMAP && sv.kind == \'d\'') && c.includes('((BYTE *)b)[0] = 1; side = 1;'), 'one pixel, coverage 1/64, GRAY8 only');
+  assert.ok(c.includes('if (markable && (f & 0x0f) == GGO_GRAY8_BITMAP && sv.kind == \'d\'') && c.includes('((BYTE *)b)[0] = 1; side = 1;'), 'one pixel, coverage 1/64, GRAY8 only');
   assert.ok(c.includes('if (i == 0 || i == 1) return true;') && c.includes('return i == n - 1;'), 'first, second and last character');
-  assert.ok(c.includes('l == "MARK on" || l == "MARK off"') && c.includes('MarkLast = Hide.Sequence() + 2;') && c.includes("seq <= MarkLast"), 'marks for the next two lines only');
+  assert.ok(c.includes('l == "MARK on" || l == "MARK off"') && c.includes('if (MarkLast < 0) MarkLast = seq + 1; ok = seq <= MarkLast;'), 'marks for two lines only');
+  assert.ok(c.includes('bool again = ') || c.includes('again = Raster.Rerasterises(cached)'), 'marks only on engines that rasterise again');
+  assert.ok(read('native/fontprobe/GlyphMatch.h').includes('bool Rerasterises(bool cached) const { return !cached && chances >= 10 && hits * 10 >= chances * 9; }'));
+  assert.ok(read('native/fontprobe/selftest/match.cpp').includes('an engine that rasterises a character once (glyph cache) gets no marks'));
+  assert.ok(read('native/HookBridge.cs').includes('status="marks-off"') && read('core/hook-native.cjs').includes("'needs-relaunch','marks-off'"));
   assert.ok(read('native/fontprobe/selftest/dothost.cpp').includes('marks: stop by themselves after two lines'));
   const b = read('native/HookBridge.cs');
   assert.ok(b.includes('GlyphSend(GlyphMarks?"MARK on":"MARK off")') && b.includes('if(GlyphMarks)w.WriteLine("MARK on");'));
