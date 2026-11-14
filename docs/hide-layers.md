@@ -153,6 +153,19 @@ line is drawn again. Built and run by `Build.ps1` and CI through `native/native-
 - Danganronpa: Trigger Happy Havoc (Steam): imports OpenGL but renders with Direct3D 9Ex (`PresentEx`, now hooked);
   every sprite is the same static unit quad placed by vertex-shader constants, so the vertices carry no position and the
   layer cannot decode its text (not hidden). Its decoded state needed the getter refresh above (declaration set at start).
+- **The Song of Saya / 沙耶の唄 (Nitro+, D3D11, Steam, Chinese text): works.** Same engine family as みにくいモジカの子:
+  a page-sized glyph sheet (329 × 360) and one quad per character, drawn twice (a shadow / outline buffer and the page).
+  93 glyphs on an NVL page learned 93 = 93 (count-only test: the visible text was partly mojibake, so the pushed line
+  was 93 placeholder characters), `hidden=1`, rectangles per character; at first only the white fill was hidden and the
+  black outline pass stayed, so a learned atlas now hides on every render target of the learned size. Text box and leaf
+  cursor stay. (Launch through Steam: `SteamAPI Initialize failed` when started directly.)
+- THE SHELL Part I (Artemis, **64-bit**, D3D11, Steam): the 64-bit DLL loads and hooks D3D11 and the game keeps running
+  (no crash); but the game stays black on this machine even fully visible and focused (glyph dots saw the same), with
+  only one draw kind (an indexed 4-vertex strip from a static buffer), so its text could not be checked.
+- 女装山脈 (YU-RIS, D3D9; needs an English path, tested from a copy on H:): the whole frame is composed on the CPU and
+  drawn as one full-screen quad (like BRUNS): not hidden.
+- Danganronpa: every sprite is one static unit quad placed and cut by vertex-shader constants, so vertices carry no
+  position or atlas cell; reading the constants would need the engine's constant layout (not generic): not hidden.
 - Regression after these changes: STEINS;GATE 0 hides the first line again (`hidden=1`, rectangles) and now keeps the
   ring wait cursor.
 - Not run: Summer Pockets REFLECTION BLUE (the 64-bit exe exits; the game is SiglusEngine_Steam.exe, Siglus has other

@@ -98,7 +98,7 @@ struct GlyphLearner {
    auto it = g->keys.find(k); if (it == g->keys.end()) { if (g->keys.size() > 20000) g->keys.clear(); g->keys[k] = Seen{ r, now, frameNo }; } else it->second.lastFrame = frameNo;
    // learned atlas on the learned target; or, for engines that build a small glyph sheet per line (a new texture every
    // line), any glyph quad of the learned glyph height on a target of the learned size (effect buffers drawn twice)
-   bool sameAtlas = rt == areaRt && atlases.count(AtlasKey(rt, tex)), sheet = freshTex && LineSized(tw, th) && rtW == areaW && rtH == areaH && std::fabs((x.y1 - x.y0) - glyphH) <= glyphH * 0.25f;
+   bool sameAtlas = rtW == areaW && rtH == areaH && atlases.count(AtlasKey(NULL, tex)), sheet = freshTex && LineSized(tw, th) && rtW == areaW && rtH == areaH && std::fabs((x.y1 - x.y0) - glyphH) <= glyphH * 0.25f;
    // glyph height only: a wait cursor or icon drawn from the same sheet inside the area stays
    bool glyphSize = std::fabs((x.y1 - x.y0) - glyphH) <= glyphH * 0.2f;
    if (learned && armed && !readOnly && glyphSize && (sameAtlas || sheet)) {
@@ -161,14 +161,14 @@ struct GlyphLearner {
    std::vector<Rect> a = Chars(Cluster(Chars(live))), b = Chars(Cluster(Chars(fresh)));
    if (log && (now / 500) != ((now - 17) / 500)) log("frame %u group rt=%p %ux%u live=%u fresh=%u n=%u", frameNo, g.rt, g.tw, g.th, (unsigned)a.size(), (unsigned)b.size(), n);
    std::vector<Rect> keep; const std::vector<Rect> *hit = Match(a, b, keep); if (!hit) continue;
-   if (learned && (g.rt != areaRt || !atlases.count(AtlasKey(g.rt, g.tex)))) continue;
+   if (learned && (g.rtW != areaW || g.rtH != areaH || !atlases.count(AtlasKey(NULL, g.tex)))) continue;
    Report(g, *hit);
    return;
   }
   // The glyphs of one line can come from several atlas pages: count them together per render target.
   std::map<void *, std::vector<Group *>> byRt; for (auto &kv : groups) byRt[kv.second.rt].push_back(&kv.second);
   for (auto &kv : byRt) {
-   if (kv.second.size() < 2 || (learned && kv.first != areaRt)) continue;
+   if (kv.second.size() < 2 || (learned && (kv.second[0]->rtW != areaW || kv.second[0]->rtH != areaH))) continue;
    std::vector<Rect> fresh, live; Group *big = kv.second[0]; size_t most = 0;
    for (Group *g : kv.second) { const std::vector<Rect> &last = g->prevFrame == frameNo - 1 ? g->frame : g->prev; live.insert(live.end(), last.begin(), last.end()); if (last.size() > most) { most = last.size(); big = g; }
     for (auto &s : g->keys) if ((int)(s.second.firstAt - since) >= 0) fresh.push_back(s.second.r); }
@@ -188,8 +188,9 @@ struct GlyphLearner {
    // glyph for at least 60 % of their quads in the area); a UI sheet drawing the box frame or body under the text is not
    auto aligned = [&](const Rect &r) { for (auto &c : cs) if (std::fabs(r.x0 - c.x0) <= 3 && std::fabs(r.y0 - c.y0) <= 3) return true; return false; };
    auto inArea = [&](const Rect &r) { float cx = (r.x0 + r.x1) / 2, cy = (r.y0 + r.y1) / 2; return cx >= area.x0 && cx <= area.x1 && cy >= area.y0 && cy <= area.y1; };
-   for (auto &kv : groups) { if (kv.second.rt != g.rt) continue; int in = 0, on = 0; for (const std::vector<Rect> *v : { &kv.second.frame, &kv.second.prev }) for (auto &r : *v) if (inArea(r)) { in++; if (aligned(r)) on++; }
-    if (&kv.second == &g || (on >= 1 && on * 10 >= in * 6)) atlases.insert(AtlasKey(kv.second.rt, kv.second.tex)); }
+   // every target of the learned size counts: engines draw the same page into a shadow / effect buffer too (Saya)
+   for (auto &kv : groups) { if (kv.second.rt != g.rt && (kv.second.rtW != g.rtW || kv.second.rtH != g.rtH)) continue; int in = 0, on = 0; for (const std::vector<Rect> *v : { &kv.second.frame, &kv.second.prev }) for (auto &r : *v) if (inArea(r)) { in++; if (aligned(r)) on++; }
+    if (&kv.second == &g || (on >= 1 && on * 10 >= in * 6)) atlases.insert(AtlasKey(NULL, kv.second.tex)); }
    snprintf(b, sizeof b, "ToMe_GPUHIDE learn seq=%u area=%.0f,%.0f,%.0f,%.0f atlas=%ux%u glyphs=%u chars=%u atlases=%u", seq, area.x0, area.y0, area.x1 - area.x0, area.y1 - area.y0, g.tw, g.th, (unsigned)cs.size(), n, (unsigned)atlases.size()); if (emit) emit(b);
   } else {
    // grow the area when a longer line spills over it
