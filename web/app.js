@@ -669,7 +669,7 @@ function japaneseRestore(){
  const zeroNote=r=>r?.patch?({zh:'；被换下的汉化补丁已用作零延迟翻译',en:'; the translation patch that was moved aside now gives zero-latency translation',ja:'。外した中国語パッチをゼロ遅延翻訳に使います'})[locale]||'':'';
  const show=async()=>{applyBtn.hidden=undoBtn.hidden=importBtn.hidden=steamBtn.hidden=true;const status=body.querySelector('[data-jr-status]');status.dataset.state='checking';status.textContent=t.check;
   try{const r=await api('jp_restore_detect',{id});status.dataset.state=t.st[r.state]?r.state:'none';status.textContent=(t.st[r.state]||t.st.none)(r);applyBtn.hidden=r.state!=='restorable';steamBtn.hidden=!(r.adapter==='language-switch'&&r.appid&&(r.state==='steam-guide'||r.mode==='steam'));
-   undoBtn.hidden=r.state!=='applied'&&r.state!=='imported';lastState=r.state;importBtn.hidden=['imported','applied'].includes(r.state)||r.adapter==='language-switch';}catch(e){status.dataset.state='';
+   undoBtn.hidden=r.state!=='applied'&&r.state!=='imported';lastState=r.state;jpAutoLine(status,id,show);importBtn.hidden=['imported','applied'].includes(r.state)||r.adapter==='language-switch';}catch(e){status.dataset.state='';
    status.textContent='';fail(e);}};
  const run=async(action,button,message)=>{applyBtn.disabled=undoBtn.disabled=true;const label=button.textContent;button.textContent=t.working;
   try{const r=await api(action,{id});toast(message(r)+zeroNote(r));}catch(e){fail(e);}finally{button.textContent=label;applyBtn.disabled=undoBtn.disabled=false;
@@ -1113,6 +1113,7 @@ function basicSettings(main=document.querySelector('#main')){
   <label class="settings-row"><div><div class="settings-label">${({zh:'光效速度',en:'Glow speed',ja:'光の速さ'})[locale]}</div><div class="settings-help">${({zh:'数值越大变化越快',en:'Higher is faster',ja:'大きいほど速く変化'})[locale]}</div></div><span class="setting-slider"><input type="range" name="glowSpeed" min="0.25" max="3" step="any" value="${Number(prefs.glowSpeed)||1}"><input type="number" data-basic-slider="glowSpeed" min="0.25" max="3" step="any" value="${Number(prefs.glowSpeed)||1}" aria-label="${({zh:'光效速度',en:'Glow speed',ja:'光の速さ'})[locale]}"></span></label>
   <label class="settings-row"><div><div class="settings-label">${({zh:'主页字体大小',en:'Home text size',ja:'ホームの文字サイズ'})[locale]}</div><div class="settings-help">${({zh:'只影响首页，1 为默认（100%）',en:'Home page only; 1 is the default (100%)',ja:'ホームのみ。1 が既定（100%）'})[locale]}</div></div><span class="setting-slider"><input type="range" name="homeFontScale" min="0.85" max="1.3" step="any" value="${Number(prefs.homeFontScale)||1}"><input type="number" data-basic-slider="homeFontScale" min="0.85" max="1.3" step="any" value="${Number(prefs.homeFontScale)||1}" aria-label="${({zh:'主页字体大小',en:'Home text size',ja:'ホームの文字サイズ'})[locale]}"></span></label>
   ${veilSettingsHTML(prefs,locale)}
+  <label class="settings-row"><div><div class="settings-label">${({zh:'自动切换为日文',en:'Switch to Japanese automatically',ja:'日本語へ自動で切り替え'})[locale]}</div><div class="settings-help">${({zh:'中文或英文版的游戏文件夹里有日文数据时，自动换成日文；可在通知或 日文原版恢复 里撤销',en:'When a Chinese or English build still has the Japanese data in its folder, switch it to Japanese; undo from the notice or Japanese original restore',ja:'中国語版・英語版のフォルダーに日本語データがあれば日本語に切り替えます。通知か「日本語原版に戻す」で元に戻せます'})[locale]}</div></div><input type="checkbox" class="switch" data-jp-auto-global checked></label>
   <label class="settings-row"><div><div class="settings-label">${text.closeToTray}</div><div class="settings-help">${text.closeHint}</div></div><input type="checkbox" class="switch" name="closeToTray" ${prefs.closeToTray?'checked':''}></label><label class="settings-row"><div><div class="settings-label">${({zh:'关闭窗口时询问',en:'Ask when closing the window',ja:'閉じるときに確認する'})[locale]}</div><div class="settings-help">${({zh:'点右上角关闭时，先问是收进托盘还是退出',en:'Ask whether to go to the tray or quit when you click close',ja:'閉じるボタンでトレイ格納か終了かを確認します'})[locale]}</div></div><input type="checkbox" class="switch" name="closeAsk" ${prefs.closeAsk!==false?'checked':''}></label></section>
   <section class="panel"><h2 class="panel-title">${text.appearance}</h2><div class="settings-row"><div class="settings-label">${text.accent}</div><div class="color-swatches"><span class="accent-chips" data-accent-chips>${accentChipsHTML(prefs)}</span><label class="accent-custom">${({zh:'自定义…',ja:'カスタム…',en:'Custom…'})[locale]}<input type="color" name="accent" data-color-action="saveAccent" aria-label="${text.accent}" value="${esc(prefs.accent)}"></label></div></div>
   <div class="settings-row"><div><div class="settings-label">${({zh:'玻璃面板颜色',en:'Glass panel colour',ja:'すりガラスの色'})[locale]}</div><div class="settings-help">${({zh:'毛玻璃面板的底色，与强调色分开；透明度在“主页背景”里调',en:'Tint of the frosted panels, separate from the accent; opacity is under Home background',ja:'すりガラスパネルの地色（強調色とは別）。不透明度は「ホーム背景」で調整'})[locale]}</div></div><span class="glass-color-control"><button type="button" class="setting-link" data-glass-reset ${prefs.glassColor?'':'hidden'}>${({zh:'恢复默认',en:'Reset',ja:'既定に戻す'})[locale]}</button><input type="color" name="glassColor" data-empty="${prefs.glassColor?'false':'true'}" value="${esc(prefs.glassColor||(prefs.themeMode==='light'?'#fff7f2':'#2a1c1b'))}"></span></div>
@@ -1121,6 +1122,8 @@ function basicSettings(main=document.querySelector('#main')){
   <div class="settings-row"><span class="settings-label">${extra.home}</span><button type="button" class="setting-link" data-background-settings>${{zh:'调整背景',en:'Customize background',ja:'背景を調整'}[locale]} ${icon('arrow')}</button></div></section>
   </form>`;
   const form=main.querySelector('#settings-form');
+  {const box=form.querySelector('[data-jp-auto-global]');api('jp_auto_get').then(r=>{box.checked=r.enabled!==false;}).catch(()=>{});
+   box.addEventListener('change',e=>{e.stopPropagation();api('jp_auto_set',{enabled:box.checked}).catch(e=>toast(errorMessage(e)));});}
   form.querySelectorAll('[name=username],[name=fontFamily],[name=themeMode]').forEach(input=>input.closest('.settings-row')?.classList.add('compact-setting'));
   const glassInput=form.elements.glassColor,glassReset=form.querySelector('[data-glass-reset]');
   glassInput.addEventListener('input',()=>{glassInput.dataset.empty='false';glassReset.hidden=false;});
@@ -1293,6 +1296,30 @@ async function start(){
    document.querySelector('#startup-retry').addEventListener('click',start);await invoke('window_action',{action:'ready'}).catch(()=>{});}
 }
 addEventListener('focus',()=>{refreshFocusedHome().catch(()=>{});});
+/* E590 automatic Japanese: state line in 日文原版恢复 (自动已恢复 / 已是日文 / 没有日文数据), undo, per-game off */
+const jpAutoWords={zh:{auto:'自动已恢复为日文',japanese:'已是日文',none:'没有日文数据',unsupported:'有日文数据，但还不能自动切换；阅读时 MeguLit 仍读取日文原句',reverted:'自动切换后游戏没能正常启动，已自动改回',undone:'已撤销自动切换，这个游戏不再自动切换',undo:'撤销自动切换',off:'这个游戏不自动切换',done:'已自动切换为日文',undid:'已撤销，游戏恢复原来的语言'},
+ en:{auto:'Switched to Japanese automatically',japanese:'Already Japanese',none:'No Japanese data',unsupported:'Japanese data found but cannot be switched automatically yet; MeguLit still reads the Japanese lines',reverted:'The game did not start after the automatic switch, so it was put back',undone:'Automatic switch undone; this game is left alone from now on',undo:'Undo automatic switch',off:'Do not switch this game automatically',done:'Switched to Japanese automatically',undid:'Undone; the game is back to its earlier language'},
+ ja:{auto:'自動で日本語に戻しました',japanese:'すでに日本語です',none:'日本語データがありません',unsupported:'日本語データはありますが、まだ自動では切り替えられません。読み取りは日本語原文で行います',reverted:'自動切り替え後に起動できなかったため、元に戻しました',undone:'自動切り替えを取り消しました。このゲームは今後切り替えません',undo:'自動切り替えを取り消す',off:'このゲームは自動で切り替えない',done:'日本語に自動で切り替えました',undid:'取り消しました。ゲームは元の言語に戻りました'}};
+async function jpAutoLine(status,id,refresh){
+ const w=jpAutoWords[locale]||jpAutoWords.zh;let line=status.parentElement.querySelector('[data-jr-auto]');
+ if(!line){line=document.createElement('div');line.className='jr-auto';line.dataset.jrAuto='';status.after(line);}
+ let r;try{r=await api('jp_auto_status',{id});}catch{line.textContent='';return;}
+ const label={auto:w.auto,japanese:w.japanese,'no-japanese':w.none,unsupported:w.unsupported,reverted:w.reverted,undone:w.undone}[r.state]||'';
+ line.innerHTML=`<p class="settings-help" data-state="${esc(r.state)}">${esc(label)}</p>`+(r.state==='auto'?`<button type="button" class="secondary" data-jr-auto-undo>${esc(w.undo)}</button>`:'')+
+  `<label class="settings-row"><span class="settings-label">${esc(w.off)}</span><input type="checkbox" class="switch" data-jr-auto-off ${r.gameOff?'checked':''}></label>`;
+ line.querySelector('[data-jr-auto-off]').onchange=e=>api('jp_auto_set',{id,off:e.target.checked}).catch(er=>toast(errorMessage(er)));
+ const u=line.querySelector('[data-jr-auto-undo]');if(u)u.onclick=async()=>{u.disabled=true;try{await api('jp_auto_undo',{id});toast(w.undid);}catch(er){toast(errorMessage(er));}refresh?.();};
+}
+/* one notice per automatic switch, with an undo action; checked at start, on focus and every minute */
+async function jpAutoNotices(){
+ let list=[];try{list=await api('jp_auto_notices');}catch{return;}
+ const w=jpAutoWords[locale]||jpAutoWords.zh;
+ for(const n of list){const el=document.createElement('div');el.className='jp-auto-notice';el.setAttribute('role','status');
+  el.innerHTML=`<span>${esc(w.done)}${n.title?' · '+esc(n.title):''}</span><button type="button" class="secondary" data-undo>${esc(w.undo)}</button><button type="button" class="ghost" data-close aria-label="close">×</button>`;
+  document.body.append(el);const close=()=>el.remove();el.querySelector('[data-close]').onclick=close;setTimeout(close,20000);
+  el.querySelector('[data-undo]').onclick=async e=>{e.target.disabled=true;try{await api('jp_auto_undo',{id:n.id});toast(w.undid);close();}catch(er){e.target.disabled=false;toast(errorMessage(er));}};}
+}
+setTimeout(jpAutoNotices,3000);setInterval(jpAutoNotices,60000);window.addEventListener('focus',()=>jpAutoNotices());
 start();
 // E255: a settings row is a <label>; only the control itself should react, not the descriptive text
 document.addEventListener('click',e=>{const row=e.target.closest?.('label.settings-row');if(!row)return;if(e.target.closest('input,select,textarea,button,a,.select-control,.switch,.toggle,[role=switch],.color-swatches,.setting-slider,.font-control'))return;

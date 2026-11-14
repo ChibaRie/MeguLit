@@ -155,7 +155,10 @@ function gameRunning(gameDir){
  /* both checks failed: writing over files the game may hold open is not safe, so say so instead of "not running" */
  throw Error('PROCESS_QUERY_FAILED');
 }
-function writeAtomic(file,data){const tmp=file+'.megulit-tmp';fs.writeFileSync(tmp,data);fs.renameSync(tmp,file);}
+/* E590 a rename can fail for a moment on Windows (antivirus / indexer holding the file, EPERM/EBUSY): wait and retry;
+   on a final failure the temp file is removed so nothing half-written stays in the game folder */
+function writeAtomic(file,data){const tmp=file+'.megulit-tmp';fs.writeFileSync(tmp,data);
+ for(let i=0;;i++){try{fs.renameSync(tmp,file);return;}catch(error){if(i>=8||!['EPERM','EBUSY','EACCES'].includes(error.code)){try{fs.rmSync(tmp,{force:true});}catch{}throw error;}Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,150*(i+1));}}}
 
 function apply(gameDir,options={}){
  gameDir=path.resolve(String(gameDir||''));if(gameRunning(gameDir))throw Error('GAME_RUNNING');
@@ -167,10 +170,13 @@ function apply(gameDir,options={}){
   const raw=rebuild(c.decoded.raw,c.decoded.marker,c.table,c.next),enc=encrypt(c.decoded.marker,raw),back=decrypt(enc),check=parse(back.raw,back.marker);
   if(back.marker!==c.decoded.marker||!back.raw.equals(raw)||check.rows!==c.table.rows||check.cols!==c.table.cols)throw Error('ROUNDTRIP_FAILED '+c.name);
   built.push({c,enc});}
+ const written=[];
  for(const {c,enc} of built){
   const keep=path.join(backup,c.name),old=entries.find(e=>e.file===c.name);
   if(!old&&!fs.existsSync(keep))fs.writeFileSync(keep,c.file);
-  writeAtomic(path.join(plan.dir,c.name),enc);
+  /* E590 a write that fails part-way puts back the files already written (no manifest exists yet to undo them) */
+  try{writeAtomic(path.join(plan.dir,c.name),enc);}catch(error){for(const w of written){try{writeAtomic(path.join(plan.dir,w.name),w.file);}catch{}}if(!prior)fs.rmSync(path.join(gameDir,BACKUP_DIR),{recursive:true,force:true});throw error;}
+  written.push(c);
   const entry={file:c.name,originalSha256:old?old.originalSha256:sha(c.file),patchedSha256:sha(enc),kind:c.kind,changed:c.changed};
   if(old)Object.assign(old,entry);else entries.push(entry);}
  const manifest={version:1,adapter:'siglus-dbs',at:new Date().toISOString(),japaneseColumn:plan.japaneseColumn,targetColumns:plan.targetColumns,files:entries};
@@ -203,4 +209,4 @@ function repairShared(gameDir){
  const undone=restore(gameDir);if(undone.skipped.length)return {repaired:false,skipped:undone.skipped};
  const done=apply(gameDir);return {repaired:true,applied:done.applied};
 }
-module.exports={repairShared,detect,apply,restore,_internal:{siglusPlan,shownJapanese,isIdent,yurisPlan,gameRunning,decrypt,encrypt,parse,rebuild,lzss,literal,languageColumns}};
+module.exports={repairShared,detect,apply,restore,_internal:{sharedPool,readManifest,siglusPlan,shownJapanese,isIdent,yurisPlan,gameRunning,decrypt,encrypt,parse,rebuild,lzss,literal,languageColumns}};
