@@ -29,6 +29,27 @@ function collected(db,id){
  const sentences=db.prepare('SELECT id,text,translation,created_at,source,original FROM saved_sentences WHERE game_id=? ORDER BY created_at DESC,id DESC LIMIT 250').all(id).map(({original,...s})=>({...s,source:s.source||'manual',scene:sceneOf(original),words:byText.get(s.text)||[]}));
  return {words,sentences,wordCounts};
 }
+/* 2026-11-15 学习 › 单词 uses the 关联单词 layout over every game: the same word rows, but ×N sums the lines met in all games, the first / latest
+   line names its game, words saved with no line yet are kept (met 0, ordered by when they were saved), and 常查单词 (unknown_words) marks each
+   word with its lookup count; looked-up surfaces that were never saved come back as lookup-only rows for that filter. */
+function studyWords(db,root){
+ const words=db.prepare(`SELECT v.id,v.spelling,v.reading,v.definitions,v.status,v.created_at,COUNT(e.id) met,MIN(e.created_at) first_at,MAX(e.created_at) last_at
+  FROM vocabulary v LEFT JOIN examples e ON e.word_id=v.id GROUP BY v.id ORDER BY COALESCE(MAX(e.created_at),v.created_at) DESC,v.id DESC LIMIT 5000`).all();
+ const groups=db.prepare('SELECT status,COUNT(*) n FROM vocabulary GROUP BY status').all();
+ const counts={total:groups.reduce((a,g)=>a+g.n,0),byStatus:Object.fromEntries(groups.map(g=>[g.status,g.n]))};
+ const byWord=new Map(words.map(w=>[w.id,w])),titles=new Map(db.prepare('SELECT id,title FROM games').all().map(g=>[g.id,g.title]));
+ const line=e=>({text:e.text,start:Number(e.highlight_start)||0,end:Number(e.highlight_end)||0,at:e.created_at,gameId:e.game_id||'',game:titles.get(e.game_id)||''});
+ for(const e of db.prepare('SELECT word_id,text,highlight_start,highlight_end,created_at,game_id FROM examples ORDER BY created_at,id').iterate()){
+  const w=byWord.get(e.word_id);if(!w)continue;w.first??=line(e);w.latest=line(e);(w.times??=[]).push(e.created_at);if(w.times.length>200)w.times.shift();}
+ let jlpt=null;try{jlpt=require('./learning-insights.cjs').loadJlpt();}catch{}
+ let anki=new Set();try{if(db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='anki_links'").get())anki=new Set(db.prepare('SELECT word_id FROM anki_links').all().map(r=>r.word_id));}catch{}
+ for(const w of words){w.jlpt=jlpt?(jlpt.byForm.get(w.spelling)||jlpt.byForm.get(w.reading)||null)?.level||null:null;w.inAnki=anki.has(w.id);w.times??=[];}
+ let often=[];try{often=require('./unknown-words.cjs').unknownWords(root);}catch{}
+ const bySpelling=new Map();for(const w of words)if(!bySpelling.has(w.spelling))bySpelling.set(w.spelling,w);
+ const lookupOnly=[];for(const o of often){const w=bySpelling.get(o.surface);if(w)w.lookups=Number(o.lookups)||0;
+  else{let jl=null;try{jl=jlpt?.byForm.get(o.surface)?.level||null;}catch{}lookupOnly.push({id:'q:'+o.surface,spelling:o.surface,reading:'',definitions:'[]',status:0,met:0,lookups:Number(o.lookups)||0,lookupOnly:true,jlpt:jl,times:[],last_at:o.lastLookup});}}
+ return {words,lookupOnly,counts,often:often.length};
+}
 function detail(db,root,id,locale){const {row,original}=record(db,id),game=store.games(db,root).find(game=>game.id===id),library=original.library||{},media=original.media||{};
  const sessions=db.prepare('SELECT id,started_at,ended_at,active_seconds,characters,sentences FROM reading_sessions WHERE game_id=? ORDER BY started_at DESC LIMIT 60').all(id);
  const {words,sentences,wordCounts}=collected(db,id);
@@ -38,4 +59,4 @@ function detail(db,root,id,locale){const {row,original}=record(db,id),game=store
  const identity=workIdentity(row,original);game.vndbId=identity.vndbId;let reception=store.readJSON(path.join(root,'data/config/game-reception.json'))[id];if(reception&&identity.appid&&reception.vndb?.url!=='https://vndb.org/'+identity.vndbId)reception={...reception,vndb:null};return {game,launchIssue,reception:reception?{...reception,reviews:reception.reviews?.[locale]||[]}:null,synopsis:synopsis(root,row,original,locale),info:{zeroLatency:(()=>{try{return require('./original-text.cjs').brief(root,id);}catch{return 'unknown';}})(),names:Array.isArray(library.names)?library.names:[],source:row.source,executable:row.executable,status:row.status,appid:library.appid||'',vndbId:identity.vndbId,developer:media.developer||library.developer||'',released:media.release_date||library.release_date||''},sessions,words,sentences,recentLines,homeLines:(()=>{try{return require('./home-lines.cjs').chosen(root,id);}catch{return [];}})(),homeAuto:(()=>{try{return require('./home-lines.cjs').auto(db,id);}catch{return null;}})(),counts:{sessions:count.sessions,sentences:db.prepare('SELECT COUNT(*) n FROM saved_sentences WHERE game_id=?').get(id).n,words:wordCounts}};
 }
 async function refreshSynopsis(db,root,id,locale){const {row,original}=record(db,id),library=original.library||{},identity=workIdentity(row,original);const {Synopses}=require('../core/library.cjs');return new Synopses({config:path.join(root,'data/config')}).get({mediaId:row.legacy_id??row.id,titles:library.names||[row.title],vndbId:identity.vndbId,appid:identity.appid,lang:locale,refresh:true});}
-module.exports={detail,refreshSynopsis};
+module.exports={detail,refreshSynopsis,studyWords};

@@ -46,7 +46,18 @@ const L={
   emptyLede:'Nothing here yet',emptyBig:['No lines','saved','yet.'],emptyTeach:'Keep the lines you like as you play. The line and its translation are saved together, ready to play back, review or turn into Anki cards',
   how:[['In the game','Click a word','or drag across a line to open the lookup card'],['Lookup card · the usual way','☆ Save sentence','keeps the whole line and its translation'],['Kept while carding','Add to Anki','adding a word to Anki keeps its line here too']],
   emptyEnd:'After your first line this becomes',emptyWall:'your wall of lines'}};
-const tx=locale=>L[locale]||L.zh;
+/* 2026-11-15 学习 › 单词: the same component over every game (scope 'all'); only these labels differ */
+const ALL={
+ zh:{words:'单词',total:'全部单词',met:'合计遇见',metTitle:n=>`所有游戏中合计遇见 ${n} 次`,often:'常查单词',oftenTitle:n=>`查过 ${n} 次`,lookupOnly:'查过但还没收录',notSaved:'未收录',
+  none:q=>`单词本里还没有「${q}」`,noneSub:'这里是你在所有游戏里收录的词，可以换成读音或中文释义再找，或者去词典里查它',noWords:'单词本还是空的',
+  noWordsSub:'在游戏里点一个词或拖选一段台词查词，收录的词会出现在这里，按最近遇见排列',status:'状态',del:'删除',delTitle:'删除这个单词（可在回收站恢复）',statusFail:'暂时无法修改状态'},
+ ja:{words:'単語',total:'すべての単語',met:'合計',metTitle:n=>`すべての作品で合計 ${n} 回`,often:'よく調べる',oftenTitle:n=>`${n} 回調べた`,lookupOnly:'調べたが未登録',notSaved:'未登録',
+  none:q=>`単語帳に「${q}」はまだありません`,noneSub:'すべての作品で登録した語です。読みや意味で探すか、辞書で調べてください',noWords:'単語帳はまだ空です',
+  noWordsSub:'ゲーム中に単語をクリックするか台詞をドラッグして調べると、登録した語がここに最近出会った順で並びます',status:'状態',del:'削除',delTitle:'この単語を削除（ごみ箱から戻せます）',statusFail:'状態を変更できませんでした'},
+ en:{words:'Words',total:'All words',met:'Met in all',metTitle:n=>`Met ${n} times across all games`,often:'Looked up often',oftenTitle:n=>`Looked up ${n} times`,lookupOnly:'Looked up, not saved yet',notSaved:'Not saved',
+  none:q=>`“${q}” is not in your words yet`,noneSub:'These are the words you saved in every game. Try a reading or a meaning, or look it up in the dictionary',noWords:'No words yet',
+  noWordsSub:'Click a word or drag across a line in the game to look it up; saved words are listed here, most recently met first',status:'Status',del:'Delete',delTitle:'Delete this word (restore it from the trash)',statusFail:'Could not change the status'}};
+const tx=(locale,scope)=>scope==='all'?{...(L[locale]||L.zh),...(ALL[locale]||ALL.zh)}:L[locale]||L.zh;
 
 const ICON=(d,c='')=>`<svg class="dc-ic${c?' '+c:''}" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="square">${d}</svg>`;
 const IC={chev:ICON('<path d="M4 6l4 4 4-4"/>','dc-ic-chev'),book:ICON('<path d="M2.5 3.5h4.5v9H2.5zM9 3.5h4.5v9H9z"/>'),x:ICON('<path d="M4 4l8 8M12 4l-8 8"/>'),
@@ -98,24 +109,29 @@ const meter=(s,t,esc,lg=false)=>`<span class="esr-mt${lg?' lg':''}" data-s="${ti
 function meansFit(list,k,max){const out=[];let n=0;for(const m of list.slice(0,k)){if(out.length&&n+m.length>max)break;out.push(m);n+=m.length+2;}return out;}
 const STEP=40,TOP=18;
 
-export function mountWords(target,{words=[],counts,locale='zh',esc,state,animate=false,onLookup,onLaunch,canLaunch=true}){
- const t=tx(locale),life=lifecycle(target);
- const all=words.map(w=>({...w,means:meanings(w.definitions),met:Number(w.met)||0}));
+/* scope 'all' (学习 › 单词): lookupOnly = looked-up surfaces never saved (shown only under 常查单词); onStatus / onDelete put the status
+   picker and the delete button into the detail column; enhance styles the picker like the app's other selects; onGame opens a line's game */
+export function mountWords(target,{words=[],lookupOnly=[],counts,locale='zh',esc,state,animate=false,onLookup,onLaunch,canLaunch=true,scope='game',onStatus,onDelete,enhance,onGame,peek}){
+ const t=tx(locale,scope),life=lifecycle(target);
+ const all=words.map(w=>({...w,means:meanings(w.definitions),met:Number(w.met)||0})),extra=lookupOnly.map(w=>({...w,means:meanings(w.definitions),met:0}));
+ const oftenCount=scope==='all'?all.filter(w=>w.lookups).length+extra.length:0;
  const byStatus=counts?.byStatus||null,groupCount=k=>byStatus?Object.entries(byStatus).filter(([s])=>group(s)===k).reduce((a,[,n])=>a+Number(n||0),0):all.filter(w=>group(w.status)===k).length;
- const total=Number(counts?.total)||all.length;
+ let total=Number(counts?.total)||all.length;
  state.filter??='all';state.q??='';state.shown??=STEP;state.open=false;
- const matches=w=>{if(state.filter!=='all'&&group(w.status)!==state.filter)return false;const q=state.q.trim().toLowerCase();if(!q)return true;
+ if(state.filter==='often'&&!oftenCount)state.filter='all';
+ const pool=()=>state.filter==='often'?[...all.filter(w=>w.lookups),...extra].sort((a,b)=>(b.lookups||0)-(a.lookups||0)):all;
+ const matches=w=>{if(state.filter==='often'?!w.lookups:state.filter!=='all'&&group(w.status)!==state.filter)return false;const q=state.q.trim().toLowerCase();if(!q)return true;
   return String(w.spelling||'').toLowerCase().includes(q)||String(w.reading||'').toLowerCase().includes(q)||hira(w.reading).includes(hira(q))||w.means.some(m=>m.toLowerCase().includes(q));};
  let list=[];const curWord=()=>list.find(w=>w.id===state.cur)||null;
 
- if(!all.length){
+ if(!all.length&&!extra.length){
   target.innerHTML=`<section class="esr is-empty" aria-label="${esc(t.words)}"><header class="esr-h"><div class="esr-hl"><span class="esr-tot"><span class="esr-k">${esc(t.total)}</span><b>0</b></span></div></header>
    <div class="esr-none" role="status"><span class="esr-w esr-w-none" lang="${locale==='en'?'en':'zh'}">${esc(t.noWords)}</span><p>${esc(t.noWordsSub)}</p>${canLaunch&&onLaunch?`<div class="esr-act"><button type="button" class="primary" data-launch>${esc(t.launch)}</button></div>`:''}</div></section>`;
   target.querySelector('[data-launch]')?.addEventListener('click',e=>onLaunch(e.currentTarget));
   const gsap=animate&&motion();if(gsap)life.add(()=>{gsap.timeline({defaults:{duration:.6,ease:'power3.out'}}).from(target.querySelectorAll('.esr-h > *, .esr-none > *'),{y:18,opacity:0,stagger:.08});});
   return life.stop;}
 
- const chips=()=>[['all',t.all,total],...t.groups.map((name,i)=>[String(i),name,groupCount(String(i))])].map(([key,name,n])=>
+ const chips=()=>[['all',t.all,total],...t.groups.map((name,i)=>[String(i),name,groupCount(String(i))]),...(oftenCount?[['often',t.often,oftenCount]]:[])].map(([key,name,n])=>
   `<button type="button" role="tab" class="esr-fb${state.filter===key?' on':''}" data-f="${key}" aria-selected="${state.filter===key}" tabindex="${state.filter===key?0:-1}">${esc(name)}<b>${n}</b></button>`).join('');
  target.innerHTML=`<section class="esr" aria-label="${esc(t.words)}">
   <header class="esr-h"><div class="esr-hl"><span class="esr-tot"><span class="esr-k">${esc(t.total)}</span><b>${total}</b></span><div class="esr-f" role="tablist" aria-label="${esc(t.filter)}">${chips()}</div></div>
@@ -124,9 +140,9 @@ export function mountWords(target,{words=[],counts,locale='zh',esc,state,animate
  const root=target.querySelector('.esr'),vp=root.querySelector('.esr-vp'),foot=root.querySelector('.esr-foot'),side=root.querySelector('.esr-d'),input=root.querySelector('.esr-q input');
 
  const row=w=>{const len=[...String(w.spelling||'')].length,sel=w.id===state.cur;
-  return `<li class="esr-row${sel?' is-cur':''}" role="option" id="esr-o-${w.id}" data-id="${w.id}" aria-selected="${sel}" tabindex="${sel?0:-1}" style="--len:${Math.max(3,len)}">`+
-   `<span class="esr-w" lang="ja">${rubyHTML(w.spelling,w.reading,esc)}</span><span class="esr-g"><span class="esr-gm">${meansFit(w.means,3,15).map(esc).join('<i class="sep">·</i>')||'—'}</span>${meter(w.status,t,esc)}`+
-   `<span class="cnt" title="${esc(t.metTitle(w.met))}">×${w.met}</span></span></li>`;};
+  return `<li class="esr-row${sel?' is-cur':''}" role="option" id="esr-o-${esc(String(w.id))}" data-id="${esc(String(w.id))}" aria-selected="${sel}" tabindex="${sel?0:-1}" style="--len:${Math.max(3,len)}">`+
+   `<span class="esr-w" lang="ja">${rubyHTML(w.spelling,w.reading,esc)}</span><span class="esr-g"><span class="esr-gm">${meansFit(w.means,3,15).map(esc).join('<i class="sep">·</i>')||'—'}</span>${w.lookupOnly?`<span class="esr-mt">${esc(t.notSaved)}</span>`:meter(w.status,t,esc)}`+
+   (state.filter==='often'?`<span class="cnt" title="${esc(t.oftenTitle(w.lookups))}">${w.lookups}</span>`:`<span class="cnt" title="${esc(t.metTitle(w.met))}">×${w.met}</span>`)+`</span></li>`;};
 
  /* the met-by-day strip: the last six days this word turned up here, its first day marked when it is among them */
  function strip(w){const times=(w.times||[]).map(toMs).filter(Boolean);if(!times.length)return '';const days=new Map();for(const ms of times){const k=dayKey(ms);days.set(k,{ms,n:(days.get(k)?.n||0)+1});}
@@ -134,25 +150,34 @@ export function mountWords(target,{words=[],counts,locale='zh',esc,state,animate
   const range=keys.length>1?`${md(days.get(keys[0]).ms)}–${md(days.get(keys[keys.length-1]).ms)}`:md(days.get(keys[0]).ms);
   return `<div class="esr-st-day"><dt class="esr-ch-h"><span>${esc(t.byDay)}</span><span>${range}</span></dt><dd><ol class="esr-ch" aria-label="${esc(t.byDayAria)}" style="--cols:${Math.max(shown.length,3)}">${shown.map(k=>{const d=days.get(k);
    return `<li class="${k===firstKey?'first':''}" style="--esr-bh:${(d.n/max).toFixed(3)}"><b>${d.n}</b><i></i><span>${md(d.ms)}</span></li>`;}).join('')}</ol></dd></div>`;}
- function exampleLine(line,label){if(!line?.text)return '';return `<p class="esr-ex" lang="ja"${exAttr(line.text,line.ruby,esc)}>「${marked(line.text,[line],esc)}」</p><p class="esr-src">${esc(label)} ${esc(dateOnly(line.at,locale))}</p>`;}
+ function exampleLine(line,label){if(!line?.text)return '';const game=scope==='all'&&line.game?(onGame&&line.gameId?`<button type="button" class="esr-game" data-game="${esc(line.gameId)}">${esc(line.game)}</button>`:`<span class="esr-game">${esc(line.game)}</span>`):'';
+  return `<p class="esr-ex" lang="ja"${exAttr(line.text,line.ruby,esc)}>「${marked(line.text,[line],esc)}」</p><p class="esr-src">${esc(label)} ${esc(dateOnly(line.at,locale))}${game?` · ${game}`:''}</p>`;}
  const meanList=w=>(state.open?w.means:w.means.slice(0,4)).map((m,i)=>`<li${i===0?' class="lead"':''}>${esc(m)}</li>`).join('')||'<li class="lead">—</li>';
  function detail(w){if(!w)return '';const extra=w.means.length-4;
   const more=extra>0?`<button type="button" class="esr-more" aria-expanded="${state.open}">${esc(state.open?t.less:t.otherMeans(extra))}${IC.chev}</button>`:'';
   const plate=w.jlpt?`<div class="esr-plate" role="img" aria-label="JLPT ${esc(w.jlpt)}"><small>JLPT</small><strong>${esc(w.jlpt)}</strong><small>${esc(t.created)} ${esc(md(toMs(w.created_at)))}</small></div>`:'';
   const latest=w.latest&&w.first&&(w.latest.text!==w.first.text)?exampleLine(w.latest,t.latest):'';
-  return `<div class="esr-cap"><span>${esc(t.current)}</span><span${w.inAnki?' class="on"':''}>${esc(w.inAnki?t.inAnki:t.notAnki)}</span></div>
-   <div class="esr-th"><h3 class="esr-t" lang="ja" style="--len:${Math.max(2,[...String(w.spelling||'')].length)}">${rubyHTML(w.spelling,w.reading,esc)}</h3><span class="esr-n" title="${esc(t.metTitle(w.met))}">${esc(t.met)}<b>×${w.met}</b></span></div>
+  const manage=!w.lookupOnly&&(onStatus||onDelete)?`<div class="esr-manage">${onStatus?`<div class="esr-status"><span aria-hidden="true">${esc(t.status)}</span><select data-status aria-label="${esc(t.mastery)}">${t.levels.map((name,i)=>`<option value="${i}"${level(w.status)===i?' selected':''}>${esc(name)}</option>`).join('')}</select></div>`:''}${onDelete?`<button type="button" class="secondary esr-del" data-del title="${esc(t.delTitle)}" aria-label="${esc(t.delTitle)}">${IC.trash}${esc(t.del)}</button>`:''}</div>`:'';
+  const cap=w.lookupOnly?t.lookupOnly:w.inAnki?t.inAnki:t.notAnki;
+  return `<div class="esr-cap"><span>${esc(t.current)}</span><span${w.inAnki?' class="on"':''}>${esc(cap)}</span></div>
+   <div class="esr-th"><h3 class="esr-t" lang="ja" style="--len:${Math.max(2,[...String(w.spelling||'')].length)}">${rubyHTML(w.spelling,w.reading,esc)}</h3>${w.lookupOnly?`<span class="esr-n" title="${esc(t.oftenTitle(w.lookups))}">${esc(t.often)}<b>${w.lookups}</b></span>`:`<span class="esr-n" title="${esc(t.metTitle(w.met))}">${esc(t.met)}<b>×${w.met}</b></span>`}</div>
    <i class="esr-bar" aria-hidden="true"></i>
    <div class="esr-mid${plate?'':' no-plate'}">${plate}<div class="esr-ms"><ol class="esr-mean">${meanList(w)}</ol>${more}</div></div>
-   ${onLookup?`<div class="esr-act"><button type="button" class="secondary" data-dict>${IC.book}${esc(t.dict)}</button></div>`:''}
+   ${onLookup||manage?`<div class="esr-act">${onLookup?`<button type="button" class="secondary" data-dict>${IC.book}${esc(t.dict)}</button>`:''}${manage}</div>`:''}
    ${exampleLine(w.first,t.first)}${latest}
-   <dl class="esr-stats"><div><dt>${esc(t.mastery)}</dt><dd>${meter(w.status,t,esc,true)}</dd></div>${strip(w)}</dl>`;}
+   ${w.lookupOnly?'':`<dl class="esr-stats"><div><dt>${esc(t.mastery)}</dt><dd>${meter(w.status,t,esc,true)}</dd></div>${strip(w)}</dl>`}`;}
  function noResults(){const q=state.q.trim();return `<div class="esr-none" role="status"><span class="esr-w" lang="ja">${esc(q||'—')}</span><p>${esc(q?t.none(q):t.noneSub)}</p>${q?`<p class="esr-none-sub">${esc(t.noneSub)}</p>`:''}
   <div class="esr-act">${q?`<button type="button" class="secondary" data-clear>${IC.x}${esc(t.clear)}</button>${onLookup?`<button type="button" class="secondary" data-dict-q>${IC.book}${esc(t.dictQ(q))}</button>`:''}`:`<button type="button" class="secondary" data-clear>${IC.x}${esc(t.clear)}</button>`}</div></div>`;}
 
  const listEl=()=>vp.querySelector('.esr-list');
  /* the current row's centre sits at 40% of the window; near the head of the list the list rests at the top instead of leaving a void above */
- const centreY=()=>{const r=vp.querySelector('.esr-row.is-cur');if(!r)return 0;const y=Math.min(TOP,vp.clientHeight*.4-(r.offsetTop+r.offsetHeight/2));vp.classList.toggle('at-top',y>=TOP);return y;};
+ /* 2026-11-15 rows share one height (the current one adds its ruby room), so the position is arithmetic on sizes measured once per render or
+    resize; reading offsetTop on every step forced a full page layout (~40 ms a step with thousands of words) */
+ let geo=null;
+ const measure=()=>{const l=listEl(),cur=l?.querySelector('.esr-row.is-cur');if(!cur){geo=null;return null;}const plain=l.querySelector('.esr-row:not(.is-cur)');
+  geo={vpH:vp.clientHeight,rowH:plain?plain.offsetHeight:cur.offsetHeight,curH:cur.offsetHeight};return geo;};
+ const centreY=()=>{const g=geo||measure();if(!g)return 0;const idx=Math.max(0,list.findIndex(w=>w.id===state.cur));
+  const y=Math.min(TOP,g.vpH*.4-(idx*g.rowH+g.curH/2));vp.classList.toggle('at-top',y>=TOP);return y;};
  function place(glide){const l=listEl();if(!l)return;const y=centreY(),gsap=motion();
   if(gsap&&glide)life.add(()=>gsap.to(l,{y,duration:.7,ease:'power4.inOut',overwrite:true}));else if(window.gsap)window.gsap.set(l,{y});else l.style.transform=`translateY(${y}px)`;}
  function cutIn(tl,at){const d=side,g=window.gsap;if(!d.firstElementChild)return tl;
@@ -165,15 +190,19 @@ export function mountWords(target,{words=[],counts,locale='zh',esc,state,animate
    .from(d.querySelectorAll('.esr-stats > div'),{opacity:0,y:8,duration:.4,stagger:.05,ease:'power3.out'},'<');
   const bars=d.querySelectorAll('.esr-ch li i');if(bars.length)tl.from(bars,{scaleY:0,transformOrigin:'50% 100%',duration:.5,stagger:.04,ease:'expo.out'},'<.1');
   return tl;}
- function paintDetail(){side.innerHTML=detail(curWord());}
- function renderList(){list=all.filter(matches);if(!list.some(w=>w.id===state.cur))state.cur=list[0]?.id??null;
+ function paintDetail(){side.innerHTML=detail(curWord());if(enhance&&side.querySelector('select'))try{enhance(side);}catch{}}
+ function renderList(){list=pool().filter(matches);if(!list.some(w=>w.id===state.cur))state.cur=list[0]?.id??null;
   const idx=list.findIndex(w=>w.id===state.cur);if(idx>=state.shown)state.shown=Math.ceil((idx+1)/STEP)*STEP;
   const shown=list.slice(0,state.shown);
-  vp.innerHTML=list.length?`<ul class="esr-list" role="listbox" aria-label="${esc(t.list)}"${state.cur!=null?` aria-activedescendant="esr-o-${state.cur}"`:''}>${shown.map(row).join('')}</ul>`:noResults();
-  const capped=total>all.length&&state.filter==='all'&&!state.q.trim();
-  foot.innerHTML=list.length?`<span class="esr-prog"><span>${esc(t.shown)} <b>${shown.length}</b> / ${list.length}${capped?` <small>（${esc(t.recent(all.length))}）</small>`:''}</span><i style="--p:${(shown.length/Math.max(1,list.length)).toFixed(4)}"></i></span>`+
-   (shown.length<list.length?`<button type="button" class="text-button" data-more>${esc(t.more(Math.min(STEP,list.length-shown.length)))}${IC.chev}</button>`:''):'';
-  root.classList.toggle('is-none',!list.length);paintDetail();place(false);}
+  vp.innerHTML=list.length?`<ul class="esr-list" role="listbox" aria-label="${esc(t.list)}"${state.cur!=null?` aria-activedescendant="esr-o-${esc(String(state.cur))}"`:''}>${shown.map(row).join('')}</ul>`:noResults();
+  paintFoot();
+  root.classList.toggle('is-none',!list.length);paintDetail();geo=null;place(false);}
+ function paintFoot(){const shown=Math.min(state.shown,list.length),capped=scope!=='all'&&total>all.length&&state.filter==='all'&&!state.q.trim();
+  foot.innerHTML=list.length?`<span class="esr-prog"><span>${esc(t.shown)} <b>${shown}</b> / ${list.length}${capped?` <small>（${esc(t.recent(all.length))}）</small>`:''}</span><i style="--p:${(shown/Math.max(1,list.length)).toFixed(4)}"></i></span>`+
+   (shown<list.length?`<button type="button" class="text-button" data-more>${esc(t.more(Math.min(STEP,list.length-shown)))}${IC.chev}</button>`:''):'';}
+ /* batches: rows are added STEP at a time at the end of the list (never a full rebuild), so thousands of words stay smooth */
+ function appendRows(){const l=listEl();if(!l||state.shown>=list.length)return [];const from=l.children.length;state.shown=Math.min(list.length,Math.max(state.shown,from)+STEP);
+  l.insertAdjacentHTML('beforeend',list.slice(from,state.shown).map(row).join(''));paintFoot();return [...l.children].slice(from);}
 
  let hoverTimer=0;
  function select(id,{focus=false,glide=false,punch=true}={}){const w=list.find(x=>x.id===id);if(!w)return;const changed=id!==state.cur;
@@ -186,7 +215,7 @@ export function mountWords(target,{words=[],counts,locale='zh',esc,state,animate
   const gsap=motion();if(!gsap||!changed||!punch||!r)return;
   life.add(()=>{const tl=gsap.timeline();tl.fromTo(r.querySelector('.esr-w'),{skewX:-10,x:-16,scale:1.06},{skewX:0,x:0,scale:1,duration:.45,ease:'expo.out',overwrite:'auto'});cutIn(tl,0);});}
  function step(delta){const i=list.findIndex(w=>w.id===state.cur),next=Math.max(0,Math.min(list.length-1,i+delta));if(next===i)return;
-  if(next>=state.shown){state.shown=Math.ceil((next+1)/STEP)*STEP;renderList();}select(list[next].id,{focus:true,glide:true});}
+  while(next>=state.shown-8&&state.shown<list.length)appendRows();select(list[next].id,{focus:true,glide:true});}
 
  /* events */
  root.querySelector('.esr-f').addEventListener('click',e=>{const b=e.target.closest('[data-f]');if(!b||b.dataset.f===state.filter)return;state.filter=b.dataset.f;state.shown=STEP;
@@ -214,15 +243,33 @@ export function mountWords(target,{words=[],counts,locale='zh',esc,state,animate
   view=scroller?scroller.getBoundingClientRect():{top:0,bottom:innerHeight};if(fr.top<view.top-2||fr.bottom>view.bottom+2)return;
   const i=list.findIndex(w=>w.id===state.cur),dir=Math.sign(e.deltaY);if(!dir||(dir<0&&i<=0)||(dir>0&&i>=list.length-1))return;e.preventDefault();
   const now=performance.now();if(now-wheelAt<110)return;wheelAt=now;step(dir);},{passive:false});
- foot.addEventListener('click',e=>{if(!e.target.closest('[data-more]'))return;const before=state.shown;state.shown+=STEP;renderList();
-  const gsap=motion(),rows=[...vp.querySelectorAll('.esr-row')].slice(before);if(gsap&&rows.length)life.add(()=>gsap.from(rows,{opacity:0,x:-20,duration:.4,stagger:.02,ease:'power3.out'}));});
+ foot.addEventListener('click',e=>{if(!e.target.closest('[data-more]'))return;
+  const gsap=motion(),rows=appendRows();if(gsap&&rows.length)life.add(()=>gsap.from(rows,{opacity:0,x:-20,duration:.4,stagger:.02,ease:'power3.out'}));});
  side.addEventListener('click',e=>{const w=curWord();if(!w)return;
   if(e.target.closest('[data-dict]')){onLookup?.(w.spelling);return;}
+  const g=e.target.closest('[data-game]');if(g){onGame?.(g.dataset.game);return;}
+  if(e.target.closest('[data-del]')&&onDelete){onDelete(w,()=>removeWord(w));return;}
   const m=e.target.closest('.esr-more');if(m){state.open=!state.open;side.querySelector('.esr-mean').innerHTML=meanList(w);m.setAttribute('aria-expanded',String(state.open));
    m.innerHTML=esc(state.open?t.less:t.otherMeans(w.means.length-4))+IC.chev;const gsap=motion();
    if(state.open&&gsap)life.add(()=>gsap.from(side.querySelectorAll('.esr-mean li:nth-child(n+5)'),{y:10,opacity:0,duration:.3,stagger:.05,ease:'power3.out'}));}});
- const ro=new ResizeObserver(()=>place(false));ro.observe(vp);life.off(()=>ro.disconnect());
- document.fonts?.ready?.then(()=>{if(life.live)place(false);});
+ /* status picker in the detail column: saved at once, the row's meter and the filter counts follow */
+ side.addEventListener('change',async e=>{const sel=e.target.closest('select[data-status]'),w=curWord();if(!sel||!w||!onStatus)return;const before=level(w.status),next=Number(sel.value);if(next===before)return;
+  sel.disabled=true;try{await onStatus(w,next);w.status=next;if(byStatus){byStatus[before]=Math.max(0,Number(byStatus[before]||0)-1);byStatus[next]=Number(byStatus[next]||0)+1;}
+   const r=listEl()?.querySelector(`.esr-row[data-id="${CSS.escape(String(w.id))}"] .esr-mt`);if(r)r.outerHTML=meter(w.status,t,esc);
+   const big=side.querySelector('.esr-stats .esr-mt');if(big)big.outerHTML=meter(w.status,t,esc,true);paintChips();}
+  catch{sel.value=String(before);}finally{sel.disabled=false;}});
+ function paintChips(){const f=root.querySelector('.esr-f');f.innerHTML=chips();root.querySelector('.esr-tot b').textContent=total;}
+ /* after a delete: the word leaves the list, the next one (or the previous at the end) becomes current */
+ function removeWord(w){const i=list.findIndex(x=>x.id===w.id),k=all.findIndex(x=>x.id===w.id);if(k<0)return;all.splice(k,1);total=Math.max(0,total-1);
+  if(byStatus)byStatus[level(w.status)]=Math.max(0,Number(byStatus[level(w.status)]||0)-1);
+  const nextWord=list[i+1]||list[i-1];state.cur=nextWord?nextWord.id:null;paintChips();renderList();}
+ /* lookup-only words have no saved meaning: the local dictionary fills meaning and reading in place (no lookup is recorded) */
+ if(peek&&extra.length)(async()=>{for(const w of extra.slice(0,100)){if(!life.live)return;let d=null;try{d=await peek(w.spelling);}catch{}if(!d||!life.live)continue;
+  if(d.definition)w.means=String(d.definition).split(/[;；\n]/).map(x=>x.trim()).filter(Boolean);if(d.reading&&d.reading!==w.spelling)w.reading=d.reading;
+  const r=listEl()?.querySelector(`.esr-row[data-id="${CSS.escape(String(w.id))}"]`);if(r){const tmp=document.createElement('ul');tmp.innerHTML=row(w);r.replaceWith(tmp.firstElementChild);}
+  if(state.cur===w.id)paintDetail();}})();
+ const ro=new ResizeObserver(()=>{geo=null;place(false);});ro.observe(vp);life.off(()=>ro.disconnect());
+ document.fonts?.ready?.then(()=>{if(life.live){geo=null;place(false);}});
 
  function swapIn(){const gsap=motion();if(!gsap)return;life.add(()=>{const tl=gsap.timeline();
   tl.from(vp.querySelectorAll('.esr-w'),{yPercent:60,opacity:0,duration:.45,stagger:.025,ease:'power4.out'});cutIn(tl,0);});}

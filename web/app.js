@@ -129,7 +129,7 @@ import {pageNav} from './page-nav.js';
 import {stageFor,applyVeil,veilSettingsHTML,veilsFromForm} from './page-veils.js';
 import {installExampleRuby,exAttr} from './example-ruby.js';
 const quickActions=new Set(['settings_get','vocabulary','unknown_words','home','preferences','ui_state','history','dialogue','sentences','word_trash','statistics',
- 'game_detail','reader_status']);
+ 'game_detail','study_words','reader_status']);
 /* E459: the learning pages' heavier reads get a longer limit, so a page never waits on them for good */
 const slowReads=new Set(['reading_insights','grammar_report','grammar_form_lines','grammar_bluebook','learning_rewards','learning_level','learning_goal','learning_activity','sentences_page']);
 const api=(action,params={})=>{const request=invoke('service',{request:{action,...params}});if(!quickActions.has(action)&&!slowReads.has(action)&&action!=='launch')return request;
@@ -924,6 +924,7 @@ function definitions(value){
    if(d&&typeof d==='object')return Object.values(d).flat().filter(v=>typeof v==='string').join('\n');}
   catch{}return String(value||'');
 }
+let studyWordsState={},studyWordsUnmount=()=>{};
 async function learning(token){
   /* 2026-11-11 假名游戏 is no longer its own tab: old links open 五十音 at its practice block */
   let kanaFocus='';if(subtab==='kanagames'){subtab='kana';kanaFocus='practice';}
@@ -952,6 +953,18 @@ async function learning(token){
    toast,errorMessage,empty,emptyLabel:text.emptySentences,readTime,datetime,icon,isCurrent:()=>token===pageToken,rerender:()=>renderRoute(),lookup:word=>{pendingDictionaryQuery=word;
    navigate('learning','dictionary');},openGame:(id,opts)=>{gameOrigin='library';selectedGameId=id;gameTab=opts?.tab||'';navigate('game');},games:model.games,cover});}catch(error){learningFailed(target,error,token);
    }if(token===pageToken)commit();return;}
+  /* 2026-11-15 单词 = the game page's 关联单词 layout (detail-collect.js mountWords) over every game; status picker and delete live in the
+     detail column, 常查单词 is one of the filters */
+  if(subtab==='words'){let data;try{data=await api('study_words');}catch(error){learningFailed(target,error,token);if(token===pageToken)commit();return;}
+   if(token!==pageToken)return;studyWordsUnmount();target.className='study-words';commit();
+   try{const {mountWords}=await import('./detail-collect.js');if(token!==pageToken)return;
+    studyWordsUnmount=mountWords(target,{scope:'all',words:data.words||[],lookupOnly:data.lookupOnly||[],counts:data.counts,locale,esc,state:studyWordsState,animate:true,
+     onLookup:word=>{pendingDictionaryQuery=word;navigate('learning','dictionary');},
+     onGame:id=>{gameOrigin='library';selectedGameId=id;navigate('game');},
+     onStatus:async(word,status)=>{try{await api('set_word_status',{id:word.id,status});}catch(error){toast(errorMessage(error));throw error;}},
+     onDelete:(word,done)=>confirmDelete(word,{onDone:done}),enhance:enhanceSelects,canLaunch:false,
+     peek:word=>api('dictionary',{query:word,source:'local'}).then(r=>r?.[0]||null)});}
+   catch(error){learningFailed(target,error,token);}return;}
   let items,pending;try{[items,pending]=await Promise.all([api(subtab==='words'?'vocabulary':subtab==='trash'?'word_trash':'sentences'),subtab==='words'?api('unknown_words').catch(()=>[]):[]]);
    }catch(error){learningFailed(target,error,token);if(token===pageToken)commit();return;}if(token!==pageToken)return;
   target.innerHTML=!items.length?empty(subtab==='words'?text.emptyWords:subtab==='trash'?text.emptyTrash:text.emptySentences,'learning'):`<div class="record-list">${items.map(item=>subtab==='sentences'?`<article class="record"><div class="record-meta"><span>${esc(item.title||'')}</span><span>${esc(readTime(item.created_at,locale))||datetime(item.created_at)}</span></div><p lang="ja"${exAttr(item.text,null,esc)}>${esc(item.text)}</p>${item.translation?`<p class="muted">${esc(item.translation)}</p>`:''}<div class="word-actions"><button class="icon-button" data-sentence-delete="${item.id}" aria-label="${{zh:'取消收藏',en:'Remove',ja:'保存を解除'}[locale]}" title="${{zh:'取消收藏',en:'Remove',ja:'保存を解除'}[locale]}">${icon('trash')}</button></div></article>`:`<article class="record word-row${subtab==='trash'?' trash-row':''}"><div><div class="word-spelling">${esc(item.spelling||item.reading)}</div><div class="word-reading">${esc(item.spelling&&item.spelling!==item.reading?item.reading:"")}${subtab==='words'?`<span class="word-jlpt${item.jlpt?'':' is-off'}">${esc(item.jlpt||({zh:'考级外',en:'Beyond JLPT',ja:'試験外'})[locale])}</span>`:''}</div>${subtab==='words'?`<div class="word-def">${esc(definitions(item.definitions))}</div>${item.example_text?`<div class="word-source"><button type="button" class="link-button" data-word-sentence="${item.id}" title="${{zh:'在句子页打开这句',en:'Open this line in Sentences',ja:'文のページで開く'}[locale]}">「<span lang="ja"${exAttr(String(item.example_text).replace(/^[\s　「『]+|[」』\s　]+$/g,''),null,esc)}>${esc((t=>t.length>60?t.slice(0,60)+'…':t)(String(item.example_text).replace(/^[\s　「『]+|[」』\s　]+$/g,'')))}</span>」</button>${item.example_game_id&&item.example_title?` · <button type="button" class="link-button" data-word-game="${esc(item.example_game_id)}">${esc(item.example_title)}</button>`:''}</div>`:''}`:`<div class="record-meta">${esc({zh:'删除于 ',ja:'削除 ',en:'Deleted '}[locale]||'')}${datetime(item.deleted_at)}</div>`}</div><div class="word-actions"><button class="${subtab==='trash'?'es-restore-btn':'icon-button'}" data-${subtab==='trash'?'restore':'delete'}="${item.id}" aria-label="${subtab==='trash'?text.restore:text.delete}">${icon(subtab==='trash'?'restore':'trash')}${subtab==='trash'?`<span class="es-restore">${esc({zh:'恢复到单词本',ja:'単語帳に戻す',en:'Restore to words'}[locale]||text.restore)}</span>`:''}</button></div></article>`).join('')}</div>`;
@@ -973,12 +986,12 @@ async function learning(token){
    model=await api('home');renderRoute();toast(text.restoreDone);}catch(error){toast(errorMessage(error));}}));
   enhanceSelects(target);commit();
 }
-function confirmDelete(word){if(!word)return;
+function confirmDelete(word,{onDone}={}){if(!word)return;
   const dialog=modal(`<h2>${text.deleteTitle}</h2><p>${text.deleteHint}</p><p class="dialog-word">${esc(word.spelling)}</p><p>${esc(word.reading)}</p><div class="dialog-actions"><button class="secondary" id="cancel-delete">${text.cancel}</button><button class="primary" id="confirm-delete">${text.deleteConfirm}</button></div>`);
   dialog.classList.add('word-delete');
   dialog.querySelector('#cancel-delete').addEventListener('click',()=>dialog.close());
   dialog.querySelector('#confirm-delete').addEventListener('click',async event=>{const button=event.currentTarget;button.disabled=true;try{await api('delete_word',
-   {id:word.id});dialog.close();model=await api('home');renderRoute();toast(text.deleteDone);}catch(error){button.disabled=false;toast(errorMessage(error));}});
+   {id:word.id});dialog.close();if(onDone){onDone();toast(text.deleteDone);model=await api('home');return;}model=await api('home');renderRoute();toast(text.deleteDone);}catch(error){button.disabled=false;toast(errorMessage(error));}});
 }
 function dictionary(target){
   const L={zh:{online:'MOJi 联网查词',local:'本地查词',play:'播放 MOJi 发音',audioFail:'发音暂时无法播放',notes:'MOJi 用户笔记',noNotes:'暂无笔记',likes:'赞',fail:'MOJi 暂时无法查询',login:'扫码登录 MOJi',

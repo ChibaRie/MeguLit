@@ -4,7 +4,7 @@
    follows by itself; buttons keep controls-b's .primary / .secondary / .text-button. One root with nine id-nots sits above controls-b's eight,
    so the few properties that must beat the app-wide !important chains (fonts, h2/h3, p) win without touching those files.
    Motion lives in GSAP (transform / opacity); CSS only carries hover colours and the static poses. */
-html:not(#dc1):not(#dc2):not(#dc3):not(#dc4):not(#dc5):not(#dc6):not(#dc7):not(#dc8):not(#dc9) body .main .game-detail-content{
+html:not(#dc1):not(#dc2):not(#dc3):not(#dc4):not(#dc5):not(#dc6):not(#dc7):not(#dc8):not(#dc9) body .main :is(.game-detail-content,.study-words){
 
 & :is(.esr,.gl){--dc-hi:var(--g-t1);--dc-mid:var(--g-t2);--dc-mute:var(--g-t3);--dc-off:color-mix(in srgb,var(--g-t1) 30%,transparent);
  --dc-line:var(--g-rule);--dc-line-2:var(--g-rule-strong);--dc-ruby:color-mix(in srgb,var(--t-red-2) 48%,var(--g-t1));
@@ -128,6 +128,15 @@ html:not(#dc1):not(#dc2):not(#dc3):not(#dc4):not(#dc5):not(#dc6):not(#dc7):not(#
 & .esr-ex em{font-style:normal;color:var(--dc-hi);box-shadow:inset 0 -2px 0 var(--t-red)}
 & .esr-ex+.esr-src+.esr-ex{margin-top:14px;font-size:16px!important;color:var(--dc-mid)}
 & .esr-src{margin:0;font:500 12px/1.4 var(--dc-mono)!important;color:var(--dc-mute)}
+/* 学习 › 单词: the line's game after the date, the status picker and delete next to 查词典 */
+& .esr-game{appearance:none;margin:0;padding:0;border:0;background:none;font:inherit;color:var(--dc-mid);cursor:pointer}
+& button.esr-game:hover{color:var(--dc-hi);text-decoration:underline 1px var(--t-red);text-underline-offset:3px}
+& .esr-manage{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+& .esr-status{flex:none;width:auto!important;min-width:max-content;display:inline-flex;align-items:center;gap:8px;font:500 12px/1 var(--dc-mono)!important;letter-spacing:.1em;color:var(--dc-mute)}
+& .esr-status>span{font-family:var(--dc-mono)!important;white-space:nowrap;flex:none}
+& .esr-status :is(select,.select-control){width:128px!important;min-width:128px;flex:none}
+& .esr-del{gap:6px}
+& .esr-del:hover{color:var(--t-red-2)}
 & .esr-stats{margin:18px 0 0;display:grid;grid-template-columns:minmax(0,.8fr) minmax(0,1.2fr);border-top:1px solid var(--dc-line);border-bottom:1px solid var(--dc-line)}
 & .esr-stats>div{display:flex;flex-direction:column;gap:10px;padding:12px 0;min-width:0}
 & .esr-stats>div+div{border-left:1px solid var(--dc-line);padding-left:20px}
@@ -341,7 +350,7 @@ html:not(#dc1):not(#dc2):not(#dc3):not(#dc4):not(#dc5):not(#dc6):not(#dc7):not(#
 }
 
 /* light theme: the card shadows soften, the plate keeps its maroon */
-html[data-theme=light]:not(#dc1):not(#dc2):not(#dc3):not(#dc4):not(#dc5):not(#dc6):not(#dc7):not(#dc8):not(#dc9) body .main .game-detail-content{
+html[data-theme=light]:not(#dc1):not(#dc2):not(#dc3):not(#dc4):not(#dc5):not(#dc6):not(#dc7):not(#dc8):not(#dc9) body .main :is(.game-detail-content,.study-words){
  & .gc{background:var(--t-panel),var(--mgc-plate,#fffaf5);box-shadow:0 18px 34px -20px rgba(60,30,20,.35)}
  & .gc:hover,& .gc:focus-visible{box-shadow:0 24px 44px -20px rgba(60,30,20,.4),0 0 0 2px var(--g-gold)}
  & .gc-how:hover{box-shadow:0 18px 34px -20px rgba(60,30,20,.35)}
@@ -352,5 +361,5 @@ html[data-theme=light]:not(#dc1):not(#dc2):not(#dc3):not(#dc4):not(#dc5):not(#dc
  & .gs.is-open .gs-frame{box-shadow:0 0 0 2px var(--g-gold)}
 }
 @media (prefers-reduced-motion:reduce){
- html body .main .game-detail-content :is(.esr-w,.esr-w::before,.gc,.gs-frame,.gl-fb){transition:none!important}
+ html body .main :is(.game-detail-content,.study-words) :is(.esr-w,.esr-w::before,.gc,.gs-frame,.gl-fb){transition:none!important}
 }
