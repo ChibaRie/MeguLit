@@ -21,7 +21,6 @@ export const NEWS_FEEDS=[
  {id:'moepedia',name:'Moepedia',url:'https://moepedia.net/feed/?paged=2',all:true},
  {id:'4gamer',name:'4Gamer.net',url:'https://www.4gamer.net/rss/pc/pc_news.xml'},
  {id:'gamespark',name:'Game*Spark',url:'https://www.gamespark.jp/rss/index.rdf'},
- {id:'inside',name:'インサイド',url:'https://www.inside-games.jp/rss/index.rdf'},
  {id:'automaton',name:'AUTOMATON',url:'https://automaton-media.com/feed/'},
  {id:'gamewatch',name:'GAME Watch',url:'https://game.watch.impress.co.jp/data/rss/1.0/gmw/feed.rdf'},
  /* ACG tab: anime, manga and other 二次元 news, unfiltered */

@@ -25,9 +25,10 @@ const NOW=new Date(2026,10,10,20,0,0);
 test('collectStats sums week / month / all time, words and streaks from local records only',t=>{
  const {db}=fixture(t);seed(db);const s=lb.collectStats(db,NOW);
  assert.deepEqual(s.keys,{week:'2026-W46',month:'2026-11',all:'all'});
- assert.deepEqual(s.stats.week,{characters:1510,seconds:910,words:1,streak:2,reviews:0,kana:0});
- assert.deepEqual(s.stats.month,{characters:3610,seconds:2170,words:2,streak:4,reviews:0,kana:0});
- assert.deepEqual(s.stats.all,{characters:12610,seconds:5770,words:3,streak:4,reviews:0,kana:0});
+ const Z={grammar:0,anki:0,practice:0,studySeconds:0,study:0};
+ assert.deepEqual(s.stats.week,{characters:1510,seconds:910,words:1,streak:2,reviews:0,kana:0,...Z});
+ assert.deepEqual(s.stats.month,{characters:3610,seconds:2170,words:2,streak:4,reviews:0,kana:0,...Z});
+ assert.deepEqual(s.stats.all,{characters:12610,seconds:5770,words:3,streak:4,reviews:0,kana:0,...Z});
  assert.equal(s.currentStreak,4);
  assert.deepEqual(s.games.map(g=>[g.title,g.characters]),[['ATRI',10500],['千恋＊万花',2100]],'hidden games stay out');
  assert.equal(lb.longestRun(['2026-01-01','2026-01-02','2026-01-04']),2);
@@ -77,7 +78,7 @@ test('opt-in needs consent and a clean nickname; only totals are uploaded; games
  assert.equal(post.url,'https://relay.test/api/leaderboard');
  /* 2026-11-12 转职: the level (and the element once chosen) ride along */
  assert.deepEqual(Object.keys(post.body).sort(),['hot','id','keys','level','name','stats','version']);assert.equal(typeof post.body.level,'number');assert.deepEqual(post.body.hot,{week:'2026-W46',terms:[]},'no lookups recorded');
- assert.deepEqual(post.body.stats.week,{characters:1510,seconds:910,words:1,streak:2,reviews:0,kana:0});
+ assert.deepEqual(post.body.stats.week,{characters:1510,seconds:910,words:1,streak:2,reviews:0,kana:0,grammar:0,anki:0,practice:0,studySeconds:0});
  assert.equal(post.body.name,'めぐみん');assert.ok(!JSON.stringify(post.body).includes(os.hostname()),'no machine names');
  const get=sent.find(r=>r.method==='GET');assert.match(get.url,/period=week&metric=characters&key=2026-W46&me=[0-9a-f]{64}$/);
  /* within 10 minutes the page does not post again */
@@ -266,11 +267,11 @@ test('E401 reviews and kana practice: counted per period, Anki answers that come
  /* only numbers are uploaded */
  lb.join(root,{name:'Kazuma',consent:true});const sent=[];
  await lb.submit(s,{root,env:BASE_ENV,account:null,now:NOW,fetch:async(u,i)=>{sent.push(JSON.parse(i.body));return new Response('{"ok":true}');}});
- assert.deepEqual(sent[0].stats.week,{characters:1510,seconds:910,words:1,streak:2,reviews:4,kana:20});
+ assert.deepEqual(sent[0].stats.week,{characters:1510,seconds:910,words:1,streak:2,reviews:4,kana:20,grammar:0,anki:2,practice:2,studySeconds:s.stats.week.studySeconds});
  const relayValidate=await import(pathToFileURL(path.join(__dirname,'..','relay','src','validate.js')).href);
  assert.equal(relayValidate.validateLeaderboard(sent[0],NOW).ok,true);
  /* an older client without the new numbers is still accepted; they count as 0 */
- const old=JSON.parse(JSON.stringify(sent[0]));for(const p of ['week','month','all']){delete old.stats[p].reviews;delete old.stats[p].kana;}
+ const old=JSON.parse(JSON.stringify(sent[0]));for(const p of ['week','month','all'])for(const k of ['reviews','kana','grammar','anki','practice','studySeconds'])delete old.stats[p][k];
  const checked=relayValidate.validateLeaderboard(old,NOW);assert.equal(checked.ok,true);assert.equal(checked.value.stats.week.kana,0);
  const big=JSON.parse(JSON.stringify(sent[0]));big.stats.week.reviews=100001;assert.equal(relayValidate.validateLeaderboard(big,NOW).error,'STATS_OUT_OF_RANGE');
  const view=await import(pathToFileURL(path.join(__dirname,'..','web','leaderboard-view.js')).href);
