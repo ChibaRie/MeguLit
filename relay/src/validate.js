@@ -15,14 +15,16 @@ export function cleanName(value){
  return {ok:true,name};
 }
 
-export const PERIODS=['week','month','all'],METRICS=['characters','seconds','words','streak','reviews','kana'];
+export const PERIODS=['week','month','all'],METRICS=['characters','seconds','words','streak','reviews','kana','grammar','anki','practice','studySeconds'];
+/* 2026-11-15 学习练习: `study` is not posted; the relay adds STUDY_PARTS. It is a board metric (BOARD_METRICS) only. */
+export const STUDY_PARTS=['kana','grammar','anki','practice'],BOARD_METRICS=['characters','seconds','words','streak','reviews','kana','study'];
 /* E401 reviews and kana arrived later: older clients leave them out and they count as 0 */
-export const OPTIONAL_METRICS=['reviews','kana'];
+export const OPTIONAL_METRICS=['reviews','kana','grammar','anki','practice','studySeconds'];
 /* Upper bounds a real reader cannot pass; anything above is rejected as a whole. */
 export const CAPS={
- week:{characters:3_000_000,seconds:7*86400,words:20_000,streak:7,reviews:100_000,kana:200_000},
- month:{characters:12_000_000,seconds:31*86400,words:80_000,streak:31,reviews:400_000,kana:800_000},
- all:{characters:2_000_000_000,seconds:200_000_000,words:2_000_000,streak:40_000,reviews:50_000_000,kana:50_000_000}
+ week:{characters:3_000_000,seconds:7*86400,words:20_000,streak:7,reviews:100_000,kana:200_000,grammar:200_000,anki:200_000,practice:200_000,studySeconds:7*86400},
+ month:{characters:12_000_000,seconds:31*86400,words:80_000,streak:31,reviews:400_000,kana:800_000,grammar:800_000,anki:800_000,practice:800_000,studySeconds:31*86400},
+ all:{characters:2_000_000_000,seconds:200_000_000,words:2_000_000,streak:40_000,reviews:50_000_000,kana:50_000_000,grammar:50_000_000,anki:50_000_000,practice:50_000_000,studySeconds:200_000_000}
 };
 export const LIMITS={body:64*1024,games:30,title:120,adaptationRecords:50,adaptationRecord:16*1024,keys:50,meta:16*1024,zip:20*1024*1024};
 const isInt=v=>Number.isSafeInteger(v)&&v>=0;
@@ -45,7 +47,8 @@ export function validateLeaderboard(body,now=new Date()){
  if(!allowed.week.has(keys.week)||!allowed.month.has(keys.month))return {ok:false,error:'PERIOD_KEY_OUT_OF_RANGE'};
  const stats={};
  for(const period of PERIODS){const p=body.stats?.[period];if(!p||typeof p!=='object')return {ok:false,error:'INVALID_STATS'};stats[period]={};
-  for(const metric of METRICS){const v=p[metric]===undefined&&OPTIONAL_METRICS.includes(metric)?0:p[metric];if(!isInt(v))return {ok:false,error:'INVALID_STATS'};if(v>CAPS[period][metric])return {ok:false,error:'STATS_OUT_OF_RANGE'};stats[period][metric]=v;}}
+  for(const metric of METRICS){const v=p[metric]===undefined&&OPTIONAL_METRICS.includes(metric)?0:p[metric];if(!isInt(v))return {ok:false,error:'INVALID_STATS'};if(v>CAPS[period][metric])return {ok:false,error:'STATS_OUT_OF_RANGE'};stats[period][metric]=v;}
+  stats[period].study=STUDY_PARTS.reduce((n,k)=>n+stats[period][k],0);}
  if(stats.all.characters<stats.month.characters||stats.all.seconds<stats.month.seconds)return {ok:false,error:'INVALID_STATS'};
  let games=null;
  if(body.games!==undefined){if(!Array.isArray(body.games)||body.games.length>LIMITS.games)return {ok:false,error:'INVALID_GAMES'};games=[];const seen=new Set();
@@ -65,7 +68,7 @@ export function validateBoardQuery(params,now=new Date()){
  const metric=params.get('metric')||'seconds',me=params.get('me')||'';
  if(me&&!HEX64.test(me))return {ok:false,error:'INVALID_QUERY'};
  if(metric==='games'){const game=params.get('game');if(game!==null&&(!game.trim()||[...game].length>LIMITS.title))return {ok:false,error:'INVALID_QUERY'};return {ok:true,value:{metric,game:game===null?null:gameKey(game),me}};}
- const period=params.get('period')||'week';if(!PERIODS.includes(period)||!METRICS.includes(metric))return {ok:false,error:'INVALID_QUERY'};
+ const period=params.get('period')||'week';if(!PERIODS.includes(period)||!BOARD_METRICS.includes(metric))return {ok:false,error:'INVALID_QUERY'};
  let key=period==='all'?'all':params.get('key')||periodKeysAt(now)[period];
  if(period==='week'&&!/^\d{4}-W\d{2}$/.test(key)||period==='month'&&!/^\d{4}-\d{2}$/.test(key))return {ok:false,error:'INVALID_QUERY'};
  return {ok:true,value:{period,metric,key,me}};

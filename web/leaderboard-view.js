@@ -17,10 +17,10 @@ import {cardify} from './home-tv.js';
 import {mountForum,forumWords,forumSubRow} from './forum-view.js';
 export const leaderboardLabel={zh:'排行榜',ja:'ランキング',en:'Leaderboard'};
 const W={
- zh:{title:'排行榜',week:'本周',month:'本月',all:'全部',characters:'阅读字数',seconds:'阅读时长',words:'新收录单词',reviews:'复习次数',kana:'假名练习',streak:'连续天数',games:'按游戏',
+ zh:{title:'排行榜',week:'本周',month:'本月',all:'全部',characters:'阅读字数',seconds:'阅读时长',words:'新收录单词',reviews:'复习次数',kana:'假名练习',study:'学习练习',streak:'连续天数',games:'按游戏',
   notReady:'联网服务还在准备中',notReadyText:'排行榜上线后会显示在这里。下面是只在本机计算的个人数据，不会上传',
   mine:'我的数据',currentStreak:'当前连续',days:'天',unitChars:'字',unitWords:'个',unitReviews:'次',unitKana:'题',totalWords:'共收录单词',hours:'小时',minutes:'分钟',
-  joinTitle:'参加排行榜',joinText:'参加后只会上传阅读字数、时长、收录单词数、复习次数、假名练习题数、连续天数的汇总，以及本周查词的词条和次数（不含原句和游戏进度），不读取硬件信息。参加要先用邮箱登录 MeguLit 账号，几台电脑会合并成一行；邮箱只用来登录，不会出现在榜上。随时可以在 设置 › 个人主页 退出，退出时会删除服务器上的记录',loginStep:'第 1 步：用邮箱登录',loginText:'输入邮箱，收到 6 位验证码后填进来就登录好了，不用设密码。已经在 设置 › 账号 登录过的话会直接跳到下一步',joinStep:'第 2 步：起个昵称',ACCOUNT_REQUIRED:'请先用邮箱登录',
+  joinTitle:'参加排行榜',joinText:'参加后只会上传阅读字数、时长、收录单词数、复习次数、学习练习题数（假名、语法、Anki 和其他练习分项）与学习时长、连续天数的汇总，以及本周查词的词条和次数（不含原句和游戏进度），不读取硬件信息。参加要先用邮箱登录 MeguLit 账号，几台电脑会合并成一行；邮箱只用来登录，不会出现在榜上。随时可以在 设置 › 个人主页 退出，退出时会删除服务器上的记录',loginStep:'第 1 步：用邮箱登录',loginText:'输入邮箱，收到 6 位验证码后填进来就登录好了，不用设密码。已经在 设置 › 账号 登录过的话会直接跳到下一步',joinStep:'第 2 步：起个昵称',ACCOUNT_REQUIRED:'请先用邮箱登录',
   nickname:'昵称',nicknameHint:'2–16 个字',shareGames:'同时公开我读过的游戏（用于“按游戏”排行）',consent:'我同意上传上述汇总数据',join:'参加',
   joinedAs:'以 {name} 参加',leave:'退出排行榜',leaveConfirm:'再点一次确认退出（会删除服务器上的记录）',left:'已退出排行榜',
   me:'我的排名',rank:'第 {n} 名',empty:'还没有人上榜',offline:'暂时连不上联网服务',retry:'重试',readers:'{n} 人在读',top:'榜首',back:'返回游戏列表',
@@ -29,10 +29,10 @@ const W={
   hotPending:'本周热词会在周一 00:00（北京时间）揭晓',hotEmpty:'这一周还没有达到上榜门槛的词',hotEmptyOf:'这一周还没有足够的{cat}',hotRule:'至少 3 位读者查过才会上榜，只统计参加排行榜的读者',
   lookedUp:'{users} 人查过 · {n} 次',times:'{n} 次',aiGuess:'AI 推测',participants:'{n} 位读者参与',
   NAME_REQUIRED:'请填写昵称',NAME_LENGTH:'昵称需要 2–16 个字',NAME_INVALID:'昵称不能包含网址、引号或特殊字符',NAME_BLOCKED:'这个昵称不能使用，换一个吧',NAME_TAKEN:'这个昵称已经有人在用了，换一个吧',CONSENT_REQUIRED:'请先勾选同意',BIO_LENGTH:'签名最多 60 字',BIO_INVALID:'签名不能包含网址或特殊字符',BIO_BLOCKED:'签名里有不能使用的内容',NOT_JOINED:'请先参加排行榜',INVALID_FAVORITES:'最喜欢的游戏有误'},
- ja:{title:'ランキング',week:'今週',month:'今月',all:'全期間',characters:'読んだ文字数',seconds:'読書時間',words:'新しく登録した単語',reviews:'復習回数',kana:'かな練習',streak:'連続日数',games:'ゲーム別',
+ ja:{title:'ランキング',week:'今週',month:'今月',all:'全期間',characters:'読んだ文字数',seconds:'読書時間',words:'新しく登録した単語',reviews:'復習回数',kana:'かな練習',study:'学習練習',streak:'連続日数',games:'ゲーム別',
   notReady:'オンラインサービスは準備中です',notReadyText:'公開後、ランキングはここに表示されます。下はこの PC だけで計算した個人の記録で、送信されません',
   mine:'自分の記録',currentStreak:'現在の連続',days:'日',unitChars:'字',unitWords:'語',unitReviews:'回',unitKana:'問',totalWords:'登録単語の合計',hours:'時間',minutes:'分',
-  joinTitle:'ランキングに参加',joinText:'参加すると、読んだ文字数・時間・登録単語数・復習回数・かな練習の問題数・連続日数の合計と、今週調べた語とその回数（原文やゲームの進行状況は含みません）だけを送ります。ハードウェア情報は読みません。参加にはメールアドレスで MeguLit アカウントにログインする必要があり、複数の PC が 1 行にまとまります。メールアドレスはログインにのみ使い、ランキングには表示されません。設定 › プロフィール でいつでも退出でき、そのときサーバーの記録も削除します',loginStep:'ステップ 1：メールアドレスでログイン',loginText:'メールアドレスを入力し、届いた 6 桁の確認コードを入れるだけでログインできます。パスワードは不要です。設定 › アカウント でログイン済みなら次のステップから始まります',joinStep:'ステップ 2：ニックネームを決める',ACCOUNT_REQUIRED:'先にメールアドレスでログインしてください',
+  joinTitle:'ランキングに参加',joinText:'参加すると、読んだ文字数・時間・登録単語数・復習回数・学習練習の問題数（かな・文法・Anki・その他の内訳）と学習時間・連続日数の合計と、今週調べた語とその回数（原文やゲームの進行状況は含みません）だけを送ります。ハードウェア情報は読みません。参加にはメールアドレスで MeguLit アカウントにログインする必要があり、複数の PC が 1 行にまとまります。メールアドレスはログインにのみ使い、ランキングには表示されません。設定 › プロフィール でいつでも退出でき、そのときサーバーの記録も削除します',loginStep:'ステップ 1：メールアドレスでログイン',loginText:'メールアドレスを入力し、届いた 6 桁の確認コードを入れるだけでログインできます。パスワードは不要です。設定 › アカウント でログイン済みなら次のステップから始まります',joinStep:'ステップ 2：ニックネームを決める',ACCOUNT_REQUIRED:'先にメールアドレスでログインしてください',
   nickname:'ニックネーム',nicknameHint:'2〜16 文字',shareGames:'読んだゲームも公開する（ゲーム別ランキング用）',consent:'上記の合計データの送信に同意します',join:'参加する',
   joinedAs:'{name} として参加中',leave:'ランキングから退出',leaveConfirm:'もう一度押すと退出します（サーバーの記録を削除）',left:'ランキングから退出しました',
   me:'自分の順位',rank:'{n} 位',empty:'まだ誰も載っていません',offline:'オンラインサービスに接続できません',retry:'再試行',readers:'{n} 人が読書中',top:'1 位',back:'ゲーム一覧に戻る',
@@ -41,10 +41,10 @@ const W={
   hotPending:'今週の注目語は月曜 0:00（UTC+8）に発表されます',hotEmpty:'この週は掲載基準に達した語がありません',hotEmptyOf:'この週は掲載基準に達した{cat}がありません',hotRule:'3 人以上が調べた語だけを掲載します。ランキング参加者のみ集計',
   lookedUp:'{users} 人が {n} 回調べました',times:'{n} 回',aiGuess:'AI の推測',participants:'{n} 人が参加',
   NAME_REQUIRED:'ニックネームを入力してください',NAME_LENGTH:'ニックネームは 2〜16 文字です',NAME_INVALID:'URL・引用符・特殊文字は使えません',NAME_BLOCKED:'このニックネームは使えません',NAME_TAKEN:'このニックネームはすでに使われています。別の名前にしてください',CONSENT_REQUIRED:'同意にチェックしてください',BIO_LENGTH:'ひとことは 60 文字までです',BIO_INVALID:'URL や特殊文字は使えません',BIO_BLOCKED:'使えない内容が含まれています',NOT_JOINED:'先にランキングに参加してください',INVALID_FAVORITES:'好きなゲームの指定が正しくありません'},
- en:{title:'Leaderboard',week:'This week',month:'This month',all:'All time',characters:'Characters read',seconds:'Reading time',words:'New words saved',reviews:'Reviews',kana:'Kana practice',streak:'Streak days',games:'By game',
+ en:{title:'Leaderboard',week:'This week',month:'This month',all:'All time',characters:'Characters read',seconds:'Reading time',words:'New words saved',reviews:'Reviews',kana:'Kana practice',study:'Study practice',streak:'Streak days',games:'By game',
   notReady:'Online services are still being set up',notReadyText:'The leaderboard will appear here once it is live. Below are your own numbers, computed on this PC and not uploaded',
   mine:'My numbers',currentStreak:'Current streak',days:'days',unitChars:'chars',unitWords:'words',unitReviews:'reviews',unitKana:'questions',totalWords:'Words saved in all',hours:'h',minutes:'min',
-  joinTitle:'Join the leaderboard',joinText:'Only totals are uploaded: characters read, reading time, words saved, reviews, kana questions answered, streak days, and this week\'s looked-up words with their counts (no sentences, no game progress, no hardware ids). Joining needs a MeguLit account signed in with your email, so your PCs share one row; the email is only used to sign in and never shows on the board. Leave any time in Settings › Profile, which also deletes your entry on the server',loginStep:'Step 1: sign in with your email',loginText:'Enter your email, then type the 6-digit code we send you. No password. If you already signed in under Settings › Account, you start at step 2',joinStep:'Step 2: pick a nickname',ACCOUNT_REQUIRED:'Sign in with your email first',
+  joinTitle:'Join the leaderboard',joinText:'Only totals are uploaded: characters read, reading time, words saved, reviews, study questions answered (kana, grammar, Anki and other practice, each counted) with study time, streak days, and this week\'s looked-up words with their counts (no sentences, no game progress, no hardware ids). Joining needs a MeguLit account signed in with your email, so your PCs share one row; the email is only used to sign in and never shows on the board. Leave any time in Settings › Profile, which also deletes your entry on the server',loginStep:'Step 1: sign in with your email',loginText:'Enter your email, then type the 6-digit code we send you. No password. If you already signed in under Settings › Account, you start at step 2',joinStep:'Step 2: pick a nickname',ACCOUNT_REQUIRED:'Sign in with your email first',
   nickname:'Nickname',nicknameHint:'2–16 characters',shareGames:'Also show the games I read (for the per-game boards)',consent:'I agree to upload these totals',join:'Join',
   joinedAs:'Joined as {name}',leave:'Leave the leaderboard',leaveConfirm:'Click again to leave (deletes your entry on the server)',left:'You left the leaderboard',
   me:'My rank',rank:'#{n}',empty:'Nobody here yet',offline:'Cannot reach the online service right now',retry:'Retry',readers:'{n} readers',top:'Top',back:'Back to games',
@@ -54,7 +54,8 @@ const W={
   lookedUp:'{users} readers · {n} lookups',times:'{n}×',aiGuess:'AI guess',participants:'{n} readers took part',
   NAME_REQUIRED:'Enter a nickname',NAME_LENGTH:'Nicknames are 2–16 characters',NAME_INVALID:'No links, quotes or special characters',NAME_BLOCKED:'That nickname is not allowed',NAME_TAKEN:'Someone already uses this name; pick another',CONSENT_REQUIRED:'Please tick the agreement first',BIO_LENGTH:'Signatures are up to 60 characters',BIO_INVALID:'No links or special characters',BIO_BLOCKED:'That signature is not allowed',NOT_JOINED:'Join the leaderboard first',INVALID_FAVORITES:'Those favourite games are not valid'}
 };
-const PERIODS=['week','month','all'],METRICS=['seconds','characters','words','reviews','kana','streak','games'],CATS=['word','phrase','sentence'];
+/* 2026-11-15 (user) 假名练习 became 学习练习: every study practice in one board, ranked by questions */
+const PERIODS=['week','month','all'],METRICS=['seconds','characters','words','reviews','study','streak','games'],CATS=['word','phrase','sentence'];
 let view={tab:'board',period:'week',metric:'seconds',game:'',category:'word',week:''};
 export const setView=patch=>{view={...view,...patch};};
 export function leaderboardWords(locale){return W[locale]||W.zh;}
@@ -63,7 +64,7 @@ const nf=locale=>new Intl.NumberFormat(locale==='zh'?'zh-CN':locale==='ja'?'ja-J
 export function formatValue(metric,value,locale){
  const w=leaderboardWords(locale),n=nf(locale).format(value||0);
  if(metric==='seconds'){const min=Math.floor((value||0)/60);return min>=60?`${Math.floor(min/60)} ${w.hours} ${min%60} ${w.minutes}`:`${min} ${w.minutes}`;}
- if(metric==='words')return `${n} ${w.unitWords}`;if(metric==='reviews')return `${n} ${w.unitReviews}`;if(metric==='kana')return `${n} ${w.unitKana}`;if(metric==='streak')return `${n} ${w.days}`;return `${n} ${w.unitChars}`;
+ if(metric==='words')return `${n} ${w.unitWords}`;if(metric==='reviews')return `${n} ${w.unitReviews}`;if(metric==='kana'||metric==='study')return `${n} ${w.unitKana}`;if(metric==='streak')return `${n} ${w.days}`;return `${n} ${w.unitChars}`;
 }
 /* Default avatar: the first character of the name on one of six preset colours picked by the name. */
 const PRESETS=['#ad1539','#b8862e','#3f7d6e','#4867a8','#7a4ea3','#a65a3a'];
@@ -77,9 +78,9 @@ export function avatarHTML(entry,images,esc){
    ruled rows under column headings; hot words use the same stage, 4–10 as one column of honour rows (no orphan
    card), 11–50 as a compact two-column index. */
 const EXTRA={
- zh:{eyebrow:'读者 · 每周更新',colRank:'名次',colReader:'读者',colTerm:'词条',colWhy:'为什么是它',honours:'4 – 10 名',rest:'11 – 50 名',myRank:'我的名次',myPage:'我的主页',circleTitle:'本周众人汇聚的魔力',circleSub:'{n} 位读者在此共鸣',featureTitle:'被阅读最多的作品',featureSub:'{n} 位读者一起读过 · 累计',wordTitle:'本周最多人查的词',wordSub:'{n} 位读者查过 · 点击查词',meTag:'吾',signIn:'注册 / 登录',follow:'关注',vacant:'虚位以待',followSub:'关注的人和同好',changeAvatar:'换头像',editProfile:'编辑个人主页',uploading:'上传并审核中…'},
- ja:{eyebrow:'読者 · 毎週更新',colRank:'順位',colReader:'読者',colTerm:'語',colWhy:'なぜこの語？',honours:'4 – 10 位',rest:'11 – 50 位',myRank:'自分の順位',myPage:'マイページ',circleTitle:'みんなで集めた魔力',circleSub:'{n} 人の読者が共鳴中',featureTitle:'いちばん読まれた作品',featureSub:'{n} 人の読者が読みました · 累計',wordTitle:'今週いちばん調べられた語',wordSub:'{n} 人が調べました · クリックで辞書へ',meTag:'我',signIn:'登録 / ログイン',follow:'フォロー',vacant:'空席',followSub:'フォロー中の人と同好',changeAvatar:'アイコンを変更',editProfile:'プロフィールを編集',uploading:'アップロードして審査中…'},
- en:{eyebrow:'Readers · updated weekly',colRank:'Rank',colReader:'Reader',colTerm:'Term',colWhy:'Why this one',honours:'Ranks 4 – 10',rest:'Ranks 11 – 50',myRank:'My rank',myPage:'My profile',circleTitle:'Mana gathered together',circleSub:'{n} readers in resonance',featureTitle:'The most-read work',featureSub:'Read by {n} readers · all time',wordTitle:'Most looked-up word this week',wordSub:'Looked up by {n} readers · click to look it up',meTag:'You',signIn:'Sign up / sign in',follow:'Following',vacant:'Open spot',followSub:'People you follow and kindred readers',changeAvatar:'Change picture',editProfile:'Edit profile',uploading:'Uploading and checking…'}
+ zh:{eyebrow:'读者 · 每周更新',colRank:'名次',colReader:'读者',colTerm:'词条',colWhy:'为什么是它',honours:'4 – 10 名',rest:'11 – 50 名',myRank:'我的名次',myPage:'我的主页',circleTitle:'本周众人汇聚的魔力',circleSub:'{n} 位读者在此共鸣',featureTitle:'被阅读最多的作品',featureSub:'{n} 位读者一起读过 · 累计',wordTitle:'本周最多人查的词',wordSub:'{n} 位读者查过 · 点击查词',meTag:'吾',dAnki:'Anki 背词',dGrammar:'语法练习',dKana:'假名练习',dPractice:'其他练习',dTime:'学习时长',dTotal:'合计',signIn:'注册 / 登录',follow:'关注',vacant:'虚位以待',followSub:'关注的人和同好',changeAvatar:'换头像',editProfile:'编辑个人主页',uploading:'上传并审核中…'},
+ ja:{eyebrow:'読者 · 毎週更新',colRank:'順位',colReader:'読者',colTerm:'語',colWhy:'なぜこの語？',honours:'4 – 10 位',rest:'11 – 50 位',myRank:'自分の順位',myPage:'マイページ',circleTitle:'みんなで集めた魔力',circleSub:'{n} 人の読者が共鳴中',featureTitle:'いちばん読まれた作品',featureSub:'{n} 人の読者が読みました · 累計',wordTitle:'今週いちばん調べられた語',wordSub:'{n} 人が調べました · クリックで辞書へ',meTag:'我',dAnki:'Anki で覚えた単語',dGrammar:'文法練習',dKana:'かな練習',dPractice:'その他の練習',dTime:'学習時間',dTotal:'合計',signIn:'登録 / ログイン',follow:'フォロー',vacant:'空席',followSub:'フォロー中の人と同好',changeAvatar:'アイコンを変更',editProfile:'プロフィールを編集',uploading:'アップロードして審査中…'},
+ en:{eyebrow:'Readers · updated weekly',colRank:'Rank',colReader:'Reader',colTerm:'Term',colWhy:'Why this one',honours:'Ranks 4 – 10',rest:'Ranks 11 – 50',myRank:'My rank',myPage:'My profile',circleTitle:'Mana gathered together',circleSub:'{n} readers in resonance',featureTitle:'The most-read work',featureSub:'Read by {n} readers · all time',wordTitle:'Most looked-up word this week',wordSub:'Looked up by {n} readers · click to look it up',meTag:'You',dAnki:'Anki words',dGrammar:'Grammar practice',dKana:'Kana practice',dPractice:'Other practice',dTime:'Study time',dTotal:'Total',signIn:'Sign up / sign in',follow:'Following',vacant:'Open spot',followSub:'People you follow and kindred readers',changeAvatar:'Change picture',editProfile:'Edit profile',uploading:'Uploading and checking…'}
 };
 const words=locale=>({...leaderboardWords(locale),...(EXTRA[locale]||EXTRA.zh),forum:forumWords(locale).forum});
 function segmented(name,items,current,w){return `<div class="lb-seg" role="group" data-lb-group="${name}">${items.map(item=>`<button type="button" data-lb-${name}="${item}" aria-pressed="${item===current}">${w[item]}</button>`).join('')}</div>`;}
@@ -98,7 +99,7 @@ const crown='<svg class="lb-crown\" viewBox="0 0 32 20" aria-hidden="true"><path
 const MEDAL={1:'gold',2:'silver',3:'bronze'};
 function localHTML(data,w,locale,esc){
  const stats=data.local?.stats?.[view.period]||{};
- return `<section class="lb-mine"><h2 class="lb-h2">${w.mine} <span>· ${w[view.period]}</span></h2><div class="lb-tiles">${[['seconds',stats.seconds],['characters',stats.characters],['words',stats.words],['totalWords',data.local?.totals?.words,'words'],['reviews',stats.reviews],['kana',stats.kana],['streak',stats.streak],['currentStreak',data.local?.currentStreak,'streak']].map(([key,value,unit])=>`<div class="lb-tile"><small>${w[key]}</small><strong>${esc(formatValue(unit||key,value,locale))}</strong></div>`).join('')}</div></div></section>`;
+ return `<section class="lb-mine"><h2 class="lb-h2">${w.mine} <span>· ${w[view.period]}</span></h2><div class="lb-tiles">${[['seconds',stats.seconds],['characters',stats.characters],['words',stats.words],['totalWords',data.local?.totals?.words,'words'],['reviews',stats.reviews],['study',stats.study],['streak',stats.streak],['currentStreak',data.local?.currentStreak,'streak']].map(([key,value,unit])=>`<div class="lb-tile"><small>${w[key]}</small><strong>${esc(formatValue(unit||key,value,locale))}</strong></div>`).join('')}</div></div></section>`;
 }
 const flag='<svg viewBox="0 0 24 24" aria-hidden="true" width="14" height="14"><path d="M6 21V4m0 0h10l-2 4 2 4H6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>';
 const reportButton=(e,w,esc)=>e.avatar&&!e.me?`<button type="button" class="leaderboard-report" data-lb-report="${esc(e.avatar)}" title="${w.report}" aria-label="${w.report}">${flag}</button>`:'';
@@ -118,10 +119,16 @@ function headHTML(entries,metric,w,locale,esc,board){
  const total=entries.reduce((n,e)=>n+(Number(e.value)||0),0);
  return `<section class="lb-circle"><div class="lb-circle-sigil">${SIGIL}</div><div class="lb-circle-text"><small>${w.circleTitle}</small><strong>${esc(formatValue(metric,total,locale))}</strong><span>${esc(fill(w.circleSub,{n:entries.length}))}</span></div></section>`;
 }
+/* 2026-11-15 学习练习: hovering (or focusing) a reader's card shows their parts in a card of the same look — Anki words,
+   grammar, kana, other practice, study time and the total. No order numbers anywhere (the old No.01 code is gone). */
+export function detailHTML(e,w,locale,esc,images){
+ const d=e?.detail;if(!d)return '';const n=v=>nf(locale).format(v||0);
+ const rows=[[w.dAnki,`${n(d.anki)} ${w.unitWords}`],[w.dGrammar,`${n(d.grammar)} ${w.unitKana}`],[w.dKana,`${n(d.kana)} ${w.unitKana}`],[w.dPractice,`${n(d.practice)} ${w.unitKana}`],[w.dTime,formatValue('seconds',d.studySeconds,locale)]];
+ return `<div class="lb-detail-head"><span class="lb-gem">${avatarHTML(e,images,esc)}</span><span class="lb-gname">${esc(e.name)}</span>${rankTag(e,esc)}</div><dl class="lb-detail-rows">${rows.map(([k,v])=>`<div><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join('')}</dl><p class="lb-detail-total"><small>${esc(w.dTotal)}</small><strong>${esc(formatValue('study',e.value,locale))}</strong></p>`;
+}
 function circleHTML(entries,metric,w,locale,esc,images,board){
- const code=n=>'No.'+String(n).padStart(2,'0');
  return `${headHTML(entries,metric,w,locale,esc,board)}
- <ol class="lb-grimoires" role="list">${entries.map((e,i)=>`<li class="lb-grimoire${e.me?' is-me':''}" style="--i:${i}">${e.me?`<em class="lb-me-tag">${w.meTag}</em>`:''}<span class="lb-code">${code(e.rank)}</span>${personButton(e,`<span class="lb-gem">${avatarHTML(e,images,esc)}</span><span class="lb-gname">${esc(e.name)}</span>${rankTag(e,esc)}`,esc)}<strong class="lb-gvalue">${esc(formatValue(metric,e.value,locale))}</strong>${reportButton(e,w,esc)}</li>`).join('')}</ol>`;
+ <ol class="lb-grimoires" role="list">${entries.map((e,i)=>`<li class="lb-grimoire${e.me?' is-me':''}" style="--i:${i}"${metric==='study'&&e.detail?` data-lb-detail="${i}"`:''}>${e.me?`<em class="lb-me-tag">${w.meTag}</em>`:''}${personButton(e,`<span class="lb-gem">${avatarHTML(e,images,esc)}</span><span class="lb-gname">${esc(e.name)}</span>${rankTag(e,esc)}`,esc)}<strong class="lb-gvalue">${esc(formatValue(metric,e.value,locale))}</strong>${reportButton(e,w,esc)}</li>`).join('')}</ol>`;
 }
 export function boardHTML(data,w,locale,esc){
  w={...words(locale),...w};
@@ -298,6 +305,18 @@ export async function mountLeaderboard(main,{api,locale,esc,toast,isCurrent=()=>
   const openProfile=()=>openProfilePanel({api,locale,esc,toast,openSettings,onClose:()=>{if(isCurrent())render();}});
   main.querySelectorAll('[data-lb-me],[data-lb-profile]').forEach(b=>b.addEventListener('click',openProfile));
   main.querySelectorAll('[data-lb-lookup]').forEach(b=>b.addEventListener('click',()=>lookup?.(b.dataset.lbLookup)));
+  /* 学习练习 hover card: one floating card, placed over the hovered reader (under it when there is no room above) */
+  {const page=main.querySelector('.leaderboard-page');main.querySelectorAll('.lb-detail').forEach(x=>x.remove());
+   const hide=()=>main.querySelectorAll('.lb-detail').forEach(x=>x.remove());
+   main.querySelectorAll('.lb-grimoire[data-lb-detail]').forEach(li=>{
+    const show=()=>{hide();const e=(last?.board?.entries||[])[Number(li.dataset.lbDetail)],html=detailHTML(e,words(locale),locale,esc,last?.avatars||{});if(!html||!page)return;
+     const tip=document.createElement('div');tip.className='lb-detail';tip.setAttribute('role','tooltip');tip.innerHTML=html;page.append(tip);
+     /* a transformed ancestor moves position:fixed off the viewport: measure where it lands and take that offset out */
+     const r=li.getBoundingClientRect(),t=tip.getBoundingClientRect(),vw=document.documentElement.clientWidth,floor=Math.max(8,main.getBoundingClientRect().top+8);
+     const x=Math.max(8,Math.min(vw-t.width-8,r.left+r.width/2-t.width/2)),y=r.top-t.height-10>=floor?r.top-t.height-10:r.bottom+10;
+     tip.style.left=x+'px';tip.style.top=y+'px';tip.style.transform='none';const land=tip.getBoundingClientRect();tip.style.transform='';tip.style.left=(2*x-land.left)+'px';tip.style.top=(2*y-land.top)+'px';requestAnimationFrame(()=>tip.classList.add('is-open'));};
+    li.addEventListener('pointerenter',show);li.addEventListener('focusin',show);li.addEventListener('pointerleave',hide);li.addEventListener('focusout',hide);});
+   if(!main.dataset.lbDetailScroll){main.dataset.lbDetailScroll='1';main.addEventListener('scroll',()=>main.querySelectorAll('.lb-detail').forEach(x=>x.remove()),{passive:true});}}
   bindSocial(main,{api,locale,esc,toast,images:()=>({...(last?.avatars||{}),...(last?.social?.avatars||{})}),avatarHTML,openSettings:section=>section==='personal'?openProfile():openSettings(section),rerender:()=>{if(isCurrent())render();}});
  };
  main.innerHTML=leaderboardHTML(null,locale,esc);

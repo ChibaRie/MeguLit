@@ -21,7 +21,9 @@
    The relay stores only sha256(id); `me` is that hash so the page can mark the user's own row. */
 const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto');
 const relay=require('./relay-config.cjs');
-const PERIODS=['week','month','all'],METRICS=['characters','seconds','words','streak','reviews','kana'],TIMEOUT=8000,SUBMIT_EVERY=10*60*1000,RESEND_ANYWAY=24*60*60*1000,MAX_GAMES=30;
+/* 2026-11-15 学习练习: the study parts are sent too (grammar, anki, practice, studySeconds); the relay adds kana+grammar+anki+practice
+   into `study`, the metric the board ranks by. QUERY_METRICS is what the page may ask for. */
+const PERIODS=['week','month','all'],METRICS=['characters','seconds','words','streak','reviews','kana','grammar','anki','practice','studySeconds'],QUERY_METRICS=['characters','seconds','words','streak','reviews','kana','study'],STUDY_PARTS=['kana','grammar','anki','practice'],TIMEOUT=8000,SUBMIT_EVERY=10*60*1000,RESEND_ANYWAY=24*60*60*1000,MAX_GAMES=30;
 const stateFile=root=>path.join(root,'data','config','leaderboard.json');
 function atomic(file,value){fs.mkdirSync(path.dirname(file),{recursive:true});const tmp=file+'.'+process.pid+'.tmp';fs.writeFileSync(tmp,JSON.stringify(value,null,1));fs.renameSync(tmp,file);}
 
@@ -76,17 +78,51 @@ function kanaTimes(root,until){
  const out=[];for(const run of runs){const t=Math.floor(Number(run.id)/1000);if(!(t>0&&t<until))continue;for(let i=0;i<Math.min(run.log.length,500);i++)out.push(t);}
  return out;
 }
+/* 2026-11-15 学习练习 — every place in the app that records a practice answer, as unix-second timestamps:
+   - kana: kanaTimes above (kana games in 学习 › 假名, web/kana/views/play.js runs; one per answered question)
+   - grammar: every answer in 学习 › 语法 practice (bridge grammar_answer → grammar_answer_events, services/grammar.cjs).
+     Before that table existed only grammar_progress totals (no time) and the 魔力 log of right answers
+     (learning_mana kind 'answer') were kept, so those older right answers count for the time before the first event.
+   - anki: one per Anki card answered, in the in-app Anki review/practice (anki_review_events) or in Anki itself and
+     synced back (anki_synced_reviews, review ids are epoch ms); an in-app answer that later syncs back counts once.
+   - practice (other): word cards in MeguLit's own 复习 (review_events written by record_review, not the rows the Anki
+     sync copies there) and the 找语法 taps on the grammar map (learning_mana kind 'find').
+   studySeconds: kana runs carry their own length (secs); the other answers are timed by the gap to the previous answer,
+   at most 120 s, and a lone answer counts 20 s. */
+function studyTimes(db,root,until){
+ const safe=fn=>{try{return fn();}catch{return [];}},has=name=>safe(()=>db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").all(name)).length>0;
+ const num=rows=>rows.map(r=>Number(r.t)||0).filter(t=>t>0&&t<until);
+ const synced=has('anki_synced_reviews'),mana=has('learning_mana');
+ const anki=[...(synced?num(safe(()=>db.prepare('SELECT review_id/1000 t FROM anki_synced_reviews').all())):[]),
+  ...num(safe(()=>db.prepare(synced?'SELECT a.reviewed_at t FROM anki_review_events a WHERE NOT EXISTS (SELECT 1 FROM anki_synced_reviews s WHERE ABS(s.review_id/1000-a.reviewed_at)<=5)':'SELECT reviewed_at t FROM anki_review_events').all()))];
+ const grammarEvents=has('grammar_answer_events')?num(safe(()=>db.prepare('SELECT at t FROM grammar_answer_events').all())):[];
+ const firstEvent=grammarEvents.length?Math.min(...grammarEvents):Infinity;
+ const grammar=[...grammarEvents,...(mana?num(safe(()=>db.prepare("SELECT at t FROM learning_mana WHERE kind='answer'").all())).filter(t=>t<firstEvent):[])];
+ const practice=[...num(safe(()=>db.prepare(synced?'SELECT e.reviewed_at t FROM review_events e WHERE NOT EXISTS (SELECT 1 FROM anki_synced_reviews s WHERE s.word_id=e.word_id AND s.review_id/1000=e.reviewed_at)':'SELECT reviewed_at t FROM review_events').all())),
+  ...(mana?num(safe(()=>db.prepare("SELECT at t FROM learning_mana WHERE kind='find'").all())):[])];
+ let runs=[];if(root){try{runs=require('./kana.cjs').read(root).runs;}catch{}}
+ const kanaRuns=runs.map(r=>({t:Math.floor(Number(r.id)/1000),secs:Math.min(3600,Math.max(0,Number(r.secs)||0))})).filter(r=>r.t>0&&r.t<until);
+ return {grammar,anki,practice,kanaRuns};
+}
+function studySeconds(times,from,until){
+ const inside=[...times.grammar,...times.anki,...times.practice].filter(t=>t>=from&&t<until).sort((a,b)=>a-b);
+ let secs=0;for(let i=0;i<inside.length;i++){const gap=i?inside[i]-inside[i-1]:Infinity;secs+=gap<=120?gap:20;}
+ for(const r of times.kanaRuns)if(r.t>=from&&r.t<until)secs+=r.secs;
+ return int(secs);
+}
 function collectStats(db,now=new Date(),root=''){
  const w=windows(now),out={keys:periodKeys(now),stats:{},games:[]};
  const sessions=db.prepare('SELECT game_id,started_at,active_seconds,characters FROM reading_sessions WHERE started_at<?').all(w.all.until);
  const words=db.prepare('SELECT created_at FROM vocabulary WHERE created_at<?').all(w.all.until).map(r=>Number(r.created_at)||0);
  const readDay=s=>dayKey(new Date(s.started_at*1000)),reading=s=>s.characters>0||s.active_seconds>0;
- const reviews=reviewTimes(db,w.all.until),kana=kanaTimes(root,w.all.until);
+ const reviews=reviewTimes(db,w.all.until),kana=kanaTimes(root,w.all.until),study=studyTimes(db,root,w.all.until);
  /* E401 the period numbers count what happened in that week or month ("新收录"); the all-time word total is separate */
  out.totals={words:int(db.prepare('SELECT COUNT(*) n FROM vocabulary').get().n)};
  for(const period of PERIODS){
   const {from,until}=w[period],inside=sessions.filter(s=>s.started_at>=from&&s.started_at<until);
   out.stats[period]={characters:int(inside.reduce((n,s)=>n+(s.characters||0),0)),seconds:int(inside.reduce((n,s)=>n+(s.active_seconds||0),0)),words:words.filter(t=>t>=from&&t<until).length,streak:longestRun(new Set(inside.filter(reading).map(readDay))),reviews:reviews.filter(t=>t>=from&&t<until).length,kana:kana.filter(t=>t>=from&&t<until).length};
+  const count=list=>list.filter(t=>t>=from&&t<until).length,p=out.stats[period];
+  Object.assign(p,{grammar:count(study.grammar),anki:count(study.anki),practice:count(study.practice),studySeconds:studySeconds(study,from,until)});p.study=STUDY_PARTS.reduce((n,k)=>n+p[k],0);
  }
  out.currentStreak=currentRun(sessions.filter(reading).map(readDay),now);
  const titles=new Map(db.prepare('SELECT id,title FROM games WHERE removed_at IS NULL AND hidden_at IS NULL').all().map(g=>[g.id,String(g.title||'').trim()]));
@@ -180,11 +216,14 @@ const AVATAR_ID=/^[0-9a-f]{32}$/;
 /* fetch(period, metric) — named fetchBoard inside so the global fetch stays reachable. */
 async function fetchBoard(period,metric,options={}){
  const c=config(options.root,options.env,options);if(!c.configured)return {state:'not-configured'};
- const isGames=metric==='games';if(!isGames&&(!PERIODS.includes(period)||!METRICS.includes(metric)))throw Error('LEADERBOARD_INVALID_QUERY');
+ const isGames=metric==='games';if(!isGames&&(!PERIODS.includes(period)||!QUERY_METRICS.includes(metric)))throw Error('LEADERBOARD_INVALID_QUERY');
  const q=new URLSearchParams(isGames?{metric}:{period,metric});if(!isGames&&period!=='all')q.set('key',periodKeys(options.now)[period]);
  if(isGames&&options.game)q.set('game',String(options.game).slice(0,120));if(c.me)q.set('me',c.me);
- const res=await call(c.base+'/api/leaderboard?'+q,{method:'GET'},options.fetch||fetch);if(res.state!=='ok')return res;
- const clean=e=>({rank:int(e?.rank),name:String(e?.name||'').slice(0,32),value:int(e?.value),me:e?.me===true,avatar:AVATAR_ID.test(String(e?.avatar||''))?e.avatar:null,pid:/^[0-9a-f]{16}$/.test(String(e?.pid||''))?e.pid:null,element:require('./reader-class.cjs').ELEMENTS.includes(e?.element)?e.element:'',level:Math.min(10000,int(e?.level))});
+ let res=await call(c.base+'/api/leaderboard?'+q,{method:'GET'},options.fetch||fetch);
+ /* a relay not yet updated for 学习练习 refuses metric=study: the kana board stands in until it is */
+ if(res.state!=='ok'&&metric==='study'){q.set('metric','kana');res=await call(c.base+'/api/leaderboard?'+q,{method:'GET'},options.fetch||fetch);if(res.state==='ok'&&Array.isArray(res.data?.entries))res.data.entries=res.data.entries.map(e=>({...e,detail:{kana:e?.value}}));}
+ if(res.state!=='ok')return res;
+ const clean=e=>({rank:int(e?.rank),name:String(e?.name||'').slice(0,32),value:int(e?.value),me:e?.me===true,avatar:AVATAR_ID.test(String(e?.avatar||''))?e.avatar:null,pid:/^[0-9a-f]{16}$/.test(String(e?.pid||''))?e.pid:null,element:require('./reader-class.cjs').ELEMENTS.includes(e?.element)?e.element:'',level:Math.min(10000,int(e?.level)),...(e?.detail&&typeof e.detail==='object'?{detail:{kana:int(e.detail.kana),grammar:int(e.detail.grammar),anki:int(e.detail.anki),practice:int(e.detail.practice),studySeconds:int(e.detail.studySeconds)}}:{})});
  if(isGames&&!options.game)return {state:'ok',games:(Array.isArray(res.data.games)?res.data.games:[]).slice(0,100).map(g=>({title:String(g?.title||'').slice(0,120),readers:int(g?.readers),top:g?.top?clean(g.top):null}))};
  const f=res.data.feature,feature=f&&String(f.title||'').trim()?{title:String(f.title).slice(0,120),value:int(f.value),readers:int(f.readers)}:null;
  return {state:'ok',entries:(Array.isArray(res.data.entries)?res.data.entries:[]).slice(0,100).map(clean),total:int(res.data.total),me:res.data.me?{rank:int(res.data.me.rank),value:int(res.data.me.value)}:null,feature};
@@ -296,7 +335,7 @@ function chip(root){
 
 /* Everything the 排行榜 page needs in one call; refreshes the user's own entry at most every 10 minutes. */
 async function view(root,db,request={},options={}){
- const now=options.now||new Date(),period=PERIODS.includes(request.period)?request.period:'week',metric=[...METRICS,'games'].includes(request.metric)?request.metric:'seconds';
+ const now=options.now||new Date(),period=PERIODS.includes(request.period)?request.period:'week',metric=[...QUERY_METRICS,'games'].includes(request.metric)?request.metric:'seconds';
  const local=collectStats(db,now,root),c=config(root,options.env,options),tab=request.tab==='hot'?'hot':'board';
  const result={configured:c.configured,joined:c.joined,enabled:c.enabled,name:c.name,shareGames:c.shareGames,account:c.account,tab,period,metric,local,board:null,hot:null,avatars:{}};
  /* E404 your own approved picture, for the 我的主页 chip on every tab */
