@@ -114,6 +114,8 @@ test('YU-RIS: es.CGMODE slots and the YSSD array they fit',()=>{
  /* entry 1: a, a_1 ; entry 2: b -> slot 1 head, 2 a, 3 a_1, 4 head, 5 b */
  const g=cg.esSlots(['a','a_1',null,'b',null]);
  assert.deepEqual([...g.slots],[[2,'a'],[3,'a_1'],[5,'b']]);assert.deepEqual([...g.heads],[1,4]);assert.equal(g.size,6);
+ /* 2026-11-15 each picture slot knows its entry (scene): variants are grouped on the card page */
+ assert.deepEqual([...g.entry],[[2,1],[3,1],[5,4]]);
  const arr=(id,values)=>{const d=Buffer.alloc(16+values.length*8);d.writeUInt32LE(1,0);d.writeUInt32LE(1,4);d.writeUInt32LE(values.length,8);d.writeUInt32LE(values.length*8,12);values.forEach((v,i)=>d.writeBigInt64LE(BigInt(v),16+i*8));
   const z=zlib.deflateSync(d);return Buffer.concat([u32(id),u32(0x100),u32(z.length),u32(d.length),z]);};
  const a=arr(11,[0,0,1,0,0,1,0]),b=arr(12,[0,1,0]),head=Buffer.alloc(0x40);head.write('YSSD');head.writeUInt32LE(0x40,8);head.writeUInt32LE(0x40+a.length,12);

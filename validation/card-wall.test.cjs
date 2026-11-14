@@ -12,7 +12,7 @@ const PNG=Buffer.from('89504e470d0a1a0a0000000d494844520000000100000001080600000
 function fakeDb(rows){return {prepare:sql=>({get:id=>rows.find(r=>r.id===id),all:()=>rows})};}
 function kirikiriGame(root){
  const dir=path.join(root,'game');fs.mkdirSync(path.join(dir,'savedata'),{recursive:true});fs.mkdirSync(path.join(dir,'image','evcg'),{recursive:true});
- for(const n of ['ev101a','ev102a','ev103a','bg_school'])fs.writeFileSync(path.join(dir,'image','evcg',n+'.png'),PNG);
+ for(const n of ['ev101a','ev102a','ev103a','bg_school'])fs.writeFileSync(path.join(dir,'image','evcg',n+'.png'),Buffer.concat([PNG,Buffer.from(n)]));/* distinct bytes: identical pictures are shown once */
  /* the system save marks only ev101a */
  fs.writeFileSync(path.join(dir,'savedata','datasu.ksd'),Buffer.concat([Buffer.from([0xff,0xfe]),Buffer.from('%[ "cg_EV101A" => 1, "next" => "ev102a" ]','utf16le')]));
  const exe=path.join(dir,'game.exe');fs.writeFileSync(exe,'');return exe;}
@@ -143,3 +143,12 @@ test('a save CG that cannot be decoded stops counting as pending',()=>{
   assert.equal(wall.handle(db,root,{action:'cards_pending',gameId:'g1'}).pending,1);
   wall.warm(root,exe,['ev101a']);assert.equal(wall.handle(db,root,{action:'cards_pending',gameId:'g1'}).pending,0);}
  finally{wall._setSpawnWarm((r,e,n)=>wall.warm(r,e,n));}});
+
+test('save CGs: variants of one scene share a group; a byte-identical picture is listed once',()=>{
+ const {root,db,exe}=setup();const dir=path.join(path.dirname(exe),'image','evcg');
+ /* ev101b is a variant of ev101a; ev101c is the very same picture as ev101a under another name */
+ fs.writeFileSync(path.join(dir,'ev101b.png'),Buffer.concat([PNG,Buffer.from('b')]));fs.copyFileSync(path.join(dir,'ev101a.png'),path.join(dir,'ev101c.png'));
+ fs.writeFileSync(path.join(path.dirname(exe),'savedata','datasu.ksd'),Buffer.concat([Buffer.from([0xff,0xfe]),Buffer.from('%[ "cg_EV101A" => 1, "cg_EV101B" => 1, "cg_EV101C" => 1 ]','utf16le')]));
+ wall.unlocked(db,root,'g1');const cgs=wall.unlocked(db,root,'g1').filter(x=>x.kind==='cg');
+ assert.deepEqual(cgs.map(x=>x.id),['save:ev101a','save:ev101b']);
+ assert.equal(cgs[0].group,cgs[1].group);});

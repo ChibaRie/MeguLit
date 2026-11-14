@@ -58,13 +58,14 @@ function readMeta(root){try{return JSON.parse(fs.readFileSync(path.join(thumbsDi
 /* cached JPEGs of at most max px for picture files: {file -> {out,w,h}} */
 const thumbOf=(root,f,max)=>{const st=stampOf(f);if(!st)return null;const k=sha(st+'|'+max+'|v2').slice(0,24);return {k,out:path.join(thumbsDir(root),k+'.jpg')};};
 /* only what is already on disk (never draws): the list the page polls must not wait on a picture */
-function cachedThumbs(root,files,max,meta=readMeta(root)){const map=new Map();for(const f of files){const t=thumbOf(root,f,max);if(t&&meta[t.k]&&fs.existsSync(t.out))map.set(f,{out:t.out,w:meta[t.k].w,h:meta[t.k].h});}return map;}
-function noteThumbs(root,done){if(!done.length)return;withLock(root,()=>{const m=readMeta(root);for(const d of done)m[d.k]={w:d.w,h:d.h};atomicWrite(path.join(thumbsDir(root),'meta.json'),JSON.stringify(m));});}
+function cachedThumbs(root,files,max,meta=readMeta(root)){const map=new Map();for(const f of files){const t=thumbOf(root,f,max);if(t&&meta[t.k]&&fs.existsSync(t.out))map.set(f,{out:t.out,w:meta[t.k].w,h:meta[t.k].h,hash:meta[t.k].hash||''});}return map;}
+const fileHash=f=>{try{return sha(fs.readFileSync(f)).slice(0,20);}catch{return '';}};
+function noteThumbs(root,done){if(!done.length)return;withLock(root,()=>{const m=readMeta(root);for(const d of done)m[d.k]={w:d.w,h:d.h,hash:d.hash||fileHash(d.out)};atomicWrite(path.join(thumbsDir(root),'meta.json'),JSON.stringify(m));});}
 function scaled(root,files,max){
  const meta=readMeta(root),map=cachedThumbs(root,files,max,meta),jobs=[];
  for(const f of files){if(map.has(f))continue;const t=thumbOf(root,f,max);if(t&&!jobs.some(j=>j.in===f))jobs.push({mode:'thumb',in:f,out:t.out,max,k:t.k});}
  if(jobs.length){fs.mkdirSync(thumbsDir(root),{recursive:true});const res=runner(jobs.map(({k,...j})=>j)),done=[];
-  jobs.forEach((j,i)=>{if(res[i]?.ok){done.push({k:j.k,w:res[i].w,h:res[i].h});map.set(j.in,{out:j.out,w:res[i].w,h:res[i].h});}});noteThumbs(root,done);}
+  jobs.forEach((j,i)=>{if(res[i]?.ok){done.push({k:j.k,w:res[i].w,h:res[i].h,out:j.out});map.set(j.in,{out:j.out,w:res[i].w,h:res[i].h});}});noteThumbs(root,done);}
  return map;}
 
 /* ---- 'seen': pictures an engine reported on screen ---- */
@@ -94,7 +95,11 @@ function sources(root,game,opts={}){
    /* KiriKiri: only explicit cg_ unlock marks count on the wall (the detail card keeps its wider rule) */
    if(r.engine==='KiriKiri'){const marked=cg.kirikiriMarked(exe)||new Set();names=names.filter(n=>marked.has(n));}
    if(safe&&names.length){const rating=require('./cg-rating.cjs'),known=rating.ratings(path.join(root,'data','cg-cache',sha(path.dirname(String(exe)).toLowerCase()).slice(0,16)));names=names.filter(n=>rating.isSafe(known[n]));}
-   for(const n of names){saved.add(n);out.push({id:'save:'+n,kind:'cg',source:'save',name:n});}}catch{}}
+   /* 2026-11-15 grouped by scene (the engine's gallery entry; else a trailing variant letter, ev101a -> ev101), scene by
+      scene in the order the gallery lists them, variants in name order */
+   const sceneOf=n=>r.items.get(n)?.group||'n:'+String(n).replace(/(?<=\d)[a-z]$/,''),rank=new Map();for(const n of names){const s=sceneOf(n);if(!rank.has(s))rank.set(s,rank.size);}
+   names=[...names].sort((a,b)=>rank.get(sceneOf(a))-rank.get(sceneOf(b))||a.localeCompare(b,undefined,{numeric:true}));
+   for(const n of names){saved.add(n);out.push({id:'save:'+n,kind:'cg',source:'save',name:n,group:sceneOf(n)});}}catch{}}
   if(!safe){const want=new Set(readSeen(root,exe).filter(n=>!saved.has(n)));const found=looseByName(path.dirname(exe),want);
    for(const [n,f] of found)out.push({id:'seen:'+n,kind:'cg',source:'seen',file:f});
    try{out.push(...require('./runtime-cg.cjs').sources(exe,{settle:opts.settle}));}catch{}}
@@ -175,7 +180,7 @@ async function warmRun(root,exe,items){
   if(readMeta(root)[t.k]&&fs.existsSync(t.out)){done++;continue;}
   fs.mkdirSync(thumbsDir(root),{recursive:true});const w=pool.idle(gate.limit);
   const p=pool.thumb(w,{mode:'thumb',in:f,out:t.out,max:THUMB}).then(r=>{inflight.delete(p);done++;
-   if(r&&r[1]==='ok')noteThumbs(root,[{k:t.k,w:Number(r[2])||0,h:Number(r[3])||0}]);else if(r)failed.push(itemKey(it));beat();});
+   if(r&&r[1]==='ok')noteThumbs(root,[{k:t.k,w:Number(r[2])||0,h:Number(r[3])||0,out:t.out}]);else if(r)failed.push(itemKey(it));beat();});
   inflight.add(p);await new Promise(r=>setImmediate(r));}
  await Promise.all(inflight);clearInterval(heart);pool.close();noteFailed(root,exe,failed);}
 function split(root,g){
@@ -191,7 +196,11 @@ function unlocked(db,root,gameId,known){
  if(need.length&&need.length<=6){const th=scaled(root,need.map(n=>n.it.file),THUMB);for(const n of need)if(th.get(n.it.file))files.set(n.s.id,n.it.file);need=[];}
  const queue=[...need,...later];if(queue.length)spawnWarm(root,g.executable,queue.map(n=>n.it));
  const th=cachedThumbs(root,[...files.values()],THUMB),have=new Set(Array.isArray(known)?known.map(String):[]);
- return list.flatMap(s=>{const t=th.get(files.get(s.id));if(!t)return [];return [{id:s.id,kind:s.kind,source:s.source,src:have.has(s.id)?'':dataUrl(t.out),w:t.w,h:t.h}];});}
+ /* group: the scene a save CG belongs to (the page shows one picture per scene and opens the variants on demand);
+    a CG whose picture is byte-identical to one already listed is left out */
+ const shown=new Set();
+ return list.flatMap(s=>{const t=th.get(files.get(s.id));if(!t)return [];if(s.kind==='cg'&&t.hash){if(shown.has(t.hash))return [];shown.add(t.hash);}
+  return [{id:s.id,kind:s.kind,source:s.source,...(s.group?{group:s.group}:{}),src:have.has(s.id)?'':dataUrl(t.out),w:t.w,h:t.h}];});}
 /* pending: pictures still on their way (total: every picture, for an honest count); paused while the game or a
    full-screen program is in front */
 function pending(db,root,gameId){const g=gameRow(db,gameId),{list,later,need}=split(root,g),q=[...need,...later];if(q.length)spawnWarm(root,g.executable,q.map(n=>n.it));
