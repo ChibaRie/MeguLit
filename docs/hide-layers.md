@@ -82,6 +82,33 @@ for a glyph, so layer 3 sees nothing.
   one `ToMe_CHARS engine=gpu` record (`docs/text-architecture.md`, ③ record): one rectangle per non-blank character in
   reading order, in back-buffer pixels, `hidden=1` once the line's glyphs are being left out.
 
+### Font dots at the source (`native/gpuhide/FontDots.h`)
+
+For engines that keep their font as prebuilt glyph sheets and composite them on the CPU, no draw call carries one glyph.
+With `MEGULIT_FONT_DOTS=1` in the game's environment (set when the DLL is injected before the game runs, through
+glyph-dots' `MeguLitLaunch<bit>.exe`; the DLL sets `MeguLitFontReady-<pid>` once its hooks are in), the DLL hooks
+kernel32's `CreateFileA/W`, `ReadFile`, `SetFilePointer(Ex)`, `GetFileSize(Ex)` and `CloseHandle`. Every file opened for
+reading is checked once: after the container of the engine family (BRUNS: `EENC` / `EENZ` = XOR with a key from the header,
+zlib for `EENZ`) it must be a 4- or 8-bit grey palette bitmap laid out as a regular grid of glyph cells (the finest grid
+whose cell boundaries carry almost no ink). The game is then served, through its own handle, a copy of the same size:
+every non-empty cell is cleared and gets a solid square dot at the top-left of the glyph's ink (3 px for a 32 px cell,
+scaled with the cell height, 2 px at least) in the sheet's brightest grey; the glyph's ink box is kept by its other three
+corners in the faintest grey (BRUNS refuses a font whose glyphs shrink to a dot: "ビットマップフォントの初期化に失敗しました").
+`EENZ` is re-wrapped with stored zlib blocks under the same key. Nothing on disk changes. Report:
+`ToMe_FONTDOTS ready version=1` and `ToMe_FONTDOTS sheet cells=WxH grid=CxR glyphs=N dot=S path=...`.
+Self-test: `selftest/fontdotshost.cpp` (x86 / x64) serves an EENZ and a plain BMP glyph sheet dotted and a non-sheet
+picture unchanged, with the sizes reported by `GetFileSizeEx` and the files on disk untouched.
+
+Live (2026-11-14):
+- ダストマニア (BRUNS, Chinese-patched install, gameplay.exe): early injection works; at start the engine reads exactly
+  `font/ff_00..03.bmp` and all four are served dotted (32 × 32 cells 16 × 180 = 2007 glyphs, 16 × 32 half-width, ...); the
+  large `*l.bmp` sheets are never opened. With the ink box kept, the engine reached the title and a scene in one run and
+  showed its font-initialisation error in another (not deterministic yet). In the scene that ran, the dialogue was still
+  drawn with full glyphs (and mojibake from starting the Chinese patch directly), so in this install the dialogue font is
+  not taken from these sheets (the engine also has a system-font renderer; libscr / libchs import TextOutW). Not done.
+- サイコロジック・ラブコメディ (YU-RIS): no font data exists in its archives (`*.ypf`: pngs and `ysbin` scripts) nor in
+  the Chinese patch's Enigma Virtual Box file (`2030.xp`: pngs and `.ybn`), so there is nothing to dot at the source.
+
 ### Crash canary
 
 Layer 4 must never crash a game. HookBridge keeps `data/gpu-hide/<exe>-<size>.json` per game build (the key of the stream

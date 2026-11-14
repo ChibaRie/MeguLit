@@ -64,3 +64,23 @@ test('built, self-tested and shipped like every native binary',()=>{
  for(const m of ['d3d9-up','d3d9-vb','d3d9-ivb','d3d9-decl','d3d11','gl','gl-ff','gdi'])assert.ok(read('native/gpuhide/selftest/run.cmd').includes(m),'self-test mode '+m);
  assert.match(h,/dialogue glyphs %s \(%d\/8 white\), name kept \(%d\/3\), scene and box frame kept/,'pixels: line gone, name and scene kept');
  assert.ok(read('docs/hide-layers.md').includes('GpuArm(string streamId, string line)'),'interface documented');});
+
+test('text marks: the game draws a row of 「・」, same count, codes kept, canary-gated',()=>{
+ const p=read('native/EmbedTextPolicy.cs'),h=read('native/HookBridge.cs'),l=read('native/GpuHideLayer.cs'),m=read('native/megulithook/MeguLitMarks.h'),y=read('native/megulithook/Yuris.cpp'),t=read('native/megulithook/texthook.cc');
+ assert.match(p,/public static string Mark\(string value\) \{ Marking = true; try \{ return Hide\(value\); \}/,'Mark = Hide rules with marks instead of blanks');
+ assert.match(p,/\? "\\uFF65" : "\\u30FB"/,'half-width 「･」, full-width 「・」');
+ assert.match(h,/EmbedTextPolicy\.Mark\("今日はいい天気だね。\\n明日もABC？"\);if\(mk!="・・・・・・・・・・\\n・・・･･･・"/,'self-test: count and line breaks kept');
+ assert.match(l,/if\(on&&GpuCanaryOff\(\)!=""\)/,'refused for a game the crash canary turned off');
+ assert.match(l,/code>=0xC0000000u&&code<=0xCFFFFFFFu/,'a forced kill (0xFFFFFFFF) is not a crash');
+ assert.match(m,/\(hp\.type & \(DATA_INDIRECT \| USING_STRING \| EMBED_ABLE\)\) \|\| hp\.text_fun/,'per-character argument hooks only');
+ assert.match(m,/if \(c < 0x80 \|\| c == 0x3000/,'ASCII codes and blanks untouched');
+ assert.match(t,/MeguLitMarks::Mark\(hp, plpdatain\)/,'wired after the GDI hide feed, only for the selected stream');
+ assert.match(y,/text = BlankInPlace\(src, n, hp->codepage, marks\);/,'YU-RIS lines with codes are marked in place from the raw bytes');
+ assert.match(y,/out\.append\("\\x81\\x45"\)/,'cp932 「・」');
+ assert.match(l,/OpenExisting\("Local\\\\MeguLitCompositorBeat-"\+Pid/,'host reads the compositor heartbeat');
+ assert.match(h,/MarksMode&&MarksLive\(\)\?EmbedTextPolicy\.Mark\(text\):EmbedTextPolicy\.Hide\(text\)/,'write-back marks only while the compositor presents; plain hide otherwise');
+ assert.match(l,/presenting==1&&tick!=0&&now>=tick&&now-tick<=1000;else live=now-\(ulong\)MarksSince<=20000/,'fresh beat (1 s) or 20 s grace before the first beat');
+ assert.match(m,/L"Local\\\\MeguLitCompositorBeat-%lu"/,'hook DLL reads the heartbeat too');
+ assert.match(m,/if \(WaitForSingleObject\(Event, 0\) != WAIT_OBJECT_0\)\s+return false;\s+return BeatLive\(\);/,'per-character marks gated by the heartbeat');
+ assert.match(m,/MeguLit_MARKS off compositor heartbeat stale/,'lapse reported');
+ assert.ok(fs.existsSync(path.join(root,'docs/text-architecture-marks.md')),'mark shape documented for the compositor');});
