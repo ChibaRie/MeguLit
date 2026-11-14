@@ -70,6 +70,16 @@ for a glyph, so layer 3 sees nothing.
   one `ToMe_CHARS engine=gpu` record (`docs/text-architecture.md`, ③ record): one rectangle per non-blank character in
   reading order, in back-buffer pixels, `hidden=1` once the line's glyphs are being left out.
 
+### Crash canary
+
+Layer 4 must never crash a game. HookBridge keeps `data/gpu-hide/<exe>-<size>.json` per game build (the key of the stream
+memory): before the DLL is loaded the file is armed with the game's pid, and a bridge thread waits for the game to end.
+An exit by an exception (exit code `0xC0000000` and up: access violation, stack overflow, ...) while the layer was loaded
+turns layer 4 **off** for that game (`off`, `reason`); every later launch skips the DLL and emits
+`{"type":"hookGpuHide","state":"off","reason":...}`. Any other exit clears the arm. A run whose end the bridge did not see
+(MeguLit closed first) is only logged. Turning the layer on again is the user's call: `GpuCanaryReset()`;
+`GpuCanaryOff()` returns the reason (empty = allowed).
+
 ### Protocol
 
 Report pipe `\\.\pipe\MeguLitGpu-<pid>` (DLL → HookBridge, UTF-8 lines):
@@ -97,6 +107,7 @@ the same path as the GDI hide (`GdiHideHit`).
 | `void GpuArm(string streamId, string line)` | Hide that line of that stream from now on (60 s, renewed by every call). Learns first; never hides when unsure. |
 | `void GpuDisarm()` | Stop hiding at once (`OFF`). |
 | `void GpuReadOnly(bool on)` | Learn and report rectangles only. |
+| `string GpuCanaryOff()` / `void GpuCanaryReset()` | Why the canary turned the layer off for the bound game (empty = allowed) / turn it on again (user's call). |
 | `event Action<string,int,int,int> GpuHit` | First hidden draw of a line: stream, line number, quads left out, characters. |
 
 Today HookBridge arms it by itself for the streams layer 3 serves (selected stream without write-back, replacement on or

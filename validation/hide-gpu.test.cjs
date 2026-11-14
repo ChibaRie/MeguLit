@@ -42,7 +42,10 @@ test('HookBridge loads the layer, arms it for glyph-fallback streams and treats 
  assert.match(i,/"MeguLitGpu64\.dll"/);assert.match(i,/"MeguLitGpu32\.dll"/);
  for(const m of ['GpuCapabilities()','GpuArm(string streamId,string line)','GpuDisarm()','GpuReadOnly(bool on)','event Action<string,int,int,int> GpuHit'])assert.ok(l.includes(m),'orchestrator interface: '+m);
  assert.match(l,/GdiHideHit\("gpu "/,'hide-only only after a confirmed hit');
- assert.match(l,/type="hookChars",line=s/,'ToMe_CHARS passed on like the engine paths');});
+ assert.match(l,/type="hookChars",line=s/,'ToMe_CHARS passed on like the engine paths');
+ assert.match(l,/if\(!GpuCanaryArm\(\)\)return;/,'crash canary checked before the DLL is loaded');
+ assert.match(l,/if\(code>=0xC0000000u\)\{e\["off"\]=true;/,'an exception exit turns layer 4 off for that game');
+ assert.match(l,/public static void GpuCanaryReset\(\)/,'turning it on again is the user\'s call');});
 
 test('built, self-tested and shipped like every native binary',()=>{
  const nb=JSON.parse(read('native/native-builds.json')).find(e=>e.name==='gpuhide');
