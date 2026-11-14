@@ -27,7 +27,7 @@
 
 /* level 0: search + covers, like the plain library */
 .cm-search{flex:none;display:flex;align-items:center;gap:10px;margin:0 22px 14px;padding:0 14px;height:42px;border-radius:999px;background:var(--cm-tile);box-shadow:inset 0 0 0 1px var(--t-line,rgba(255,255,255,.09));transition:box-shadow .2s,background-color .2s}
-.cm-search:focus-within{background:var(--cm-tile-2);box-shadow:inset 0 0 0 1px var(--cm-gold)}
+.cm-search:focus-within{background:var(--cm-tile-2);box-shadow:inset 0 0 0 1.5px var(--cm-gold),0 0 0 3px color-mix(in srgb,var(--cm-gold) 22%,transparent)}
 .cm-search svg{width:18px;height:18px;color:var(--cm-ink-3);flex:none}
 .cm-search input{flex:1;min-width:0;height:100%;border:0!important;outline:0;background:transparent!important;box-shadow:none!important;color:var(--cm-ink);font:inherit;font-size:14px;padding:0!important}
 .cm-search input::placeholder{color:var(--cm-ink-3)}
