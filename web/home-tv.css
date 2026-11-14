@@ -375,6 +375,5 @@
 .tv-title .tv-h1 span.tv-ch{display:inline-block;opacity:1;transform:none;transition:none;will-change:transform,opacity}
 .tv-title .tv-h1 span.tv-w{display:inline-block;white-space:nowrap}
 html:not(#u):not(#v):not(#w):not(#x):not(#y) body .tv-home .tv-title{bottom:calc(8vh + 18px)!important;max-width:min(34vw,660px)!important}
-@media (max-height:800px){.tv-left{zoom:.74}}
 .tv-title .tv-seg{text-wrap:pretty}
 .tv-title .tv-h1{text-wrap:pretty}
