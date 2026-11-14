@@ -225,7 +225,7 @@ static volatile bool SkipHeld;static int BurstRun;const int BurstSkipLines=8;sta
    bool veil=!printer&&UnitySetter(candidate.code);
    /* E560: the game handed our veil back (its typewriter reads Text.text and appends): it builds on what it reads, which froze
       月に寄りそう乙女の作法. The original goes back unveiled and writeback stops for this stream (cover mode). */
-   if(veil&&text.IndexOf(EmbedTextPolicy.UnityVeilOpen,StringComparison.Ordinal)>=0){Luna_EmbedCallback(tp,text,EmbedTextPolicy.Unveil(text));Diagnostic(candidate.name+" reads its text back (veil returned); embed marked unsafe (cover mode)");ThreadPool.QueueUserWorkItem(_=>MarkUnsafe("unity-readback"));return;}string replacement=printer?HideNaninovel(text):veil?EmbedTextPolicy.UnityVeil(text):MarksMode?EmbedTextPolicy.Mark(text):EmbedTextPolicy.Hide(text);
+   if(veil&&text.IndexOf(EmbedTextPolicy.UnityVeilOpen,StringComparison.Ordinal)>=0){Luna_EmbedCallback(tp,text,EmbedTextPolicy.Unveil(text));Diagnostic(candidate.name+" reads its text back (veil returned); embed marked unsafe (cover mode)");ThreadPool.QueueUserWorkItem(_=>MarkUnsafe("unity-readback"));return;}string replacement=printer?HideNaninovel(text):veil?EmbedTextPolicy.UnityVeil(text):MarksMode&&MarksLive()?EmbedTextPolicy.Mark(text):EmbedTextPolicy.Hide(text);
    if(veil&&replacement.Length==0&&EmbedTextPolicy.HasInnerColor(text)&&EmbedTextPolicy.Hide(EmbedTextPolicy.Unveil(text)).Length>0){Diagnostic(candidate.name+" colours each character itself: the Unity veil cannot hide it; embed marked unsafe (cover mode)");Luna_EmbedCallback(tp,text,"");ThreadPool.QueueUserWorkItem(_=>MarkUnsafe("unity-colour-reveal"));return;}
    /* E320 (魔法使いの夜): the game stopped with "Micro Thread ... [0x80000012]" right after a skip burst that was written back line by line (several lines within 2-40 ms). While the game skips, its lines go back unchanged; hiding resumes at the first line read at normal speed; a redraw of the same line is not a burst. */
    DateTime embedNow=DateTime.UtcNow;bool quick=(embedNow-LastEmbedAt).TotalMilliseconds<250&&text!=LastEmbedText&&!TypewriterStep(LastEmbedText,text);BurstRun=quick?BurstRun+1:0;bool burst=quick&&(SkipHeld||BurstRun>=BurstSkipLines);LastEmbedAt=embedNow;LastEmbedText=text;
@@ -240,7 +240,7 @@ static volatile bool SkipHeld;static int BurstRun;const int BurstSkipLines=8;sta
     Emit(new{type="embedRequest",id=id,text=text});return;
    }
    Luna_EmbedCallback(tp,text,replacement==text?"":replacement);
-   if(MarksMode&&replacement.Length>0&&replacement!=text)MarksLine("embed",text,replacement);
+   if(MarksMode&&!MarksPaused&&replacement.Length>0&&replacement!=text)MarksLine("embed",text,replacement);
    Diagnostic("guarded "+(replacement.Length==0||replacement==text?"passthrough ":"replace ")+candidate.name+" chars="+text.Length+(replacement.Length==0?" raw="+Json.Serialize(text.Length>160?text.Substring(0,160):text):""));
    if(replacement.Length==0||replacement==text)return;
    LastReplaceAt=DateTime.UtcNow;ReplacementCallback=true;ReceivedText=true;RememberStream();Status("已收到内嵌原文并应答替换；画面效果待验证");

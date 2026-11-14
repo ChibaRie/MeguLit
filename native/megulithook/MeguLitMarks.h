@@ -13,6 +13,59 @@ namespace MeguLitMarks
 {
   inline HANDLE Event = NULL;
   inline DWORD LastHit = 0, LastMark = 0;
+  // Owner rule "the player never sees marks" (docs/text-architecture.md): marks only while MeguLit's capture compositor
+  // presents this game. Heartbeat Local\MeguLitCompositorBeat-<pid> {magic 'MGCB', version 1, compositorPid, presenting,
+  // tickMs, frames}: before any beat a 20 s grace from the DLL load (as ① dots); after one was seen, presenting == 1
+  // and GetTickCount64() - tickMs <= 1000. A lapse sends "MeguLit_MARKS off" once (the game draws real text again).
+#pragma pack(push, 4)
+  struct Beat
+  {
+    DWORD magic, version, compositorPid, presenting;
+    unsigned long long tickMs, frames;
+  };
+#pragma pack(pop)
+  inline volatile const Beat *BeatView = nullptr;
+  inline ULONGLONG GraceFrom = GetTickCount64();
+  inline volatile LONG BeatSeen = 0, Lapsed = 0;
+  inline bool BeatFresh()
+  {
+    if (!BeatView)
+    {
+      wchar_t name[64];
+      swprintf_s(name, L"Local\\MeguLitCompositorBeat-%lu", GetCurrentProcessId());
+      if (HANDLE m = OpenFileMappingW(FILE_MAP_READ, FALSE, name))
+      {
+        void *v = MapViewOfFile(m, FILE_MAP_READ, 0, 0, sizeof(Beat));
+        if (!v || InterlockedCompareExchangePointer((PVOID *)&BeatView, v, NULL) != NULL)
+        {
+          if (v)
+            UnmapViewOfFile(v);
+          CloseHandle(m);
+        }
+      }
+    }
+    ULONGLONG now = GetTickCount64();
+    const volatile Beat *b = BeatView;
+    if (b && b->magic == 0x4243474D && b->version == 1)
+    {
+      if (b->tickMs)
+        InterlockedExchange(&BeatSeen, 1);
+      if (BeatSeen)
+        return b->presenting == 1 && b->tickMs && now >= b->tickMs && now - b->tickMs <= 1000;
+    }
+    if (BeatSeen)
+      return false;
+    return now - GraceFrom <= 20000;
+  }
+  inline bool BeatLive()
+  {
+    bool live = BeatFresh();
+    if (!live && !InterlockedExchange(&Lapsed, 1))
+      Msg::Log("MeguLit_MARKS off compositor heartbeat stale");
+    else if (live && Lapsed && InterlockedExchange(&Lapsed, 0))
+      Msg::Log("MeguLit_MARKS live");
+    return live;
+  }
   inline bool On()
   {
     if (!Event)
@@ -23,7 +76,9 @@ namespace MeguLitMarks
       if (!Event)
         return false;
     }
-    return WaitForSingleObject(Event, 0) == WAIT_OBJECT_0;
+    if (WaitForSingleObject(Event, 0) != WAIT_OBJECT_0)
+      return false;
+    return BeatLive();
   }
   // A visible glyph outside ASCII: kana, kanji, full-width letters and punctuation (not U+3000 and not a control code).
   inline bool Visible(wchar_t c)

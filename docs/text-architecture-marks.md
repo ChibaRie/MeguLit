@@ -33,6 +33,22 @@ colour, effects, wrapping and pacing. The capture compositor finds the marks the
   replaces the argument by U+30FB before the original runs (`native/megulithook/MeguLitMarks.h`), while the stream is
   selected and `Local\MeguLitMarks-<pid>` is set. ASCII is left alone (engines keep their codes there, BRUNS `$N`).
 
+## Owner rule: the player never sees marks
+
+Marks are written only while MeguLit's capture compositor presents the game: heartbeat
+`Local\MeguLitCompositorBeat-<game pid>` (docs/text-architecture.md: magic `MGCB`, version 1, `presenting`, `tickMs`).
+Before any beat there is a 20 s grace (HookBridge: from switching marks on; hook DLL: from its load, as ① dots); after a
+beat was seen, `presenting == 1` and the tick at most 1000 ms old. When the beat is stale:
+
+- HookBridge answers write-back lines with the ordinary hide (blanks) instead of marks and sends
+  `{"type":"hookTextMarks","state":"paused"}` (`"live"` when the beat is back).
+- The hook DLL stops marking per-character arguments (the game draws its real characters) and logs
+  `MeguLit_MARKS off compositor heartbeat stale` once (`MeguLit_MARKS live` when back).
+- A closed MeguLit closes HookBridge, so write-back stops entirely and the game shows its own text.
+
+Live check (YU-RIS, no compositor running): `text marks paused: compositor heartbeat stale`, lines blanked, no 「・」.
+Marks mode no longer needs `MeguLitGpu<bit>.dll` to be present.
+
 ## Reports
 
 - HookBridge stdout: `{"type":"hookTextMarks","state":"on"|"off","mark":"middle-dot"}`,
