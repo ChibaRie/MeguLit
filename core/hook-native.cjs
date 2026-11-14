@@ -102,7 +102,7 @@ class HookNative{
   HookNative.syncShippedHook(this.folder);
   HookNative.fetchRuntimeDump(this.folder);
   const root=this.layout.hook,required=['LunaHost64.dll','LunaHook32.dll','LunaHook64.dll'],missing=required.filter(n=>!fs.existsSync(path.join(root,n)));if(missing.length||!fs.existsSync(path.join(this.folder,'HookBridge.exe'))){this.retryAt=this.now()+30000;this.notify({hookMessage:'Hook 组件缺失：'+missing.join('、'),hookAvailable:false});return;}
-  this.flowPage=FLOW_PAGE_EXES.test(name);this.flowGridName=(FLOW_GRIDS.find(([re])=>re.test(name))||[])[1]||'';  const identity=pid+"|"+started;if(identity!==this.identity){this.lastSource="";this.lastSourceAt=0;this.preferredThread=null;this.remembered=null;this.identity=identity;this.state.hookFramework=null;this.state.hookEmbedPending=false;}this.pid=pid;this.started=started;this.enabled=this.preferences?.hookProfile!=='read'&&!this.preflight&&this.windowState?.bound===true&&(this.windowState?.coverEnabled!==false||this.preferences?.embedTranslation===true);this.route=this.enabled?(this.preferences?.hookProfile==='embed'?'embed':'custom'):'read';this.markerKey='';this.lastHeartbeat=this.now();const serial=++this.serial,child=this.process=this.spawn(path.join(this.folder,'HookBridge.exe'),[String(pid),hwnd,name,started,...(this.route==='read'?['--read-only']:this.route==='embed'?['--official-embed']:[])],{cwd:this.folder,windowsHide:true,stdio:['pipe','pipe','ignore']});child.stdin.on('error',()=>{});if(this.enabled)this.send({type:'enable'});
+  this.flowPage=FLOW_PAGE_EXES.test(name);this.flowGridName=(FLOW_GRIDS.find(([re])=>re.test(name))||[])[1]||'';  const identity=pid+"|"+started;if(identity!==this.identity){this.lastSource="";this.lastSourceAt=0;this.preferredThread=null;this.remembered=null;this.identity=identity;this.state.hookFramework=null;this.state.hookEmbedPending=false;}this.pid=pid;this.started=started;this.enabled=this.preferences?.hookProfile!=='read'&&!this.preflight&&this.windowState?.bound===true&&(this.windowState?.coverEnabled!==false||this.preferences?.embedTranslation===true);this.route=this.enabled?(this.preferences?.hookProfile==='embed'?'embed':'custom'):'read';this.markerKey='';this.lastHeartbeat=this.now();const serial=++this.serial,child=this.process=this.spawn(path.join(this.folder,'HookBridge.exe'),[String(pid),hwnd,name,started,...(this.route==='read'?['--read-only']:this.route==='embed'?['--official-embed']:[])],{cwd:this.folder,windowsHide:true,stdio:['pipe','pipe','ignore'],env:{...process.env,...require('./glyph-dots.cjs').bridgeEnv(path.join(this.folder,'..'))}});child.stdin.on('error',()=>{});if(this.enabled)this.send({type:'enable'});
   const failed=()=>{if(serial!==this.serial)return;this.process=null;++this.serial;this.retry('Hook 连接停止');};child.on('error',failed);child.on('exit',failed);
   createInterface({input:child.stdout}).on('line',line=>{if(serial!==this.serial||line.length>30000)return;let m;try{m=JSON.parse(line);}catch{return;}this.lastHeartbeat=this.now();/* 2026-11-13 replay recording: MEGULIT_HOOK_RECORD=<file.jsonl> keeps every bridge message with its time (validation/hook-replay) */if(process.env.MEGULIT_HOOK_RECORD&&m.type!=='hookHeartbeat')try{fs.appendFileSync(process.env.MEGULIT_HOOK_RECORD,JSON.stringify({t:this.now(),m})+'\n');}catch{}
    /* 2026-11-14 Chinese builds draw GBK through ANSI calls: read them with the code page of the game's own script (core/hook-codepage.cjs) */
@@ -127,6 +127,11 @@ class HookNative{
    /* 2026-11-14 glyph hide (native/fontprobe/GlyphMatch.h): the engine-agnostic fallback hid the game's own drawing of the line (hit),
       learned the dialogue font (key), or found the engine reuses rasterised glyphs and stopped (cached; the bridge turns the stream back to read-only). */
    if(m.type==='hookGlyphHide'){this.glyphHide(m);return;}
+   /* 2026-11-14 glyph dots (docs/text-architecture.md): MODE dot serves one small square per dialogue character; the
+      bridge forwards the line and every served dot. They are passed on as hookGlyphDots for the capture compositor and the
+      current line's dot table is kept in state (hookGlyphDots: seq, text, dots by index, cached). */
+   if(m.type==='hookGlyphDots'){this.glyphDots(m);return;}
+   if(m.type==='hookGlyphExtra'){this.glyphExtra(m);return;}
    if(m.type==='hookRender'){this.notify({hookDrawCount:Number(m.count)||0,hookDrawAt:Number(m.at)||0});return;}
    if(m.type==='waitMarkerDrawn'){this.emit({type:'waitMarkerDrawn'});return;}
    if(m.type==='waitMarkerStatus'){this.notify({waitMarkerMessage:String(m.message||'').slice(0,300),waitMarkerHookActive:m.active===true});return;}
@@ -144,6 +149,31 @@ class HookNative{
  // replaces the captured line; anything else, or any error, keeps the captured text so the dialogue never goes missing.
  /* E285 (user: a Chinese script was imported, yet the game was given DeepSeek's wording): one lookup per line, shared by the
     reader and the text written back into the game, so the matcher's reading position moves once per line. */
+ /* Front end -> bridge: MODE dot or blank for the glyph fallback (the compositor switches dots on while it runs). */
+ /* ① extra lines (records 4): the name plate and the choices are blanked like the line and reported with their cell
+    origins, each under its own id (state.hookGlyphExtras: {[id]:{id,kind:'n'|'o',text,dots}}; a new name replaces the old
+    one). setGlyphExtras({names:true}) lets the bridge push every name-stream line; {choices:[...]} pushes the options on
+    screen ([] clears them). Off by default: only turn it on when the reader overlay draws names and choices itself. */
+ /* locating marks for GetGlyphOutline engines (core/glyph-locate.cjs): on only while the reader captures frames to find them */
+ setGlyphMarks(on){this.send({type:'glyphMarks',on:on===true});}
+ setGlyphExtras(o={}){const m={type:'glyphExtras',names:o.names===true};if(Array.isArray(o.choices))m.choices=o.choices.map(String).filter(t=>t.trim()).slice(0,12);this.send(m);if(Array.isArray(o.choices)&&!m.choices.length&&this.state.hookGlyphExtras){const keep={};for(const[k,v]of Object.entries(this.state.hookGlyphExtras))if(v.kind!=='o')keep[k]=v;this.state={...this.state,hookGlyphExtras:keep};}}
+ glyphExtra(m){if(!m||!Number.isSafeInteger(m.id))return;const all={...(this.state.hookGlyphExtras||{})};
+  if(m.state==='line'&&(m.kind==='n'||m.kind==='o')&&typeof m.text==='string'){if(m.kind==='n')for(const[k,v]of Object.entries(all))if(v.kind==='n')delete all[k];all[m.id]={id:m.id,kind:m.kind,text:m.text.slice(0,200),dots:[]};const ids=Object.keys(all).map(Number).sort((a,b)=>a-b);while(ids.length>16)delete all[ids.shift()];}
+  else if(m.state==='dots'&&Array.isArray(m.dots)&&all[m.id]){const t={...all[m.id],dots:[...all[m.id].dots]};for(const d of m.dots.slice(0,256))if(d&&Number.isInteger(d.i)&&d.i>=0&&typeof d.ch==='string'&&d.k===t.kind&&!t.dots.some(o=>o.i===d.i))t.dots.push({i:d.i,ch:d.ch.slice(0,2),h:d.h|0,b:d.b|0,a:d.a|0,x:d.x|0,y:d.y|0,s:d.s|0,k:d.k,path:String(m.path||'').slice(0,8),...(d.at&&typeof d.at.space==='string'&&/^(c|g|[mt]\d{1,5}x\d{1,5})$/.test(d.at.space)?{at:{x:d.at.x|0,y:d.at.y|0,space:d.at.space}}:{})});all[m.id]=t;}
+  else return;
+  this.state={...this.state,hookGlyphExtras:all};this.emit(m);}
+ setGlyphMode(mode){this.send({type:'glyphMode',mode:mode==='dot'?'dot':'blank'});}
+ glyphDots(m){if(m?.state==='status'&&['paused','live','needs-relaunch','marks-off'].includes(m.status)){this.trace('glyph dots '+m.status);this.notify({hookGlyphDotsStatus:m.status});this.emit(m);return;}if(!m||!['line','dots','cached'].includes(m.state))return;const cur=this.state.hookGlyphDots;
+  if(m.state==='cached'){if(cur)this.notify({hookGlyphDots:{...cur,cached:true}});this.emit(m);return;}
+  if(!Number.isSafeInteger(m.seq))return;
+  let next=cur&&cur.seq===m.seq?{...cur}:{seq:m.seq,text:'',dots:[],cached:cur?.cached===true};
+  /* blind dots (kind b) were drawn before their line arrived: they carry the previous seq and belong to the next line,
+     mapped here by reading order (the n-th blind dot of a character = its n-th occurrence after the previous one). */
+  const pending=cur&&cur.seq!==m.seq?(cur.dots||[]).filter(d=>d.k==='b'&&d.i<0):[];
+  if(m.state==='line'&&typeof m.text==='string'){next.text=m.text.slice(0,2048);if(pending.length){let at=0;const mapped=[];for(const d of pending){const j=next.text.indexOf(d.ch,at);if(j<0)continue;mapped.push({...d,i:j});at=j+1;}next.dots=[...next.dots,...mapped];}}
+  else if(pending.length)next.dots=[...pending];
+  if(m.state==='dots'&&Array.isArray(m.dots)){const dots=[...next.dots];for(const d of m.dots.slice(0,1024))if(d&&Number.isInteger(d.i)&&typeof d.ch==='string'&&/^[dcprb]$/.test(d.k)&&!dots.some(o=>o.i===d.i&&o.k===d.k&&(d.i>=0||o.ch===d.ch&&o.h===d.h)))dots.push({i:d.i,ch:d.ch.slice(0,2),h:d.h|0,b:d.b|0,a:d.a|0,x:d.x|0,y:d.y|0,s:d.s|0,k:d.k,path:String(m.path||'').slice(0,8),...(d.at&&typeof d.at.space==='string'&&/^(c|g|[mt]\d{1,5}x\d{1,5})$/.test(d.at.space)?{at:{x:d.at.x|0,y:d.at.y|0,space:d.at.space}}:{})});next.dots=dots.slice(0,2048);}
+  this.state={...this.state,hookGlyphDots:next};this.emit(m);}
  glyphHide(m){if(!m||!['ready','hit','key','cached'].includes(m.state))return;const v={hookGlyphHide:m.state==='key'||m.state==='ready'?(this.state.hookGlyphHide||'learning'):m.state};if(m.state==='ready'&&Number.isFinite(m.version))v.hookGlyphVersion=Number(m.version);if(m.state==='hit'&&typeof m.path==='string')v.hookGlyphPath=m.path.slice(0,16);if(m.state==='key'&&typeof m.face==='string'&&Number.isFinite(m.size))v.hookGlyphFont={face:m.face.slice(0,64),size:Number(m.size)};this.trace('glyph hide '+m.state+(m.path?' '+String(m.path).slice(0,16):'')+(m.size?' '+Number(m.size)+'px':''));this.notify(v);}
  markScriptSource(){try{if(this.state&&!this.state.scriptSource)this.notify({scriptSource:true});}catch{}}
  resolveSource(text){const provider=this.originalText;if(!provider||!text)return null;const key=String(text).replace(/\s+/g,'');this.sourceCache??=new Map();if(this.sourceCache.has(key)&&this.sourceCache.get(key).provider===provider)return this.sourceCache.get(key).r;const r=provider.resolve(text);this.sourceCache.set(key,{provider,r});if(this.sourceCache.size>200)this.sourceCache.delete(this.sourceCache.keys().next().value);return r;}

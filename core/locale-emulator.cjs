@@ -94,6 +94,13 @@ class LocaleEmulator{
   /* E333 (user 2026-11-10, 女装山脈): LEProc sometimes crashes on start (0xC0000005) before the game appears; the next
      try works. A crash with no game process is retried twice before it is reported. */
   let result;
+  /* Text architecture ①: with 文字显示 = compositor the game is created through LE's loader by MeguLitLaunch32 (dots before
+     the first glyph, core/glyph-dots.cjs); any failure falls back to LEProc below with the late attach */
+  const early=require('./glyph-dots.cjs').earlyLocale(this.root,s.dir,launchExe);
+  if(early){try{const child=await startProcess(early.file,early.args,path.dirname(launchExe),'LE_SPAWN_FAILED',spawn,early.env);trace('locale-early-started',{pid:child.pid});
+    result=await waitForVisibleGame(async()=>{const matches=await this.processes(launchExe);return matches.length||launchExe===exe?matches:this.processes(exe);},{exit:()=>child.exit,helper:true,trace});
+    return {localeJapanese:true,localePath:s.path,gamePid:result.pid,early:true};}
+   catch(error){trace('locale-early-failed',{error:error.message});}}
   for(let attempt=0;;attempt++){
    const child=await startProcess(s.path,['-runas',s.profile,launchExe],path.dirname(launchExe),'LE_SPAWN_FAILED',spawn);
    trace('locale-helper-started',{pid:child.pid,alias:launchExe!==exe,...(attempt?{retry:attempt}:{})});

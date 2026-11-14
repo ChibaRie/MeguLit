@@ -35,7 +35,7 @@ test('host: probe on selection, hide-only only after the DLL reports a hidden st
  assert.ok(b.includes('static bool Armed(Candidate c){return c!=null&&(c.embed||c.gdiProbe);}'));
  assert.ok(b.includes('static bool GdiProbeable(Candidate c){return c!=null&&!c.embed&&c.role!=2&&c.role!=3&&!LoadUnsafe().ContainsKey(UnsafeKey(c.name,c.role));}'),'never the name stream, never a stream marked unsafe');
  assert.ok(b.includes('if(GdiProbeable(c)){c.gdiProbe=true;'));
- assert.ok(b.includes('if(Armed(c)&&(ReplacementEnabled||ProbeWanted&&c.gdiProbe)){var t3=c.tp;bool v3=true;later.Add(()=>Luna_UseEmbed(t3,v3));}'),'switched on with replacement on or as a hide probe, outside Gate (E560)');
+ assert.ok(b.includes('if(Armed(c)&&(ReplacementEnabled||ProbeWanted&&c.gdiProbe)&&!DotsOwn(c)){var t3=c.tp;bool v3=true;later.Add(()=>Luna_UseEmbed(t3,v3));}'),'switched on with replacement on or as a hide probe, outside Gate (E560); not in glyph dot mode (docs/text-architecture.md)');
  assert.ok(b.includes('Armed(Candidates[Selected])&&!(ProbeWanted&&Candidates[Selected].gdiProbe))Luna_UseEmbed(Candidates[Selected].tp,false);ReplacementEnabled=false;'),'switched off with replacement unless the reader still probes');
  assert.ok(b.includes('if(Selected==""||!Candidates.TryGetValue(Selected,out c)||!c.gdiProbe||c.embed)return;c.embed=true;c.hideOnly=true;List();'));
  assert.ok(b.includes('if((s??"").StartsWith("MeguLit_GDIHIDE hit",StringComparison.Ordinal))GdiHideHit(s.Substring(20));'));
@@ -86,9 +86,9 @@ test('hook-native sends the probe once per state and forgets it with the process
 test('host: the probe switches the probed stream on without replacement, keeps it through a read-mode disable, and feeds the glyph hide',()=>{
  const b=read('native/HookBridge.cs');
  assert.ok(b.includes('else if(type=="probe"){object pv;ProbeWanted=d.TryGetValue("on",out pv)&&Convert.ToBoolean(pv);Probe();}'));
- assert.ok(b.includes('!c.gdiProbe)return;tp=c.tp;on=ReplacementEnabled||ProbeWanted;'),'only the stream the GDI hide probes');
- assert.ok(b.includes('bool v1=ReplacementEnabled||ProbeWanted&&c.gdiProbe;'));
- assert.ok(b.includes('Enabled&&Armed(Candidates[Selected])&&(ReplacementEnabled||ProbeWanted&&Candidates[Selected].gdiProbe))Luna_UseEmbed(Candidates[Selected].tp,true);'),'on connect too');
+ assert.ok(b.includes('!c.gdiProbe)return;tp=c.tp;on=(ReplacementEnabled||ProbeWanted)&&!DotsOwn(c);'),'only the stream the GDI hide probes');
+ assert.ok(b.includes('bool v1=(ReplacementEnabled||ProbeWanted&&c.gdiProbe)&&!DotsOwn(c);'));
+ assert.ok(b.includes('Enabled&&Armed(Candidates[Selected])&&(ReplacementEnabled||ProbeWanted&&Candidates[Selected].gdiProbe)&&!DotsOwn(Candidates[Selected]))Luna_UseEmbed(Candidates[Selected].tp,true);'),'on connect too');
  assert.ok(b.includes('return !GlyphCached&&Enabled&&(ReplacementEnabled||ProbeWanted)&&Selected!=""'),'glyph hide lines are pushed while probing');});
 test('reader: where the hook cannot hide the game text, MeguLit does not paint a second copy of the Japanese line over it',()=>{
  const g=read('web/reader/modules/gal.js');
