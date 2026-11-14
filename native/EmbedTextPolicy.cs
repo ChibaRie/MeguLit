@@ -180,6 +180,9 @@ internal static class EmbedTextPolicy {
         int cp; if (m.Groups[2].Success && Int32.TryParse(m.Groups[2].Value, out cp) && cp > 0) return cp;
         return fallback > 0 ? fallback : 932;
     }
+    /* 2026-11-15 (沙耶の唄, user: 「这乱码是原文」): a hook that hands over the engine's own UTF-16 / UTF-8 string (LunaHook types W, Q, U,
+       V) cannot produce code-page mojibake: whatever it delivers is the text the game draws, noise included. */
+    public static bool EngineText(string code) { return System.Text.RegularExpressions.Regex.IsMatch(code ?? "", "^H[WQUV]"); }
     public static bool RoundTrips(string text, int codepage) {
         if (codepage <= 0 || codepage == 1200 || codepage == 65001 || String.IsNullOrEmpty(text)) return true;
         try {

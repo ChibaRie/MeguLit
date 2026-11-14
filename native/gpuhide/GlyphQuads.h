@@ -68,6 +68,10 @@ struct GlyphLearner {
   if (log) log("LINE seq=%u n=%u", seq, n);
  }
  void Off() { n = 0; armedUntil = 0; if (log) log("OFF"); }
+ // 2026-11-15 (user: the first line must already be hidden): a calibration saved by an earlier run (glyph height, target size).
+ // Only the current line's own fresh glyph sheets are hidden from it (no atlas, no area) until a real learn refines it.
+ bool preset = false;
+ void Preset(float gh, unsigned w, unsigned h) { if (learned || gh < 4 || gh > 160 || !w || !h) return; learned = true; preset = true; glyphH = gh; areaW = w; areaH = h; area = Rect{ 0, 0, (float)w, (float)h }; if (log) log("PRESET gh=%.1f rt=%ux%u", gh, w, h); }
 
  // A draw onto the back buffer that samples a render-target texture: remember where that texture lands on screen.
  void Composite(void *tex, const std::vector<Quad> &q) {
@@ -164,7 +168,7 @@ struct GlyphLearner {
    std::vector<Rect> a = Chars(Cluster(Chars(live))), b = Chars(Cluster(Chars(fresh)));
    if (log && (now / 500) != ((now - 17) / 500)) log("frame %u group rt=%p %ux%u live=%u fresh=%u n=%u", frameNo, g.rt, g.tw, g.th, (unsigned)a.size(), (unsigned)b.size(), n);
    std::vector<Rect> keep; const std::vector<Rect> *hit = Match(a, b, keep); if (!hit) continue;
-   if (learned && (g.rtW != areaW || g.rtH != areaH || !atlases.count(AtlasKey(NULL, g.tex)))) continue;
+   if (learned && (g.rtW != areaW || g.rtH != areaH || (!preset && !atlases.count(AtlasKey(NULL, g.tex))))) continue;
    Report(g, *hit);
    return;
   }
@@ -194,7 +198,7 @@ struct GlyphLearner {
    // every target of the learned size counts: engines draw the same page into a shadow / effect buffer too (Saya)
    for (auto &kv : groups) { if (kv.second.rt != g.rt && (kv.second.rtW != g.rtW || kv.second.rtH != g.rtH)) continue; int in = 0, on = 0; for (const std::vector<Rect> *v : { &kv.second.frame, &kv.second.prev }) for (auto &r : *v) if (inArea(r)) { in++; if (aligned(r)) on++; }
     if (&kv.second == &g || (on >= 1 && on * 10 >= in * 6)) atlases.insert(AtlasKey(NULL, kv.second.tex)); }
-   snprintf(b, sizeof b, "ToMe_GPUHIDE learn seq=%u area=%.0f,%.0f,%.0f,%.0f atlas=%ux%u glyphs=%u chars=%u atlases=%u", seq, area.x0, area.y0, area.x1 - area.x0, area.y1 - area.y0, g.tw, g.th, (unsigned)cs.size(), n, (unsigned)atlases.size()); if (emit) emit(b);
+   snprintf(b, sizeof b, "ToMe_GPUHIDE learn seq=%u area=%.0f,%.0f,%.0f,%.0f atlas=%ux%u glyphs=%u chars=%u atlases=%u gh=%.1f rt=%ux%u", seq, area.x0, area.y0, area.x1 - area.x0, area.y1 - area.y0, g.tw, g.th, (unsigned)cs.size(), n, (unsigned)atlases.size(), h, g.rtW, g.rtH); if (emit) emit(b);
   } else {
    // grow the area when a longer line spills over it
    area.x0 = (std::min)(area.x0, box.x0 - h * 0.5f); area.y0 = (std::min)(area.y0, box.y0 - h * 0.5f); area.x1 = (std::max)(area.x1, box.x1 + h * 0.5f); area.y1 = (std::max)(area.y1, box.y1 + h * 0.5f);

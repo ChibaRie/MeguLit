@@ -351,7 +351,9 @@ class HookNative{
      and code-page mojibake stay unreadable there. */
   /* user: 「按照剧本来上遮罩防止误杀」 - a line the game's own script holds exactly is its text, whatever it looks like */
   let scripted=false;if(typeof m.text==='string'&&this.originalText){try{const r=this.resolveSource(String(m.text).trim());scripted=!!r&&r.status==='exact';}catch{}}
-  const scriptNoise=scripted||typeof m.text==='string'&&this.codepage?.mode(name||m.sourceCode||m.sourceName||'')==='native'&&/[\u3041-\u309f\u30a1-\u30fa]/.test(m.text)&&!/\ufffd/.test(m.text)&&!require('./text-sanity.cjs').repairShiftJisAsGbk(m.text);
+  /* a wide / UTF-8 hook (LunaHook H W|Q|U|V) hands over the engine's own string: never code-page mojibake (EmbedTextPolicy.EngineText) */
+  const engineText=/^H[WQUV]/.test(String(m.sourceCode||''))&&typeof m.text==='string'&&!/\ufffd/.test(m.text);
+  const scriptNoise=scripted||engineText||typeof m.text==='string'&&this.codepage?.mode(name||m.sourceCode||m.sourceName||'')==='native'&&/[\u3041-\u309f\u30a1-\u30fa]/.test(m.text)&&!/\ufffd/.test(m.text)&&!require('./text-sanity.cjs').repairShiftJisAsGbk(m.text);
   if(scriptNoise)this.trace('script noise line kept '+JSON.stringify(String(m.text).slice(0,20)));
   if(!scriptNoise&&require('./text-sanity.cjs').garbledSource(m.text,{controls:false})){this.trace('source dropped unreadable '+JSON.stringify(String(m.text).slice(0,20)));if(!this.lineUnreadable){this.lineUnreadable=true;this.notify({hookLineUnreadable:true});}return;}
   // Multilingual containers keep only the Japanese track (E243); streams that deliver every line several times (or every character doubled) are learned and undone per stream (E215).
