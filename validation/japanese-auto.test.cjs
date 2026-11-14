@@ -115,3 +115,26 @@ test('a write that fails part-way leaves the game as it was; a brief EPERM is re
  try{assert.equal(auto.run(root,'p2',g).done,true);}finally{fs.renameSync=real;}
  assert.equal(auto.verifyFiles(g).ok,true);
 });
+
+test('Artemis multi-language (The Shell layout): an added archive fixes the text language to ja; originals untouched; undo and self-check revert delete it',()=>{
+ const ar=require('../core/artemis-language.cjs'),sc=require('../services/original-engines/scenes.cjs'),{pf8}=ar._internal;
+ const root=tmp('root'),g=tmp('artemis');
+ const ast='astver = 2.0\nast = {\n'+Array.from({length:60},(_,i)=>'\t["0001_'+i+'"] = {\n\t\t{"text"},\n\t\ttext = {\n\t\t\tja = {{"しんと静まりかえった講堂。'+i+'"}},\n\t\t\ten = {{"The auditorium, silent as the grave. '+i+'"}},\n\t\t\ttw = {{"寂靜無聲的禮堂。'+i+'"}},\n\t\t},\n\t},').join('\n')+'\n}';
+ const lua='function get_language(flag)\n\tlocal r = flag and conf and conf.language or init.game_language or "ja"\n\treturn r\nend\n';
+ fs.writeFileSync(path.join(g,'Game.pfs'),pf8([{name:'script\\a.ast',data:Buffer.from(ast)},{name:'system\\msg\\lang.lua',data:Buffer.from(lua)}]));
+ fs.writeFileSync(path.join(g,'Game.pfs.000'),pf8([{name:'system\\x.png',data:Buffer.from('png')}]));
+ fs.writeFileSync(path.join(g,'Game.pfs.060'),pf8([{name:'system\\table\\list_windows_en.tbl',data:Buffer.from('lang={}')}]));
+ const before=fs.readdirSync(g).map(n=>[n,fs.readFileSync(path.join(g,n))]);
+ const d=auto.decide(g);assert.equal(d.action,'files');assert.equal(d.detected.adapter,'artemis-pfs');assert.equal(d.detected.file,'Game.pfs.061');
+ const r=auto.run(root,'ar1',g);assert.equal(r.done,true);
+ for(const [n,b] of before)assert.ok(fs.readFileSync(path.join(g,n)).equals(b),n+' untouched');
+ const f=path.join(g,'Game.pfs.061'),l=sc.pfsList(f),t=sc.pfsRead(f,l.files[0],l.key).toString();
+ assert.equal(l.files[0].name,'system\\msg\\lang.lua');assert.match(t,/function get_language\(flag\)\n\tif flag then return "ja" end/);
+ assert.equal(auto.verifyFiles(g).ok,true);assert.equal(jr.detect(g).state,'applied');
+ /* launch never reached a window -> the added archive is removed */
+ auto.selfCheck(root,'ar1',g);auto.launchResult(root,'ar1',false);
+ assert.equal(auto.selfCheck(root,'ar1',g).reverted,true);assert.ok(!fs.existsSync(f));assert.ok(!fs.existsSync(path.join(g,'.megulit-japanese')));
+ /* a fresh game id: apply, then user undo */
+ auto.run(root,'ar2',g);assert.ok(fs.existsSync(f));auto.undo(root,'ar2',g);assert.ok(!fs.existsSync(f));
+ assert.deepEqual(fs.readdirSync(g).sort(),before.map(b=>b[0]).sort());
+});

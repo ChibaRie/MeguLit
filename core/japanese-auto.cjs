@@ -63,6 +63,7 @@ function takeNotices(root){const s=read(root),out=s.notices;if(out.length){s.not
 /* is the table MeguLit wrote still readable and unshared (E278: Siglus crashed on shared strings) */
 function verifyFiles(gameDir){
  const J=jr(),m=J._internal.readManifest(path.resolve(gameDir));if(!m)return {ok:false,reason:'MANIFEST_MISSING'};
+ if(m.adapter==='artemis-pfs')return require('./artemis-language.cjs').verify(gameDir);
  if(m.adapter!=='siglus-dbs')return {ok:true};
  const dat=path.join(gameDir,'dat');
  for(const e of m.files){const f=path.join(dat,e.file);let buf;try{buf=fs.readFileSync(f);}catch{return {ok:false,reason:'FILE_MISSING',file:e.file};}
