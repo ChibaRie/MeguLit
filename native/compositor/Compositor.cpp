@@ -1000,6 +1000,9 @@ private:
     for (size_t k = 0; k < g.size(); ++k) {
       const Json &d = g[k]; const int i = int(d["i"].num(-1)); const std::string kind = d["k"].str();
       if (i < 0 || i >= int(l.metric.size()) || (!kind.empty() && kind != "d" && kind != "c" && kind != "b")) continue; // b: blind dot, mapped to its character
+      // path conv (MultiByteToWideChar source): the game draws 「・」 with its own font, the record has no metrics (h = 0):
+      // a centred mark, placed like ④'s text marks.
+      if (d["h"].num() <= 0) { l.centered = true; if (!std::binary_search(l.rec.begin(), l.rec.end(), i)) l.rec.insert(std::upper_bound(l.rec.begin(), l.rec.end(), i), i); continue; }
       l.metric[i] = { true, float(d["h"].num()), float(d["b"].num()), float(d["a"].num()), float(d["x"].num()), float(d["y"].num()) };
       if (!std::binary_search(l.rec.begin(), l.rec.end(), i)) l.rec.insert(std::upper_bound(l.rec.begin(), l.rec.end(), i), i);
     }

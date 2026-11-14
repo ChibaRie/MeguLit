@@ -141,4 +141,5 @@ test('owner rule: heartbeat for the glyph DLL, no mark handed back on a mismatch
   assert.match(read('core/gal-native.cjs'), /message\.type==='hookTextMarks'\)this\.compositor\?\.hook\(/);
   assert.match(read('core/hook-native.cjs'), /m\.type==='hookFont'\|\|m\.type==='hookTextMarks'\)\{this\.emit\(m\);/, 'HookBridge text-mark lines reach the app');
   assert.match(c, /cur\.centered = j\["marks"\]\.str\(\) == "middle-dot"/, '④ marks: glyphs centred on the mark');
+  assert.match(c, /if \(d\["h"\]\.num\(\) <= 0\) \{ l\.centered = true;/, 'conv records (no metrics) are centred marks');
 });
