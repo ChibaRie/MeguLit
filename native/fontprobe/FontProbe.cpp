@@ -132,7 +132,9 @@ void AfterDecision() { if (Hide.Cached()) InterlockedExchange(&HideOn, 0); }
 // without waiting for the line; kind 'b', index -1. MeguLit maps them to the line by reading order when it arrives.
 bool BlindChar(wchar_t c) { return c == 0 || (c >= 0x3000 && !GlyphHide::Blank(c)) || (c >= 0xff01 && c <= 0xff5e); }
 // One glyph; dc may be NULL when c is already a character. sv/seq/ch (optional): what was served, for the dot report.
+bool DotsBlocked();
 bool HideGlyph(HDC dc, UINT c, bool index, const Face &f, bool render, GlyphHide::Served *sv = NULL, long *seq = NULL, wchar_t *chOut = NULL) {
+ if (DotsBlocked()) return false;
  AcquireSRWLockExclusive(&HideLock);
  wchar_t ch = index ? FromIndex(dc, c) : (wchar_t)c;
  bool r = ch && Hide.Glyph(ch, KeyOf(f), GetTickCount(), render, "ggo", sv); AfterDecision();
@@ -141,7 +143,7 @@ bool HideGlyph(HDC dc, UINT c, bool index, const Face &f, bool render, GlyphHide
  ReleaseSRWLockExclusive(&HideLock); return r;
 }
 bool HideText(const std::wstring &s, const Face &f, const char *path, std::vector<GlyphHide::Served> *sv = NULL, long *seq = NULL) {
- if (s.empty()) return false;
+ if (s.empty() || DotsBlocked()) return false;
  AcquireSRWLockExclusive(&HideLock); bool r = Hide.Text(s, KeyOf(f), GetTickCount(), path, sv); AfterDecision();
  if (!r && BlindMode && Hide.DialogueKey(KeyOf(f))) { bool any = false; for (wchar_t c : s) any = any || (c && BlindChar(c)); if (any) { r = true; if (sv) { sv->assign(s.size(), GlyphHide::Served{}); for (size_t i = 0; i < s.size(); i++) if (s[i] && BlindChar(s[i])) (*sv)[i] = GlyphHide::Served{-1, 'b'}; } } } if (seq) *seq = Hide.Sequence(); ReleaseSRWLockExclusive(&HideLock); return r;
 }
@@ -174,8 +176,10 @@ struct Dot { int i; wchar_t ch; int h, b, a, x, y, s; char k; };
 SRWLOCK DotLock = SRWLOCK_INIT; long DotSeq = -1, DotAnnounced = -1; std::set<unsigned long long> DotSeen; std::string DotBuf, DotPath; DWORD DotFirst; int DotCount;
 void DotFlushLocked() { if (!DotBuf.empty()) Send("ToMe_GLYPHDOT dots seq=" + std::to_string(DotSeq) + " path=" + DotPath + " list=" + DotBuf); DotBuf.clear(); DotCount = 0; }
 // One served dot glyph; reported once per line and (index, kind) (ruby: per character and height). Never called under HideLock.
+volatile LONG DotsServedCount;
 void ServeDot(long seq, const char *path, const Dot &d) {
  if (!d.k) return;
+ InterlockedIncrement(&DotsServedCount);
  AcquireSRWLockExclusive(&DotLock);
  if (seq != DotSeq) { DotFlushLocked(); DotSeq = seq; DotSeen.clear(); }
  if (seq != DotAnnounced) { std::wstring text; AcquireSRWLockShared(&HideLock); bool same = Hide.Sequence() == seq; if (same) text = Hide.Current(); ReleaseSRWLockShared(&HideLock);
@@ -193,6 +197,38 @@ void AnnounceLine(long seq, const std::wstring &text) {
  ReleaseSRWLockExclusive(&DotLock);
 }
 DWORD WINAPI DotFlusher(void *) { for (;;) { Sleep(25); AcquireSRWLockExclusive(&DotLock); if (!DotBuf.empty() && GetTickCount() - DotFirst >= 25) DotFlushLocked(); ReleaseSRWLockExclusive(&DotLock); } }
+
+// ---- compositor heartbeat (docs/text-architecture.md, "Owner rule: the player never sees marks") ----------------------
+// Dots are only served while MeguLit's capture compositor is presenting this game: shared memory
+// Local\MeguLitCompositorBeat-<pid> {magic 'MGCB', version 1, compositorPid, presenting, tickMs, frames}. Before any
+// heartbeat was seen, a 20 s grace from DLL load (early injection starts before the compositor exists). After one was
+// seen: presenting == 1 and now - tickMs <= 1000 ms, checked before every glyph and by a 250 ms watcher. Otherwise real
+// glyphs at once; when dots were already served the engine may keep cached dots, so "ToMe_GLYPHDOT status
+// needs-relaunch" is sent once per lapse. A heartbeat that comes back only affects glyphs rasterised from then on.
+#pragma pack(push, 4)
+struct Beat { DWORD magic, version, compositorPid, presenting; unsigned long long tickMs, frames; };
+#pragma pack(pop)
+const DWORD BeatMagic = 0x4243474D; const ULONGLONG BeatGrace = 20000, BeatFresh = 1000;
+ULONGLONG LoadedAt; HANDLE BeatMap; volatile const Beat *BeatView; volatile LONG BeatSeen, BeatLapsed;
+bool DotsLive() {
+ if (!BeatView) { wchar_t name[64]; swprintf_s(name, L"Local\\MeguLitCompositorBeat-%lu", GetCurrentProcessId()); HANDLE m = OpenFileMappingW(FILE_MAP_READ, FALSE, name);
+  if (m) { void *v = MapViewOfFile(m, FILE_MAP_READ, 0, 0, sizeof(Beat)); if (v && InterlockedCompareExchangePointer((PVOID *)&BeatView, v, NULL) == NULL) BeatMap = m; else { if (v) UnmapViewOfFile(v); CloseHandle(m); } } }
+ ULONGLONG now = GetTickCount64();
+ const volatile Beat *b = BeatView;
+ if (b && b->magic == BeatMagic && b->version == 1) {
+  if (b->tickMs) InterlockedExchange(&BeatSeen, 1);
+  if (BeatSeen) return b->presenting == 1 && b->tickMs && now >= b->tickMs && now - b->tickMs <= BeatFresh;
+ }
+ if (BeatSeen) return false;      // seen once, now gone or invalid: real glyphs
+ return now - LoadedAt <= BeatGrace; // never seen: early-injection grace
+}
+// Dot mode answers "not matched" while the heartbeat says the player would see the marks.
+bool DotsBlocked() { return DotMode && !DotsLive(); }
+DWORD WINAPI BeatWatch(void *) {
+ for (;;) { Sleep(250); if (!DotMode) continue; bool live = DotsLive();
+  if (!live && !InterlockedExchange(&BeatLapsed, 1)) { if (DotsServedCount) Send("ToMe_GLYPHDOT status needs-relaunch served=" + std::to_string(DotsServedCount)); else Send("ToMe_GLYPHDOT status paused"); }
+  if (live && BeatLapsed) { InterlockedExchange(&BeatLapsed, 0); Send("ToMe_GLYPHDOT status live"); } }
+}
 
 // The glyph buffer of a dot glyph. Metrics, black box and buffer size stay the original's; the only coverage is a
 // side x side square at the black box's top-left. Bitmaps: rows top-down, DWORD-aligned; full coverage is 1 (mono),
@@ -614,6 +650,7 @@ DWORD WINAPI Run(void *) {
  Hide.Report = [](const std::string &line) { Send(line); };
  HANDLE w = CreateThread(NULL, 0, Writer, NULL, 0, NULL); if (w) CloseHandle(w);
  HANDLE fl = CreateThread(NULL, 0, DotFlusher, NULL, 0, NULL); if (fl) CloseHandle(fl);
+ HANDLE bw = CreateThread(NULL, 0, BeatWatch, NULL, 0, NULL); if (bw) CloseHandle(bw);
  if (MH_Initialize() != MH_OK) { Send("ToMe_FONT status off: minhook"); return 0; }
  HMODULE gdi = GetModuleHandleW(L"gdi32.dll"); if (!gdi) gdi = LoadLibraryW(L"gdi32.dll");
  int n = 0;
@@ -641,7 +678,7 @@ DWORD WINAPI Run(void *) {
 
 BOOL WINAPI DllMain(HINSTANCE h, DWORD reason, void *) {
  if (reason == DLL_PROCESS_ATTACH) {
-  Self = h; DisableThreadLibraryCalls(h); InitializeCriticalSection(&Gate); Wake = CreateEventW(NULL, FALSE, FALSE, NULL);
+  Self = h; LoadedAt = GetTickCount64(); DisableThreadLibraryCalls(h); InitializeCriticalSection(&Gate); Wake = CreateEventW(NULL, FALSE, FALSE, NULL);
   HMODULE pin; GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_PIN, (LPCWSTR)&DllMain, &pin);
   HANDLE t = CreateThread(NULL, 0, Run, NULL, 0, NULL); if (t) CloseHandle(t);
  }

@@ -22,6 +22,7 @@ version, a line in this log, and stays backward compatible where possible (new f
 |------|------------|--------|
 | 1    | 2026-11-14 | First version: dot geometry, `ToMe_GLYPHDOT` records, `hookGlyphDots` events, `glyphMode` command. |
 | 2    | 2026-11-14 | Dot side grows with the cell: max(3, round(h/10)) from 12 px (was a fixed 3). Records unchanged. |
+| 2    | 2026-11-14 | Compositor heartbeat gate (dot mode), `status needs-relaunch / paused / live` records. |
 | 2    | 2026-11-14 | Compatible addition: `MODE dot-blind` / `blind:true`, record kind `b`. |
 | 1    | 2026-11-14 | Compatible addition: `glyphMode` `all:true` (write-back streams on dots too).                    |
 | 1    | 2026-11-14 | Compatible addition: in dot mode `ToMe_GLYPHDOT line` is sent when the line is pushed, before any dot. |
@@ -123,6 +124,19 @@ later as usual (the same DLL path is not loaded twice) and takes over with `MODE
 fallback for every other launch path (Steam, Locale Emulator, shell open). The first launch of a game has no remembered
 font yet unless the line stream taught one; HookBridge stores the probe's dialogue font (`BlindSeed`) for the next one.
 Self-test: `run-dots.cmd` starts `earlyhost.exe` through the launcher (x86 and x64); its first glyph must be a dot.
+
+### Compositor heartbeat (dot mode only)
+
+Owner rule: the player never sees marks. MeguLitFont serves dots only while the capture compositor presents this game:
+it reads `Local\MeguLitCompositorBeat-<game pid>` (`magic 0x4243474D 'MGCB'`, `version 1`, `compositorPid`, `presenting`,
+`tickMs` = GetTickCount64, `frames`; written by ② every 50 ms). Before any heartbeat was seen, dots are allowed for 20 s
+from DLL load (early injection starts before the compositor). Once one was seen: only while `presenting == 1` and
+`now − tickMs ≤ 1000 ms`, checked before every glyph/string and by a 250 ms watcher. Otherwise every path answers
+"not matched", so the game gets its real glyphs and strings at once (MeguLit, HookBridge or the compositor crashing or
+closing all end here). On a lapse the DLL sends once `ToMe_GLYPHDOT status needs-relaunch served=<n>` when dots were
+already served (an engine cache may still hold them; MeguLit offers a restart) or `status paused` when none were; when the
+heartbeat comes back, `status live`, and only glyphs rasterised from then on become dots. Blank mode is not affected.
+Self-test: `run-dots.cmd` (fresh beat → dot, presenting 0 → real at once, needs-relaunch reported, back → dots, stale 5 s → real).
 
 ### Reports (DLL → HookBridge, pipe `\\.\pipe\MeguLitFont-<pid>`, UTF-8 lines)
 
