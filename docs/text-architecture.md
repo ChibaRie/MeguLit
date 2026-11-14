@@ -22,6 +22,7 @@ version, a line in this log, and stays backward compatible where possible (new f
 
 | Spec | Date       | Change |
 |------|------------|--------|
+| 3    | 2026-11-15 | Compatible addition: extra lines for the name plate and choices (`EXTRA n|o <text>`, `EXTRA-CLEAR n|o`; records `ToMe_GLYPHDOT extra` / `xdots`; event `hookGlyphExtra`; front end `glyphExtras`). Whole-string draws only. |
 | 3    | 2026-11-14 | `MODE blank` now reports records too (blank glyphs + records = placement; `place`/`place-blind` are aliases of `blank`/`blank-blind`), the default for MeguLit's launch flow. Record version 4 (`ready ... records=4`). Compatible addition at the end of every dot record: `:px:py:space`, the cell's top-left on screen; `hookGlyphDots` dots carry `at`. `ready ... modes=blank,dot,place`. Dots stay available on request. |
 | 1    | 2026-11-14 | First version: dot geometry, `ToMe_GLYPHDOT` records, `hookGlyphDots` events, `glyphMode` command. |
 | 2    | 2026-11-14 | Dot side grows with the cell: max(3, round(h/10)) from 12 px (was a fixed 3). Records unchanged. |
@@ -172,6 +173,51 @@ the cell origin appended (`px:py:space`, see Reports).
   DrawGlyphRun leave no ink; every character is reported once with the expected origin in `m1000x90`, in `c` (a
   hidden, never shown window whose child at (50,30) must map to client (50+x, 30+y) of the top-level window), in
   `t1000x90`, and `-` for GetGlyphOutline; `blank-blind` leaves no ink either.
+
+### Names and choices (extra lines, spec 3)
+
+The name plate and the choices are not part of the dialogue line, so the line matcher never touches them. For
+acceptance item (h) they can be pushed as **extra lines**, each blanked and reported on its own:
+
+- Bridge → DLL: `EXTRA n <name>` (replaces the previous name), `EXTRA o <choice>` (one per option on screen),
+  `EXTRA-CLEAR n` / `EXTRA-CLEAR o`; `OFF` clears them. At most 16, each valid 60 s, blanks stripped.
+- Matched only by whole-string draws (TextOut / ExtTextOut / DrawText, GDI+, Direct2D), which carry a position: the
+  stripped string equals the extra or is a part of it with two characters or more, in any font size. Those draws are
+  blank (as `MODE blank`) and reported. A per-glyph engine (GetGlyphOutline) gives no position, so its names and
+  choices are left alone rather than hidden without a replacement.
+- DLL → bridge: `ToMe_GLYPHDOT extra id=<n> kind=<n|o> text=<text>` once per extra, then
+  `ToMe_GLYPHDOT xdots id=<n> path=<p> list=<dot>;...` (same 12-field records, kind `n` / `o`, index into the extra's
+  text, each index once per id). Ids count on their own, separate from the line `seq`.
+- Bridge → front end: `{"type":"hookGlyphExtra","state":"line","id":1,"kind":"n","text":"古河渚"}` and
+  `{"type":"hookGlyphExtra","state":"dots","id":1,"path":"text","dots":[...]}`. HookNative keeps them in
+  `state.hookGlyphExtras` (a new name replaces the old one).
+- Front end → bridge: `{"type":"glyphExtras","names":true,"choices":["…","…"]}` (`HookNative.setGlyphExtras`). `names`
+  makes the bridge push every line of the name stream (`role 2`); `choices` replaces the options (`[]` clears).
+  **Off by default**: turn it on only when the reader overlay draws names and choices itself, otherwise they would
+  disappear. Note for the overlay: the current choice flow finds choice boxes by OCR of the drawn options; once the
+  options are blank, their boxes must come from these records instead (`core/glyph-place.cjs extraRects`, which also
+  gives each choice a `click` point in client pixels to post to the game window).
+- Self-test (`run-dots.cmd`): a pushed name drawn in a 20 px font and a choice leave no ink, an unrelated string is
+  drawn, each character is reported once at its cell origin, `EXTRA-CLEAR o` brings the choice back.
+
+### GetGlyphOutline engines: no position (status 2026-11-15)
+
+CLANNAD (Siglus), ISLAND (CatSystem2) and Under The Moon (AdvHD) take each glyph with GetGlyphOutline and place it
+themselves (into their own texture or surface). Their records carry the character, cell height, ascent and advance
+(`a` = `gmCellIncX`) but `space` `-`. What was looked at:
+
+1. Following the glyph bitmap to where it is drawn. The engines copy the returned buffer into their own memory (a
+   locked Direct3D texture or a system-memory surface) with their own code, not through a GDI call, so no GDI hook
+   (BitBlt, StretchDIBits, UpdateLayeredWindow) sees it. Catching the copy itself would need a guard page on the
+   engine's buffer plus single-stepping its copy loop, or a Direct3D texture/draw tracker that maps an atlas cell to the
+   quad that samples it (layer ④'s territory). Neither can be built or checked without running the games; not done.
+2. Relative layout from the metrics (`a`, `h`, `b` per character, in reading order) is already in the records. What is
+   missing is the origin of the first character and the wrap width. A blank line has nothing to locate on screen; the
+   only frame that shows the text is one that is not blanked, which item (d) forbids. Not done.
+3. Fallback (what ① does today): the line is still blank in the game, so the original never shows (d), and the records
+   tell the overlay it cannot place the line (`glyphRects` returns null for `space` `-`). The overlay then shows the line
+   its old way (its own text panel, translation beside, words clickable, clicks elsewhere to the game: (c)(e)). Only (a)
+   "in the original place" is not met for these engines.
 
 ### Compositor heartbeat (dot mode only)
 

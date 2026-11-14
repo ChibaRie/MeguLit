@@ -4,7 +4,7 @@
    The record lines below are the format the DLL sends (ToMe_GLYPHDOT dots ... list=i:u:h:b:a:x:y:s:k:px:py:space),
    parsed the way HookBridge parses them, merged by HookNative, then turned into boxes. */
 const test = require('node:test'), assert = require('node:assert');
-const {glyphRects, scaleOf} = require('../core/glyph-place.cjs');
+const {glyphRects, scaleOf, clickPoint, extraRects} = require('../core/glyph-place.cjs');
 const {HookNative} = require('../core/hook-native.cjs');
 
 /* HookBridge.GlyphDots, as JavaScript (same field rules). */
@@ -58,4 +58,27 @@ test('the DLL record format is the one parsed here', () => {
   assert.ok(c.includes('"%s%d:%04x:%d:%d:%d:%d:%d:%d:%c:%d:%d:%s"'));
   const b = require('node:fs').readFileSync(require('node:path').join(__dirname, '..', 'native', 'HookBridge.cs'), 'utf8');
   assert.ok(b.includes('f.Length!=9&&f.Length!=12'));
+});
+
+test('names and choices (extra lines): own ids, own tables, boxes and a click point for each choice', () => {
+  const h = host(), sent = []; h.send = m => sent.push(m);
+  h.setGlyphExtras({names: true, choices: ['上書きで何か吹き込む', 'やめておく', ' ']});
+  assert.deepEqual(sent[0], {type: 'glyphExtras', names: true, choices: ['上書きで何か吹き込む', 'やめておく']});
+  h.glyphExtra({type: 'hookGlyphExtra', state: 'line', id: 1, kind: 'n', text: '古河渚'});
+  h.glyphExtra({type: 'hookGlyphExtra', state: 'dots', id: 1, path: 'text', dots: parse(rec('古河渚', [[300, 40], [320, 40], [340, 40]], 'c').replace(/:d:/g, ':n:'))});
+  h.glyphExtra({type: 'hookGlyphExtra', state: 'line', id: 2, kind: 'o', text: 'やめておく'});
+  h.glyphExtra({type: 'hookGlyphExtra', state: 'dots', id: 2, path: 'text', dots: parse(rec('やめておく', [[100, 400], [128, 400], [156, 400], [184, 400], [212, 400]], 'm1280x720').replace(/:d:/g, ':o:'))});
+  const all = extraRects(h.state.hookGlyphExtras, [1280, 720]);
+  assert.deepEqual(all.map(r => [r.kind, r.text]), [['o', 'やめておく'], ['n', '古河渚']]);
+  assert.deepEqual(all[0].click, {x: 170, y: 414}, 'centre of the choice row');
+  assert.deepEqual(all[1].rects.map(b => b.x), [300, 320, 340]);
+  h.glyphExtra({type: 'hookGlyphExtra', state: 'line', id: 3, kind: 'n', text: '岡崎朋也'});
+  assert.equal(Object.values(h.state.hookGlyphExtras).filter(t => t.kind === 'n').length, 1, 'a new name replaces the old one');
+  h.setGlyphExtras({names: true, choices: []});
+  assert.equal(Object.values(h.state.hookGlyphExtras).filter(t => t.kind === 'o').length, 0, 'choices cleared');
+  assert.equal(clickPoint(null), null);
+  const b = require('node:fs').readFileSync(require('node:path').join(__dirname, '..', 'native', 'HookBridge.cs'), 'utf8');
+  assert.ok(b.includes('Regex.Match(s,@"^extra id=(')&&b.includes(') kind=([no]) text=(.*)$");') && b.includes('GlyphSend("EXTRA o "+t)') && b.includes('if(GlyphNames&&GlyphWanted())GlyphSend("EXTRA n "'), 'bridge pushes names / choices and forwards the records');
+  const c = require('node:fs').readFileSync(require('node:path').join(__dirname, '..', 'native', 'fontprobe', 'FontProbe.cpp'), 'utf8');
+  assert.ok(c.includes('Send("ToMe_GLYPHDOT xdots id="') && c.includes('if (!r && DotMode && !Extras.empty() && ExtraMatch(s, sv, &xid))'), 'DLL: whole-string draws only');
 });

@@ -19,15 +19,17 @@ function scaleOf(space, client) {
   return w > 0 && h > 0 ? [client[0] / w, client[1] / h] : null;
 }
 
-/* table: {seq, text, dots:[{i,ch,h,b,a,k,at:{x,y,space}}]}; client: [width, height] of the game's client area.
+/* table: {seq, text, dots:[{i,ch,h,b,a,k,at:{x,y,space}}]} (a line), or an extra line from state.hookGlyphExtras
+   ({id, kind:'n'|'o', text, dots}); client: [width, height] of the game's client area.
    Returns {seq, text, rects:[{x,y,w,h,baseline}], space} or null. */
 function glyphRects(table, client) {
+  const kind = table && (table.kind === 'n' || table.kind === 'o') ? table.kind : 'd';
   if (!table || typeof table.text !== 'string' || !Array.isArray(table.dots)) return null;
   const chars = [...table.text];
   if (!chars.length) return null;
   const by = new Map();
   for (const d of table.dots) {
-    if (!d || d.k !== 'd' || !Number.isInteger(d.i) || d.i < 0 || d.i >= chars.length || by.has(d.i)) continue;
+    if (!d || d.k !== kind || !Number.isInteger(d.i) || d.i < 0 || d.i >= chars.length || by.has(d.i)) continue;
     if (d.ch !== chars[d.i] || !d.at) continue;
     by.set(d.i, d);
   }
@@ -39,7 +41,23 @@ function glyphRects(table, client) {
     spaces.add(d.at.space);
     rects.push({x: d.at.x * s[0], y: d.at.y * s[1], w: Math.max(1, d.a) * s[0], h: Math.max(1, d.h) * s[1], baseline: d.b * s[1]});
   }
-  return {seq: table.seq, text: table.text, rects, space: spaces.size === 1 ? [...spaces][0] : 'mixed'};
+  return {seq: table.seq ?? table.id, kind, text: table.text, rects, space: spaces.size === 1 ? [...spaces][0] : 'mixed'};
 }
 
-module.exports = {glyphRects, scaleOf};
+/* Where to click so the game gets a click on this choice: the centre of its boxes, in client pixels. The reader posts
+   it to the game window (PostMessage WM_LBUTTONDOWN/UP with these client coordinates); the real cursor never moves. */
+function clickPoint(placed) {
+  if (!placed || !Array.isArray(placed.rects) || !placed.rects.length) return null;
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const r of placed.rects) { x0 = Math.min(x0, r.x); y0 = Math.min(y0, r.y); x1 = Math.max(x1, r.x + r.w); y1 = Math.max(y1, r.y + r.h); }
+  return {x: Math.round((x0 + x1) / 2), y: Math.round((y0 + y1) / 2)};
+}
+
+/* Every placeable extra line (names, choices) of state.hookGlyphExtras, newest first per kind. */
+function extraRects(extras, client) {
+  const out = [];
+  for (const t of Object.values(extras || {}).sort((a, b) => b.id - a.id)) { const r = glyphRects(t, client); if (r) out.push(r.kind === 'o' ? {...r, click: clickPoint(r)} : r); }
+  return out;
+}
+
+module.exports = {glyphRects, scaleOf, clickPoint, extraRects};

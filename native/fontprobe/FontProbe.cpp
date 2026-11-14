@@ -98,17 +98,41 @@ bool BlindAllowed();
 struct IndexMap { HFONT font = NULL; long seq = -1; std::map<WORD, wchar_t> map; } Indexes;
 GlyphHide::Key KeyOf(const Face &f) { GlyphHide::Key k; k.face = f.name; k.size = f.size; return k; }
 void AnnounceLine(long seq, const std::wstring &text);
+// Extra lines (spec 3, records 4): the name plate (EXTRA n) and the choices on screen (EXTRA o, one per item), pushed by
+// HookBridge when the front end asks for them. Only whole-string draws (TextOut/ExtTextOut/DrawText, GDI+, Direct2D)
+// are matched against them: those report a position, so the reader overlay can draw what was blanked. A glyph-by-glyph
+// engine (GetGlyphOutline) gives no position, so its names and choices are left alone. Ids count from 1 on their own.
+// Guarded by HideLock.
+struct Extra { long id; char kind; std::wstring text; DWORD at; };
+std::vector<Extra> Extras; long ExtraSeq = 0;
+std::wstring Stripped(const std::wstring &s) { std::wstring t; for (wchar_t c : s) if (!GlyphHide::Blank(c)) t += c; return t; }
+// A drawn string that is an extra line or a part of it (two characters or more, or the whole extra): one Served per
+// non-blank character (index into the extra's text, kind n / o); seq = the extra's id.
+bool ExtraMatch(const std::wstring &s, std::vector<GlyphHide::Served> *sv, long *seq) {
+ std::vector<size_t> at; std::wstring t; for (size_t i = 0; i < s.size(); i++) if (!GlyphHide::Blank(s[i])) { t += s[i]; at.push_back(i); }
+ if (t.empty()) return false; DWORD now = GetTickCount();
+ for (auto e = Extras.rbegin(); e != Extras.rend(); ++e) {
+  if (now - e->at > 60000) continue; size_t f = e->text.find(t); if (f == std::wstring::npos || (t.size() < 2 && t != e->text)) continue;
+  if (sv) { sv->assign(s.size(), GlyphHide::Served{}); for (size_t j = 0; j < at.size(); j++) (*sv)[at[j]] = GlyphHide::Served{(int)(f + j), e->kind}; }
+  if (seq) *seq = e->id; return true; }
+ return false;
+}
 void Command(std::string l) {
  while (!l.empty() && (l.back() == '\r' || l.back() == '\n')) l.pop_back();
  AcquireSRWLockExclusive(&HideLock);
- long announce = -1; std::wstring text;
+ long announce = -1; std::wstring text; std::string extra;
  if (l.rfind("LINE ", 0) == 0) { long before = Hide.Sequence(); Hide.SetLine(Wide(l.substr(5)), GetTickCount()); InterlockedExchange(&HideOn, Hide.Cached() ? 0 : 1); if (DotMode && Hide.Sequence() != before) { announce = Hide.Sequence(); text = Hide.Current(); } }
- else if (l == "OFF") { Hide.Off(); InterlockedExchange(&HideOn, 0); }
+ else if (l == "OFF") { Hide.Off(); Extras.clear(); InterlockedExchange(&HideOn, 0); }
  else if (l == "MODE dot" || l == "MODE blank" || l == "MODE dot-blind" || l == "MODE blank-blind" || l == "MODE place" || l == "MODE place-blind") {
   bool report = true, paint = l.rfind("MODE dot", 0) == 0, blind = l.size() > 6 && l.compare(l.size() - 6, 6, "-blind") == 0;
   Hide.StopOnCache = !report; InterlockedExchange(&PaintDots, paint ? 1 : 0); InterlockedExchange(&DotMode, report ? 1 : 0); InterlockedExchange(&BlindMode, blind ? 1 : 0); if (blind) InterlockedExchange(&HideOn, 1); }
+ else if ((l.rfind("EXTRA n ", 0) == 0 || l.rfind("EXTRA o ", 0) == 0) && l.size() > 8) { char k = l[6]; std::wstring t = Stripped(Wide(l.substr(8)));
+  if (!t.empty() && t.size() <= 200) { if (k == 'n') Extras.erase(std::remove_if(Extras.begin(), Extras.end(), [](const Extra &e) { return e.kind == 'n'; }), Extras.end());
+   if (Extras.size() >= 16) Extras.erase(Extras.begin()); Extras.push_back(Extra{++ExtraSeq, k, t, GetTickCount()}); extra = "ToMe_GLYPHDOT extra id=" + std::to_string(ExtraSeq) + " kind=" + std::string(1, k) + " text=" + Utf8(t); } }
+ else if (l == "EXTRA-CLEAR n" || l == "EXTRA-CLEAR o") { char k = l[12]; Extras.erase(std::remove_if(Extras.begin(), Extras.end(), [k](const Extra &e) { return e.kind == k; }), Extras.end()); }
  else if (l.rfind("FONT ", 0) == 0) { size_t sp = l.find(' ', 5); if (sp != std::string::npos) { GlyphHide::Key k; k.size = atoi(l.substr(5, sp - 5).c_str()); k.face = Clean(Wide(l.substr(sp + 1))); Hide.Seed(k); } }
  ReleaseSRWLockExclusive(&HideLock);
+ if (!extra.empty()) Send(extra);
  if (announce >= 0) AnnounceLine(announce, text); // dot mode: the line (and how many dots to expect) before the game draws it
 }
 DWORD WINAPI Control(void *) {
@@ -150,7 +174,8 @@ bool HideGlyph(HDC dc, UINT c, bool index, const Face &f, bool render, GlyphHide
 }
 bool HideText(const std::wstring &s, const Face &f, const char *path, std::vector<GlyphHide::Served> *sv = NULL, long *seq = NULL) {
  if (s.empty() || DotsBlocked()) return false;
- AcquireSRWLockExclusive(&HideLock); bool r = Hide.Text(s, KeyOf(f), GetTickCount(), path, sv); AfterDecision();
+ AcquireSRWLockExclusive(&HideLock); bool r = Hide.Text(s, KeyOf(f), GetTickCount(), path, sv); AfterDecision(); long xid = 0;
+ if (!r && DotMode && !Extras.empty() && ExtraMatch(s, sv, &xid)) { if (seq) *seq = xid; ReleaseSRWLockExclusive(&HideLock); return true; }
  if (!r && BlindMode && Hide.BlindKey(KeyOf(f)) && BlindAllowed()) { bool any = false; for (wchar_t c : s) any = any || (c && BlindChar(c)); if (any) { r = true; if (sv) { sv->assign(s.size(), GlyphHide::Served{}); for (size_t i = 0; i < s.size(); i++) if (s[i] && BlindChar(s[i])) (*sv)[i] = GlyphHide::Served{-1, 'b'}; } } } if (seq) *seq = Hide.Sequence(); ReleaseSRWLockExclusive(&HideLock); return r;
 }
 std::wstring FromIndices(HDC dc, const WORD *g, UINT n) {
@@ -193,6 +218,8 @@ Where PlaceDevice(HDC dc, POINT p) {
 }
 Where PlaceLogical(HDC dc, int x, int y) { POINT p{x, y}; if (dc) LPtoDP(dc, &p, 1); return PlaceDevice(dc, p); }
 SRWLOCK DotLock = SRWLOCK_INIT; long DotSeq = -1, DotAnnounced = -1; std::set<unsigned long long> DotSeen; std::string DotBuf, DotPath; DWORD DotFirst; int DotCount;
+std::string XBuf, XPath; long XId = -1; DWORD XFirst; std::set<unsigned long long> XSeen;
+void XFlushLocked() { if (!XBuf.empty()) Send("ToMe_GLYPHDOT xdots id=" + std::to_string(XId) + " path=" + XPath + " list=" + XBuf); XBuf.clear(); }
 void DotFlushLocked() { if (!DotBuf.empty()) Send("ToMe_GLYPHDOT dots seq=" + std::to_string(DotSeq) + " path=" + DotPath + " list=" + DotBuf); DotBuf.clear(); DotCount = 0; }
 // One served dot glyph; reported once per line and (index, kind) (ruby: per character and height). Never called under HideLock.
 volatile LONG DotsServedCount;
@@ -200,6 +227,11 @@ void ServeDot(long seq, const char *path, const Dot &d) {
  if (!d.k) return;
  InterlockedIncrement(&DotsServedCount);
  AcquireSRWLockExclusive(&DotLock);
+ if (d.k == 'n' || d.k == 'o') { // extra line: seq is the extra's id; each (id, index) once
+  if (seq != XId || XPath != path) { XFlushLocked(); if (seq != XId && XSeen.size() > 4096) XSeen.clear(); XId = seq; XPath = path; XFirst = GetTickCount(); }
+  if (XSeen.insert(((unsigned long long)(unsigned long)seq << 20) | (unsigned)(d.i & 0xfffff)).second) {
+   char e[160]; sprintf_s(e, "%s%d:%04x:%d:%d:%d:%d:%d:%d:%c:%d:%d:%s", XBuf.empty() ? "" : ";", d.i, (unsigned)d.ch, d.h, d.b, d.a, d.x, d.y, d.s, d.k, d.at.x, d.at.y, d.at.sp); XBuf += e; }
+  ReleaseSRWLockExclusive(&DotLock); return; }
  if (seq != DotSeq) { DotFlushLocked(); DotSeq = seq; DotSeen.clear(); }
  if (seq != DotAnnounced) { std::wstring text; AcquireSRWLockShared(&HideLock); bool same = Hide.Sequence() == seq; if (same) text = Hide.Current(); ReleaseSRWLockShared(&HideLock);
   if (same) { DotAnnounced = seq; Send("ToMe_GLYPHDOT line seq=" + std::to_string(seq) + " text=" + Utf8(text)); } }
@@ -215,7 +247,7 @@ void AnnounceLine(long seq, const std::wstring &text) {
  if (seq != DotAnnounced) { DotAnnounced = seq; Send("ToMe_GLYPHDOT line seq=" + std::to_string(seq) + " text=" + Utf8(text)); }
  ReleaseSRWLockExclusive(&DotLock);
 }
-DWORD WINAPI DotFlusher(void *) { for (;;) { Sleep(25); AcquireSRWLockExclusive(&DotLock); if (!DotBuf.empty() && GetTickCount() - DotFirst >= 25) DotFlushLocked(); ReleaseSRWLockExclusive(&DotLock); } }
+DWORD WINAPI DotFlusher(void *) { for (;;) { Sleep(25); AcquireSRWLockExclusive(&DotLock); if (!DotBuf.empty() && GetTickCount() - DotFirst >= 25) DotFlushLocked(); if (!XBuf.empty() && GetTickCount() - XFirst >= 25) XFlushLocked(); ReleaseSRWLockExclusive(&DotLock); } }
 
 // ---- compositor heartbeat (docs/text-architecture.md, "Owner rule: the player never sees marks") ----------------------
 // Dots are only served while MeguLit's capture compositor is presenting this game: shared memory

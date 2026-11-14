@@ -219,6 +219,26 @@ int wmain(int argc, wchar_t **argv) {
    DWRITE_GLYPH_RUN run{ff, 28.f, (UINT32)gi.size(), gi.data(), adv.data(), NULL, FALSE, 0}; Clear(); rt->BindDC(Dc, &r); rt->BeginDraw(); rt->Clear(D2D1::ColorF(1, 1, 1)); rt->CreateSolidColorBrush(D2D1::ColorF(0, 0, 0), &brush); rt->DrawGlyphRun(D2D1::Point2F((FLOAT)X0, (FLOAT)base), &run, brush); rt->EndDraw();
    Check(Ink() == 0, "place d2d drawglyphrun: no ink"); char t[32]; sprintf_s(t, "t%dx%d", W, H); Placed[Seq] = {e, t};
    brush->Release(); ff->Release(); f->Release(); fam->Release(); sys->Release(); rt->Release(); }
+  // Extra lines (names, choices): whole-string draws of a pushed name / choice are blank and reported with their
+  // origin (kind n / o, index into the extra), in any font size; other strings stay drawn.
+  { HFONT plate = CreateFontW(-20, 0, 0, 0, 400, 0, 0, 0, SHIFTJIS_CHARSET, 0, 0, ANTIALIASED_QUALITY, 0, Face); SelectObject(Dc, plate);
+   Push("EXTRA n 古河 渚"); Push("EXTRA o 上書きで何か吹き込む"); Push("EXTRA o やめておく");
+   Clear(); TextOutW(Dc, 300, 40, L"古河渚", 3); Check(Ink() == 0, "extra name: no ink");
+   Clear(); TextOutW(Dc, 100, 10, L"やめておく", 5); Check(Ink() == 0, "extra choice: no ink");
+   Clear(); TextOutW(Dc, 100, 10, L"セーブ", 3); Check(Ink() > 30, "extra: an unrelated string is drawn normally");
+   std::vector<int> nameAdv; for (wchar_t c : std::wstring(L"古河渚")) { SIZE z{}; GetTextExtentPoint32W(Dc, &c, 1, &z); nameAdv.push_back(z.cx); }
+   Sleep(300); size_t at = 0; int named = 0, chosen = 0; bool where = true;
+   AcquireSRWLockShared(&GotLock); std::string got = Got; ReleaseSRWLockShared(&GotLock);
+   while ((at = got.find("ToMe_GLYPHDOT xdots ", at)) != std::string::npos) { size_t eol = got.find('\n', at); std::string msg = got.substr(at, eol - at); at = eol; std::string list = msg.substr(msg.find("list=") + 5); size_t a = 0;
+    while (a < list.size()) { size_t b = list.find(';', a); if (b == std::string::npos) b = list.size(); int i, h, bl, ad, x, y, sd, px, py; unsigned ch; char k; char sp[24] = {};
+     if (sscanf_s(list.substr(a, b - a).c_str(), "%d:%x:%d:%d:%d:%d:%d:%d:%c:%d:%d:%23[^;]", &i, &ch, &h, &bl, &ad, &x, &y, &sd, &k, 1, &px, &py, sp, (unsigned)sizeof sp) == 12) {
+      if (k == 'n') { named++; int ex = 300; for (int j = 0; j < i && j < 3; j++) ex += nameAdv[j]; if (i < 0 || i > 2 || abs(px - ex) > 1 || abs(py - 40) > 1 || strcmp(sp, mem)) { where = false; printf("     name index %d at %d,%d %s, expected %d,40 %s\n", i, px, py, sp, ex, mem); } }
+      if (k == 'o') chosen++; }
+     a = b + 1; } }
+   Check(got.find("ToMe_GLYPHDOT extra id=1 kind=n text=古河渚") != std::string::npos && got.find("kind=o text=やめておく") != std::string::npos, "extra lines announced (blanks stripped)");
+   Check(named == 3 && chosen == 5 && where, "extra records: 3 name characters at their cell origins, 5 choice characters (" + std::to_string(named) + "/" + std::to_string(chosen) + ")");
+   Push("EXTRA-CLEAR o"); Clear(); TextOutW(Dc, 100, 10, L"やめておく", 5); Check(Ink() > 100, "choices cleared: drawn normally again");
+   SelectObject(Dc, dialogue); DeleteObject(plate); }
   // Blind placement: a line never pushed, dialogue font -> blank, kind b.
   { Push("MODE blank-blind"); const std::wstring blind = L"見知らぬ天井だった"; Measure(blind); Clear(); std::vector<POINT> e; bool same = true; DrawGgo(blind, GGO_GRAY8_BITMAP, X0, base, e, same); Check(Ink() == 0, "place-blind ggo: no ink"); }
   Push("MODE dot"); }
