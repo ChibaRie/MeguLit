@@ -168,6 +168,7 @@ static void WINAPI HglDrawElements(GLenum mode, GLsizei count, GLenum type, cons
 typedef BOOL(WINAPI *SwapBuffersF)(HDC);
 static SwapBuffersF OSwapBuffers;
 static BOOL WINAPI HSwapBuffers(HDC dc) {
+ FpsCap();
  HWND w = WindowFromDC(dc); RECT r = {}; if (w) GetClientRect(w, &r);
  { Guard g; GlBackW = r.right; GlBackH = r.bottom; Frame++; LastPresent = GetTickCount(); Learner.Frame(LastPresent, GlBackW, GlBackH); }
  return OSwapBuffers(dc);

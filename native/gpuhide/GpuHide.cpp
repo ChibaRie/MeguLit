@@ -100,6 +100,13 @@ static Dev *DevOf(IDirect3DDevice9 *d) {
 // ------------------------------------------------------------------------------------------------------------ line state
 static GlyphLearner Learner;
 static unsigned Frame, LastPresent;
+/* Test rigs only: MEGULIT_GPU_FPS_CAP=<fps> sleeps before each present so a background test game does not take the GPU from
+   the player's own game. Unset in MeguLit (no cap). */
+static void FpsCap() {
+ static int cap = -1; static LARGE_INTEGER f, last; if (cap < 0) { wchar_t v[8] = {}; cap = GetEnvironmentVariableW(L"MEGULIT_GPU_FPS_CAP", v, 8) ? _wtoi(v) : 0; QueryPerformanceFrequency(&f); }
+ if (cap <= 0) return; LARGE_INTEGER now; QueryPerformanceCounter(&now); double want = 1.0 / cap, got = last.QuadPart ? (double)(now.QuadPart - last.QuadPart) / f.QuadPart : want;
+ if (got < want) Sleep((DWORD)((want - got) * 1000)); QueryPerformanceCounter(&last);
+}
 
 // --------------------------------------------------------------------------------------------------------- vertex decode
 static bool PosLayout(DWORD fvf, unsigned &posSize, bool &rhw, unsigned &uvOff, unsigned &stride) {
@@ -302,19 +309,19 @@ static HRESULT WINAPI HSetViewport(IDirect3DDevice9 *d, const D3DVIEWPORT9 *p) {
 }
 static HRESULT WINAPI HPresent(IDirect3DDevice9 *d, const RECT *a, const RECT *b, HWND w, const RGNDATA *r) {
  auto o = ORIG(HRESULT(WINAPI *)(IDirect3DDevice9 *, const RECT *, const RECT *, HWND, const RGNDATA *), d, 17);
- { Guard g; Frame++; LastPresent = GetTickCount(); Dev &v = *DevOf(d); Learner.Frame(LastPresent, v.bbW, v.bbH); }
+ FpsCap(); { Guard g; Frame++; LastPresent = GetTickCount(); Dev &v = *DevOf(d); Learner.Frame(LastPresent, v.bbW, v.bbH); }
  return o(d, a, b, w, r);
 }
 // Engines that present through an IDirect3DSwapChain9 (minori's eden*) never call the device's Present: same frame tick.
 static HRESULT WINAPI HSwapPresent(IDirect3DSwapChain9 *sc, const RECT *a, const RECT *b, HWND w, const RGNDATA *r, DWORD f) {
  auto o = (HRESULT(WINAPI *)(IDirect3DSwapChain9 *, const RECT *, const RECT *, HWND, const RGNDATA *, DWORD))CurOrig;
- IDirect3DDevice9 *d = NULL; if (SUCCEEDED(sc->GetDevice(&d)) && d) { { Guard g; Frame++; LastPresent = GetTickCount(); Dev &v = *DevOf(d); Learner.Frame(LastPresent, v.bbW, v.bbH); } d->Release(); }
+ IDirect3DDevice9 *d = NULL; if (SUCCEEDED(sc->GetDevice(&d)) && d) { FpsCap(); { Guard g; Frame++; LastPresent = GetTickCount(); Dev &v = *DevOf(d); Learner.Frame(LastPresent, v.bbW, v.bbH); } d->Release(); }
  return o(sc, a, b, w, r, f);
 }
 // Direct3D 9Ex devices (DR1) present through PresentEx.
 static HRESULT WINAPI HPresentEx(IDirect3DDevice9Ex *d, const RECT *a, const RECT *b, HWND w, const RGNDATA *r, DWORD f) {
  auto o = (HRESULT(WINAPI *)(IDirect3DDevice9Ex *, const RECT *, const RECT *, HWND, const RGNDATA *, DWORD))CurOrig;
- { Guard g; Frame++; LastPresent = GetTickCount(); Dev &v = *DevOf(d); Learner.Frame(LastPresent, v.bbW, v.bbH); }
+ FpsCap(); { Guard g; Frame++; LastPresent = GetTickCount(); Dev &v = *DevOf(d); Learner.Frame(LastPresent, v.bbW, v.bbH); }
  return o(d, a, b, w, r, f);
 }
 static HRESULT WINAPI HReset(IDirect3DDevice9 *d, D3DPRESENT_PARAMETERS *p) {

@@ -114,6 +114,7 @@ static HRESULT STDMETHODCALLTYPE HCreateInputLayout(ID3D11Device *dev, const D3D
 }
 static HRESULT STDMETHODCALLTYPE HPresent11(IDXGISwapChain *sc, UINT sync, UINT flags) {
  auto o = (HRESULT(STDMETHODCALLTYPE *)(IDXGISwapChain *, UINT, UINT))CurOrig;
+ FpsCap();
  DXGI_SWAP_CHAIN_DESC d; if (SUCCEEDED(sc->GetDesc(&d))) { ID3D11Texture2D *bb = NULL; void *res = NULL; if (SUCCEEDED(sc->GetBuffer(0, __uuidof(ID3D11Texture2D), (void **)&bb)) && bb) { res = bb; bb->Release(); }
   Guard g; BackW11 = d.BufferDesc.Width; BackH11 = d.BufferDesc.Height; BackRes11 = res; Frame++; LastPresent = GetTickCount(); Learner.Frame(LastPresent, BackW11, BackH11); }
  return o(sc, sync, flags);
