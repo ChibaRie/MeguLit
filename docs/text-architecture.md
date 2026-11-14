@@ -245,7 +245,9 @@ learned from three marks the DLL leaves in blank mode, then every later line is 
 - **Using it** (`layout`): each character's box from its advance, the learned scale, origin, pitch and wrap width; the
   same shape as `glyph-place.glyphRects` with `space` `c`, `located: true`.
 - When to run it: on the first lines of a game, again whenever placed text and the game disagree (box moved, animated
-  box), then `MARK off`. Turning marks on costs nothing visible.
+  box). Owner (2026-11-15): marks appear only in the lines a game is learned from. `MARK on` therefore covers the next
+  two pushed lines only and then stops by itself (`MarkLast`); `MARK off` stops it at once. An engine with a glyph cache
+  (Siglus) may reuse a marked glyph later for the same character; that pixel stays as faint as before.
 - Front end: `HookNative.setGlyphMarks(true|false)` → `{"type":"glyphMarks","on":…}` → `MARK on|off` (re-sent on every
   control connection while on).
 - Tests: `run-dots.cmd` (exactly three mark pixels at the expected spots, value 252 on white, none in GRAY4, records

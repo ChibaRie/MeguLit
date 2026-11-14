@@ -231,7 +231,10 @@ int wmain(int argc, wchar_t **argv) {
    Sleep(200); AcquireSRWLockShared(&GotLock); std::string g = Got; ReleaseSRWLockShared(&GotLock);
    std::string tag = "ToMe_GLYPHDOT dots seq=" + std::to_string(Seq - 1) + " "; size_t p0 = g.find(tag); int ones = 0; while (p0 != std::string::npos) { size_t eol = g.find('\n', p0); std::string m = g.substr(p0, eol - p0); for (size_t q = 0; (q = m.find(":1:d:", q)) != std::string::npos; q++) ones++; p0 = g.find(tag, eol); }
    Check(ones == 3, "marks: the three marked characters are reported with s = 1 (" + std::to_string(ones) + ")");
-   Placed.erase(Seq - 1); Placed[Seq] = {{}, "-"}; SeqPath.erase(Seq - 1); SeqText.erase(Seq - 1); Push("MARK off"); }
+   // MARK on covers two lines only: the third line after it gets no mark although MARK off was never sent
+   const std::wstring &l3 = Next("ggo"); Clear(); e.clear(); DrawGgo(l3, GGO_GRAY8_BITMAP, X0, base, e, same); GdiFlush(); int third = 0; for (int i = 0; i < W * H; i++) third += (Bits[i] & 0xff) < 255;
+   Check(third == 0, "marks: stop by themselves after two lines (third line: " + std::to_string(third) + " pixels)");
+   Placed.erase(Seq - 2); Placed[Seq - 1] = {{}, "-"}; Placed[Seq] = {{}, "-"}; SeqPath.erase(Seq - 2); SeqText.erase(Seq - 2); Push("MARK off"); }
   // Extra lines (names, choices): whole-string draws of a pushed name / choice are blank and reported with their
   // origin (kind n / o, index into the extra), in any font size; other strings stay drawn.
   { HFONT plate = CreateFontW(-20, 0, 0, 0, 400, 0, 0, 0, SHIFTJIS_CHARSET, 0, 0, ANTIALIASED_QUALITY, 0, Face); SelectObject(Dc, plate);

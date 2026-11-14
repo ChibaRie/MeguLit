@@ -97,7 +97,8 @@ test('wiring: DLL marks GRAY8 only (first, second, last), bridge and front end s
   const c = read('native/fontprobe/FontProbe.cpp');
   assert.ok(c.includes('if (!PaintDots && MarkOn && (f & 0x0f) == GGO_GRAY8_BITMAP && sv.kind == \'d\'') && c.includes('((BYTE *)b)[0] = 1; side = 1;'), 'one pixel, coverage 1/64, GRAY8 only');
   assert.ok(c.includes('if (i == 0 || i == 1) return true;') && c.includes('return i == n - 1;'), 'first, second and last character');
-  assert.ok(c.includes('l == "MARK on" || l == "MARK off"'));
+  assert.ok(c.includes('l == "MARK on" || l == "MARK off"') && c.includes('MarkLast = Hide.Sequence() + 2;') && c.includes("seq <= MarkLast"), 'marks for the next two lines only');
+  assert.ok(read('native/fontprobe/selftest/dothost.cpp').includes('marks: stop by themselves after two lines'));
   const b = read('native/HookBridge.cs');
   assert.ok(b.includes('GlyphSend(GlyphMarks?"MARK on":"MARK off")') && b.includes('if(GlyphMarks)w.WriteLine("MARK on");'));
   assert.ok(b.includes('int want=fast?30:180;') && b.includes('static void GlyphLine(string text){FlushFit();'), 'read-only stream under placement: 30 ms flush');
