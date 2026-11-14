@@ -18,3 +18,9 @@ test('home headline pick skips stories that show real people (cosplay, gravure)'
  const r=pickHeadline([pic('【コスプレ】メガネ×制服',1),pic('グラビア特集',2),...[3,4,5,6].map(i=>pic('新作ゲーム '+i,i))],'gal',3);
  assert.equal(r.top.title,'新作ゲーム 3');assert.equal(r.small.length,3);
 });
+test('インサイド source is removed everywhere and the daily page opens on 4Gamer',()=>{
+ const rd=f=>fs.readFileSync(path.join(__dirname,'..',f),'utf8');
+ assert.ok(!/inside-games|id:'inside'/.test(rd('relay/src/daily.js')),'relay no longer fetches it');
+ assert.match(rd('services/daily.cjs'),/DROPPED_SOURCES=new Set\(\['inside'\]\)/);
+ const v=rd('web/daily-view.js');assert.match(v,/DEFAULT_SOURCE='4Gamer\.net'/);assert.match(v,/filter='default'/);
+});

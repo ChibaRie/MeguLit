@@ -22,11 +22,13 @@ const SENSITIVE=/R-?18|18禁|18歳未満|成人向け|成人指定|アダルト|
 const BLOCKED=/僕のヒーロー|ヒーローアカデミア|ヒロアカ|My\s*Hero\s*Academia|Boku\s*no\s*Hero|BNHA|我的英雄学[院园]|我的英雄学院|MHA\b/i;
 /* 2026-11-15 (user: 热点常驻的封面不要显示真人的内容) cosplay, gravure, photo books and the like show real people: dropped too */
 const REAL_PEOPLE=/コスプレ|コスプレイヤー|コスプレ衣装|cosplay|グラビア|写真集|生写真|撮影会|水着|ランジェリー|イメージビデオ|ミスコン|レイヤー|アイドル|美女|セクシー女優|AV女優|写真展|cosplayer|角色扮演|写真集|真人|寫真/i;
-const blocked=n=>REAL_PEOPLE.test([n?.title,n?.summary,...(Array.isArray(n?.tags)?n.tags:[])].map(x=>String(x||'')).join(' '))||BLOCKED.test([n?.title,n?.summary,...(Array.isArray(n?.tags)?n.tags:[])].map(x=>String(x||'')).join(' '));
+/* 2026-11-15 (user: 把インサイド这个网站来源删了) the source is gone: its stories and its tab never reach the page, whatever an older relay or cache still sends */
+const DROPPED_SOURCES=new Set(['inside']);
+const blocked=n=>DROPPED_SOURCES.has(String(n?.sourceId||''))||String(n?.source||'')==='インサイド'||REAL_PEOPLE.test([n?.title,n?.summary,...(Array.isArray(n?.tags)?n.tags:[])].map(x=>String(x||'')).join(' '))||BLOCKED.test([n?.title,n?.summary,...(Array.isArray(n?.tags)?n.tags:[])].map(x=>String(x||'')).join(' '));
 const sensitive=n=>SENSITIVE.test(String(n.title||'')+' '+String(n.summary||''));
 function cleanNews(d){
  const items=(Array.isArray(d?.items)?d.items:[]).filter(n=>!blocked(n)).slice(0,120).map(n=>({sensitive:sensitive({title:n?.title,summary:n?.summary}),fulltext:n?.fulltext===true,cat:n?.cat==='acg'?'acg':'gal',title:str(n?.title,160),link:link(n?.link),date:str(n?.date,30),source:str(n?.source,40),sourceId:str(n?.sourceId,20),summary:str(n?.summary,160),image:/^\/api\/news\/img\/[0-9a-f]{32}$/.test(String(n?.image||''))?n.image:''})).filter(n=>n.title&&n.link);
- return {items,sources:(Array.isArray(d?.sources)?d.sources:[]).slice(0,10).map(s=>({id:str(s?.id,20),name:str(s?.name,40)})),updatedAt:str(d?.updatedAt,30)||null};
+ return {items,sources:(Array.isArray(d?.sources)?d.sources:[]).filter(s=>!DROPPED_SOURCES.has(String(s?.id||''))).slice(0,10).map(s=>({id:str(s?.id,20),name:str(s?.name,40)})),updatedAt:str(d?.updatedAt,30)||null};
 }
 /* the local dictionary is Chinese: its first line, first two senses, make the short gloss beside a hot word.
    Readings: first of 'a · b'. Only exact headwords, never a tokenizer guess. */
