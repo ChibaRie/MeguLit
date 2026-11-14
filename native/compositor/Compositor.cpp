@@ -202,6 +202,7 @@ public:
       if (opt.demo) cur.demoCells = cur.cells;
       cur.metric.assign(cur.dotChar.size(), {});
       MergeMetrics(cur, j["glyphs"]);
+      if (!cur.rec.empty()) dotsSeen = true;
       cur.lastChange = NowMs();
       LineSpec s; s.id = cur.id; s.expected = !cur.rec.empty() ? -1 : j.has("expected") ? int(j["expected"].num()) : int(cur.dotChar.size()); s.vertical = cur.vertical; s.em = cur.em; s.colorKnown = cur.colorKnown; s.color = cur.color; if (!opt.demo) s.cells = cur.cells;
       tracker.BeginLine(s); choicesOn = false; layouts.clear();
@@ -230,6 +231,7 @@ public:
       if (j.has("tl")) cur.tl = Wide(j["tl"].str());
     } else if (t == "glyphs") { // later ① dot records of a line: {"t":"glyphs","id":7,"glyphs":[{"i":0,"h":28,"b":24,"a":28,"x":1,"y":2},...]}
       const int id = int(j["id"].num());
+      if (j["glyphs"].size()) dotsSeen = true;
       if (cur.id == id) { MergeMetrics(cur, j["glyphs"]); if (!cur.rec.empty()) tracker.SetExpected(-1); } // counts judged here (Targets)
       else if (kept.count(id)) MergeMetrics(kept[id], j["glyphs"]);
     } else if (t == "choices") {
@@ -319,6 +321,7 @@ private:
   std::map<uint64_t, Glyph> layouts;
   // tracking
   DotTracker tracker; ChoiceTracker choiceTracker; TrackResult lastResult; ChoiceTracker::Out lastChoices;
+  bool dotsSeen = false; // ① reported at least one dot in this game session
   LineMsg cur; std::map<int, LineMsg> kept; int autoId = 0, autoMax = 0, autoEmpty = 0;
   std::vector<ChoiceText> choices; bool choicesOn = false, choiceUndot = false; double choiceStart = 0;
   // cursor (scale mode)
@@ -582,6 +585,9 @@ private:
       if (f != cur.lastFound) { cur.lastFound = f; Emit("{\"e\":\"line\",\"id\":" + std::to_string(cur.id) + ",\"status\":\"" + (cur.rectHidden ? "complete" : "waiting") + "\",\"found\":" + std::to_string(f) + ",\"expected\":" + std::to_string(cur.dotChar.size()) + ",\"rects\":true}"); }
       return;
     }
+    // No dot search before ① has reported a real dot in this game: an engine ① cannot dot (own rasteriser, Unity, web)
+    // would only offer false dots (petals, sparkles) to erase and draw over.
+    if (!dotsSeen && !opt.demo && !opt.autoLines) { lastResult = TrackResult{}; return; }
     lastResult = tracker.Update(im);
     if (opt.autoLines && cur.text.empty()) {
       const int f = int(lastResult.dots.size()); autoMax = std::max(autoMax, f);

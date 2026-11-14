@@ -11,7 +11,8 @@
    Nothing here touches the game or its files. */
 const fs=require('node:fs'),path=require('node:path');
 
-const ENGINES=new Set(['krkr','renpy','web','unity']);
+/* gpu: layer 4 (native/gpuhide, feat/hide-gpu-proxy) speaks the same record, rects in back-buffer px */
+const ENGINES=new Set(['krkr','renpy','web','unity','gpu']);
 const MAX_RECTS=4000;
 
 /* ---- record ------------------------------------------------------------------------------------------------------
