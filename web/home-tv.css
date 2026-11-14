@@ -383,7 +383,7 @@ html:not(#u):not(#v):not(#w):not(#x):not(#y) body .tv-home .tv-title{bottom:calc
 .tv-heat-card .tv-hot-news{margin:8px 0 0;max-width:none}
 .tv-heat-card .tv-hot-news+.tv-daily-pics{margin-top:8px}
 html:not(#u):not(#v):not(#w):not(#x):not(#y) body .tv-home .tv-heat-card .tv-hot-news{max-width:none!important;width:100%!important;margin:8px 0 0!important}
-/* 2026-11-15 (user chose design A) month heat map: a calendar of squares, gold tiers, the top tier red, today ringed, the month's totals beside it */
+/* 2026-11-15 (user chose design A) month heat map: a calendar of squares, gold tiers, the top tier red, today looks like any other day, the month's totals beside it */
 .tv-heat-card .tv-heat,.tv-heat-card .tv-heatsum{display:none!important}
 .tv-heat-card.is-empty .tv-month{display:none}
 .tv-month{--c:22px;--gp:4px;display:flex;gap:22px;align-items:flex-end;justify-content:space-between}
@@ -399,7 +399,6 @@ html:not(#u):not(#v):not(#w):not(#x):not(#y) body .tv-home .tv-heat-card .tv-hot
 .heat-a .tv-month-days i.l2{background:color-mix(in srgb,var(--g-gold) 58%,transparent)}
 .heat-a .tv-month-days i.l3{background:var(--g-gold)}
 .heat-a .tv-month-days i.l4{background:#d23a45}
-.heat-a .tv-month-days i.today{box-shadow:0 0 0 1.5px var(--bg),0 0 0 3px #d23a45}
 .heat-a .tv-month-days i:hover{transform:scale(1.15)}
 /* the strip is a window: the track slides so the current card stays a little left of centre at every size */
 .tv-rail{left:42vw;right:5vw;width:auto;display:block;overflow:hidden;padding:12px 0 10px;margin-bottom:-10px;-webkit-mask-image:linear-gradient(90deg,transparent,#000 7%,#000 93%,transparent);mask-image:linear-gradient(90deg,transparent,#000 7%,#000 93%,transparent)}
