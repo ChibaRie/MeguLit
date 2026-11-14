@@ -300,6 +300,7 @@ font probe (`ToMe_FONT` counts and the matcher's `placed`/`requested`):
 
 Rule seen live: dots need the line **before** the glyphs are rasterised, i.e. a write-back (embed) stream with `all:true`; a read-only stream is ~180 ms late. CatSystem2, Siglus and BGI show real dialogue dots (limited by its glyph cache; ② drew 16 of 17 CLANNAD lines on the game's cells from these dots). For caching engines dot mode must be on and the stream selected before the first dialogue glyph is rasterised (MODE dot at connect + the remembered stream pre-armed at start), otherwise the characters cached earlier stay real for the whole process; HookBridge does both: MODE is sent at connect, the dot passthrough remembers the stream, and with `all:true` a remembered stream is never displaced by another stream that speaks first (title menus). Verified on CLANNAD: fresh process, NEW GAME, the first line 一面、白い世界… = 8 records, 8 dots, no other ink (live\clannad-first-line-dots.png); the cases above are what decides ①'s reach. The x86/x64 self-test hosts
 remain the proof that every covered API produces exact dots.
+
 ## ③ Non-dot paths (engines that do not take glyphs from Windows)
 
 Branch `feat/text-paths`. Four engine families draw their text without asking Windows for glyphs, so ① can never put
@@ -457,6 +458,41 @@ colours every frame undoes the component's own alpha. TextMeshPro characters in 
 (ruby) are left out. Live 2026-11-14 魔法少女ノ魔女裁判 (Unity 6000.0.48, IL2CPP x64, Steam, Naninovel
 `RevealableTextModified`): the plugin loads, records per character while the line types, hidden=1 with the line gone,
 drawn again on reset, boxes on every glyph. Mono regression 月に寄りそう乙女の作法 with the renderer hiding: hidden=1, gone.
+
+### Dot font at the source (engines with their own rasteriser)
+
+`native/fontdot` (MeguLitFontDot32/64.dll, `FontDotPatch.h`): for engines that rasterise text themselves (FreeType:
+Ren'Py, Artemis, many newer engines) the dots of ① are made in the font itself, so ② finds every character exactly as it
+does for GDI games. The patch works **in place, same length**: each glyph outline inside its own `glyf` slot (TrueType,
+also every font of a `.ttc`) or its own Type 2 charstring (CFF `OTTO`) becomes one square of side `unitsPerEm / 12`,
+clipped to the black box, at the glyph's black-box top-left (CFF: hmtx left side bearing and vertical origin − vmtx top
+side bearing, as exact as the TrueType bbox); the rest of the slot is zero. cmap, hmtx / vmtx, hhea / OS/2, kerning,
+units per em, loca and every table size are untouched, so layout, wrapping and pacing are the engine's own; embedded
+bitmap strikes are switched off by renaming their tags. At 36–48 px a dot is 3–4 px.
+
+Where the font is caught (no file on disk is ever written):
+- **In memory**: a background scan (every 2 s for a minute, then every 10 s) finds sfnt data in writable private memory
+  (table directory + `head.magicNumber`) and patches it there: the engine's own decrypted / read-in copy (Ren'Py reads
+  whole fonts out of its `.rpa` into memory; Artemis decrypts `.pfs` members).
+- **File reads**: a `ReadFile` whose data starts a font registers that byte range of the file; the DLL reads the font
+  once through its own handle, patches the copy, and serves the patched bytes to every read of that range (loose font
+  files, plain archives where the member starts the read).
+Load it before the game reads its fonts: `MeguLitLaunch<bit>.exe <MeguLitFontDot<bit>.dll> <game>` (from ①) starts the
+game suspended; the DLL sets `MeguLitFontReady-<pid>` when its hooks are in. `MEGULIT_FONTDOT_OFF=1` disables it;
+`MEGULIT_FONTDOT_TRACE=1` reports reads of archives / fonts and mapped views. Reports: `\\.\pipe\MeguLitFontDot-<pid>`,
+`ToMe_FONTDOT ready | patched src=file|mem size= fonts= dotted= emptied= cff= strikes=`.
+Self-tests: `native/fontdot/selftest/run.cmd` (MS Gothic collection from memory through GDI: same advances and cell,
+every glyph a dot ≤ 6 px at 48 px, same length, idempotent) and `check.py` (fontTools: TrueType and CFF squares at the
+original black-box top-left, cmap and advances unchanged).
+
+Live 2026-11-14: 夏末盛开的花 (Ren'Py 8.4) via MeguLitLaunch64: both game fonts (4.9 MB and 21.7 MB TrueType, read into
+memory from the `.rpa`) patched in memory when the story started; the dialogue「通常被称为回忆的，就是这种碎片。」drawn as
+16 dots, one at each character's top-left (punctuation lower, as its black box is), layout unchanged. 殻ノ少女 / THE SHELL
+HD (Artemis, 64-bit, Steam) via MeguLitLaunch64 from a hard-link shadow of the game folder on the same volume (junctions
+for folders, `steam_appid.txt` in the shadow so Steam does not restart the real program; removed afterwards): four
+fonts patched in memory after the engine decrypted them from `.pfs` (three CFF of 11–25 MB, one TrueType), title →
+start, the dialogue drawn as one dot per character over two rows; the game ran normally on screen. Not wired into
+HookBridge's launch yet, and no crash canary for it yet (it loads only through MeguLitLaunch, by hand).
 
 Not covered yet: canvas web engines (RenJS / Phaser), KiriKiri games with their own message-layer class that use
 neither KAG `processCh` nor TextRender, Ren'Py text outside the say screen, YU-RIS and Artemis (see above).
