@@ -92,6 +92,15 @@ int main()
   }
   Check(PartOf(L"類たぐいまれな", L"類まれな"), "inline ruby reading skipped in a drawn string");
   {
+    // A remembered seed (name box size) loses to the probe's live leader (dialogue size); without a leader the seed counts.
+    Matcher m;
+    const Key Name{L"MS Gothic", 17}, Dialogue{L"MS Gothic", 20};
+    m.Seed(Name);
+    Check(m.DialogueKey(Name) && !m.DialogueKey(Dialogue), "seed only: the seeded size is the dialogue key");
+    m.Leader(Dialogue);
+    Check(m.DialogueKey(Dialogue) && !m.DialogueKey(Name), "probe leader known: it replaces a stale seed");
+  }
+  {
     // Glyph dots: every matched draw says which line character it is (index into the line without blanks).
     Matcher m;
     m.Seed(D);
