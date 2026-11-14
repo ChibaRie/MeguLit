@@ -22,6 +22,7 @@ version, a line in this log, and stays backward compatible where possible (new f
 |------|------------|--------|
 | 1    | 2026-11-14 | First version: dot geometry, `ToMe_GLYPHDOT` records, `hookGlyphDots` events, `glyphMode` command. |
 | 2    | 2026-11-14 | Dot side grows with the cell: max(3, round(h/10)) from 12 px (was a fixed 3). Records unchanged. |
+| 2    | 2026-11-14 | Compatible addition: `MODE dot-blind` / `blind:true`, record kind `b`. |
 | 1    | 2026-11-14 | Compatible addition: `glyphMode` `all:true` (write-back streams on dots too).                    |
 | 1    | 2026-11-14 | Compatible addition: in dot mode `ToMe_GLYPHDOT line` is sent when the line is pushed, before any dot. |
 | ③ 1  | 2026-11-14 | Non-dot paths: `ToMe_CHARS` records, `hookCharRects` events, crash canary (`feat/text-paths`).    |
@@ -52,8 +53,9 @@ The same matcher as the glyph hide (E667) decides; dot mode changes only what a 
 |---------|----------------------------------|
 | `blank` | nothing: blank glyph with the same metrics, string left out (version 2 behaviour, the **default and fallback**) |
 | `dot`   | a dot glyph with the same metrics; strings get one dot per character |
+| `dot-blind` | as `dot`, plus every CJK/kana glyph under the dialogue font becomes a dot **without waiting for the line** (kind `b`, index −1) |
 
-Front end → bridge (stdin JSON): `{"type":"glyphMode","mode":"dot"}` or `"blank"`. `HookNative.setGlyphMode(mode)` sends
+Front end → bridge (stdin JSON): `{"type":"glyphMode","mode":"dot"}` or `"blank"`. Add `"blind":true` (or `MEGULIT_GLYPH_BLIND=1`) for `MODE dot-blind`: for engines whose stream text arrives after the glyphs (AdvHD, KiriKiri2 read-only streams). Scope is the dialogue font only (learned, `FONT` seed, or the probe's leading font); the dialogue window is not known at this layer, so a name or menu drawn in the same face and size is dotted too. `HookNative.setGlyphMode(mode)` sends
 it. `MEGULIT_GLYPH_MODE=dot` in HookBridge's environment starts in dot mode (tests). Bridge → DLL (control pipe
 `\\.\pipe\MeguLitFontCtl-<pid>`): `MODE dot` / `MODE blank`, sent on every connection and on every change.
 
@@ -115,6 +117,9 @@ ToMe_GLYPHDOT cache seq=<n> missing=<a> of <b>
   - `s` nominal dot side (the drawn square may be clipped to a smaller black box),
   - `k` kind: `d` character of the current line, `c` drawn again after it was matched (index of its last placement),
     `p` character of the previous line (index into the previous line's text), `r` ruby kana over a matched draw (`i`=-1).
+  `b` blind dot (`MODE dot-blind`): drawn before its line arrived; it carries the seq of the last pushed line and belongs
+  to the line pushed next. Map blind dots to that line's characters by reading order. Blind records are deduplicated per
+  (character, height) within a seq, so repeated characters appear once in the records but as many times as drawn on screen.
 - Every (index, kind) is reported **once per line** (ruby: once per character and height), even when the game redraws the
   line every frame. Records are batched (at most 48 dots, flushed after 25 ms); one line may span several `dots` records.
 - `cache`: the engine reuses glyphs it rasterised earlier (two lines in a row left out at least three already matched

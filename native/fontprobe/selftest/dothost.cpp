@@ -164,6 +164,10 @@ int wmain(int argc, wchar_t **argv) {
    ff->Release(); f->Release(); fam->Release(); sys->Release(); }
   if (brush) brush->Release(); format->Release(); rt->Release(); }
 
+ // Blind dots (MODE dot-blind): text never pushed, dialogue font -> dots (kind b); another size -> untouched.
+ { Push("MODE dot-blind"); const std::wstring blind = L"見知らぬ天井だった"; Measure(blind); Clear(); std::vector<POINT> e; bool same = true; DrawGgo(blind, GGO_GRAY8_BITMAP, X0, base, e, same); (void)same; Dots("blind-ggo", e);
+  HFONT tiny = CreateFontW(-16, 0, 0, 0, 400, 0, 0, 0, SHIFTJIS_CHARSET, 0, 0, ANTIALIASED_QUALITY, 0, Face); SelectObject(Dc, tiny); Clear(); TextOutW(Dc, X0, Y0, blind.c_str(), (int)blind.size()); Check(Ink() > 100, "blind: the same text in another size is drawn normally"); SelectObject(Dc, dialogue); DeleteObject(tiny);
+  Push("MODE dot"); Sleep(200); Check(Got.find(":b;") != std::string::npos || Got.find(":b\n") != std::string::npos, "blind dots reported with kind b"); }
  Push("OFF"); Sleep(400);
  { Clear(); TextOutW(Dc, X0, Y0, A.c_str(), (int)A.size()); Save("after-off"); Check(Ink() > 500, "after OFF: the line is drawn in full again"); }
  printf("%s", Got.c_str());
@@ -174,10 +178,11 @@ int wmain(int argc, wchar_t **argv) {
   bool line = Got.find("ToMe_GLYPHDOT line " + tag + "text=" + Utf8(l)) != std::string::npos; std::map<int, int> count; bool chars = true, path = true; size_t pos = 0;
   while ((pos = Got.find("ToMe_GLYPHDOT dots " + tag, pos)) != std::string::npos) {
    size_t eol = Got.find('\n', pos); std::string msg = Got.substr(pos, eol - pos); pos = eol;
-   if (msg.find("path=" + SeqPath[seq] + " ") == std::string::npos) path = false;
+   bool onlyBlind = msg.find(":d") == std::string::npos && msg.find(":c") == std::string::npos && msg.find(":p") == std::string::npos && msg.find(":r") == std::string::npos;
+   if (!onlyBlind && msg.find("path=" + SeqPath[seq] + " ") == std::string::npos) path = false;
    std::string list = msg.substr(msg.find("list=") + 5); size_t a = 0;
    while (a < list.size()) { size_t b = list.find(';', a); if (b == std::string::npos) b = list.size(); int i, h, bl, ad, x, y, s; unsigned ch; char k;
-    if (sscanf_s(list.substr(a, b - a).c_str(), "%d:%x:%d:%d:%d:%d:%d:%d:%c", &i, &ch, &h, &bl, &ad, &x, &y, &s, &k, 1) == 9) { count[i]++; if (i < 0 || i >= (int)l.size() || l[i] != (wchar_t)ch || k != 'd' || s != Side || h <= 0) chars = false; } else chars = false; a = b + 1; } }
+    if (sscanf_s(list.substr(a, b - a).c_str(), "%d:%x:%d:%d:%d:%d:%d:%d:%c", &i, &ch, &h, &bl, &ad, &x, &y, &s, &k, 1) == 9) { if (k == 'b') { a = b + 1; continue; } count[i]++; if (i < 0 || i >= (int)l.size() || l[i] != (wchar_t)ch || k != 'd' || s != Side || h <= 0) chars = false; } else chars = false; a = b + 1; } }
   bool all = count.size() == l.size(); for (auto &c : count) all = all && c.second == 1;
   Check(line && all && chars && path, "report " + tag + "(" + SeqPath[seq] + "): line text, every index once, character and kind d, dot side 3");
  }

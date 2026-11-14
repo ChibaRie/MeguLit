@@ -89,7 +89,7 @@ Face FaceOf(HDC dc) {
 }
 
 // ---- glyph hide state: GlyphMatch.h decides, HideLock guards it (never taken while holding Gate) ------------------------
-SRWLOCK HideLock = SRWLOCK_INIT; GlyphHide::Matcher Hide; volatile LONG HideOn = 0, DotMode = 0;
+SRWLOCK HideLock = SRWLOCK_INIT; GlyphHide::Matcher Hide; volatile LONG HideOn = 0, DotMode = 0, BlindMode = 0;
 struct IndexMap { HFONT font = NULL; long seq = -1; std::map<WORD, wchar_t> map; } Indexes;
 GlyphHide::Key KeyOf(const Face &f) { GlyphHide::Key k; k.face = f.name; k.size = f.size; return k; }
 void AnnounceLine(long seq, const std::wstring &text);
@@ -99,7 +99,7 @@ void Command(std::string l) {
  long announce = -1; std::wstring text;
  if (l.rfind("LINE ", 0) == 0) { long before = Hide.Sequence(); Hide.SetLine(Wide(l.substr(5)), GetTickCount()); InterlockedExchange(&HideOn, Hide.Cached() ? 0 : 1); if (DotMode && Hide.Sequence() != before) { announce = Hide.Sequence(); text = Hide.Current(); } }
  else if (l == "OFF") { Hide.Off(); InterlockedExchange(&HideOn, 0); }
- else if (l == "MODE dot" || l == "MODE blank") { bool dot = l == "MODE dot"; Hide.StopOnCache = !dot; InterlockedExchange(&DotMode, dot ? 1 : 0); }
+ else if (l == "MODE dot" || l == "MODE blank" || l == "MODE dot-blind") { bool dot = l != "MODE blank", blind = l == "MODE dot-blind"; Hide.StopOnCache = !dot; InterlockedExchange(&DotMode, dot ? 1 : 0); InterlockedExchange(&BlindMode, blind ? 1 : 0); if (blind) InterlockedExchange(&HideOn, 1); }
  else if (l.rfind("FONT ", 0) == 0) { size_t sp = l.find(' ', 5); if (sp != std::string::npos) { GlyphHide::Key k; k.size = atoi(l.substr(5, sp - 5).c_str()); k.face = Clean(Wide(l.substr(sp + 1))); Hide.Seed(k); } }
  ReleaseSRWLockExclusive(&HideLock);
  if (announce >= 0) AnnounceLine(announce, text); // dot mode: the line (and how many dots to expect) before the game draws it
@@ -126,17 +126,23 @@ wchar_t FromIndex(HDC dc, UINT g) {
  auto it = Indexes.map.find((WORD)g); return it == Indexes.map.end() ? 0 : it->second;
 }
 void AfterDecision() { if (Hide.Cached()) InterlockedExchange(&HideOn, 0); }
+// Blind dots (MODE dot-blind, for streams whose text arrives after the glyphs are drawn): any CJK/kana glyph (or an
+// unmapped glyph index) under the dialogue font (learned, seeded with FONT, or the probe's leading font) becomes a dot
+// without waiting for the line; kind 'b', index -1. MeguLit maps them to the line by reading order when it arrives.
+bool BlindChar(wchar_t c) { return c == 0 || (c >= 0x3000 && !GlyphHide::Blank(c)) || (c >= 0xff01 && c <= 0xff5e); }
 // One glyph; dc may be NULL when c is already a character. sv/seq/ch (optional): what was served, for the dot report.
 bool HideGlyph(HDC dc, UINT c, bool index, const Face &f, bool render, GlyphHide::Served *sv = NULL, long *seq = NULL, wchar_t *chOut = NULL) {
  AcquireSRWLockExclusive(&HideLock);
  wchar_t ch = index ? FromIndex(dc, c) : (wchar_t)c;
  bool r = ch && Hide.Glyph(ch, KeyOf(f), GetTickCount(), render, "ggo", sv); AfterDecision();
+ if (!r && BlindMode && BlindChar(ch) && (ch || index) && Hide.DialogueKey(KeyOf(f))) { r = true; if (sv) *sv = GlyphHide::Served{-1, 'b'}; }
  if (seq) *seq = Hide.Sequence(); if (chOut) *chOut = ch;
  ReleaseSRWLockExclusive(&HideLock); return r;
 }
 bool HideText(const std::wstring &s, const Face &f, const char *path, std::vector<GlyphHide::Served> *sv = NULL, long *seq = NULL) {
  if (s.empty()) return false;
- AcquireSRWLockExclusive(&HideLock); bool r = Hide.Text(s, KeyOf(f), GetTickCount(), path, sv); AfterDecision(); if (seq) *seq = Hide.Sequence(); ReleaseSRWLockExclusive(&HideLock); return r;
+ AcquireSRWLockExclusive(&HideLock); bool r = Hide.Text(s, KeyOf(f), GetTickCount(), path, sv); AfterDecision();
+ if (!r && BlindMode && Hide.DialogueKey(KeyOf(f))) { bool any = false; for (wchar_t c : s) any = any || (c && BlindChar(c)); if (any) { r = true; if (sv) { sv->assign(s.size(), GlyphHide::Served{}); for (size_t i = 0; i < s.size(); i++) if (s[i] && BlindChar(s[i])) (*sv)[i] = GlyphHide::Served{-1, 'b'}; } } } if (seq) *seq = Hide.Sequence(); ReleaseSRWLockExclusive(&HideLock); return r;
 }
 std::wstring FromIndices(HDC dc, const WORD *g, UINT n) {
  std::wstring w; if (!g || !n || n > 4096) return w;
@@ -349,9 +355,13 @@ DWORD ServeGlyph(HDC dc, UINT f, const GLYPHMETRICS *gm, LPVOID b, DWORD n, DWOR
 // Most visual novel engines rasterise their text one character at a time with GetGlyphOutline. Every call counts one
 // character; engines that ask the size first count twice, which ranks every font of that engine alike.
 // Matched glyphs keep their GLYPHMETRICS and buffer size (layout and advance unchanged); only the pixels change.
+volatile LONG GgoChar, GgoIndex, GgoMetrics, GgoReported; // which GetGlyphOutline forms the game uses (one status line)
+void GgoKind(UINT c, UINT f) { if ((f & 0x0f) == GGO_METRICS) InterlockedIncrement(&GgoMetrics); else if (f & GGO_GLYPH_INDEX) InterlockedIncrement(&GgoIndex); else InterlockedIncrement(&GgoChar); (void)c; }
 DWORD WINAPI HGetGlyphOutlineW(HDC dc, UINT c, UINT f, LPGLYPHMETRICS gm, DWORD n, LPVOID b, const MAT2 *m) {
+ GgoKind(c, f);
  bool index = (f & GGO_GLYPH_INDEX) != 0; Face face{L"", 0, 400}; bool known = false;
  if (!index && c < 0x10000 && Japanese((wchar_t)c)) { face = FaceOf(dc); known = true; Count("gdi", face, 1); }
+ else if (index && (f & 0x0f) != GGO_METRICS) { face = FaceOf(dc); known = true; Count("gdi", face, 1); } // glyph-index engines: every rasterised glyph ranks its font
  GlyphHide::Served sv; long seq = 0; wchar_t ch = 0;
  bool hide = HideOn && c && c < 0x10000 && HideGlyph(dc, c, index, known ? face : FaceOf(dc), (f & 0x0f) != GGO_METRICS, &sv, &seq, &ch);
  DWORD r = OGetGlyphOutlineW(dc, c, f, gm, n, b, m);
@@ -359,7 +369,8 @@ DWORD WINAPI HGetGlyphOutlineW(HDC dc, UINT c, UINT f, LPGLYPHMETRICS gm, DWORD 
  return r;
 }
 DWORD WINAPI HGetGlyphOutlineA(HDC dc, UINT c, UINT f, LPGLYPHMETRICS gm, DWORD n, LPVOID b, const MAT2 *m) {
- bool index = (f & GGO_GLYPH_INDEX) != 0; if (!index && c > 0x8100) Count("gdi", FaceOf(dc), 1);
+ GgoKind(c, f);
+ bool index = (f & GGO_GLYPH_INDEX) != 0; if ((!index && c > 0x8100) || (index && (f & 0x0f) != GGO_METRICS)) Count("gdi", FaceOf(dc), 1);
  bool hide = false; GlyphHide::Served sv; long seq = 0; wchar_t ch = 0;
  if (HideOn && c) { UINT code = c; if (!index) { char bytes[2]; int len = 0; if (c > 0xff) bytes[len++] = (char)(c >> 8); bytes[len++] = (char)(c & 0xff); std::wstring w = GameText(bytes, len); code = w.size() == 1 ? w[0] : 0; }
   hide = code && HideGlyph(dc, code, index, FaceOf(dc), (f & 0x0f) != GGO_METRICS, &sv, &seq, &ch); }
@@ -618,7 +629,7 @@ DWORD WINAPI Run(void *) {
  n += Hook(gdi, "AddFontResourceExA", (void *)&HAddFontResourceExA, (void **)&OAddFontResourceExA);
  Send("ToMe_FONT status gdi hooks " + std::to_string(n) + "/11");
  HANDLE ctl = CreateThread(NULL, 0, Control, NULL, 0, NULL); if (ctl) CloseHandle(ctl); // after the hooks: a pushed line always meets them
- for (;;) { LateHooks(); Report(); Sleep(1000); }
+ for (;;) { LateHooks(); Report(); if (!GgoReported && GgoChar + GgoIndex + GgoMetrics >= 200) { GgoReported = 1; Send("ToMe_FONT status ggo char=" + std::to_string(GgoChar) + " index=" + std::to_string(GgoIndex) + " metrics=" + std::to_string(GgoMetrics)); } Sleep(1000); }
 }
 } // namespace
 
