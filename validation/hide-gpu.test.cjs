@@ -12,7 +12,7 @@ test('learner is API-independent, generic and hides only after learning, inside 
  assert.doesNotMatch(g,/kirikiri|krkr|siglus|bgi|yuris|bruns|unity|renpy|leaf|clannad|dustmania/i,'no engine or game names');
  assert.match(g,/armedUntil = now \+ 60000/,'a line stays armed 60 s after the last push');
  assert.match(g,/sameAtlas = rtW == areaW && rtH == areaH && atlases\.count\(AtlasKey\(NULL, tex\)\)/,'learned atlas (by texture) on every target of the learned size (pages drawn twice into a shadow buffer)');
- assert.match(g,/sheet = freshTex && LineSized\(tw, th\)/,'per-line glyph sheets: new and sized to the line only');
+ assert.match(g,/sheet = freshKey && LineSized\(tw, th\)/,'line-sized glyph sheets: only glyphs whose screen place is new to this line');
  assert.match(g,/if \(learned && armed && !readOnly && \(\(glyphSize && sameAtlas\) \|\| sheet \|\| pageLine\)\)/,'hides only after learning, while armed; learned atlas at glyph height, or the current line\'s own fresh sheet');
  assert.match(g,/if \(sheet \|\| pageLine \|\| \(cx >= area\.x0 && cx <= area\.x1 && cy >= area\.y0 && cy <= area\.y1\)\)/,'learned atlas only inside the text area; the current line\'s fresh sheet wherever the page puts it');
  assert.match(g,/on >= 1 && on \* 10 >= in \* 6/,'an atlas is learned only when its quads line up with the glyphs (never a UI sheet under the text)');
