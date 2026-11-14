@@ -138,14 +138,14 @@ bool HideGlyph(HDC dc, UINT c, bool index, const Face &f, bool render, GlyphHide
  AcquireSRWLockExclusive(&HideLock);
  wchar_t ch = index ? FromIndex(dc, c) : (wchar_t)c;
  bool r = ch && Hide.Glyph(ch, KeyOf(f), GetTickCount(), render, "ggo", sv); AfterDecision();
- if (!r && BlindMode && BlindChar(ch) && (ch || index) && Hide.DialogueKey(KeyOf(f))) { r = true; if (sv) *sv = GlyphHide::Served{-1, 'b'}; }
+ if (!r && BlindMode && BlindChar(ch) && (ch || index) && Hide.BlindKey(KeyOf(f))) { r = true; if (sv) *sv = GlyphHide::Served{-1, 'b'}; }
  if (seq) *seq = Hide.Sequence(); if (chOut) *chOut = ch;
  ReleaseSRWLockExclusive(&HideLock); return r;
 }
 bool HideText(const std::wstring &s, const Face &f, const char *path, std::vector<GlyphHide::Served> *sv = NULL, long *seq = NULL) {
  if (s.empty() || DotsBlocked()) return false;
  AcquireSRWLockExclusive(&HideLock); bool r = Hide.Text(s, KeyOf(f), GetTickCount(), path, sv); AfterDecision();
- if (!r && BlindMode && Hide.DialogueKey(KeyOf(f))) { bool any = false; for (wchar_t c : s) any = any || (c && BlindChar(c)); if (any) { r = true; if (sv) { sv->assign(s.size(), GlyphHide::Served{}); for (size_t i = 0; i < s.size(); i++) if (s[i] && BlindChar(s[i])) (*sv)[i] = GlyphHide::Served{-1, 'b'}; } } } if (seq) *seq = Hide.Sequence(); ReleaseSRWLockExclusive(&HideLock); return r;
+ if (!r && BlindMode && Hide.BlindKey(KeyOf(f))) { bool any = false; for (wchar_t c : s) any = any || (c && BlindChar(c)); if (any) { r = true; if (sv) { sv->assign(s.size(), GlyphHide::Served{}); for (size_t i = 0; i < s.size(); i++) if (s[i] && BlindChar(s[i])) (*sv)[i] = GlyphHide::Served{-1, 'b'}; } } } if (seq) *seq = Hide.Sequence(); ReleaseSRWLockExclusive(&HideLock); return r;
 }
 std::wstring FromIndices(HDC dc, const WORD *g, UINT n) {
  std::wstring w; if (!g || !n || n > 4096) return w;
