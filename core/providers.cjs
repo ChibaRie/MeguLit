@@ -63,7 +63,7 @@ function createTranslationService(fetcher = fetch, environmentKey = '') {
     options = resolveOptions(options);
     /* garbage (mojibake, control codes) is never sent: the translator would answer about it, not translate it (core/text-sanity.cjs) */
     const sanity = require('./text-sanity.cjs');
-    if (sanity.garbledSource(text)) return '';
+    if (sanity.garbledSource(text,{noise:false})) return '';
     observeSource(text);
     const entry = history.at(-1);
     const context = options.contextEnabled === false || !(isLLM(options.provider) || options.provider === 'deepl') || options.provider === 'sakura' ? [] : history.slice(0,-1).slice(-Math.max(1,Math.min(8,Number(options.contextLines) || 4))).map(h=>({source:h.source,...(h.translation?{translation:h.translation}:{})}));

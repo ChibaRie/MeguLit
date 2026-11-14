@@ -278,7 +278,10 @@ class HookNative{
  artScanState(now=this.now()){const hidden=this.engineDialog===false,line=String(this.lastSource||'').trim(),current=!!line&&!hidden;
   const on=hidden||!line||now-(this.lastSourceAt||0)>2000;
   return {on,dialog:current?line.slice(0,600):'',speaker:current?String(this.state?.hookSpeaker||'').slice(0,40):'',band:current,foreign:this.foreignArtReady()};}
- auxText(m){this.artCandidate(m.text);const C=this.choice||(this.choice=this.newChoiceCapture());const added=C.add(m.text,this.lastSource,this.speaker?.text);
+ auxText(m){/* 2026-11-15 (沙耶の唄, user: 「ocr遮挡又出来了」): the dialogue hook sends each line on two thread contexts; the one not selected
+    came here as aux text, went to the art path and its translation was drawn over the game's own line. A line from the same hook
+    as the dialogue stream is dialogue, never art text. */
+  if(!(m.sourceName&&this.dialogueHook&&String(m.sourceName)===this.dialogueHook))this.artCandidate(m.text);const C=this.choice||(this.choice=this.newChoiceCapture());const added=C.add(m.text,this.lastSource,this.speaker?.text);
   this.trace('choice aux '+String(m.sourceName||'').slice(0,40)+' role='+(m.role??'')+' added='+JSON.stringify(added)+' text='+JSON.stringify(String(m.text).slice(0,80)));
   if(!added.length)return;clearTimeout(this.choiceTimer);this.choiceTimer=setTimeout(()=>this.requestChoices(0),450);this.choiceTimer.unref?.();}
  requestChoices(round){const options=round>0&&this.choiceOptions?this.choiceOptions:this.choice?.options();
@@ -324,6 +327,7 @@ class HookNative{
   /* 2026-11-14 (ダストマニア・グロテスク, Chinese patch): Shift-JIS read as GBK becomes the Japanese it was (core/text-sanity.cjs).
      The hook gets this text already as UTF-16 (the game converted it with the system code page), so the hook's own code page
      setting cannot help: each stream is judged by its text and locked once it is clearly one or the other. */
+  if(m.sourceName&&m.origin!=='history')this.dialogueHook=String(m.sourceName);
   if(typeof m.text==='string'){const stream=name||m.sourceCode||m.sourceName||'';const fixed=(this.codepage||(this.codepage=new (require('./text-sanity.cjs').StreamCodepage)())).fix(stream,m.text);if(fixed.locked)this.trace('stream locked as Shift-JIS read as GBK '+JSON.stringify(String(stream).slice(0,60)));if(fixed.repaired){this.trace('source repaired Shift-JIS read as GBK '+JSON.stringify(fixed.text.slice(0,20)));m={...m,text:fixed.text};}}
   /* 2026-11-12 (ファタモルガーナの館: "……けれど……", drawn large in the middle of the opening, was hidden and shown as a subtitle
      at the bottom): while the engine says its text window is hidden, a line is art text. HookBridge leaves it to the game;
@@ -339,7 +343,13 @@ class HookNative{
   /* 2026-11-15 (沙耶の唄: after such a line the reader kept the previous line's furigana and translation over a page that no longer
      had it): the line on screen is now one MeguLit cannot read, so the reader steps aside (hookLineUnreadable) until the next
      readable line; HookBridge leaves the line to the game (EmbedTextPolicy.Unreadable), nothing hides it. */
-  if(require('./text-sanity.cjs').garbledSource(m.text,{controls:false})){this.trace('source dropped unreadable '+JSON.stringify(String(m.text).slice(0,20)));if(!this.lineUnreadable){this.lineUnreadable=true;this.notify({hookLineUnreadable:true});}return;}
+  /* 2026-11-15 (user, 沙耶の唄: 「这乱码是原文文本啊」): the monsters' speech is noise in the game's own script (2003 script.pak, official
+     Chinese too). On a stream already known as readable Japanese (two kana lines, StreamCodepage 'native') such a line is the
+     script's text: delivered, hidden, redrawn in place and translated like every other line. Only replacement characters
+     and code-page mojibake stay unreadable there. */
+  const scriptNoise=typeof m.text==='string'&&this.codepage?.mode(name||m.sourceCode||m.sourceName||'')==='native'&&/[\u3041-\u309f\u30a1-\u30fa]/.test(m.text)&&!/\ufffd/.test(m.text)&&!require('./text-sanity.cjs').repairShiftJisAsGbk(m.text);
+  if(scriptNoise)this.trace('script noise line kept '+JSON.stringify(String(m.text).slice(0,20)));
+  if(!scriptNoise&&require('./text-sanity.cjs').garbledSource(m.text,{controls:false})){this.trace('source dropped unreadable '+JSON.stringify(String(m.text).slice(0,20)));if(!this.lineUnreadable){this.lineUnreadable=true;this.notify({hookLineUnreadable:true});}return;}
   // Multilingual containers keep only the Japanese track (E243); streams that deliver every line several times (or every character doubled) are learned and undone per stream (E215).
   this.repeats=this.repeats||new (require('./repeat-normalizer.cjs').RepeatNormalizer)();
   this.attempt=0;/* 2026-11-13 (user: DDLC Plus set to English showed nothing): a line in another language is first looked up in the

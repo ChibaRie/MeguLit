@@ -36,16 +36,24 @@ test('the game\'s noise lines are unreadable, real lines are not', () => {
   for (const t of READABLE) assert.equal(garbledSource(t, { controls: false }), false, t);
 });
 
-test('an unreadable line makes the reader step aside until the next readable line', t => {
+test('a readable Japanese stream keeps its noise lines (the game\'s script text); an unreadable line elsewhere makes the reader step aside', t => {
+  /* user 2026-11-15: 「这乱码是原文文本啊」 — on the dialogue stream the noise lines are delivered like any line */
+  const ev2 = []; let now2 = 100000;
+  const hook2 = new HookNative({ native: __dirname, hook: __dirname, logs: 'Z:/no-fixture-log' }, e => ev2.push(e), () => {}, () => now2);
+  hook2.trace = () => {}; hook2.enabled = true; t.after(() => hook2.stop());
+  for (const text of [READABLE[0], READABLE[1], NOISE[4], NOISE[5]]) { hook2.source({ text, sourceName: 'NitroPlus', origin: 'live' }, ''); now2 += 5000; }
+  assert.deepEqual(ev2.filter(e => typeof e.hookSource === 'string').map(e => e.hookSource.trim()).slice(2), [NOISE[4].trim(), NOISE[5].trim()]);
+  assert.equal(ev2.some(e => e.hookLineUnreadable === true), false);
   const ev = [], traces = []; let now = 100000;
   const hook = new HookNative({ native: __dirname, hook: __dirname, logs: 'Z:/no-fixture-log' }, e => ev.push(e), () => {}, () => now);
   hook.trace = m => traces.push(m); hook.enabled = true; t.after(() => hook.stop());
   const line = text => { hook.source({ text, sourceName: 'NitroPlus', origin: 'live' }, ''); now += 5000; };
-  line(READABLE[0]); line(NOISE[4]); line(NOISE[5]); line(READABLE[1]);
+  /* a stream that has not shown readable Japanese yet: replacement characters and noise are not delivered */
+  line(READABLE[0]); line('���あ�'); line('��いう��'); line(READABLE[1]);
   const flags = ev.filter(e => typeof e.hookLineUnreadable === 'boolean').map(e => e.hookLineUnreadable);
-  assert.deepEqual(flags, [true, false], 'one step aside for two noise lines, back at the next readable line');
+  assert.deepEqual(flags, [true, false], 'one step aside for unreadable lines, back at the next readable line');
   const shown = ev.filter(e => typeof e.hookSource === 'string').map(e => e.hookSource.trim());
-  assert.deepEqual(shown, [READABLE[0].trim(), READABLE[1].trim()], 'noise lines are never delivered');
+  assert.deepEqual(shown, [READABLE[0].trim(), READABLE[1].trim()], 'unreadable lines are never delivered');
   const back = ev.findIndex(e => e.hookLineUnreadable === false);
   assert.equal(ev[back].hookSource.trim(), READABLE[1].trim(), 'the reader comes back with the readable line itself');
 });
@@ -72,10 +80,10 @@ test('a line the game still draws itself: the placement host says so, a placed l
 
 test('HookBridge: nothing unreadable is hidden, every write goes through the code-page guard', () => {
   const b = read('native/HookBridge.cs'), p = read('native/EmbedTextPolicy.cs');
-  assert.match(b, /static void GlyphLine\(string text\)\{FlushFit\(\);\/\*[^*]*\*\/if\(EmbedTextPolicy\.Unreadable\(text\)\)\{[^}]*GlyphOff\(\);return;\}GpuLine\(text\);/);
+  assert.match(b, /static void GlyphLine\(string text\)\{FlushFit\(\);\/\*[^*]*\*\/if\(EmbedTextPolicy\.Unreadable\(text\)&&SelectedReadableRun<2\)\{[^}]*GlyphOff\(\);return;\}GpuLine\(text\);/);
   assert.match(b, /string reply=hide\?\(p\.hidden\?\?""\):EmbedTextPolicy\.Writeback\(p\.text,trans\);reply=SafeReply\(p\.code,p\.text,reply,"embed-translate"\);/);
   assert.match(b, /replacement=SafeReply\(candidate\.code,text,replacement,candidate\.name\);\r?\n   Luna_EmbedCallback\(tp,text,replacement==text\?"":replacement\);/);
-  assert.match(b, /if\(replacement\.Length>0&&EmbedTextPolicy\.Unreadable\(text\)\)\{replacement="";/);
+  assert.match(b, /if\(replacement\.Length>0&&EmbedTextPolicy\.Unreadable\(text\)&&SelectedReadableRun<2\)\{replacement="";/);
   assert.match(b, /if\(!EmbedTextPolicy\.GuardSelfTest\(\)\)\{Console\.Error\.WriteLine\("FAIL write guard"\);return 3;\}/, 'the guard is part of the bridge self-test (Build-HookBridge.ps1 runs it)');
   assert.match(p, /public static string GuardWrite\(string code, int fallbackCodepage, string original, string reply, out string reason\)/);
   assert.match(p, /if \(!RoundTrips\(reply, cp\)\) \{ reason = "not representable in code page " \+ cp; return ""; \}/);
@@ -87,8 +95,8 @@ test('stream choice: an unreadable line never selects a stream, two in a row on 
   /* second recording (05:21): auto-select took Nitroplus3 (HSXF4, UTF-8 read as Shift-JIS: 「縲弱ロ繧ｧ繝阪ぉ…」); every line was dropped and
      the Japanese NitroPlus stream stayed aux, so the reader never got a line and only art/OCR translations showed */
   const b = read('native/HookBridge.cs');
-  assert.match(b, /else if\(\(Selected==""\|\|\(StaleMemory\(\)&&tp\.Key\(\)!=Selected\)\|\|\(tp\.Key\(\)!=Selected&&SelectedUnreadableRun>=2\)\)&&c!=null[^{]*&&!EmbedTextPolicy\.Unreadable\(text\)\)\{bool leave=/);
-  assert.match(b, /if\(Enabled&&tp\.Key\(\)==Selected\)\{if\(EmbedTextPolicy\.Unreadable\(text\)\)SelectedUnreadableRun\+\+;else SelectedUnreadableRun=0;\}/);
+  assert.match(b, /else if\(\(Selected==""\|\|\(StaleMemory\(\)&&tp\.Key\(\)!=Selected\)\|\|\(tp\.Key\(\)!=Selected&&SelectedUnreadableRun>=2&&SelectedReadableRun<2\)\)&&c!=null[^{]*&&!EmbedTextPolicy\.Unreadable\(text\)\)\{bool leave=/);
+  assert.match(b, /if\(Enabled&&tp\.Key\(\)==Selected\)\{if\(EmbedTextPolicy\.Unreadable\(text\)\)SelectedUnreadableRun\+\+;else\{SelectedUnreadableRun=0;SelectedReadableRun\+\+;\}\}/);
   assert.equal(garbledSource('縲弱ロ繧ｧ繝阪ぉ縲∽ｻ雁ｺｦ繝弱☆・f・ｾ・ｾf蜉斐ゑｽｩI謦･D骭仙ｹｴ繝上√ラ繝・き貂呻ｽｨt繝ｼ縺ｨ繝｢驕翫', { controls: false }), true);
 });
 

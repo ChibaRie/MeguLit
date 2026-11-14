@@ -24,7 +24,9 @@ class OverlayPlacement {
       if (t !== this.settingTime) { this.settingTime = t; this.setting = JSON.parse(fs.readFileSync(file, 'utf8').replace(/^﻿/, '')).textRenderer; }
       if (this.setting) return this.setting === 'compositor';
     } catch {}
-    return preferences?.textRenderer === 'compositor';
+    /* 2026-11-15 (user, 沙耶の唄: 「位置要和原文一样」): drawing in the game's own place is the default; only an explicit other
+       文字显示 choice turns it off */
+    return (preferences?.textRenderer || 'compositor') === 'compositor';
   }
   configure(preferences, state) {
     /* GalWindowBridge reports the client size in its layout message (state.layout); older callers passed it flat */
