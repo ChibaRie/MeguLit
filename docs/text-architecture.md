@@ -1,4 +1,17 @@
-# Text architecture: MeguLit draws the game's text
+# Text architecture
+
+## Owner acceptance checklist (2026-11-14, check every screenshot against it)
+
+1. The Japanese line is drawn in the original's place: same position, size, colour, outline/shadow, game font where known. Never missing in bilingual mode.
+2. Furigana above every kanji word, using the shared ruby rule: game ruby first, then context/dictionary reading, never tokenizer guesses for names.
+3. The translation goes beside or under the Japanese, with no plate or box behind it.
+4. No mark is ever visible: no dots, no 「・」, no leftover original glyphs.
+5. Name plates and choices look like the game's own.
+
+OCR (owner, 2026-11-14): only OCR masking (blurring or covering the game's text) is banned. OCR may read: text baked into
+images (titles, cards, image choices), checking what a frame actually draws when marks cannot all be matched, and the
+per-game verdict that the original text is gone.
+
 
 Agreed with the owner on 2026-11-14. MeguLit draws every line of dialogue itself, in the place and size where the game
 would have drawn it. Three parts, each with its own section below:

@@ -126,6 +126,22 @@ class CompositorHost {
     if (item) { item.tl = translation; this.cc.choices(this.choiceItems); }
     this.trace('translation ' + (id !== null ? 'for line ' + id : item ? 'for a choice' : 'unmatched: ' + s.slice(0, 24)));
   }
+  // The reader's furigana for a line (game ruby first, then context / dictionary readings): [[start, end, reading]] in
+  // code points of the reader's text. A per-character marks line had its leading name plate removed: shifted to match.
+  ruby(source, list) {
+    if (!this.cc || !Array.isArray(list) || !list.length) return;
+    const s = strip(source).text; if (!s) return;
+    let id = null;
+    for (const [k, v] of [...this.lines.entries()].reverse()) if (v === s || v.includes(s) || (v && s.includes(v))) { id = k; break; }
+    if (id === null) return;
+    let full = String(source), ruby = list;
+    const plate = this.charMarks && full.match(NAME_PLATE);
+    if (plate) { const n = [...plate[0]].length; full = full.slice(plate[0].length); ruby = list.map(r => [r[0] - n, r[1] - n, r[2]]).filter(r => r[0] >= 0); }
+    // the compositor's line can carry more before the reader's text (a speaker such as "？？"): re-index onto it
+    const lt = String(this.cc.lines?.get?.(id)?.text || ''), probe = full.slice(0, Math.min(6, full.length)), at = probe ? lt.indexOf(probe) : -1;
+    if (at >= 0) { const n = [...lt.slice(0, at)].length; ruby = ruby.map(r => [r[0] + n, r[1] + n, r[2]]); full = lt; }
+    this.cc.annotate({ id, fullText: full, ruby }); this.trace('ruby for line ' + id + ' spans=' + ruby.length + ' full=' + JSON.stringify(full.slice(0, 30)) + ' line=' + JSON.stringify(String(this.cc.lines?.get?.(id)?.text || '').slice(0, 30)) + ' first=' + JSON.stringify(ruby[0] || null));
+  }
   choices(options) {
     if (!this.cc || !Array.isArray(options) || !options.length) return;
     this.choiceItems = options.map(o => typeof o === 'string' ? { text: o } : { text: String(o?.text || o?.source || ''), tl: String(o?.translation || o?.tl || '') });

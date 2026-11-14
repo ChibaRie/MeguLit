@@ -265,7 +265,7 @@ class Reader{
    case 'galToggleCover':g?.send({type:'toggleCover'});break;
    case 'galToggleMode':g?.send({type:'toggleMode'});break;
    case 'galShutdown':this.stop();break;
-   case 'hookPrefs':g?.setHookPrefs(r.settings);break;
+   case 'hookPrefs':g?.setHookPrefs(r.settings);break;case 'compositorRuby':g?.compositor?.ruby?.(String(r.text||''),Array.isArray(r.ruby)?r.ruby:[]);break;
    case 'hookStart':g?.userStart(r.profile,r.force===true,r.id);break;
    case 'hookReselect':g?.reselectStream?.(r.onlyIfBad===true);break;
    case 'hookSelect':g?.hooks.select(r.id,true);break;
@@ -318,7 +318,7 @@ class Reader{
    case 'dictRepair':this.runtime.learning().install(true,true,Array.isArray(r.only)?r.only.filter(x=>['sudachi','unidic'].includes(x)):null).catch(()=>{});break;
    case 'learningInstall':this.runtime.learning().install(true).catch(()=>{});break;
    case 'galMaskLoaded':case 'galMaskError':if(Number.isSafeInteger(r.id)&&r.id===g?.lastFrameId){const count=Number.isSafeInteger(r.count)&&r.count>=0&&r.count<=4000?r.count:0;g.notify({maskMessage:r.type==='galMaskLoaded'?(r.provisional?'遮罩预览已加载：':'遮罩图片已加载：')+count+' 块原文小区域':'阅读层无法解码遮罩图片，请查看状态诊断'});}break;
-   default:if(Number.isSafeInteger(r.id)){this.latest=r.id;if(r.disabled!==undefined)break;try{const translated=await this.translate(r);/* ② the compositor draws this translation beside / instead of the line */g?.compositor?.text(String(r.text||''),translated);reply('deliver',r.id,translated,false,'');}catch(e){reply('deliver',r.id,'',true,e.message);}}else throw Error('UNKNOWN_READER_ACTION');
+   default:if(Number.isSafeInteger(r.id)){this.latest=r.id;if(r.disabled!==undefined)break;/* ② the compositor draws the Japanese itself: furigana from the shared rule (game ruby in the line, then dictionary-settled readings) */if(g?.compositor&&g.preferences?.furigana!==false&&r.text)require('./example-ruby.cjs').exampleRuby(null,this.runtime.learning(),[{text:String(r.text)}]).then(x=>{const it=x?.items?.[0];if(it?.spans?.length)g.compositor?.ruby?.(it.text,it.spans.map(sp=>[sp.start,sp.end,String(sp.reading||'')]));}).catch(()=>{});try{const translated=await this.translate(r);/* ② the compositor draws this translation beside / instead of the line */g?.compositor?.text(String(r.text||''),translated);reply('deliver',r.id,translated,false,'');}catch(e){reply('deliver',r.id,'',true,e.message);}}else throw Error('UNKNOWN_READER_ACTION');
   }
   return {replies};
  }
