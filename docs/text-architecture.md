@@ -46,7 +46,9 @@ The compositor (native/compositor/Compositor.cpp) publishes a heartbeat in share
 - layout, little endian: `uint32 magic = 0x4243474D ("MGCB")`, `uint32 version = 1`, `uint32 compositorPid`,
   `uint32 presenting`, `uint64 tickMs` (GetTickCount64), `uint64 frames`
 - refreshed every 50 ms while the compositor window is visible, the game is not minimised and at least one frame has
-  been captured (`presenting = 1`, `tickMs` = now); while it does not show the game `presenting = 0` and `tickMs` stops
+  been captured (`tickMs` = now); `presenting = 1` only once MeguLit has sent it a dialogue line for this game (before
+  that, e.g. no stream selected, a game language the reader does not take, the title menu, nothing would find and erase
+  the dots, so the game draws real text); while it does not show the game `presenting = 0` and `tickMs` stops
 - on a normal exit (game closed, MeguLit closed its stdin, `quit`) it writes `presenting = 0`, `tickMs = 0` and closes
   the mapping; a crash or kill just stops the ticks (the mapping disappears with the last handle)
 

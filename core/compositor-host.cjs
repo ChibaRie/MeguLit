@@ -63,8 +63,18 @@ class CompositorHost {
   // ① / ③ events from HookBridge (GalNative.hookEvent).
   hook(m, table) {
     if (!this.cc || !m) return;
+    if (m.type === 'hookTextMarks' && m.path === 'char' && m.state === 'hit') {
+      // Text marks on a per-character argument hook (the hook DLL replaces each visible non-ASCII character by 「・」,
+      // ASCII stays real): from the first confirmed line on, every line of the stream is a marks line. The hit can come
+      // just after its line's text, so that line is sent again as a marks line.
+      if (!this.charMarks) { this.charMarks = true; if (this.lastPlain && Date.now() - this.lastPlain.at < 3000) this.charMarksLine(this.lastPlain.m); }
+      return;
+    }
+    if (m.type === 'hookTextMarks' && (m.state === 'paused' || m.state === 'off')) { this.charMarks = false; return; }
     if (m.type === 'hookGlyphDots') {
       if (m.state === 'line') this.remember(Number(m.seq) || 0, String(m.text || ''));
+      if (this.charMarks) { if (m.state === 'line') this.charMarksLine(m); return; }
+      if (m.state === 'line') this.lastPlain = { m, at: Date.now() };
       this.cc.hookGlyphDots(m);
       // Blind dots (drawn before the line's text arrived) are mapped to characters by HookNative when the line comes:
       // its line table (table) then holds them with their character index.
@@ -83,6 +93,21 @@ class CompositorHost {
       this.remember(id, text);
       this.cc.send({ t: 'rects', id, text, rects: rectsToClient(m, this.client[0], this.client[1]), hidden: m.hidden === true });
     }
+  }
+  // A per-character marks line: only the characters the DLL marks are MeguLit's to draw (ASCII stays the game's own glyph).
+  charMarksLine(m) {
+    // ASCII the game draws itself (a name's brackets) is kept and sent as "plain" so the compositor places, erases and
+    // draws it next to its marked neighbour; an engine code ($X, \X) is dropped with its letter.
+    const src = [...String(m.text || '')], chars = [], plain = [];
+    for (let i = 0; i < src.length; i++) {
+      const c = src[i], u = c.codePointAt(0);
+      if (c === '$' || c === '\\') { i++; continue; }
+      if (u > 0x20 && u < 0x7F) { plain.push(chars.length); chars.push(c); continue; }
+      if (u >= 0x80 && u !== 0x3000 && u !== 0x30FB && u !== 0xFEFF && !(u >= 0x2000 && u <= 0x200F) && !(u >= 0xE000 && u <= 0xF8FF)) chars.push(c);
+    }
+    const marks = chars.length - plain.length;
+    if (!marks) return;
+    this.cc.send({ t: 'line', id: Number(m.seq) || 0, text: chars.join(''), expected: marks, plain, marks: 'middle-dot' });
   }
   remember(id, text) { this.lines.set(id, strip(text).text); if (this.lines.size > 64) this.lines.delete(this.lines.keys().next().value); this.lastId = id; }
   // The reader translated a line: hand the translation to the compositor line that shows it (①'s text may carry more,

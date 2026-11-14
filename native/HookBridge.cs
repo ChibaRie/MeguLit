@@ -430,7 +430,7 @@ static void Deactivate(string reason){if(WaitHook!=null)WaitHook.Disable();lock(
  static string GlyphModeLine(){return GlyphMode=="dot"&&GlyphBlind?"MODE dot-blind":"MODE "+GlyphMode;}
  /* all: write-back streams too. Their embed callback stays on, but in dot mode it pushes the line to the DLL first and then
     hands the text back unchanged, so the line is known before the game draws it (the text output arrives too late for that). */
- static bool DotsOwn(Candidate c){return GlyphMode=="dot"&&c!=null&&c.gdiProbe;}
+ static bool DotsOwn(Candidate c){return GlyphMode=="dot"&&c!=null&&c.gdiProbe&&!MarksMode;} /* text marks on a per-character argument hook: the DLL marks only a stream that is switched on (check_embed_able), so dots no longer keep it off */
  static void GlyphModeSet(string mode,bool force=false){mode=mode=="dot"?"dot":"blank";if(mode==GlyphMode&&!force)return;GlyphMode=mode;GlyphSend(GlyphModeLine());Diagnostic("glyph mode "+mode);string id;lock(Gate){id=Enabled?Selected:"";}if(id!="")Select(id);}
  static void GlyphDots(string s){
   var line=System.Text.RegularExpressions.Regex.Match(s,@"^line seq=(\d{1,9}) text=(.*)$");if(line.Success){Emit(new{type="hookGlyphDots",state="line",seq=Int64.Parse(line.Groups[1].Value),text=line.Groups[2].Value});return;}

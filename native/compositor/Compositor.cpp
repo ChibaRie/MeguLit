@@ -88,6 +88,7 @@ struct LineMsg {
   // search, no erasing: MeguLit's glyphs go straight onto these client rects (one per character of text, blanks too).
   bool rectMode = false; bool rectHidden = false; std::vector<Box> rects;
   bool conv = false;          // dots from oss-universal's conv source (MeguLitFont waits for our CONV ok / off)
+  std::vector<int> plain; int markCount = -1; // per-character marks: characters the game still draws itself (ASCII), by character index; marks expected
   bool centered = false;      // ④'s text marks: the mark is the centre of the character's cell (not a top-left dot)
   bool bestFit = false;       // more marks than characters: all erased, the text drawn on the first ones
   bool undot = false;        // fallback chosen: the game draws this line itself, MeguLit neither erases nor draws it
@@ -198,6 +199,7 @@ public:
   // Commands from MeguLit (stdin thread → queue → here, on the render thread).
   void Command(const Json &j) {
     const std::string t = j["t"].str();
+    if (t == "line" || t == "rects" || t == "glyphs" || t == "choices") hadLine = true;
     if (t == "line") {
       // The same line pushed again by the stream (repeated, or the text twice over) while it is still being shown: one line.
       {
@@ -211,6 +213,8 @@ public:
       for (size_t i = 0; i < j["ruby"].size(); ++i) { const Json &r = j["ruby"][i]; cur.ruby.push_back({ int(r[0].num()), int(r[1].num()), Wide(r[2].str()) }); }
       cur.vertical = j.has("vertical") ? (j["vertical"].truthy() ? 1 : 0) : -1;
       cur.em = float(j["em"].num(0));
+      for (size_t i = 0; i < j["plain"].size(); ++i) cur.plain.push_back(int(j["plain"][i].num()));
+      cur.markCount = j.has("expected") ? int(j["expected"].num()) : -1;
       cur.centered = j["marks"].str() == "middle-dot"; if (cur.centered) dotsSeen = true; // ④'s text marks: one centred mark per character, count known
       cur.colorKnown = ParseColor(j["color"].str(), cur.color);
       for (size_t i = 0; i < j["cells"].size(); ++i) { const Json &c = j["cells"][i]; cur.cells.push_back({ int(c[0].num()), int(c[1].num()), int(c[0].num() + c[2].num()), int(c[1].num() + c[3].num()) }); }
@@ -335,7 +339,9 @@ public:
   void Beat() {
     if (!beat) return;
     const bool showing = hwnd && IsWindowVisible(hwnd) && !IsIconic(opt.game) && haveFrame;
-    beat->presenting = showing ? 1 : 0; beat->frames = uint64_t(frames);
+    // Presenting only once MeguLit has a dialogue line for this game: before that (no stream selected, a language the
+    // reader does not take, a title menu) nothing would find and erase the dots/marks, so the game draws real text.
+    beat->presenting = showing && hadLine ? 1 : 0; beat->frames = uint64_t(frames);
     if (showing) beat->tickMs = GetTickCount64();
   }
   void StopBeat() { if (!beat) return; beat->presenting = 0; beat->tickMs = 0; UnmapViewOfFile(beat); beat = nullptr; if (beatMap) CloseHandle(beatMap); beatMap = nullptr; }
@@ -377,7 +383,7 @@ private:
   std::map<uint64_t, Glyph> layouts;
   // tracking
   double lastFrameAt = 0, recheckAt = 0; bool haveFrame = false; int recheck = 0; // Recheck(): passes left over the last frame
-  std::map<int, std::vector<Json>> earlyGlyphs; std::map<int, int> alias; /* repeated line id → the line it repeats */ int convVerdict = 0; std::vector<Dot> menuMarks; CompositorBeat *beat = nullptr; HANDLE beatMap = nullptr; int flood = 0; double starveSince = 0; DotTracker tracker; ChoiceTracker choiceTracker; TrackResult lastResult; ChoiceTracker::Out lastChoices;
+  std::map<int, std::vector<Json>> earlyGlyphs; std::map<int, int> alias; /* repeated line id → the line it repeats */ int convVerdict = 0; std::vector<Dot> menuMarks; CompositorBeat *beat = nullptr; bool hadLine = false; HANDLE beatMap = nullptr; int flood = 0; double starveSince = 0; DotTracker tracker; ChoiceTracker choiceTracker; TrackResult lastResult; ChoiceTracker::Out lastChoices;
   bool dotsSeen = false; // ① reported at least one dot in this game session
   LineMsg cur; std::map<int, LineMsg> kept; int autoId = 0, autoMax = 0, autoEmpty = 0;
   std::vector<ChoiceText> choices; bool choicesOn = false, choiceUndot = false; double choiceStart = 0;
@@ -667,6 +673,7 @@ private:
     if (!dotsSeen && !opt.demo && !opt.autoLines) { lastResult = TrackResult{}; return; }
     const bool knew = tracker.HasColor();
     lastResult = tracker.Update(im);
+    if (cur.centered && !cur.conv && lastResult.status != LineStatus::Fading) OtherColourMarks(im, lastResult, cur.markCount >= 0 ? cur.markCount : Expected(cur));
     if (opt.trace && tracker.HasColor() != knew) { const Rgb c = tracker.Color(); Emit("{\"e\":\"trace\",\"what\":\"color\",\"known\":" + std::string(tracker.HasColor() ? "true" : "false") + ",\"rgb\":[" + std::to_string(c.r) + "," + std::to_string(c.g) + "," + std::to_string(c.b) + "]}"); }
     if (opt.autoLines && cur.text.empty()) {
       const int f = int(lastResult.dots.size()); autoMax = std::max(autoMax, f);
@@ -699,12 +706,15 @@ private:
     // completed → ok; a conv line whose marks never showed although the text colour is known (the game's own text is
     // still drawn) → off. Sent once per run.
     if (cur.conv && !convVerdict) {
-      if (cur.complete && found > 0) { convVerdict = 1; Emit("{\"e\":\"conv\",\"ok\":true,\"id\":" + std::to_string(cur.id) + "}"); }
+      if (cur.complete && found >= Expected(cur) && !cur.bestFit) { convVerdict = 1; Emit("{\"e\":\"conv\",\"ok\":true,\"id\":" + std::to_string(cur.id) + "}"); }
       else if (!cur.everDots && tracker.HasColor() && NowMs() - cur.started > 4000) { convVerdict = -1; Emit("{\"e\":\"conv\",\"ok\":false,\"id\":" + std::to_string(cur.id) + "}"); }
     }
     // A reveal stuck short of the full line (the engine's glyph cache keeps some characters real): the dots that are
     // there stay MeguLit's, the real glyphs stay the game's (same cells), and the line counts as shown (translation).
     if (!cur.undot && !cur.complete && found > 0 && st == LineStatus::Revealing && NowMs() - cur.lastChange > 1500 && !opt.demo) {
+      // conv source that marks only part of the line (the engine converts some characters elsewhere): not trusted, the
+      // font DLL turns it off and the game draws its real text again from the next line.
+      if (cur.conv && convVerdict == 0) { convVerdict = -1; Emit("{\"e\":\"conv\",\"ok\":false,\"partial\":true,\"id\":" + std::to_string(cur.id) + "}"); }
       cur.complete = true;
       Emit("{\"e\":\"line\",\"id\":" + std::to_string(cur.id) + ",\"status\":\"complete\",\"partial\":true,\"found\":" + std::to_string(found) + ",\"expected\":" + std::to_string(Expected(cur)) + "}");
     }
@@ -725,7 +735,75 @@ private:
       st = LineStatus::Complete; lastResult.status = st; cur.complete = true;
       if (!cur.bestFit) { cur.bestFit = true; Emit("{\"e\":\"line\",\"id\":" + std::to_string(cur.id) + ",\"status\":\"complete\",\"bestFit\":true,\"found\":" + std::to_string(found) + ",\"expected\":" + std::to_string(Expected(cur)) + "}"); }
     }
+    if (!cur.undot && !cur.plain.empty() && cur.complete && int(lastResult.dots.size()) == cur.markCount) PlaceUnmarked(lastResult);
     if (cur.undot) lastResult.dots.clear();
+  }
+
+  // Per-character marks leave ASCII to the game (engines keep their codes there): those characters (a name's brackets)
+  // get a cell next to their marked neighbour on the same row (half width after / before a full-width cell), so they are
+  // erased and drawn by MeguLit like the rest of the line.
+  void PlaceUnmarked(TrackResult &r) {
+    const int total = int(cur.dotChar.size());
+    if (r.dots.empty() || total != int(r.dots.size() + cur.plain.size())) return;
+    std::vector<bool> isPlain(size_t(total), false); for (int i : cur.plain) if (i >= 0 && i < total) isPlain[size_t(i)] = true;
+    std::vector<int> realAt(size_t(total), -1); { int k = 0; for (int i = 0; i < total; ++i) if (!isPlain[size_t(i)]) realAt[size_t(i)] = k++; }
+    const float pitch = r.pitch > 0 ? r.pitch : float(std::max(8, r.dots[0].box.h() * 12));
+    std::vector<Dot> out; out.reserve(size_t(total));
+    for (int i = 0; i < total; ++i) {
+      if (!isPlain[size_t(i)]) { out.push_back(r.dots[size_t(realAt[size_t(i)])]); continue; }
+      int p = i - 1, before = 0; while (p >= 0 && isPlain[size_t(p)]) { --p; ++before; }
+      int n = i + 1, after = 0; while (n < total && isPlain[size_t(n)]) { ++n; ++after; }
+      Dot d;
+      if (p >= 0) { const Dot &a = r.dots[size_t(realAt[size_t(p)])]; d = a; d.cx = a.cx + pitch * .75f + pitch * .5f * before; }
+      else if (n < total) { const Dot &a = r.dots[size_t(realAt[size_t(n)])]; d = a; d.cx = a.cx - pitch * .75f - pitch * .5f * after; }
+      else return;
+      d.box = { int(d.cx - pitch * .3f), int(d.cy - pitch * .5f), int(d.cx + pitch * .3f) + 1, int(d.cy + pitch * .5f) + 1 };
+      if (d.box.x0 < 0 || d.box.x1 > srcW || d.box.y0 < 0 || d.box.y1 > srcH) return;
+      out.push_back(d);
+    }
+    r.dots.swap(out);
+  }
+
+  // Text marks in a second colour (a name in its own colour on the dialogue row): the tracker follows one colour, so marks
+  // short of the line's count are looked for on the rows it found, any colour, same size and shape as its marks, close to
+  // the row's span. Added in reading order; never more than the line is short of.
+  void OtherColourMarks(const Image &im, TrackResult &r, int expected) {
+    const int found = int(r.dots.size());
+    if (r.vertical || found < 2 || expected <= found) return;
+    std::vector<int> ws, hs; for (const Dot &d : r.dots) { ws.push_back(d.box.w()); hs.push_back(d.box.h()); }
+    std::nth_element(ws.begin(), ws.begin() + ws.size() / 2, ws.end()); std::nth_element(hs.begin(), hs.begin() + hs.size() / 2, hs.end());
+    const int mw = ws[ws.size() / 2], mh = hs[hs.size() / 2];
+    const float pitch = r.pitch > 0 ? r.pitch : float(mh * 5);
+    struct Row { float cy; float x0, x1; };
+    std::vector<Row> rows;
+    for (const Dot &d : r.dots) {
+      bool hit = false;
+      for (Row &w : rows) if (std::abs(w.cy - d.cy) <= std::max(2.f, mh * 1.f)) { w.x0 = std::min(w.x0, d.cx); w.x1 = std::max(w.x1, d.cx); hit = true; break; }
+      if (!hit) rows.push_back({ d.cy, d.cx, d.cx });
+    }
+    std::vector<Dot> extra;
+    for (const Row &w : rows) {
+      const Box roi{ std::max(0, int(w.x0 - pitch * 4)), std::max(0, int(w.cy - mh * 2 - 2)), std::min(im.w, int(w.x1 + pitch * 4) + 1), std::min(im.h, int(w.cy + mh * 2 + 3)) };
+      if (roi.empty()) continue;
+      std::vector<Blob> blobs; std::vector<int> parent;
+      PlateauBlobs(im, roi, 2, 14, blobs, parent);
+      for (const Blob &b : blobs) {
+        if (!DotShaped(b, 2, 14) || std::abs(b.box.w() - mw) > std::max(mw >= 4 ? 1 : 0, mw / 3) || std::abs(b.box.h() - mh) > std::max(mh >= 4 ? 1 : 0, mh / 3) || std::abs(b.cy() - w.cy) > std::max(2.f, mh * .6f)) continue;
+        bool taken = false;
+        for (const Dot &d : r.dots) if (std::abs(d.cx - b.cx()) < pitch * .4f && std::abs(d.cy - b.cy()) < mh) { taken = true; break; }
+        for (const Dot &d : extra) if (std::abs(d.cx - b.cx()) < pitch * .4f && std::abs(d.cy - b.cy()) < mh) { taken = true; break; }
+        if (taken) continue;
+        Dot d; d.box = b.box; d.cx = b.cx(); d.cy = b.cy(); d.color = b.mean(); extra.push_back(d);
+      }
+    }
+    if (extra.empty() || found + int(extra.size()) > expected) return; // more candidates than missing marks: not trusted
+    r.dots.insert(r.dots.end(), extra.begin(), extra.end());
+    std::stable_sort(r.dots.begin(), r.dots.end(), [&](const Dot &a, const Dot &b) {
+      const bool same = std::abs(a.cy - b.cy) <= std::max(2.f, mh * 1.f);
+      return same ? a.cx < b.cx : a.cy < b.cy;
+    });
+    for (const Dot &d : extra) { r.area.x0 = std::min(r.area.x0, d.box.x0); r.area.y0 = std::min(r.area.y0, d.box.y0); r.area.x1 = std::max(r.area.x1, d.box.x1); r.area.y1 = std::max(r.area.y1, d.box.y1); }
+    if (int(r.dots.size()) >= expected) r.status = LineStatus::Complete;
   }
 
   void Erase(Image &im, const D3D11_MAPPED_SUBRESOURCE &map) {
@@ -926,7 +1004,9 @@ private:
     const UINT32 shown = std::min<UINT32>(UINT32(l.tl.size()), UINT32(std::ceil(l.tl.size() * share)));
     com_ptr<ID2D1SolidColorBrush> clear; d2->CreateSolidColorBrush(D2D1::ColorF(0, 0, 0, 0), clear.put());
     if (shown < l.tl.size()) tl->SetDrawingEffect(clear.get(), { shown, UINT32(l.tl.size()) - shown });
-    Text(tl.get(), vertical ? D2D1_POINT_2F{ a.x, a.y } : a, style.useGameColor ? first.color : style.jpColor, first.alpha);
+    // The translation takes the line's text colour (the tracked one), not the first dot's: a name in its own colour
+    // starts the line.
+    Text(tl.get(), vertical ? D2D1_POINT_2F{ a.x, a.y } : a, style.useGameColor ? (tracker.HasColor() ? tracker.Color() : first.color) : style.jpColor, first.alpha);
   }
 
   // Choices: one box per choice run; Japanese on the game's cells and the translation under it (bilingual), or the
