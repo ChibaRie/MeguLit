@@ -644,5 +644,5 @@ img{-webkit-user-drag:none}
 
 /* 2026-11-15 (user: 进搜索之后把这个红色线的轨道透明) while the search box has text or focus the red rails fade to nothing (0.3 s) and come back when the search ends; the capsule itself is untouched */
 .drift-rails{transition:opacity .3s ease}
-body:has(#game-search:focus) .drift-rails,body:has(#game-search:not(:placeholder-shown)) .drift-rails{opacity:0}
+body:has(#game-search:focus) .drift-rails,body:has(#game-search:not(:placeholder-shown)) .drift-rails{opacity:0!important}
 @media (prefers-reduced-motion:reduce){.drift-rails{transition:none}}
