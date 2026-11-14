@@ -119,7 +119,7 @@ class CompositorHost {
     const s = strip(source).text; if (!s) return;
     let id = null;
     for (const [k, v] of [...this.lines.entries()].reverse()) if (v === s || v.includes(s) || (v && s.includes(v))) { id = k; break; }
-    if (id !== null) this.cc.annotate({ id, tl: this.charMarks && NAME_PLATE.test(String(source || '')) ? String(translation).replace(NAME_PLATE, '') : translation });
+    if (id !== null) this.cc.annotate({ id, tl: NAME_PLATE.test(String(source || '')) ? String(translation).replace(NAME_PLATE, '').replace(/^\s*[^\s：:「『“"]{1,12}[：:]\s*/, '') : translation });
     // Menu items arrive as text only: their translations come through here like any line (before or after the menu).
     this.recent.set(s, translation); if (this.recent.size > 48) this.recent.delete(this.recent.keys().next().value);
     const item = this.choiceItems.find(x => !x.tl && strip(x.text).text === s);

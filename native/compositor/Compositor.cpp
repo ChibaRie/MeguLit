@@ -689,7 +689,9 @@ private:
     // the same colour) — forget it and learn again from the next change.
     if (!cur.complete && !cur.rec.empty() && found > 3 * int(cur.rec.size()) + 5) { if (++flood > 15) { tracker.ForgetColor(); flood = 0; } } else flood = 0;
     // Or far fewer for a while although ① drew them all (the colour of a blinking cursor or UI mark): learn again.
-    if (!cur.complete && cur.rec.size() >= 4 && tracker.HasColor() && found * 10 < int(cur.rec.size()) * 3) { if (!starveSince) starveSince = NowMs(); else if (NowMs() - starveSince > 1200) { tracker.ForgetColor(); starveSince = 0; recheck = std::max(recheck, 4); } } else starveSince = 0; // timed: a still screen sends few frames
+    // Marks lines know their count up front: short of it for a while (wrong colour learned, e.g. from a menu) → learn again.
+    const bool marksShort = cur.centered && !cur.conv && cur.markCount >= 2 && found < cur.markCount;
+    if (!cur.complete && ((cur.rec.size() >= 4 && found * 10 < int(cur.rec.size()) * 3) || marksShort) && tracker.HasColor()) { if (!starveSince) starveSince = NowMs(); else if (NowMs() - starveSince > 1200) { tracker.ForgetColor(); starveSince = 0; recheck = std::max(recheck, 4); } } else starveSince = 0; // timed: a still screen sends few frames
     LineStatus st = r.status;
     if (!cur.rec.empty() && found > 0 && st != LineStatus::Fading) {
       // With ① reports the tracker does not know the count: complete once the reported span is covered, mismatch when
