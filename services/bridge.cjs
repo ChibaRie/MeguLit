@@ -126,7 +126,11 @@ async function launch(db,id,runtime=null,windowsLaunch=false,{retried=false,redi
    /* Text architecture ①: with 文字显示 = compositor a direct start goes through MeguLitLaunch<bit>.exe, so the glyph dots are in place before the game's first glyph (core/glyph-dots.cjs); Steam keeps the late attach */
    const early=steam||textPath?null:require('../core/glyph-dots.cjs').earlyStart(root,game.executable,companion?companionArgs:[],require('../core/locale-emulator.cjs').x86(game.executable),directEnv||process.env);
    if(early)trace('glyph-dots-early',{launcher:path.basename(early.file),font:early.env.MEGULIT_GLYPH_FONT||''});
+   /* ③ dot font at the source (native/fontdot): with the early launcher, MeguLitFontDot<bit>.dll is loaded right after
+      MeguLitFont while the game is still suspended (core/text-paths-launch.cjs fontDot: compositor mode, binaries, crash canary) */
+   const fontDot=early&&!textPath?require('../core/text-paths-launch.cjs').fontDot(root,game.executable,early,trace):null;
    const child=textPath?await startProcess(textPath.exe,[...(companionArgs||[]),...textPath.args],textPath.cwd,'GAME_LAUNCH_FAILED',undefined,{...process.env,...textPath.env}):await startProcess(early?early.file:steam?'explorer.exe':game.executable,early?early.args:steam?['steam://rungameid/'+profile.appid]:companion?companionArgs:[],path.dirname(game.executable),'GAME_LAUNCH_FAILED',undefined,early?early.env:directEnv);
+
    trace('launch-process-started',{pid:child.pid,steam,steamDirect:companion||undefined});
    stage='window-wait';
    /* Steam may start another program in the install folder than the one on record (Summer Pockets: the library has
@@ -146,6 +150,8 @@ async function launch(db,id,runtime=null,windowsLaunch=false,{retried=false,redi
     trace('locale-fallback',{});stage='locale-start';const result=await lib.locale.launch(game.executable,{trace});if(result.needLocaleEmulator)throw error;
     state={pid:result.gamePid,locale:'japanese'};
    }
+   /* ③ dot font: the game must live 20 s with it, or the crash canary turns it off for this game */
+   if(fontDot)fontDot.watch(state?.pid);
    /* ③ the engine path joins the hook reader once the game is up; its exit code goes to the crash canary */
    if(textPath){try{const tp=require('../core/text-paths-launch.cjs');const join=(n=0)=>{const hook=runtime?.reader?.gal?.hooks;if(hook){tp.attach(textPath,hook);return;}if(n<20)setTimeout(()=>join(n+1),1500).unref?.();};join();textPath.connect().catch(()=>{});
     const exitWatch=setInterval(()=>{if(child.exit){clearInterval(exitWatch);try{textPath.session.exited(child.exit.code??-1);textPath.session.stop();}catch{}}},2000);exitWatch.unref?.();}catch(error){trace('text-paths-attach-failed',{error:String(error?.message||error).slice(0,160)});}}

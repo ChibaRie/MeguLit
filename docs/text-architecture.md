@@ -491,8 +491,22 @@ memory from the `.rpa`) patched in memory when the story started; the dialogue�
 HD (Artemis, 64-bit, Steam) via MeguLitLaunch64 from a hard-link shadow of the game folder on the same volume (junctions
 for folders, `steam_appid.txt` in the shadow so Steam does not restart the real program; removed afterwards): four
 fonts patched in memory after the engine decrypted them from `.pfs` (three CFF of 11–25 MB, one TrueType), title →
-start, the dialogue drawn as one dot per character over two rows; the game ran normally on screen. Not wired into
-HookBridge's launch yet, and no crash canary for it yet (it loads only through MeguLitLaunch, by hand).
+start, the dialogue drawn as one dot per character over two rows; the game ran normally on screen.
+
+**In the normal launch** (services/bridge.cjs, `core/text-paths-launch.cjs fontDot`): whenever ① starts a game through
+MeguLitLaunch (文字显示 = compositor), `MeguLitFontDot<bit>.dll` is added to `MEGULIT_LAUNCH_EXTRA`; the launcher loads
+every DLL listed there right after MeguLitFont, still suspended (the DLL installs its hooks inside LoadLibrary). Steam,
+Locale Emulator and shell-open starts keep the late attach and get no dot font (fonts are read before an attach).
+**Crash canary** `fontdot`: armed at launch; the launcher exits at once, so the game's own process is watched: gone
+within 20 s = died with it, the path is off for this game from the next launch (MEGULIT_FONTDOT_OFF=1 for all).
+**Compositor heartbeat** (the same `Local\MeguLitCompositorBeat-<pid>` gate as ①): dots for 20 s from load before any
+heartbeat, then only while the compositor presents with a tick at most 1 s old. When the gate closes every font patched
+in memory gets its original bytes back (kept once per font, the 256 most recent buffers remembered) and file reads are
+served as they are; status `needs-relaunch` (glyphs the engine already rasterised stay dots, as with ①) or `paused`;
+`live` when it opens again. Live by hand 2026-11-14 on 夏末盛开的花 with MeguLitLaunch64 + MeguLitFont64 + the dot font
+in MEGULIT_LAUNCH_EXTRA and a stand-in heartbeat: both fonts dotted through the file-read path, dialogue as dots while
+the heartbeat ran; heartbeat stopped → `needs-relaunch fonts=6` (originals back in memory; the engine's cached glyphs
+stayed dots, as documented). Not yet run from the real app with the real compositor (capture-compositor verifies).
 
 Not covered yet: canvas web engines (RenJS / Phaser), KiriKiri games with their own message-layer class that use
 neither KAG `processCh` nor TextRender, Ren'Py text outside the say screen, YU-RIS and Artemis (see above).
