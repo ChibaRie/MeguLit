@@ -82,12 +82,17 @@ static bool Detect(const std::vector<uint8_t> &b, Sheet &s, std::vector<int> &lu
 }
 static int DotSheet(std::vector<uint8_t> &b, Sheet &s, const std::vector<int> &lum) {
  int top = 0; for (int i = 1; i < 256; i++) if (lum[i] > lum[top]) top = i; int bg = 0; for (int i = 1; i < 256; i++) if (lum[i] < lum[bg]) bg = i;
+ int faint = -1; for (int i = 0; i < 256; i++) if (lum[i] > lum[bg] && (faint < 0 || lum[i] < lum[faint])) faint = i; // the faintest non-background level
  int glyphs = 0;
  for (int cy = 0; cy + s.ch <= s.h; cy += s.ch) for (int cx = 0; cx + s.cw <= s.w; cx += s.cw) {
-  int x0 = 1 << 30, y0 = 1 << 30; bool any = false; for (int pass = 0; pass < 2 && !any; pass++) { int thr = pass ? 40 : 128; for (int y = cy; y < cy + s.ch; y++) for (int x = cx; x < cx + s.cw; x++) if (lum[Px(b, s, x, y)] > thr) { any = true; x0 = (std::min)(x0, x); y0 = (std::min)(y0, y); } }
+  int x0 = 1 << 30, y0 = 1 << 30, ex0 = 1 << 30, ey0 = 1 << 30, ex1 = -1, ey1 = -1; bool any = false; for (int pass = 0; pass < 2 && !any; pass++) { int thr = pass ? 40 : 128; for (int y = cy; y < cy + s.ch; y++) for (int x = cx; x < cx + s.cw; x++) if (lum[Px(b, s, x, y)] > thr) { any = true; x0 = (std::min)(x0, x); y0 = (std::min)(y0, y); } }
+  for (int y = cy; y < cy + s.ch; y++) for (int x = cx; x < cx + s.cw; x++) if (lum[Px(b, s, x, y)] > 0) { ex0 = (std::min)(ex0, x); ey0 = (std::min)(ey0, y); ex1 = (std::max)(ex1, x); ey1 = (std::max)(ey1, y); }
   if (!any) continue; glyphs++;
   for (int y = cy; y < cy + s.ch; y++) for (int x = cx; x < cx + s.cw; x++) SetPx(b, s, x, y, bg);
   for (int y = y0; y < (std::min)(y0 + s.dot, cy + s.ch); y++) for (int x = x0; x < (std::min)(x0 + s.dot, cx + s.cw); x++) SetPx(b, s, x, y, top);
+  // keep the glyph's ink box for engines that measure their glyphs from the sheet (BRUNS refuses a font whose glyphs
+  // shrink to a dot): its four corners get the faintest grey, the dot stays the only visible mark
+  if (faint >= 0 && ex1 >= 0) for (int k = 0; k < 4; k++) { int x = k & 1 ? ex1 : ex0, y = k & 2 ? ey1 : ey0; if (lum[Px(b, s, x, y)] == lum[bg]) SetPx(b, s, x, y, faint); }
  }
  s.glyphs = glyphs; return glyphs;
 }
@@ -120,13 +125,13 @@ static std::shared_ptr<std::vector<uint8_t>> DottedCopy(const std::wstring &path
  std::shared_ptr<std::vector<uint8_t>> res;
  HANDLE h = OCreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, NULL);
  if (h != INVALID_HANDLE_VALUE) { LARGE_INTEGER sz = {}; if (OGetFileSizeEx(h, &sz) && sz.QuadPart >= 16 && sz.QuadPart <= (48ll << 20)) { uint8_t head[4]; DWORD got = 0; if (OReadFile(h, head, 4, &got, NULL) && got == 4 && ((head[0] == 'B' && head[1] == 'M') || (head[0] == 'E' && head[1] == 'E' && head[2] == 'N'))) {
-   std::vector<uint8_t> f((size_t)sz.QuadPart); memcpy(f.data(), head, 4); DWORD rest = 0; if (OReadFile(h, f.data() + 4, (DWORD)f.size() - 4, &rest, NULL) && rest == f.size() - 4) { auto out = std::make_shared<std::vector<uint8_t>>(); fd::Sheet s = {}; if (fd::Transform(f, *out, s)) { res = out; char b[600]; std::string p8 = Utf8(path); snprintf(b, sizeof b, "ToMe_FONTDOTS sheet cells=%dx%d grid=%dx%d glyphs=%d dot=%d path=%s", s.cw, s.ch, s.w / s.cw, s.h / s.ch, s.glyphs, s.dot, p8.c_str()); Send(b); } } } }
+   std::vector<uint8_t> f((size_t)sz.QuadPart); memcpy(f.data(), head, 4); DWORD rest = 0; if (OReadFile(h, f.data() + 4, (DWORD)f.size() - 4, &rest, NULL) && rest == f.size() - 4) { auto out = std::make_shared<std::vector<uint8_t>>(); fd::Sheet s = {}; if (fd::Transform(f, *out, s)) { wchar_t idn[4] = {}; GetEnvironmentVariableW(L"MEGULIT_FONT_DOTS_PROBE", idn, 4); if (idn[0] == L'1') *out = f; else if (idn[0] == L'2') { std::vector<uint8_t> in2; int kd; uint32_t ky; if (fd::Unwrap(f, in2, kd, ky)) fd::Wrap(f, in2, kd, ky, *out); } /* diagnostics: serve the original bytes through the same path */ res = out; char b[600]; std::string p8 = Utf8(path); snprintf(b, sizeof b, "ToMe_FONTDOTS sheet cells=%dx%d grid=%dx%d glyphs=%d dot=%d path=%s", s.cw, s.ch, s.w / s.cw, s.h / s.ch, s.glyphs, s.dot, p8.c_str()); Send(b); } } } }
   OCloseHandle(h); }
  Guard g; if (res) VCache[key] = res; else { VNo.insert(key); if (VNo.size() > 20000) VNo.clear(); } return res;
 }
 static HANDLE Track(HANDLE h, const std::wstring &path, DWORD access, DWORD disp) {
  if (h == INVALID_HANDLE_VALUE || !FontDotsOn || (access & (GENERIC_WRITE | FILE_WRITE_DATA | FILE_APPEND_DATA)) || disp != OPEN_EXISTING) return h;
- auto d = DottedCopy(path); if (d) { Guard g; VFiles[h] = VFile{ d, 0 }; } return h;
+ auto d = DottedCopy(path); if (d) { Guard g; VFiles[h] = VFile{ d, 0 }; } if (Diag) Log("open %s %S", d ? "DOTS" : "file", path.c_str()); return h;
 }
 static HANDLE WINAPI HCreateFileW(LPCWSTR n, DWORD a, DWORD sh, LPSECURITY_ATTRIBUTES sa, DWORD disp, DWORD fl, HANDLE t) { HANDLE h = OCreateFileW(n, a, sh, sa, disp, fl, t); return n ? Track(h, n, a, disp) : h; }
 static HANDLE WINAPI HCreateFileA(LPCSTR n, DWORD a, DWORD sh, LPSECURITY_ATTRIBUTES sa, DWORD disp, DWORD fl, HANDLE t) {
@@ -148,11 +153,15 @@ static BOOL WINAPI HSetFilePointerEx(HANDLE h, LARGE_INTEGER d, PLARGE_INTEGER n
 static DWORD WINAPI HGetFileSize(HANDLE h, LPDWORD hi) { { Guard g; auto it = VFiles.find(h); if (it != VFiles.end()) { uint64_t sz = it->second.data->size(); if (hi) *hi = (DWORD)(sz >> 32); return (DWORD)sz; } } return OGetFileSize(h, hi); }
 static BOOL WINAPI HGetFileSizeEx(HANDLE h, PLARGE_INTEGER s) { { Guard g; auto it = VFiles.find(h); if (it != VFiles.end()) { s->QuadPart = (LONGLONG)it->second.data->size(); return TRUE; } } return OGetFileSizeEx(h, s); }
 static BOOL WINAPI HCloseHandle(HANDLE h) { { Guard g; VFiles.erase(h); } return OCloseHandle(h); }
+// Diagnostics only: which strings the engine still sends through GDI (an engine may mix sheet fonts and system fonts).
+typedef BOOL(WINAPI *TextOutWF)(HDC, int, int, LPCWSTR, int); static TextOutWF OTextOutW; static volatile LONG TextOutCalls;
+static BOOL WINAPI HTextOutW(HDC dc, int x, int y, LPCWSTR s, int n) { LONG k = InterlockedIncrement(&TextOutCalls); if (Diag && k < 40 && s && n > 0) Log("TextOutW %d,%d %.*S", x, y, (std::min)(n, 40), s); return OTextOutW(dc, x, y, s, n); }
 static int InstallFontDots() {
  int n = 0; HMODULE k = GetModuleHandleW(L"kernel32.dll"); auto hk = [&](const char *name, void *hook, void **orig) { void *t = (void *)GetProcAddress(k, name); if (t && MH_CreateHook(t, hook, orig) == MH_OK && MH_EnableHook(t) == MH_OK) n++; };
  hk("CreateFileW", (void *)HCreateFileW, (void **)&OCreateFileW); hk("CreateFileA", (void *)HCreateFileA, (void **)&OCreateFileA); hk("ReadFile", (void *)HReadFile, (void **)&OReadFile);
  hk("SetFilePointer", (void *)HSetFilePointer, (void **)&OSetFilePointer); hk("SetFilePointerEx", (void *)HSetFilePointerEx, (void **)&OSetFilePointerEx); hk("GetFileSize", (void *)HGetFileSize, (void **)&OGetFileSize);
  hk("GetFileSizeEx", (void *)HGetFileSizeEx, (void **)&OGetFileSizeEx); hk("CloseHandle", (void *)HCloseHandle, (void **)&OCloseHandle);
+ if (Diag) { void *t = (void *)GetProcAddress(GetModuleHandleW(L"gdi32.dll"), "TextOutW"); if (t && MH_CreateHook(t, (void *)HTextOutW, (void **)&OTextOutW) == MH_OK) MH_EnableHook(t); }
  return n;
 }
 #endif

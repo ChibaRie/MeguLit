@@ -4,7 +4,7 @@
 // in EENZ, the same sheet as a plain BMP, and a non-sheet picture (noise). With MEGULIT_FONT_DOTS=1 it loads the DLL,
 // waits for MeguLitFontReady-<pid>, then reads each file the way engines do (CreateFile, GetFileSize, ReadFile in parts,
 // SetFilePointer). Asserted: both sheets come back with every glyph cell replaced by a 3 x 3 dot at the glyph's top-left
-// in the brightest colour and nothing else in the cell; the picture comes back unchanged; the files on disk unchanged.
+// in the brightest colour, the glyph's ink box kept by its other three corners in the faintest grey, nothing else; the picture comes back unchanged; the files on disk unchanged.
 #include <windows.h>
 #include <vector>
 #include <algorithm>
@@ -39,9 +39,9 @@ static bool Dotted(const std::vector<uint8_t> &bmp, const char *label) {
  size_t stride = W / 2, off = *(const uint32_t *)&bmp[10]; auto px = [&](int x, int y) { uint8_t c = bmp[off + (size_t)(H - 1 - y) * stride + x / 2]; return x & 1 ? c & 15 : c >> 4; };
  int bad = 0, dots = 0;
  for (int cy = 0; cy < H / CH; cy++) for (int cx = 0; cx < W / CW; cx++) { bool empty = (cx + cy) % 7 == 3; int gx = cx * CW + 4 + cx % 3, gy = cy * CH + 5 + cy % 2;
-  for (int y = cy * CH; y < cy * CH + CH; y++) for (int x = cx * CW; x < cx * CW + CW; x++) { bool inDot = !empty && x >= gx && x < gx + 3 && y >= gy && y < gy + 3; int v = px(x, y); if (inDot ? v != 15 : v != 0) bad++; }
+  for (int y = cy * CH; y < cy * CH + CH; y++) for (int x = cx * CW; x < cx * CW + CW; x++) { bool inDot = !empty && x >= gx && x < gx + 3 && y >= gy && y < gy + 3; bool corner = !empty && (x == gx || x == gx + 17) && (y == gy || y == gy + 19) && !inDot; int v = px(x, y); if (inDot ? v != 15 : corner ? v != 1 : v != 0) bad++; }
   if (!empty) dots++; }
- char b[200]; snprintf(b, sizeof b, "%s: every glyph cell is one 3x3 dot at the glyph's top-left (%d cells, %d wrong pixels)", label, dots, bad); Check(bad == 0, b); return bad == 0;
+ char b[200]; snprintf(b, sizeof b, "%s: every glyph cell is one 3x3 dot at the glyph's top-left, ink box kept by faint corners (%d cells, %d wrong pixels)", label, dots, bad); Check(bad == 0, b); return bad == 0;
 }
 int wmain(int argc, wchar_t **argv) {
  if (argc < 2) return 2; printf("font dots (%d-bit)\n", (int)sizeof(void *) * 8);
