@@ -27,13 +27,14 @@ test('DLL: every covered path asks the matcher only while a line is pushed, and 
  const c=read('native/fontprobe/FontProbe.cpp');
  assert.match(c,/#include "GlyphMatch\.h"/);
  assert.match(c,/L"\\\\\\\\\.\\\\pipe\\\\MeguLitFontCtl-%lu"/,'control pipe per game process');
- assert.match(c,/CloseHandle\(p\); Command\("OFF"\);/,'HookBridge gone: nothing stays hidden');
+ assert.match(c,/CloseHandle\(p\); InterlockedExchange\(&CtlConnected, 0\); Command\("OFF"\);/,'HookBridge gone: nothing stays hidden');
  for(const fn of ['HExtTextOutW','HExtTextOutA','HTextOutW','HTextOutA'])assert.match(c,new RegExp('BOOL WINAPI '+fn+'\\([^)]*\\) \\{[^\\n]*\\n[^\\n]*\\n if \\(HideOn && s'),fn);
  assert.match(c,/bool hide = HideOn && c && c < 0x10000 && HideGlyph\(/,'GetGlyphOutlineW');
- assert.match(c,/DWORD r = OGetGlyphOutlineW\(dc, c, f, gm, n, b, m\);\s*if \(hide && r != GDI_ERROR && b && n\) BlankGlyph\(f, b, r < n \? r : n\);\s*return r;/,'original call first: metrics and size unchanged, only pixels blanked');
+ assert.match(c,/DWORD r = OGetGlyphOutlineW\(dc, c, f, gm, n, b, m\);\s*if \(hide && r != GDI_ERROR\) r = ServeGlyph\(dc, f, gm, b, n, r, sv, seq, ch\);\s*return r;/,'original call first: metrics and size unchanged, only pixels changed');
+ assert.ok(c.includes('if (!DotMode || !gm || !PaintDots) { if (b && n) BlankGlyph(f, b, r < n ? r : n);'),'MODE blank (default): pixels blanked as in version 2, then reported');
  assert.match(c,/if \(\(o & ETO_OPAQUE\) && r\) OExtTextOutW\(dc, x, y, ETO_OPAQUE/,'opaque background kept');
  assert.match(c,/TA_UPDATECP/,'current position kept');
- assert.match(c,/HideText\(std::wstring\(s, len\), face, "gdip"\)\) return 0;/,'GdipDrawString');
+ assert.match(c,/HideText\(std::wstring\(s, len\), face, "gdip", &sv, &seq\)\) \{ if \(DotMode\) GdipDots\([^;]*;\s*return 0; \}/,'GdipDrawString');
  assert.match(c,/flags & 1/,'GdipDrawDriverString only with characters (CmapLookup)');
  assert.match(c,/vt\[27\], \(void \*\)&HDrawText/);assert.match(c,/vt\[28\], \(void \*\)&HDrawTextLayout/);
  assert.match(c,/vt\[18\], \(void \*\)&HCreateTextLayout/);
@@ -45,7 +46,7 @@ test('DLL: every covered path asks the matcher only while a line is pushed, and 
 
 test('HookBridge: pushes only for a selected stream that cannot write back, with replacement on or while the reader probes (E578)',()=>{
  const b=read('native/HookBridge.cs');
- assert.ok(b.includes('static bool GlyphWanted(){lock(Gate){Candidate c;return !GlyphCached&&Enabled&&(ReplacementEnabled||ProbeWanted)&&Selected!=""&&Candidates.TryGetValue(Selected,out c)&&c.gdiProbe;}}'));
+ assert.ok(b.includes('static bool GlyphWanted(){lock(Gate){Candidate c;return !GlyphCached&&Enabled&&(ReplacementEnabled||ProbeWanted)&&Selected!=""&&Candidates.TryGetValue(Selected,out c)&&(c.gdiProbe||GlyphAll);}}'));
  assert.ok(b.includes('Diagnostic("source id="+tp.Key()+" chars="+text.Length);GlyphLine(text);'),'pushed before the reader gets the line');
  assert.ok(b.includes('static bool GdiProbeable(Candidate c){return c!=null&&!c.embed&&'),'never when an engine-specific embed hook exists');
  assert.ok(b.includes('replacement disabled; reason="+reason+"; selected="+Selected);GlyphOff();'),'switching hiding off stops it at once');

@@ -45,7 +45,7 @@ test('HookBridge loads the layer, arms it for glyph-fallback streams and treats 
  const b=read('native/HookBridge.cs'),l=read('native/GpuHideLayer.cs'),i=read('native/HookInjector.cs'),s=read('native/Build-HookBridge.ps1');
  assert.match(b,/public static partial class HookBridge/);
  assert.match(b,/GpuHide\(bit,loader,args\);/);
- assert.match(b,/static void GlyphLine\(string text\)\{GpuLine\(text\);/);
+ assert.match(b,/static void GlyphLine\(string text\)\{(FlushFit\(\);)?GpuLine\(text\);/);
  assert.match(b,/static void GlyphOff\(\)\{GpuDisarm\(\);/);
  assert.match(s,/'GpuHideLayer\.cs'/);
  assert.match(i,/"MeguLitGpu64\.dll"/);assert.match(i,/"MeguLitGpu32\.dll"/);

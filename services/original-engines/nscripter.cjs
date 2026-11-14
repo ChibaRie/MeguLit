@@ -41,6 +41,11 @@ const nscripter={
  // A patch folder holds a whole script too: its blocks stand for the running script's blocks of the same label.
  archives(dir){return this.scenes(dir);},
  sources:dir=>scriptFiles(dir),
+ /* the code page the script (and so the game's ANSI text calls) is written in; '' when there is no script. GBK = a Chinese build */
+ codepage(dir){const files=scriptFiles(dir);if(!files.length)return '';const bufs=[];let total=0;
+  for(const f of files){if(total>=1<<20)break;let b;try{const fd=fs.openSync(f,'r');try{b=Buffer.alloc(Math.min(1<<20,fs.fstatSync(fd).size));fs.readSync(fd,b,0,b.length,0);}finally{fs.closeSync(fd);}}catch{continue;}
+   if(/\.dat$/i.test(f))for(let i=0;i<b.length;i++)b[i]^=0x84;bufs.push(b);total+=b.length;}
+  return bufs.length?kit.codepage(Buffer.concat(bufs)):'';},
  parse,test:()=>false,
  _internal:{blocks,clean,scriptText},
 };

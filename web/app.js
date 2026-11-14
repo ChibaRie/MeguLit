@@ -131,7 +131,7 @@ import {installExampleRuby,exAttr} from './example-ruby.js';
 const quickActions=new Set(['settings_get','vocabulary','unknown_words','home','preferences','ui_state','history','dialogue','sentences','word_trash','statistics',
  'game_detail','reader_status']);
 /* E459: the learning pages' heavier reads get a longer limit, so a page never waits on them for good */
-const slowReads=new Set(['reading_insights','grammar_report','grammar_bluebook','learning_rewards','learning_level','learning_goal','learning_activity','sentences_page']);
+const slowReads=new Set(['reading_insights','grammar_report','grammar_form_lines','grammar_bluebook','learning_rewards','learning_level','learning_goal','learning_activity','sentences_page']);
 const api=(action,params={})=>{const request=invoke('service',{request:{action,...params}});if(!quickActions.has(action)&&!slowReads.has(action)&&action!=='launch')return request;
  let timer;return Promise.race([request,new Promise((resolve,reject)=>{timer=setTimeout(()=>reject(Error('SERVICE_TIMEOUT')),action==='launch'?48000:slowReads.has(action)?40000:12000);
  })]).finally(()=>clearTimeout(timer));};
@@ -471,16 +471,21 @@ function renderGames(){
   const orbit=host.classList.contains('field-orbit'),wall=!!plane&&!orbit&&!host.querySelector('.field-feature'),filtered=!!search.trim();
   const cells=plane?[...plane.children].filter(c=>!c.hasAttribute('data-parked')):[];
   if(!animate||!cells.length||!((wall&&filtered)||(orbit&&!filtered&&libraryView()!=='tracks')))return renderGamesNow();
+  /* 2026-11-15 (user: 取消搜索后的过渡直接没了) clearing a search: no fly-out first; the orbit covers glide straight to their wall places while the rest of the wall fades in around them (renderGamesNow 'unorbit') */
+  if(orbit&&!filtered)return renderGamesNow('unorbit');
+  /* entering a search: the covers that match stay put and glide onto the orbit; only the others fade out where they are */
+  let keep=null;if(wall&&filtered){try{const e=libraryEntries(model,search,false);keep={games:new Set(e.games.map(g=>g.id)),series:new Set(e.series.map(x=>x.id))};}catch{keep=null;}}
+  const isKept=c=>!!keep&&((c.querySelector('[data-member-id]')||c).dataset?.memberId&&keep.games.has((c.querySelector('[data-member-id]')||c).dataset.memberId)||(c.querySelector('[data-series-drop]')||c).dataset?.seriesDrop&&keep.series.has((c.querySelector('[data-series-drop]')||c).dataset.seriesDrop));
   const b=host.getBoundingClientRect(),cx=b.left+b.width/2,cy=b.top+b.height/2;
   const dist=cells.map(c=>{const r=c.getBoundingClientRect();return Math.hypot(r.left+r.width/2-cx,r.top+r.height/2-cy);}),max=Math.max(1,...dist);
   /* E272: leaving the orbit, covers fall back into the capsule (reverse of their entrance) */
-  const runs=cells.map((c,i)=>{const n=c.firstElementChild||c;if(wall)return n.animate([{opacity:1,transform:'none'},{opacity:0,transform:'scale(.9)'}],{duration:260,
-   delay:dist[i]/max*360,easing:'ease-in',fill:'forwards'});const r=c.getBoundingClientRect(),ox=r.left+r.width/2-cx,oy=r.top+r.height/2-cy,ol=Math.hypot(ox,oy)||1,
-   push=Math.max(innerWidth,innerHeight)*.35;return n.animate([{opacity:1,transform:'none'},{opacity:0,transform:`translate(${ox/ol*push}px,${oy/ol*push}px) scale(1.04)`}],
+  const runs=cells.flatMap((c,i)=>{if(isKept(c))return [];if(wall)return animateCard(c,[{opacity:1,transform:'none'},{opacity:0,transform:'scale(.9)'}],{duration:220,
+   delay:dist[i]/max*160,easing:'ease-in',fill:'forwards'});const r=c.getBoundingClientRect(),ox=r.left+r.width/2-cx,oy=r.top+r.height/2-cy,ol=Math.hypot(ox,oy)||1,
+   push=Math.max(innerWidth,innerHeight)*.35;return animateCard(c,[{opacity:1,transform:'none'},{opacity:0,transform:`translate(${ox/ol*push}px,${oy/ol*push}px) scale(1.04)`}],
    {duration:380,delay:dist[i]/max*80,easing:'cubic-bezier(.55,0,.8,.3)',fill:'forwards'});}); /* E273 (user): clearing the search, orbit covers fly outward, never into the capsule */
-  let done=false;const finish=()=>{if(done)return;done=true;gameTransition=null;renderGamesNow(orbit&&!filtered?'domino':'fresh');};
+  let done=false;const finish=()=>{if(done)return;done=true;gameTransition=null;renderGamesNow(orbit&&!filtered?'domino':keep?'enter':'fresh');};
   gameTransition={cancel(){runs.forEach(r=>r.cancel());done=true;}};
-  Promise.all(runs.map(r=>r.finished)).then(finish,()=>{});setTimeout(finish,wall?(260+360)*.82:300); /* E271 overlap: no blank frame between out and in */
+  Promise.all(runs.map(r=>r.finished)).then(finish,()=>{});setTimeout(finish,wall?(220+160)*.85:300); /* E271 overlap: no blank frame between out and in */
 }
 function renderGamesNow(mode=''){
   const host=document.querySelector('#library-results');
@@ -505,13 +510,13 @@ function renderGamesNow(mode=''){
        the centre outward, mirroring the wall that just left. The orbit keeps its own entrance. */
     if(host.classList.contains('field-orbit'))return;
     const cards=[...host.querySelectorAll('.field-plane > [data-member-id]:not([data-parked]), .field-plane > :not([data-parked]) > [data-member-id], .field-feature > [data-member-id]')];if(!cards.length)return;
-    const inners=cards.map(c=>c.firstElementChild||c);inners.forEach(n=>{n.style.opacity='0';});
+    const inners=cards.flatMap(c=>visuals(c));inners.forEach(n=>{n.style.opacity='0';});
     const imgs=[...host.querySelectorAll('img')].slice(0,80);
     Promise.race([Promise.all(imgs.map(i=>i.decode?.().catch(()=>{}))),new Promise(r=>setTimeout(r,160))]).then(()=>requestAnimationFrame(()=>{
       const b=host.getBoundingClientRect(),cx=b.left+b.width/2,cy=b.top+b.height/2;
       const dist=cards.map(c=>{const r=c.getBoundingClientRect();return Math.hypot(r.left+r.width/2-cx,r.top+r.height/2-cy);}),max=Math.max(1,...dist);
-      inners.forEach((n,i)=>{n.style.opacity='';n.animate([{opacity:0,transform:'scale(.88)'},{opacity:1,transform:'none'}],{duration:420,delay:dist[i]/max*320,
-       easing:'cubic-bezier(.22,.72,.24,1)',fill:'backwards'});});
+      cards.forEach((c,i)=>visuals(c).forEach(n=>{n.style.opacity='';n.animate([{opacity:0,transform:'scale(.88)'},{opacity:1,transform:'none'}],{duration:420,delay:dist[i]/max*320,
+       easing:'cubic-bezier(.22,.72,.24,1)',fill:'backwards'});}));
     }));
     return;
   }
@@ -531,21 +536,24 @@ function renderGamesNow(mode=''){
     for(const card of host.querySelectorAll('.field-plane > [data-member-id]:not([data-parked]), .field-plane > :not([data-parked]) > [data-member-id]')){const from=matching(card.dataset.memberId,before);if(from){kept.add(from.card);
      flyInner(card,from.rect);continue;}
       /* E276 (user): a cover that comes back into the results flies in from outside onto the orbit */
-      const inner=card.firstElementChild;if(!inner)continue;const r=card.getBoundingClientRect(),dx=r.left+r.width/2-cx0,dy=r.top+r.height/2-cy0,l=Math.hypot(dx,
+      const r=card.getBoundingClientRect(),dx=r.left+r.width/2-cx0,dy=r.top+r.height/2-cy0,l=Math.hypot(dx,
        dy)||1;
-      inner.animate([{transform:`translate(${dx/l*far0}px,${dy/l*far0}px) scale(1.05)`,opacity:0},{transform:'none',opacity:1}],{duration:640,delay:Math.min(240,
+      animateCard(card,[{transform:`translate(${dx/l*far0}px,${dy/l*far0}px) scale(1.05)`,opacity:0},{transform:'none',opacity:1}],{duration:640,delay:Math.min(240,
        fresh++*45),easing:'cubic-bezier(.16,.84,.3,1)',fill:'backwards'});}
     /* E276 (user): covers that drop out of a narrowing search fly outward off the window */
     if(wasOrbit)scatterGhosts(before.filter(x=>!kept.has(x.card)),bounds);
   }else if(wasOrbit&&!search.trim()){
     // leaving the orbit: orbit covers fly out, then the wall returns from the edges inwards like dominoes
-    dominoIn(host,bounds);
+    dominoIn(host,bounds,wallCards);
   }else if(oldSingle){
     const match=matching(oldSingle.dataset.memberId,[...host.querySelectorAll('.field-plane > [data-member-id]:not([data-parked]), .field-plane > :not([data-parked]) > [data-member-id]')].map(card=>({card,rect:card.getBoundingClientRect()})));
     if(match)animateFeatureCard(match.card,oldRect,bounds);
     else host.querySelector('.field-plane')?.animate([{opacity:.35},{opacity:1}],{duration:250,easing:'ease-out'});
   }
 }
+/* 2026-11-15 (user: 无限墙取消搜索后的过渡直接没了) every card now starts with the invisible selection badge (.bp-sel), so animating card.firstElementChild moved nothing visible; the visible parts are all children except the badge */
+const visuals=card=>{const k=[...card.children].filter(x=>!/(^|\s)bp-/.test(String(x.className||'')));return k.length?k:[card];};
+const animateCard=(card,keyframes,options)=>visuals(card).map(n=>n.animate(keyframes,options));
 function scatterGhosts(cards,bounds){
   if(!cards.length)return;const layer=document.createElement('div');layer.style.cssText='position:fixed;inset:0;pointer-events:none;z-index:9999;overflow:hidden';
    layer.style.clipPath=`inset(${Math.max(0,bounds.top)}px ${Math.max(0,innerWidth-bounds.right)}px ${Math.max(0,innerHeight-bounds.bottom)}px ${Math.max(0,bounds.left)}px)`;
@@ -557,20 +565,21 @@ function scatterGhosts(cards,bounds){
    g.animate([{transform:'none',opacity:1},{transform:`translate(${dx/len*push}px,${dy/len*push}px) scale(.85)`,opacity:0}],{duration:460+Math.random()*120,easing:'cubic-bezier(.55,0,.8,.3)',
     fill:'forwards'}).onfinish=()=>{if(++done>=Math.min(80,cards.length))layer.remove();};}
 }
-function dominoIn(host,bounds){
+function dominoIn(host,bounds,before){
+  const was=new Map((before||[]).map(x=>[x.card.dataset.memberId,x.rect]));
   const cx=bounds.left+bounds.width/2,cy=bounds.top+bounds.height/2,cards=[...host.querySelectorAll('.field-plane > [data-member-id]:not([data-parked]), .field-plane > :not([data-parked]) > [data-member-id]')].map(card=>{
    const r=card.getBoundingClientRect(),dx=r.left+r.width/2-cx,dy=r.top+r.height/2-cy;return {card,dx,dy,d:Math.hypot(dx,dy)};});
   const max=Math.max(1,...cards.map(c=>c.d));
-  for(const {card,dx,dy,d} of cards){const inner=card.firstElementChild;if(!inner)continue;const len=d||1,out=Math.max(innerWidth,innerHeight)*.5;
-   /* E272: a short settle from just outside instead of a long flight, no idle lead-in */const k=Math.min(70,out*.12);inner.animate([{transform:`translate(${dx/len*k}px,${dy/len*k}px) scale(.9)`,
+  for(const {card,dx,dy,d} of cards){const from=was.get(card.dataset.memberId);if(from&&from.width){flyInner(card,from);continue;}const len=d||1,out=Math.max(innerWidth,innerHeight)*.5;
+   /* E272: a short settle from just outside instead of a long flight, no idle lead-in */const k=Math.min(70,out*.12);animateCard(card,[{transform:`translate(${dx/len*k}px,${dy/len*k}px) scale(.9)`,
     opacity:0},{transform:'none',opacity:1}],{duration:560,delay:(1-d/max)*380,easing:'cubic-bezier(.16,.84,.3,1)',fill:'backwards'});}
 }
 function flyInner(card,from){
-  const inner=card.firstElementChild;if(!inner)return;const to=card.getBoundingClientRect();
-  if(!from||!to.width){inner.animate([{opacity:0,transform:'scale(.7)'},{opacity:1,transform:'none'}],{duration:420,easing:'cubic-bezier(.22,.72,.24,1)'});return;
+  const to=card.getBoundingClientRect();
+  if(!from||!to.width){animateCard(card,[{opacity:0,transform:'scale(.7)'},{opacity:1,transform:'none'}],{duration:420,easing:'cubic-bezier(.22,.72,.24,1)'});return;
    }
   const x=from.left+from.width/2-to.left-to.width/2,y=from.top+from.height/2-to.top-to.height/2,k=from.width/to.width;
-  inner.animate([{transform:`translate(${x}px,${y}px) scale(${k})`},{transform:'none'}],{duration:560,easing:'cubic-bezier(.22,.72,.24,1)'});
+  animateCard(card,[{transform:`translate(${x}px,${y}px) scale(${k})`},{transform:'none'}],{duration:560,easing:'cubic-bezier(.22,.72,.24,1)'});
 }
 function animateFeatureCard(card,from,bounds){
   const to=card.getBoundingClientRect(),base=getComputedStyle(card).transform;
@@ -669,7 +678,7 @@ function japaneseRestore(){
  const zeroNote=r=>r?.patch?({zh:'；被换下的汉化补丁已用作零延迟翻译',en:'; the translation patch that was moved aside now gives zero-latency translation',ja:'。外した中国語パッチをゼロ遅延翻訳に使います'})[locale]||'':'';
  const show=async()=>{applyBtn.hidden=undoBtn.hidden=importBtn.hidden=steamBtn.hidden=true;const status=body.querySelector('[data-jr-status]');status.dataset.state='checking';status.textContent=t.check;
   try{const r=await api('jp_restore_detect',{id});status.dataset.state=t.st[r.state]?r.state:'none';status.textContent=(t.st[r.state]||t.st.none)(r);applyBtn.hidden=r.state!=='restorable';steamBtn.hidden=!(r.adapter==='language-switch'&&r.appid&&(r.state==='steam-guide'||r.mode==='steam'));
-   undoBtn.hidden=r.state!=='applied'&&r.state!=='imported';lastState=r.state;importBtn.hidden=['imported','applied'].includes(r.state)||r.adapter==='language-switch';}catch(e){status.dataset.state='';
+   undoBtn.hidden=r.state!=='applied'&&r.state!=='imported';lastState=r.state;jpAutoLine(status,id,show);importBtn.hidden=['imported','applied'].includes(r.state)||r.adapter==='language-switch';}catch(e){status.dataset.state='';
    status.textContent='';fail(e);}};
  const run=async(action,button,message)=>{applyBtn.disabled=undoBtn.disabled=true;const label=button.textContent;button.textContent=t.working;
   try{const r=await api(action,{id});toast(message(r)+zeroNote(r));}catch(e){fail(e);}finally{button.textContent=label;applyBtn.disabled=undoBtn.disabled=false;
@@ -1113,6 +1122,7 @@ function basicSettings(main=document.querySelector('#main')){
   <label class="settings-row"><div><div class="settings-label">${({zh:'光效速度',en:'Glow speed',ja:'光の速さ'})[locale]}</div><div class="settings-help">${({zh:'数值越大变化越快',en:'Higher is faster',ja:'大きいほど速く変化'})[locale]}</div></div><span class="setting-slider"><input type="range" name="glowSpeed" min="0.25" max="3" step="any" value="${Number(prefs.glowSpeed)||1}"><input type="number" data-basic-slider="glowSpeed" min="0.25" max="3" step="any" value="${Number(prefs.glowSpeed)||1}" aria-label="${({zh:'光效速度',en:'Glow speed',ja:'光の速さ'})[locale]}"></span></label>
   <label class="settings-row"><div><div class="settings-label">${({zh:'主页字体大小',en:'Home text size',ja:'ホームの文字サイズ'})[locale]}</div><div class="settings-help">${({zh:'只影响首页，1 为默认（100%）',en:'Home page only; 1 is the default (100%)',ja:'ホームのみ。1 が既定（100%）'})[locale]}</div></div><span class="setting-slider"><input type="range" name="homeFontScale" min="0.85" max="1.3" step="any" value="${Number(prefs.homeFontScale)||1}"><input type="number" data-basic-slider="homeFontScale" min="0.85" max="1.3" step="any" value="${Number(prefs.homeFontScale)||1}" aria-label="${({zh:'主页字体大小',en:'Home text size',ja:'ホームの文字サイズ'})[locale]}"></span></label>
   ${veilSettingsHTML(prefs,locale)}
+  <label class="settings-row"><div><div class="settings-label">${({zh:'自动切换为日文',en:'Switch to Japanese automatically',ja:'日本語へ自動で切り替え'})[locale]}</div><div class="settings-help">${({zh:'中文或英文版的游戏文件夹里有日文数据时，自动换成日文；可在通知或 日文原版恢复 里撤销',en:'When a Chinese or English build still has the Japanese data in its folder, switch it to Japanese; undo from the notice or Japanese original restore',ja:'中国語版・英語版のフォルダーに日本語データがあれば日本語に切り替えます。通知か「日本語原版に戻す」で元に戻せます'})[locale]}</div></div><input type="checkbox" class="switch" data-jp-auto-global checked></label>
   <label class="settings-row"><div><div class="settings-label">${text.closeToTray}</div><div class="settings-help">${text.closeHint}</div></div><input type="checkbox" class="switch" name="closeToTray" ${prefs.closeToTray?'checked':''}></label><label class="settings-row"><div><div class="settings-label">${({zh:'关闭窗口时询问',en:'Ask when closing the window',ja:'閉じるときに確認する'})[locale]}</div><div class="settings-help">${({zh:'点右上角关闭时，先问是收进托盘还是退出',en:'Ask whether to go to the tray or quit when you click close',ja:'閉じるボタンでトレイ格納か終了かを確認します'})[locale]}</div></div><input type="checkbox" class="switch" name="closeAsk" ${prefs.closeAsk!==false?'checked':''}></label></section>
   <section class="panel"><h2 class="panel-title">${text.appearance}</h2><div class="settings-row"><div class="settings-label">${text.accent}</div><div class="color-swatches"><span class="accent-chips" data-accent-chips>${accentChipsHTML(prefs)}</span><label class="accent-custom">${({zh:'自定义…',ja:'カスタム…',en:'Custom…'})[locale]}<input type="color" name="accent" data-color-action="saveAccent" aria-label="${text.accent}" value="${esc(prefs.accent)}"></label></div></div>
   <div class="settings-row"><div><div class="settings-label">${({zh:'玻璃面板颜色',en:'Glass panel colour',ja:'すりガラスの色'})[locale]}</div><div class="settings-help">${({zh:'毛玻璃面板的底色，与强调色分开；透明度在“主页背景”里调',en:'Tint of the frosted panels, separate from the accent; opacity is under Home background',ja:'すりガラスパネルの地色（強調色とは別）。不透明度は「ホーム背景」で調整'})[locale]}</div></div><span class="glass-color-control"><button type="button" class="setting-link" data-glass-reset ${prefs.glassColor?'':'hidden'}>${({zh:'恢复默认',en:'Reset',ja:'既定に戻す'})[locale]}</button><input type="color" name="glassColor" data-empty="${prefs.glassColor?'false':'true'}" value="${esc(prefs.glassColor||(prefs.themeMode==='light'?'#fff7f2':'#2a1c1b'))}"></span></div>
@@ -1121,6 +1131,8 @@ function basicSettings(main=document.querySelector('#main')){
   <div class="settings-row"><span class="settings-label">${extra.home}</span><button type="button" class="setting-link" data-background-settings>${{zh:'调整背景',en:'Customize background',ja:'背景を調整'}[locale]} ${icon('arrow')}</button></div></section>
   </form>`;
   const form=main.querySelector('#settings-form');
+  {const box=form.querySelector('[data-jp-auto-global]');api('jp_auto_get').then(r=>{box.checked=r.enabled!==false;}).catch(()=>{});
+   box.addEventListener('change',e=>{e.stopPropagation();api('jp_auto_set',{enabled:box.checked}).catch(e=>toast(errorMessage(e)));});}
   form.querySelectorAll('[name=username],[name=fontFamily],[name=themeMode]').forEach(input=>input.closest('.settings-row')?.classList.add('compact-setting'));
   const glassInput=form.elements.glassColor,glassReset=form.querySelector('[data-glass-reset]');
   glassInput.addEventListener('input',()=>{glassInput.dataset.empty='false';glassReset.hidden=false;});
@@ -1188,11 +1200,14 @@ function loading(){return '<div class="loading-screen"><span class="spinner" ari
 /* the 个人主页 pill at the right of the top bar: same panel as the 排行榜 chip; shows your picture and name once known */
 async function paintTopProfile(){
  const me=document.querySelector('[data-top-me]');if(!me)return;
- let data;try{data=await api('leaderboard_view',{tab:'board'});}catch{return;}
- if(!data?.name)return;
- me.querySelector('.leaderboard-avatar')?.replaceWith(document.createRange().createContextualFragment(avatarHTML({name:data.name,avatar:data.self?.avatar||null},
-  data.avatars||{},esc)));
- me.querySelector('.top-me-name').textContent=data.name;me.title=data.name;
+ const paint=data=>{if(!data?.name)return;
+  me.querySelector('.leaderboard-avatar')?.replaceWith(document.createRange().createContextualFragment(avatarHTML({name:data.name,avatar:data.self?.avatar||null},
+   data.avatars||{},esc)));
+  me.querySelector('.top-me-name').textContent=data.name;me.title=data.name;};
+ /* 2026-11-14 (user: the pill sat on 「个人主页」 and a blank circle): name and cached picture from this PC first; the
+    board call, which waits on the relay, only refreshes them */
+ try{paint(await api('profile_chip',{}));}catch{}
+ try{paint(await api('leaderboard_view',{tab:'board'}));}catch{}
 }
 function bindTopProfile(){
  const me=document.querySelector('[data-top-me]');if(!me)return;
@@ -1293,6 +1308,30 @@ async function start(){
    document.querySelector('#startup-retry').addEventListener('click',start);await invoke('window_action',{action:'ready'}).catch(()=>{});}
 }
 addEventListener('focus',()=>{refreshFocusedHome().catch(()=>{});});
+/* E590 automatic Japanese: state line in 日文原版恢复 (自动已恢复 / 已是日文 / 没有日文数据), undo, per-game off */
+const jpAutoWords={zh:{auto:'自动已恢复为日文',japanese:'已是日文',none:'没有日文数据',unsupported:'有日文数据，但还不能自动切换；阅读时 MeguLit 仍读取日文原句',reverted:'自动切换后游戏没能正常启动，已自动改回',undone:'已撤销自动切换，这个游戏不再自动切换',undo:'撤销自动切换',off:'这个游戏不自动切换',done:'已自动切换为日文',undid:'已撤销，游戏恢复原来的语言'},
+ en:{auto:'Switched to Japanese automatically',japanese:'Already Japanese',none:'No Japanese data',unsupported:'Japanese data found but cannot be switched automatically yet; MeguLit still reads the Japanese lines',reverted:'The game did not start after the automatic switch, so it was put back',undone:'Automatic switch undone; this game is left alone from now on',undo:'Undo automatic switch',off:'Do not switch this game automatically',done:'Switched to Japanese automatically',undid:'Undone; the game is back to its earlier language'},
+ ja:{auto:'自動で日本語に戻しました',japanese:'すでに日本語です',none:'日本語データがありません',unsupported:'日本語データはありますが、まだ自動では切り替えられません。読み取りは日本語原文で行います',reverted:'自動切り替え後に起動できなかったため、元に戻しました',undone:'自動切り替えを取り消しました。このゲームは今後切り替えません',undo:'自動切り替えを取り消す',off:'このゲームは自動で切り替えない',done:'日本語に自動で切り替えました',undid:'取り消しました。ゲームは元の言語に戻りました'}};
+async function jpAutoLine(status,id,refresh){
+ const w=jpAutoWords[locale]||jpAutoWords.zh;let line=status.parentElement.querySelector('[data-jr-auto]');
+ if(!line){line=document.createElement('div');line.className='jr-auto';line.dataset.jrAuto='';status.after(line);}
+ let r;try{r=await api('jp_auto_status',{id});}catch{line.textContent='';return;}
+ const label={auto:w.auto,japanese:w.japanese,'no-japanese':w.none,unsupported:w.unsupported,reverted:w.reverted,undone:w.undone}[r.state]||'';
+ line.innerHTML=`<p class="settings-help" data-state="${esc(r.state)}">${esc(label)}</p>`+(r.state==='auto'?`<button type="button" class="secondary" data-jr-auto-undo>${esc(w.undo)}</button>`:'')+
+  `<label class="settings-row"><span class="settings-label">${esc(w.off)}</span><input type="checkbox" class="switch" data-jr-auto-off ${r.gameOff?'checked':''}></label>`;
+ line.querySelector('[data-jr-auto-off]').onchange=e=>api('jp_auto_set',{id,off:e.target.checked}).catch(er=>toast(errorMessage(er)));
+ const u=line.querySelector('[data-jr-auto-undo]');if(u)u.onclick=async()=>{u.disabled=true;try{await api('jp_auto_undo',{id});toast(w.undid);}catch(er){toast(errorMessage(er));}refresh?.();};
+}
+/* one notice per automatic switch, with an undo action; checked at start, on focus and every minute */
+async function jpAutoNotices(){
+ let list=[];try{list=await api('jp_auto_notices');}catch{return;}
+ const w=jpAutoWords[locale]||jpAutoWords.zh;
+ for(const n of list){const el=document.createElement('div');el.className='jp-auto-notice';el.setAttribute('role','status');
+  el.innerHTML=`<span>${esc(w.done)}${n.title?' · '+esc(n.title):''}</span><button type="button" class="secondary" data-undo>${esc(w.undo)}</button><button type="button" class="ghost" data-close aria-label="close">×</button>`;
+  document.body.append(el);const close=()=>el.remove();el.querySelector('[data-close]').onclick=close;setTimeout(close,20000);
+  el.querySelector('[data-undo]').onclick=async e=>{e.target.disabled=true;try{await api('jp_auto_undo',{id:n.id});toast(w.undid);close();}catch(er){e.target.disabled=false;toast(errorMessage(er));}};}
+}
+setTimeout(jpAutoNotices,3000);setInterval(jpAutoNotices,60000);window.addEventListener('focus',()=>jpAutoNotices());
 start();
 // E255: a settings row is a <label>; only the control itself should react, not the descriptive text
 document.addEventListener('click',e=>{const row=e.target.closest?.('label.settings-row');if(!row)return;if(e.target.closest('input,select,textarea,button,a,.select-control,.switch,.toggle,[role=switch],.color-swatches,.setting-slider,.font-control'))return;

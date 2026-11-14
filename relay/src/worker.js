@@ -94,7 +94,7 @@ async function readJSON(request,max=LIMITS.body){
 }
 
 /* ---- leaderboard ----------------------------------------------------------------------------------------------- */
-const COLUMN={characters:'characters',seconds:'seconds',words:'words',streak:'streak',reviews:'reviews',kana:'kana'};
+const COLUMN={characters:'characters',seconds:'seconds',words:'words',streak:'streak',reviews:'reviews',kana:'kana',study:'study'};
 export async function leaderboardPost(request,env,ip,now=new Date()){
  if(!await hit(env,'lb-post',ip,now.getTime()))return fail('RATE_LIMITED',429);
  const body=await readJSON(request);if(body.error)return fail(body.error,body.error==='PAYLOAD_TOO_LARGE'?413:400);
@@ -110,7 +110,7 @@ export async function leaderboardPost(request,env,ip,now=new Date()){
  /* 2026-11-13 every upsert below skips the write when nothing actually changed (D1 counts rows_written, and the app
     re-posts the same totals every 10 minutes while the board is open). updated_at alone is not worth a row. */
  const statements=[env.DB.prepare('INSERT INTO leaderboard_users(id_hash,name,share_games,element,level,created_at,updated_at) VALUES(?,?,?,?,?,?,?) ON CONFLICT(id_hash) DO UPDATE SET name=excluded.name,share_games=excluded.share_games,element=excluded.element,level=excluded.level,updated_at=excluded.updated_at WHERE leaderboard_users.name<>excluded.name OR leaderboard_users.share_games<>excluded.share_games OR leaderboard_users.element<>excluded.element OR leaderboard_users.level<>excluded.level').bind(idHash,name,games?1:0,element,level,t,t)];
- for(const period of ['week','month','all']){const s=stats[period];statements.push(env.DB.prepare('INSERT INTO leaderboard_stats(id_hash,period,period_key,characters,seconds,words,streak,reviews,kana,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id_hash,period,period_key) DO UPDATE SET characters=excluded.characters,seconds=excluded.seconds,words=excluded.words,streak=excluded.streak,reviews=excluded.reviews,kana=excluded.kana,updated_at=excluded.updated_at WHERE leaderboard_stats.characters<>excluded.characters OR leaderboard_stats.seconds<>excluded.seconds OR leaderboard_stats.words<>excluded.words OR leaderboard_stats.streak<>excluded.streak OR leaderboard_stats.reviews<>excluded.reviews OR leaderboard_stats.kana<>excluded.kana').bind(idHash,period,keys[period],s.characters,s.seconds,s.words,s.streak,s.reviews,s.kana,t));}
+ for(const period of ['week','month','all']){const s=stats[period];statements.push(env.DB.prepare('INSERT INTO leaderboard_stats(id_hash,period,period_key,characters,seconds,words,streak,reviews,kana,grammar,anki,practice,study_seconds,study,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id_hash,period,period_key) DO UPDATE SET characters=excluded.characters,seconds=excluded.seconds,words=excluded.words,streak=excluded.streak,reviews=excluded.reviews,kana=excluded.kana,grammar=excluded.grammar,anki=excluded.anki,practice=excluded.practice,study_seconds=excluded.study_seconds,study=excluded.study,updated_at=excluded.updated_at WHERE leaderboard_stats.characters<>excluded.characters OR leaderboard_stats.seconds<>excluded.seconds OR leaderboard_stats.words<>excluded.words OR leaderboard_stats.streak<>excluded.streak OR leaderboard_stats.reviews<>excluded.reviews OR leaderboard_stats.kana<>excluded.kana OR leaderboard_stats.grammar<>excluded.grammar OR leaderboard_stats.anki<>excluded.anki OR leaderboard_stats.practice<>excluded.practice OR leaderboard_stats.study_seconds<>excluded.study_seconds OR leaderboard_stats.study<>excluded.study').bind(idHash,period,keys[period],s.characters,s.seconds,s.words,s.streak,s.reviews,s.kana,s.grammar,s.anki,s.practice,s.studySeconds,s.study,t));}
   /* the games were deleted and re-inserted wholesale before: 60 rows a post for a 30-game list, nearly all identical */
  {const keys=(games||[]).map(g=>g.key);
   statements.push(keys.length
@@ -139,13 +139,15 @@ export async function leaderboardGet(url,env,ip,now=new Date()){
   if(q.me){const r=await env.DB.prepare('SELECT characters value FROM leaderboard_games WHERE game_key=? AND id_hash=?').bind(q.game,q.me).first();if(r&&r.value>0)mine={value:r.value,rank:1+((await env.DB.prepare('SELECT COUNT(*) n FROM leaderboard_games WHERE game_key=? AND characters>?').bind(q.game,r.value).first())?.n||0)};}
  }else{
   const col=COLUMN[q.metric];
-  ({results:rows}=await env.DB.prepare(`SELECT s.id_hash,u.name,u.element,u.level,s.${col} value,p.pid FROM leaderboard_stats s JOIN leaderboard_users u ON u.id_hash=s.id_hash LEFT JOIN profiles p ON p.id_hash=s.id_hash AND p.public=1 AND p.hidden=0 WHERE s.period=? AND s.period_key=? AND s.${col}>0 ORDER BY s.${col} DESC,s.updated_at ASC LIMIT 50`).bind(q.period,q.key).all());
+  /* 学习练习 rows carry their parts for the hover card */
+  const parts=q.metric==='study'?',s.kana d_kana,s.grammar d_grammar,s.anki d_anki,s.practice d_practice,s.study_seconds d_secs':'';
+  ({results:rows}=await env.DB.prepare(`SELECT s.id_hash,u.name,u.element,u.level,s.${col} value,p.pid${parts} FROM leaderboard_stats s JOIN leaderboard_users u ON u.id_hash=s.id_hash LEFT JOIN profiles p ON p.id_hash=s.id_hash AND p.public=1 AND p.hidden=0 WHERE s.period=? AND s.period_key=? AND s.${col}>0 ORDER BY s.${col} DESC,s.updated_at ASC LIMIT 50`).bind(q.period,q.key).all());
   total=(await env.DB.prepare(`SELECT COUNT(*) n FROM leaderboard_stats WHERE period=? AND period_key=? AND ${col}>0`).bind(q.period,q.key).first())?.n||0;
   if(q.me){const r=await env.DB.prepare(`SELECT ${col} value FROM leaderboard_stats WHERE period=? AND period_key=? AND id_hash=?`).bind(q.period,q.key,q.me).first();if(r&&r.value>0)mine={value:r.value,rank:1+((await env.DB.prepare(`SELECT COUNT(*) n FROM leaderboard_stats WHERE period=? AND period_key=? AND ${col}>?`).bind(q.period,q.key,r.value).first())?.n||0)};}
  }
  /* rank = 1 + number of strictly better values, so ties share a rank; id hashes never leave the server */
  const avatars=await avatarsFor(env,rows.map(r=>r.id_hash));
- let rank=0,prev=null;const entries=rows.map((r,i)=>{if(r.value!==prev){rank=i+1;prev=r.value;}return {rank,name:r.name,value:r.value,me:!!q.me&&r.id_hash===q.me,avatar:avatars.get(r.id_hash)||null,pid:r.pid||null,element:r.element||'',level:r.level||0};});
+ let rank=0,prev=null;const entries=rows.map((r,i)=>{if(r.value!==prev){rank=i+1;prev=r.value;}return {rank,name:r.name,value:r.value,me:!!q.me&&r.id_hash===q.me,avatar:avatars.get(r.id_hash)||null,pid:r.pid||null,element:r.element||'',level:r.level||0,...(q.metric==='study'?{detail:{kana:r.d_kana||0,grammar:r.d_grammar||0,anki:r.d_anki||0,practice:r.d_practice||0,studySeconds:r.d_secs||0}}:{})};});
  /* E420 the most-read work (all time, from readers who share game names) for 阅读时长 / 阅读字数 */
  let feature=null;
  if(q.metric==='seconds'||q.metric==='characters'){const col=q.metric;const f=await env.DB.prepare(`SELECT MAX(title) title,SUM(${col}) value,COUNT(*) readers FROM leaderboard_games WHERE ${col}>0 GROUP BY game_key ORDER BY value DESC LIMIT 1`).first();if(f&&f.value>0)feature={title:f.title,value:f.value,readers:f.readers};}

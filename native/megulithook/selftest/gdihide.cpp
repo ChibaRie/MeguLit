@@ -83,6 +83,17 @@ int main()
   selected = false;
   Check(!SkipW(body, L"次の行だ。"), "nothing is hidden once the host switches the stream off");
   selected = true;
+  // E578 character blanking: the engine gets a same-width blank for every drawn character; markup and controls stay
+  Check(MeguLitGdiHide::BlankChar(L'\x985e') == 0x3000, "a kanji becomes an ideographic space");
+  Check(MeguLitGdiHide::BlankChar(L'\x3042') == 0x3000 && MeguLitGdiHide::BlankChar(L'\x3001') == 0x3000, "kana and punctuation become ideographic spaces");
+  Check(MeguLitGdiHide::BlankChar(L'\xff71') == L' ', "a half-width katakana becomes a half-width space");
+  Check(MeguLitGdiHide::BlankChar(L'&') == L'&' && MeguLitGdiHide::BlankChar(L'R') == L'R' && MeguLitGdiHide::BlankChar(L'\n') == L'\n', "ASCII script markup and line breaks stay");
+  Sleep(450);
+  FeedChars(dialogue, L"\x3042");
+  int before = logs;
+  MeguLitGdiHide::BlankChar(L'\x3042');
+  MeguLitGdiHide::BlankChar(L'\x3044');
+  Check(logs == before + 1, "the first blanked character of a new line is reported once");
   printf("%d failure(s)\n", failures);
   return failures;
 }

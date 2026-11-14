@@ -19,7 +19,10 @@ public sealed class GameSceneProbe : IDisposable {
  const int SettleMs=1200;
  // E578 (live beta38, ダストマニア: the player hid the game's text window, MeguLit's line stayed on the bare picture): the box band alone
  // going away while the rest of the picture stays is the text window being hidden; it must hold this long with no new line.
- const double BoxOnly=.5, StillPicture=.13;
+ // E578 live beta39: a dark translucent text window over a dark scene changes each band cell by less than the scene
+ // threshold (48% of cells at 108), so the band test counts smaller per-cell changes.
+ const double BoxOnly=.4, StillPicture=.13;
+ const int BandCell=48;
  const int BoxSettleMs=650;
  Bitmap frame;
  int[] last, baseline, lastBox, baseBox;
@@ -30,6 +33,9 @@ public sealed class GameSceneProbe : IDisposable {
  int width, height;
  // Why the last hide / show / keep decision was taken; GalWindowBridge sends it with dialogScene for the reader log.
  public string Reason="";
+ // E578 live beta39 (user setting immersion off): the text window going away is followed always; the whole-picture scene
+ // path only with immersion (Full). Box is true when the last hide/show decision came from the box band alone.
+ public bool Full=true, Box;
 
  public void Reset(){last=null;baseline=null;lastBox=null;baseBox=null;changed=returned=0;hidden=boxHidden=false;inputAt=DateTime.MinValue;candidateAt=DateTime.MinValue;boxAt=DateTime.MinValue;}
  public void Line(){baseline=null;baseBox=null;changed=returned=0;hidden=boxHidden=false;inputAt=DateTime.MinValue;candidateAt=DateTime.MinValue;boxAt=DateTime.MinValue;}
@@ -37,12 +43,13 @@ public sealed class GameSceneProbe : IDisposable {
   if(hidden||baseline!=null||last==null)return;
   baseline=last;baseBox=lastBox;inputAt=DateTime.UtcNow;changed=0;candidateAt=DateTime.MinValue;boxAt=DateTime.MinValue;
  }
- public static double Difference(int[] a,int[] b){
+ public static double Difference(int[] a,int[] b){return Difference(a,b,108);}
+ public static double Difference(int[] a,int[] b,int limit){
   if(a==null||b==null||a.Length==0||a.Length!=b.Length)return 0;
   int different=0;
   for(int i=0;i<a.Length;i++){
    int d=Math.Abs((a[i]&255)-(b[i]&255))+Math.Abs((a[i]>>8&255)-(b[i]>>8&255))+Math.Abs((a[i]>>16&255)-(b[i]>>16&255));
-   if(d>=108)different++;
+   if(d>=limit)different++;
   }
   return different/(double)a.Length;
  }
@@ -78,15 +85,16 @@ public sealed class GameSceneProbe : IDisposable {
   double delta=Difference(baseline,pixels);
   if(hidden){
    /* a hidden text window comes back: the box band looks as it did before the input again */
-   returned=(boxHidden?Difference(baseBox,box):delta)<=Returned?returned+1:0;
-   if(returned>=2){Line();Reason="scene back";return true;}
+   returned=(boxHidden?Difference(baseBox,box,BandCell):delta)<=Returned?returned+1:0;
+   if(returned>=2){Box=boxHidden;Reason=boxHidden?"text window back":"scene back";Line();return true;}
    return null;
   }
   if(candidateAt==DateTime.MinValue){
-   double bandDelta=Difference(baseBox,box);
-   if(delta<=StillPicture&&bandDelta>=BoxOnly){if(boxAt==DateTime.MinValue)boxAt=now;else if((now-boxAt).TotalMilliseconds>=BoxSettleMs){hidden=boxHidden=true;returned=0;Reason="text window hidden: box "+Math.Round(bandDelta*100)+"%, picture "+Math.Round(delta*100)+"%";return false;}return null;}
+   double bandDelta=Difference(baseBox,box,BandCell);
+   if(delta<=StillPicture&&bandDelta>=BoxOnly){if(boxAt==DateTime.MinValue)boxAt=now;else if((now-boxAt).TotalMilliseconds>=BoxSettleMs){hidden=boxHidden=true;Box=true;returned=0;Reason="text window hidden: box "+Math.Round(bandDelta*100)+"%, picture "+Math.Round(delta*100)+"%";return false;}return null;}
    boxAt=DateTime.MinValue;
    if((now-inputAt).TotalMilliseconds>1900){Line();return null;}
+   if(!Full)return null;
    changed=delta>=Changed?changed+1:0;
    if(changed>=3)candidateAt=now;
    return null;
@@ -95,7 +103,7 @@ public sealed class GameSceneProbe : IDisposable {
   if(delta<Changed){candidateAt=DateTime.MinValue;changed=0;return null;}
   if((now-candidateAt).TotalMilliseconds<SettleMs)return null;
   double boxDelta=Difference(baseBox,box);
-  if(boxDelta>=BoxGone){hidden=true;Reason="scene changed "+Math.Round(delta*100)+"%, box "+Math.Round(boxDelta*100)+"%";return false;}
+  if(boxDelta>=BoxGone){hidden=true;Box=false;Reason="scene changed "+Math.Round(delta*100)+"%, box "+Math.Round(boxDelta*100)+"%";return false;}
   // The picture changed but the dialogue-box band did not: a background or CG behind a box that is still there.
   Reason="kept: picture changed "+Math.Round(delta*100)+"% but box only "+Math.Round(boxDelta*100)+"%";Line();return null;
  }
@@ -134,6 +142,8 @@ public sealed class GameSceneProbe : IDisposable {
    using(var bare=pic(Color.SkyBlue,Color.SkyBlue)){p.Line();run(day,170);p.Input();if(run(bare,1000)!=false)return false;if(run(day,600)!=true)return false;
     // a box that only blinks (a new line redrawing it) is not a hidden window
     p.Line();run(day,170);p.Input();run(bare,340);if(run(day,1200)==false)return false;}
+   // E578: with immersion off (Full=false) a scene change is left alone, the text window is still followed.
+   using(var bare2=pic(Color.SkyBlue,Color.SkyBlue)){p.Full=false;p.Line();run(day,170);p.Input();if(run(cg,2000)==false)return false;p.Line();run(day,170);p.Input();if(run(bare2,1000)!=false||!p.Box)return false;if(run(day,600)!=true)return false;p.Full=true;}
   }
   return true;
  }
