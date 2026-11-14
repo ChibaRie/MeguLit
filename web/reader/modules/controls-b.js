@@ -109,6 +109,19 @@ ${R} body{
  & .tomoyo-selection-card footer button:is(.active,.on,.is-on,[aria-pressed=true]){background:var(--mgc-red)!important;border-color:var(--mgc-red)!important;color:#fff!important}
 }
 @keyframes megulit-anki-sweep{from{transform:translateX(-100%)}to{transform:translateX(250%)}}
+/* Alt+T sections without boxes (2026-11-15, user: 内部就不要按部分来加玻璃底框了 看的很烦 / anki这种就挺好): like the 学习 →
+   Anki section, every section's heading, notes and controls sit directly on the panel, sections are set apart by a faint
+   line and some room, and the status block inside 原文隐藏 (game connected, N characters, picture to confirm) is plain
+   rows. Controls keep their own borders; the red 危险区 and the 记录 look preview keep theirs on purpose. */
+${R}:not(#mgq1):not(#mgq2) body .tomoyo-cn-dialog .tomoyo-menu-content :is(.tome-mask-card,.tomoyo-v4-immersion,.tome-gamefont,.tome-game-style-sync,.tome-calibration-imports,.tomoyo-dictionary-card,.tome-voice-pack,.tome-bg-panels,.tome-credit){
+ border:0!important;border-top:1px solid var(--line,rgba(243,239,232,.1))!important;border-radius:0!important;background:transparent!important;box-shadow:none!important;backdrop-filter:none!important;
+ padding:18px 0 4px!important;margin:18px 0 0!important}
+${R}:not(#mgq1):not(#mgq2) body .tomoyo-cn-dialog .tomoyo-menu-content :is(.tome-mask-card,.tomoyo-v4-immersion,.tome-gamefont,.tome-game-style-sync,.tome-calibration-imports,.tomoyo-dictionary-card,.tome-voice-pack,.tome-bg-panels,.tome-credit):is(:first-child,:first-of-type:not(:has(~*:first-child))){margin-top:6px!important}
+${R}:not(#mgq1):not(#mgq2) body .tomoyo-cn-dialog .tomoyo-menu-content :is(.tome-hook-main,.tome-hook-summary,.tome-hook-proof,.tomoyo-hook-state){
+ border:0!important;border-radius:0!important;background:transparent!important;box-shadow:none!important;padding-inline:0!important;padding-block:2px!important;margin-inline:0!important}
+${R}:not(#mgq1):not(#mgq2) body .tomoyo-cn-dialog .tomoyo-menu-content :is(.tome-hook-summary,.tome-hook-proof,.tomoyo-hook-state){margin-top:10px!important}
+${R}:not(#mgq1):not(#mgq2) body .tomoyo-cn-dialog .tomoyo-menu-content :is(.tome-mask-card,.tomoyo-v4-immersion,.tome-gamefont,.tome-game-style-sync,.tome-calibration-imports,.tomoyo-dictionary-card,.tome-voice-pack,.tome-bg-panels,.tome-credit)>:is(h4,h5,legend,summary):first-child{margin-top:0!important;padding-inline:0!important}
+${R}:not(#mgq1):not(#mgq2) body .tomoyo-cn-dialog .tomoyo-menu-content :is(.tome-bg-panels,.tome-voice-pack) details>:is(summary,:not(summary)){padding-inline:0!important}
 /* 点读卡 (2026-11-15, user: 字太大, 滚动条隐藏): one step smaller everywhere, on the Alt+T menu's type scale; headword at
    60% of the former 40 px; tighter rows; (one id-selector more than reader-panels.js, whose 40 px headword had nine); no scrollbar (wheel and touchpad still scroll); a fade at the bottom while more
    content is below; a narrow card turns the AI and save buttons into icons. */
