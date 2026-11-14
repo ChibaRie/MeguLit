@@ -26,6 +26,7 @@ version, a line in this log, and stays backward compatible where possible (new f
 | 1    | 2026-11-14 | Compatible addition: `glyphMode` `all:true` (write-back streams on dots too).                    |
 | 1    | 2026-11-14 | Compatible addition: in dot mode `ToMe_GLYPHDOT line` is sent when the line is pushed, before any dot. |
 | ③ 1  | 2026-11-14 | Non-dot paths: `ToMe_CHARS` records, `hookCharRects` events, crash canary (`feat/text-paths`).    |
+| 2    | 2026-11-14 | Compatible addition: path `conv` (MultiByteToWideChar source, mark U+30FB, h=0, map by reading order); switches on by itself after two lines without dots, remembered in `cacheont-probe<hash>source.txt`, canary `conv-trial` → `conv-off`. |
 
 ## ① Glyph dots
 
