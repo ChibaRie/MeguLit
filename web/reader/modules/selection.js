@@ -21,21 +21,32 @@
  function hitRects(){const a=anchor;let list=[];try{if(a&&typeof a.getClientRects==='function')list=[...a.getClientRects()];}catch{}
   if(!list.length&&a?.getBoundingClientRect)list=[a.getBoundingClientRect()];if(!list.length&&a&&Number.isFinite(a.top))list=[a];return list.filter(r=>r.width||r.height);
    }
- function place(){if(!card)return;card.style.width=Math.min(520,innerWidth-24)+'px';
+ /* 2026-11-15 (user: 优化点读卡尺寸，滚动条隐藏，字太大): the card is about 400 px wide at 1920 px (scaled with the screen,
+    360-440), never taller than half the game window, and placed above or below the whole sentence, not just the word,
+    so it never covers the line being read. Inside it scrolls without a scrollbar; a fade at the bottom shows there is more. */
+ const cardWidth=()=>Math.round(Math.min(innerWidth-24,Math.max(360,Math.min(440,.21*Math.max(screen.width||0,innerWidth)))));
+ const cardCap=()=>{const area=b.gameArea?.();return Math.max(160,Math.round((area?area.height:innerHeight)/2));};
+ const sentenceRect=()=>{const node=anchor&&typeof anchor.closest==='function'?anchor:anchor?.startContainer?.parentElement||null;const block=node?.closest?.('.sentence-text,.tome-page-lines>div,.tomoyo-cn-output,.sentence-window');
+  if(!block)return null;const list=[...block.getClientRects()].filter(r=>r.width&&r.height);return list.length?{top:Math.min(...list.map(r=>r.top)),bottom:Math.max(...list.map(r=>r.bottom))}:null;};
+ function more(){if(!card)return;const left=card.scrollHeight-card.clientHeight-card.scrollTop;card.toggleAttribute('data-more',left>4);}
+ function place(){if(!card)return;const width=cardWidth();card.style.width=width+'px';card.classList.toggle('tome-card-compact',width<400);for(const x of card.querySelectorAll('.mg-ai-btn,.tomoyo-save-sentence-button'))if(!x.title)x.title=x.textContent.replace(/^\s*☆\s*/,'').trim();
+  if(!card.__tomeMore){card.__tomeMore=true;card.addEventListener('scroll',more,{passive:true});new ResizeObserver(more).observe(card);let queued=0;new MutationObserver(()=>{if(!queued)queued=requestAnimationFrame(()=>{queued=0;more();});}).observe(card,{childList:true,subtree:true,characterData:true,attributes:true,attributeFilter:['open','hidden']});}
   if(card.__tomeMoved){const s=card.getBoundingClientRect();card.style.bottom='';card.style.left=Math.max(12,Math.min(innerWidth-s.width-12,s.left))+'px';card.style.top=Math.max(12,
    Math.min(innerHeight-s.height-12,s.top))+'px';window.__tomoyoHitRegionsRefresh?.(true);return;}
   const rects=hitRects(),u=rects.length?{left:Math.min(...rects.map(r=>r.left)),right:Math.max(...rects.map(r=>r.right)),top:Math.min(...rects.map(r=>r.top)),bottom:Math.max(...rects.map(r=>r.bottom))}:{
    left:innerWidth/2,right:innerWidth/2,top:innerHeight/2,bottom:innerHeight/2};
+  {const line=sentenceRect();if(line&&line.top<=u.bottom&&line.bottom>=u.top){u.top=Math.min(u.top,line.top);u.bottom=Math.max(u.bottom,line.bottom);}}
+  card.style.removeProperty('max-height');const cap=cardCap();
   const point=anchor?.__megulitPoint||lastPoint,size=card.getBoundingClientRect(),gap=10,margin=12;
   // Centred on the click when it lies on (or right next to) the hit text, else on the hit text; kept on screen.
   const cx=point&&point.x>=u.left-40&&point.x<=u.right+40?point.x:(u.left+u.right)/2;
   card.style.left=Math.round(Math.max(margin,Math.min(innerWidth-size.width-margin,cx-size.width/2)))+'px';
   // Just above the hit text; just below it when the card does not fit above; otherwise the roomier side, capped.
-  const above=u.top-gap-margin,below=innerHeight-u.bottom-gap-margin,h=size.height,up=above>=h||(below<h&&above>=below);
-  if(up){card.style.top='';card.style.bottom=Math.round(innerHeight-u.top+gap)+'px';card.style.setProperty('max-height',Math.max(120,Math.round(above))+'px','important');
+  const above=u.top-gap-margin,below=innerHeight-u.bottom-gap-margin,h=Math.min(size.height,cap),up=above>=h||(below<h&&above>=below);
+  if(up){card.style.top='';card.style.bottom=Math.round(innerHeight-u.top+gap)+'px';card.style.setProperty('max-height',Math.max(120,Math.round(Math.min(cap,above)))+'px','important');
    }
-  else{card.style.bottom='';card.style.top=Math.round(u.bottom+gap)+'px';card.style.setProperty('max-height',Math.max(120,Math.round(below))+'px','important');}
-  window.__tomoyoHitRegionsRefresh?.(true);}
+  else{card.style.bottom='';card.style.top=Math.round(u.bottom+gap)+'px';card.style.setProperty('max-height',Math.max(120,Math.round(Math.min(cap,below)))+'px','important');}
+  more();window.__tomoyoHitRegionsRefresh?.(true);}
  function dragCard(head){head.style.cursor='grab';head.addEventListener('pointerdown',e=>{if(e.button!==0||e.target.closest('button,a,input,select,textarea,summary,[role=button]'))return;
   e.preventDefault();e.stopPropagation();const s=card.getBoundingClientRect(),dx=e.clientX-s.left,dy=e.clientY-s.top;try{head.setPointerCapture(e.pointerId);}catch{
   }head.style.cursor='grabbing';card.__tomeMoved=true;card.style.bottom='';
