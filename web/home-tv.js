@@ -103,7 +103,11 @@ const PILE_IN=620;
 /* (user 2026-11-12: "no code transition for the background lines") the columns change like ink: the old ones lift and
    fade one after another from the right, then the new ones rise into place with a soft stagger; only opacity and
    transform animate (Web Animations, on the compositor), the text is written once per change */
-function swapScript(script,lines,onPick){if(!script)return;const esc2=t=>String(t).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]);
+/* 2026-11-15 dissolve: the upper block (title, who/line, columns, figures) fades out, the new text is written while it is invisible, then it fades in; opacity only, nothing moves */
+function fadeEls(root,to,ms){const els=[...root.querySelectorAll('.tv-title,.tv-who,.tv-line,.tv-script,.tv-figs')];return Promise.all(els.map(el=>{el.getAnimations().filter(a=>a._dis).forEach(a=>a.cancel());
+ if(!to){const a=el.animate([{opacity:getComputedStyle(el).opacity},{opacity:0}],{duration:ms,easing:'ease-out',fill:'forwards'});a._dis=1;return a.finished.catch(()=>null);}
+ const base=getComputedStyle(el).opacity,a=el.animate([{opacity:0},{opacity:base}],{duration:ms,easing:'ease-in'});a._dis=1;return a.finished.catch(()=>null);}));}
+function swapScript(script,lines,onPick,soft){if(!script)return;const esc2=t=>String(t).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]);
  (script._anims||[]).forEach(x=>{try{x.cancel();}catch{}});script._anims=[];
  lines=lines.slice(0,8);const next=lines.map(t=>/^[「『（("]/.test(t)?t:'「'+t+'」'),olds=[...script.querySelectorAll('p')];
  const bind=()=>script.querySelectorAll('p').forEach(el=>el.addEventListener('pointerenter',()=>{const n=+el.dataset.n;if(!lines[n])return;script.querySelectorAll('p').forEach(x=>x.classList.toggle('on',
@@ -117,7 +121,7 @@ function swapScript(script,lines,onPick){if(!script)return;const esc2=t=>String(
   script.classList.toggle('is-empty',!texts.length);bind();};
  script.classList.remove('is-fading');const token=String(Math.random());script.dataset.timer=token;
  if(olds.length&&script._cand===next.join('|'))return;script._cand=next.join('|');
- if(matchMedia('(prefers-reduced-motion:reduce)').matches||typeof Element.prototype.animate!=='function'){paint(next);return;}
+ if(matchMedia('(prefers-reduced-motion:reduce)').matches||typeof Element.prototype.animate!=='function'||soft){paint(next);return;}
  const OUT=300,GAP=45,keep=x=>(script._anims.push(x),x);
  /* start after the frame that paints the new cover and ring, so the first frames of the fade are not swallowed by it */
  requestAnimationFrame(()=>requestAnimationFrame(()=>{if(script.dataset.timer!==token)return;
@@ -324,12 +328,12 @@ export function renderHomeTV(main,ctx){
   live.typer=setInterval(()=>{n++;line.textContent=n>=s.length?quoted(s):(/^[「『（("]/.test(s)?'':'「')+s.slice(0,n);if(n>=s.length){clearInterval(live.typer);line.classList.remove('typing');setExample(line,s);}},55);};
  const nameIn=g=>{const who=$('.tv-who');if(!who)return;who.textContent=g.lastPlayedAt?`${w.last} · ${relativeTime(g.lastPlayedAt)}`:'';who.title=g.title;};
  const max=Math.max(1,...model.games.map(g=>g.characters||0));
- async function paint(i,flash=true,mode='draw'){
+ async function paint(i,flash=true,mode='draw'){const soft=flash&&mode==='fade'&&!matchMedia('(prefers-reduced-motion:reduce)').matches;
   const g=typeof i==='object'?i:list[i];if(!root.isConnected){if(live?.root===root)stopHomeTV();return;}if(!g||!live||live.root!==root)return;shown=g;cur=list.indexOf(g);
    const mine=++token;
   const started=performance.now(),reveal=deal($('.tv-cover'),art(g,['#3b2a26','#3b2a26','#1a1110']),flash,mode);
   const [p,d]=await Promise.all([palette(g),detail(api,g.id,locale)]);if(mine!==token||!live||live.root!==root)return;
-  const wait=flash?Math.max(0,reveal-(performance.now()-started)):0;if(wait){await new Promise(r=>setTimeout(r,wait));if(mine!==token||!live||live.root!==root)return;
+  const wait=flash&&!soft?Math.max(0,reveal-(performance.now()-started)):0;if(soft){await fadeEls(root,0,170);if(mine!==token||!live||live.root!==root)return;}if(wait){await new Promise(r=>setTimeout(r,wait));if(mine!==token||!live||live.root!==root)return;
    }
   glowTo(ctx.onGame,g);root.style.setProperty('--tv-a',p[0]);root.style.setProperty('--tv-b',p[1]);root.style.setProperty('--tv-c',p[2]);
   const k=(g.title.length*37+pool.indexOf(g)*13)%60,picked=homeLinesFor(d),sentences=picked.lines,words=(d.words||[]).filter(x=>x.spelling).slice(0,10),sessions=d.sessions||[];
@@ -340,30 +344,31 @@ export function renderHomeTV(main,ctx){
   ring.innerHTML=`<svg viewBox="0 0 100 100"><defs><linearGradient id="tvgrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff6e4"/><stop offset=".45" stop-color="var(--g-gold)"/><stop offset="1" stop-color="var(--tv-a)"/></linearGradient><filter id="tvglow" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="1.4"/></filter></defs>${Array.from({length:N},(_,t)=>{const a=t/N*2*Math.PI-Math.PI/2,big=t%5===0,r1=big?38.6:39.4,r2=40.4;return `<line class="etch${big?' big':''}${t<Math.round(pct*N)?' on':''}" style="--d:${t*18}ms" x1="${(50+r1*Math.cos(a)).toFixed(2)}" y1="${(50+r1*Math.sin(a)).toFixed(2)}" x2="${(50+r2*Math.cos(a)).toFixed(2)}" y2="${(50+r2*Math.sin(a)).toFixed(2)}"/>`;}).join('')}<circle class="track" cx="50" cy="50" r="44"/><g transform="rotate(-90 50 50)"><circle class="glow" cx="50" cy="50" r="44" stroke-dasharray="${C}" stroke-dashoffset="${C}" filter="url(#tvglow)"/><circle class="prog" cx="50" cy="50" r="44" stroke-dasharray="${C}" stroke-dashoffset="${C}"/></g><circle class="head" cx="50" cy="8.4" r=".9" style="transform-origin:50px 50px;transform:rotate(0deg)"/></svg>`;
    requestAnimationFrame(()=>requestAnimationFrame(()=>{const off=C*(1-pct);ring.querySelectorAll('.prog,.glow').forEach(c=>c.style.strokeDashoffset=off);const h=ring.querySelector('.head');
    if(h)h.style.transform=`rotate(${pct*360}deg)`;}));
-  swapScript($('.tv-script'),sentences.slice(0,8),type);shownLines=sentences.slice(0,8);$('.tv-lines-edit').classList.toggle('custom',picked.custom);
+  swapScript($('.tv-script'),sentences.slice(0,8),type,soft);shownLines=sentences.slice(0,8);$('.tv-lines-edit').classList.toggle('custom',picked.custom);
   const now=Date.now(),span=40*864e5,big=Math.max(1,...sessions.map(s=>s.active_seconds||0))*.6;$('.tv-tl').innerHTML=sessions.filter(s=>now-s.started_at*1000<span).map(s=>{
    const y=10+((now-s.started_at*1000)/span)*70,long=(s.active_seconds||0)>=big;return `<b class="${long?'big':''}" style="top:${y}%"></b>`+(long?`<span style="top:${y}%">${new Date(s.started_at*1000).toLocaleDateString(undefined,{month:'numeric',day:'numeric'})} · ${Math.round((s.active_seconds||0)/60)}${w.min}</span>`:'');
    }).join('');
   $('.tv-slices').innerHTML=Array.from({length:5},(_,j)=>`<i style="background:${art(g,p)};background-size:500% 100%;background-position:${j*25}% 0;transform:translateZ(${j%2?40:-20}px) translateY(${(j-2)*12}px)"></i>`).join('');
 
   const no=String(Math.max(1,pool.indexOf(g)+1)).padStart(2,'0');
-  const t=$('.tv-title');t.classList.remove('in');const outP=flash?titleOut(root,live):Promise.resolve();setTimeout(async()=>{await outP;if(mine!==token||!live||live.root!==root)return;const [mainTitle,subTitle]=splitTitle(g.title);$('.tv-h1').innerHTML=titleHTML(mainTitle);
+  const t=$('.tv-title');if(!soft)t.classList.remove('in');const outP=flash&&!soft?titleOut(root,live):Promise.resolve();setTimeout(async()=>{await outP;if(mine!==token||!live||live.root!==root)return;const [mainTitle,subTitle]=splitTitle(g.title);$('.tv-h1').innerHTML=titleHTML(mainTitle);
    $('.tv-h1').title=g.title;$('.tv-meta').innerHTML=(subTitle?`<span class="tv-sub" lang="ja">${esc(subTitle)}</span>`:''); void t.offsetWidth;fitTitle($('.tv-h1'));
-   fitLeft(root);nameIn(g);type(randomLine(d,sentences));t.classList.add('in');if(flash)titleIn(root,live);/* measure again once the new title has settled, so a block hidden mid-change comes back */setTimeout(()=>{
-   if(live&&live.root===root)fitLeft(root);},900);},flash?Math.max(0,reveal-(performance.now()-started)):0);
+   fitLeft(root);nameIn(g);type(randomLine(d,sentences));t.classList.add('in');if(flash&&!soft)titleIn(root,live);/* measure again once the new title has settled, so a block hidden mid-change comes back */setTimeout(()=>{
+   if(live&&live.root===root)fitLeft(root);},900);},flash&&!soft?Math.max(0,reveal-(performance.now()-started)):0);
   tweenFig($('[data-fig="time"]'),g.readingSeconds||0,v=>mins(v));tweenFig($('[data-fig="chars"]'),g.characters||0,v=>number(Math.round(v)));tweenFig($('[data-fig="words"]'),
    g.learnedWords||0,v=>number(Math.round(v)));
   
-  rail();
+  rail();if(soft)setTimeout(()=>{if(mine===token)fadeEls(root,1,200);},40);
  }
  /* 2026-11-14 (user: "右边下面不是卡牌，是正常选的那种") the games are picked from the cover strip again (thumbnails, the current one wider with its timer bar); the card hand is gone */
  /* 2026-11-15 (user: 当前卡要在牌的正中间，两边都有牌) the strip is the library three times in a row and the current card is the one in the middle copy, so cards stand on both sides of it whichever game is current; the track element stays, so the strip slides from where it was */
  function rail(){const r=$('.tv-rail');let track=r.firstElementChild;if(!track){track=document.createElement('div');track.className='tv-rail-in';r.append(track);}
-  const chip=(g,i,on)=>`<button class="tv-chip${on?' on':''}" data-i="${i}" title="${esc(g.title)}" aria-label="${esc(g.title)}" style="--dur:${DUR}ms">${g.cover?`<img src="${esc(g.cover)}" alt="">`:''}${setting.pinned.includes(g.id)?'<span class="pin"></span>':''}<span class="bar"></span></button>`;
-  track.innerHTML=[0,1,2].map(c=>list.map((g,i)=>chip(g,i,c===1&&g===shown)).join('')).join('');
-  track.querySelectorAll('.tv-chip').forEach(b=>b.addEventListener('click',()=>{const i=+b.dataset.i;if(list[i]&&list[i]!==shown)paint(i,true,'fade');}));centerRail(r);}
- /* 2026-11-15 (user: 展示的卡不管任何尺寸都要在下面牌的中心稍微偏左) the current card always sits at the same spot, a little left of the strip's centre; the strip slides under it */
- function centerRail(r){const track=r.firstElementChild,on=track?.querySelector('.tv-chip.on');if(!on)return;let first=on;for(let k=0;k<3&&first.previousElementSibling;k++)first=first.previousElementSibling;/* 2026-11-15 (user: 让这个手卡就固定在这) the current card is always the 4th: three cards stand to its left, the strip slides so the new current card lands there, the rest of the width fills with the cards on its right */const fresh=!track.dataset.set;track.dataset.set='1';if(fresh)track.style.transition='none';track.style.transform=`translateX(${(-first.offsetLeft).toFixed(1)}px)`;if(fresh)requestAnimationFrame(()=>requestAnimationFrame(()=>{track.style.transition='';}));}
+  /* 2026-11-15 (user: 我不是要固定第四张 别让他动 … 最多10张) the strip never moves: the 10 most recent games, one copy, no sliding; picking only highlights the card in place while the cover, title, lines and figures above dissolve */
+  const shownList=list.slice(0,10),key=shownList.map(g=>g.id).join('|')+'|'+setting.pinned.join(',');
+  if(track.dataset.key!==key){track.dataset.key=key;const chip=(g,i)=>`<button class="tv-chip" data-i="${i}" title="${esc(g.title)}" aria-label="${esc(g.title)}" style="--dur:${DUR}ms">${g.cover?`<img src="${esc(g.cover)}" alt="">`:''}${setting.pinned.includes(g.id)?'<span class="pin"></span>':''}<span class="bar"></span></button>`;
+   track.innerHTML=shownList.map(chip).join('');
+   track.querySelectorAll('.tv-chip').forEach(b=>b.addEventListener('click',()=>{const i=+b.dataset.i;if(list[i]&&list[i]!==shown)paint(i,true,'fade');}));}
+  track.querySelectorAll('.tv-chip').forEach((b,i)=>b.classList.toggle('on',list[i]===shown));}
  function commit(){model.preferences.homeShowcase=setting;savePreferences({homeShowcase:setting});const id=shown?.id;list=showcaseGames(model.games,setting);
   paint(Math.max(0,list.findIndex(g=>g.id===id)),false);}
  /* 2026-11-13 (user: "不要全部作品 … 把＋卡移到最右边 不要是卡牌了 鼠标放上去再出来") the hand editor is a tab docked on the right edge that slides out
@@ -398,7 +403,7 @@ export function renderHomeTV(main,ctx){
  /* 2026-11-13 (user) every layer has its own depth: the far headline picture drifts against the pointer, near ones (cards, figures, rail, bottom bar) lead it */
  {const L=(sel,z)=>{const el=$(sel);return el?{el,z}:null;};live.depth=createDepth(root,{canvas,planes,layers:[L('.tv-left',7),L('.tv-figs',8),
   L('.tv-rail',24),L('.tv-dialog',5),L('.tv-title',9),L('.tv-marks',3),L('.tv-cshadow',-22)].filter(Boolean)});}
- const onResize=()=>{if(live&&live.root===root){fitLeft(root);const rr=root.querySelector('.tv-rail');if(rr)centerRail(rr);}else removeEventListener('resize',onResize);};addEventListener('resize',onResize);
+ const onResize=()=>{if(live&&live.root===root){fitLeft(root);}else removeEventListener('resize',onResize);};addEventListener('resize',onResize);
  root.querySelectorAll('.tv-cover,.tv-heat-card').forEach(cardify);
  const coverEl=$('.tv-cover');let clickTimer=0,pressAt=0,pressXY=[0,0];coverEl.setAttribute('aria-label',w.coverHint);const pop=document.createElement('div');pop.className='tv-pop';
   pop.innerHTML=`<p><i class="m1"></i><b>${w.tipClick}</b><span>${w.tipDetail}</span></p><p><i class="m2"></i><b>${w.tipDbl}</b><span>${w.tipDraw}</span></p>`;root.appendChild(pop);
