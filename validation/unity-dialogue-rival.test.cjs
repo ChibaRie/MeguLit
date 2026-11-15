@@ -1,0 +1,23 @@
+'use strict';
+// E609 (DDLC Plus in Japanese, beta.41): the remembered TMP_Text.set_text stream only carried labels, the story came through
+// TextTypewriterEffect.StartText as aux. The bridge leaves a dialogue-less stream for one that carries dialogue, and hides the
+// second setter that repeats the selected line.
+const test=require('node:test');const assert=require('node:assert');const fs=require('node:fs');const path=require('node:path');
+const s=fs.readFileSync(path.join(__dirname,'..','native','HookBridge.cs'),'utf8');
+
+test('a stream with three paced dialogue lines takes over a selected stream that gives none',()=>{
+ assert.match(s,/leave dialogue-less stream/);
+ assert.match(s,/\(now-LastSelectedLineAt\)\.TotalSeconds>=3/);
+ assert.match(s,/\(now-r\.at\)\.TotalSeconds>=0\.35/,'a backlog dump does not count');
+ assert.match(s,/r\.hits>=\(rv\.embed\|\|!cur\.embed\?3:5\)/);
+ assert.match(s,/!ManualPick&&!JaTwins\.Contains\(tp\.Key\(\)\)/,'a stream the player picked is kept');
+ assert.match(s,/ManualPick=d\.ContainsKey\("manual"\)/);
+ assert.match(fs.readFileSync(path.join(__dirname,'..','core','hook-native.cjs'),'utf8'),/\.\.\.\(manual\?\{manual:true\}:\{\}\)/);
+});
+
+test('a second writable stream that repeats the selected line is hidden with it',()=>{
+ assert.match(s,/japanese twin embedding on/);
+ assert.match(s,/japanese twin hidden/);
+ assert.match(s,/\(sel\.code\?\?""\)!=\(c\.code\?\?""\)&&JaTwins\.Add\(key\)/,'contexts of the same setter stay with ManyUnityContexts');
+ assert.match(s,/if\(id!=Selected\)\{DialogueRivals\.Clear\(\);JaTwins\.Clear\(\);/);
+});
