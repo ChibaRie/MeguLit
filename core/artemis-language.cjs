@@ -38,9 +38,13 @@ function patchLua(buf){
  const t=buf.toString('utf8');if(t.includes(MARK))return null;
  const lines=t.split('\n');let n=0;
  for(let i=0;i<lines.length;i++){const m=/^(\s*local\s+(\w+)\s*=\s*)get_language\(\s*true\s*\)/.exec(lines[i]);if(!m)continue;
-  const v=m[2],after=lines.slice(i+1,i+6).join('\n'),esc=v.replace(/\W/g,'');
+  /* the next lines of the same function only (a function ends at an "end" or starts at "function" in column 0) */
+  const next=lines.slice(i+1,i+6),stop=next.findIndex(l=>/^(?:local\s+)?function\b|^end\b/.test(l));
+  const v=m[2],after=(stop<0?next:next.slice(0,stop)).join('\n'),esc=v.replace(/\W/g,'');
   const indexes=new RegExp('\[\s*'+esc+'\s*\]|lang\s*=\s*\(\s*'+esc+'\s*\)').test(after),concat=new RegExp('\.\.\s*'+esc+'\b|\b'+esc+'\s*\.\.').test(after);
-  if(!indexes||concat||!/text|\bname\b|\.ja\b|\bp\[|block/.test(after))continue;
+  /* E598 (user's Steam The Shell went black at boot): a lookup of fonts, images or paths by language (boot.lua font cache,
+     confvo.lua font) stays the game's; only text tables are switched */
+  if(!indexes||concat||!/text|\bname\b|\.ja\b|\bp\[|block/.test(after)||/font|image|\.show\b|cache|path|\.png|\.ogg|\bfile\b/i.test(after))continue;
   lines[i]=m[1]+'"ja"'+lines[i].slice(m[0].length)+' '+MARK;n++;}
  return n?{data:Buffer.from(lines.join('\n'),'utf8'),changed:n}:null;
 }

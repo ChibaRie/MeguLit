@@ -28,7 +28,10 @@ class Reader{
    require('../core/game-fonts.cjs').exePath(pid).then(exe=>{exe=require('./launch-path.cjs').canonical(exe);if(this.gamePid!==pid)return;this.gameExe=exe;this.adoptTextSource(exe,pid);this.translation?.clearContext();const db=openStore(this.root);try{const game=require('./library.cjs').activeGameForProgram(db,exe);this.gameId=game?.id||null;this.findTextSource(this.gameId);this.sharedImport(game);/* E596 opt-in runtime harvest (does nothing unless allowed and needed) */if(game?.id)try{require('./runtime-harvest.cjs').onGameBound(this.root,{gameId:game.id,executable:exe,pid},{emit:(e,d)=>this.runtime.emit(e,d)});}catch{}this.setWorkPrompt(game?.id|| (exe?'exe-'+require('node:crypto').createHash('sha256').update(exe.toLowerCase()).digest('hex'):''));for(const line of this.pendingLines||[])this.stats.line({...line,gameId:this.gameId});this.pendingLines=null;this.runtime.emit('reader-event',{type:'activeGame',legacyId:game?.legacy_id??null});}finally{db.close();}}).catch(()=>{});this.fonts.detect(pid).then(()=>this.engineFontScan(pid)).catch(()=>{});
   }
   if(message.bound===false&&this.gal?.process&&this.gal.process.exitCode!==null&&!this.gal.stopped){this.runtime.readerReady=false;this.runtime.readerError='READER_NATIVE_EXITED';this.runtime.emit('reader-health',{ready:false,error:'READER_NATIVE_EXITED'});}
-  if(message.type==='gameClosed'){try{require('./card-wall.cjs').noteGame(this.root,null);}catch{}try{require('./runtime-harvest.cjs').onGameClosed(this.root);}catch{}this.gameId=null;this.gamePid=null;this.pendingLines=null;this.setWorkPrompt('');this.stats.reset();}
+  if(message.type==='gameClosed'){try{require('./card-wall.cjs').noteGame(this.root,null);}catch{}try{require('./runtime-harvest.cjs').onGameClosed(this.root);}catch{}
+   /* E598 a game switched to Japanese automatically that never showed text is put back (core/japanese-auto.cjs) */
+   if(this.gameId)try{require('../core/japanese-auto.cjs').gameClosed(this.root,this.gameId);}catch{}
+   this.jpAutoSeen=null;this.gameId=null;this.gamePid=null;this.pendingLines=null;this.setWorkPrompt('');this.stats.reset();}
   this.runtime.services().gameEvent(message,config).catch(()=>{});
   if(message.type==='dialogEvidence'&&config.dialogDetection==='visual')this.immersion.evidence(message.visible,'visual');
   // The embedded replacement was seen working in this game: remember it as verified (shown as "embedding verified").
@@ -69,7 +72,9 @@ class Reader{
    /* E287: translate the next few lines the script leaves untranslated, so they are ready before the game reaches them. */
    if(typeof message.hookSource==='string'&&message.hookSource.trim())require('./script-prefetch.cjs').ahead(this).catch(()=>{});
    if(typeof message.hookSource==='string'&&message.hookSource.trim()){require('./scene-shots.cjs').maybe(this);require('./sentence-scenes.cjs').remember(this);}
-  }if(!message.hookRecovering&&message.hookSourceOrigin!=='history'&&message.hookSource)this.lastLine=message.hookSource;const line={gameId:this.gameId,text:message.hookSource,sequence:message.hookSequence,active:message.hookActive,recovering:message.hookRecovering,origin:message.hookSourceOrigin};if(this.pendingLines){if(this.pendingLines.length<40)this.pendingLines.push(line);}else this.stats.line(line);}
+  }if(!message.hookRecovering&&message.hookSourceOrigin!=='history'&&message.hookSource){this.lastLine=message.hookSource;
+   /* E598 text from the game after an automatic switch: it works */
+   if(this.gameId&&this.jpAutoSeen!==this.gameId){this.jpAutoSeen=this.gameId;try{require('../core/japanese-auto.cjs').textSeen(this.root,this.gameId);}catch{}}}const line={gameId:this.gameId,text:message.hookSource,sequence:message.hookSequence,active:message.hookActive,recovering:message.hookRecovering,origin:message.hookSourceOrigin};if(this.pendingLines){if(this.pendingLines.length<40)this.pendingLines.push(line);}else this.stats.line(line);}
   this.runtime.emit('reader-event',message);if(typeof message.hotkey==='boolean')this.runtime.emit('reader-health',this.runtime.readerStatus?.()||{});
  }
  /* E475 + font probe (user 2026-11-13: 自动读内存来导入游戏字体): the font the game draws with is the reader's Japanese font
