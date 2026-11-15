@@ -176,6 +176,8 @@
         const x0 = Math.min(...all.map(r => r[0])), x1 = Math.max(Math.max(...all.map(r => r[0] + r[2])), x0 + last[3] * 20), h = last[3], pitch = h * 1.3;
         boxes = [[last[0] + last[2], last[1] - h * .5, Math.max(0, x1 - last[0] - last[2]), h * 1.6], [x0, last[1] + pitch - h * .5, x1 - x0, h * 1.6]];
       }
+      /* the translation streams in the same way: its row (three lines of room) is a region before the text is there */
+      { const row = cur && win.querySelector('.tomoyo-cn-row'), rb = row && row.style.left ? row.getBoundingClientRect() : null; if (rb && rb.width > 0) { const fs = parseFloat(getComputedStyle(row).fontSize) || 16; boxes.push([rb.left - 6, rb.top - 4, rb.width + 12, Math.max(rb.height, fs * 1.6 * 3) + 8]); } }
       const key = boxes.map(r => r.map(Math.round).join(',')).join(';');
       if (!ahead && boxes.length) { ahead = document.createElement('div'); ahead.id = 'megulit-page-ahead'; ahead.setAttribute('aria-hidden', 'true'); document.body.append(ahead); }
       if (ahead && ahead.__megulitKey !== key) { ahead.__megulitKey = key; ahead.replaceChildren(...boxes.map(r => { const i = document.createElement('i'); i.style.cssText = 'left:' + r[0] + 'px;top:' + r[1] + 'px;width:' + r[2] + 'px;height:' + r[3] + 'px'; return i; })); window.__tomoyoHitRegionsRefresh?.(true); }
