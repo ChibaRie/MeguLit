@@ -70,3 +70,15 @@ test('a provisional foreign pick (boot screen text) gives way to the dialogue st
  h.manualThread='mine';h.state.hookThreads=[{id:'mine',sample:'Skip Intro',selected:true},{id:'say2',sample:line,selected:false}];
  assert.equal(h.foreignPick(),false,'a stream the player chose is kept');
 });
+
+test('E609 a Japanese story stream is never left for English labels that map to the table (DDLC Plus in Japanese)',()=>{
+ const {foreignKey}=require('../services/original-text.cjs');
+ const line='I always tell myself it is about time I meet some girls or something like that.';
+ const map=new Map([[foreignKey(line),'「いつも自分に言い聞かせている」']]);
+ const h=probe({kind:'patch',foreign:t=>map.get(foreignKey(t))||''});
+ const picked=[];h.select=id=>picked.push(id);
+ h.state.hookThreads=[{id:'story',sample:'「実はディベート部は辞めたの」',selected:true},{id:'os',sample:line,selected:false}];
+ assert.equal(h.foreignPick(),false);assert.deepEqual(picked,[]);
+ h.state.hookThreads=[{id:'label',sample:'モニカ',selected:true},{id:'os',sample:line,selected:false}];
+ assert.equal(h.foreignPick(),true,'a short Japanese label still gives way');
+});
