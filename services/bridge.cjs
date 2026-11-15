@@ -561,6 +561,11 @@ async function dispatch(request,runtime=null) {
       case 'update_start':{const u=require('./update.cjs');u.start(root,String(request.current||''));return u.status();}
       case 'update_status':return require('./update.cjs').status();
       case 'update_install':return await require('./update.cjs').install(root);
+      /* 2026-11-15 adaptation contribution consent (services/adapter-contrib.cjs): the update card's 同意并下一步 / 不参与, the beta note */
+      case 'contrib_consent':return require('./adapter-contrib.cjs').consentState(root);
+      case 'contrib_consent_set':return require('./adapter-contrib.cjs').setConsent(root,request.on===true,{source:String(request.source||'card')});
+      case 'contrib_notice_seen':return require('./adapter-contrib.cjs').noticeSeen(root);
+      case 'contrib_status':return require('./adapter-contrib.cjs').status(root);
       case 'update_hot_failed':return require('./update.cjs').hotFail(root,String(request.reason||''));
       case 'kana_progress':return require('./kana.cjs').read(root);
       case 'kana_progress_save':return require('./kana.cjs').save(root,request.data);

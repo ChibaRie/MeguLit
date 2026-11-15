@@ -122,6 +122,9 @@ bool('library','runtimeHarvest','运行时读取游戏结构（只读）','Runti
 /* 2026-11-14 desensitized probe of games that do not read well, uploaded in the background (services/probe-auto.cjs);
    one probe per game on the server (dedupe). On unless the user turned it off. */
 bool('library','probeUpload','自动上传读不出的游戏的脱敏结构（不含文本，可关）','Upload desensitized structure of games that do not read (no text)','読めないゲームの匿名化した構造を自動送信（文章なし）');
+/* 2026-11-15 adaptation contribution (services/adapter-contrib.cjs): scripts and program code of library games that do not read
+   well, for the maintainer's adapter packs. Public: off until the player agrees; closed beta: on after the in-app note. */
+bool('library','adapterContrib','后台上传读不好的游戏的剧本和启动程序（只用于改进适配，用完即删，可随时关）','Upload scripts and program code of games that do not read well (for adaptation only, deleted after use)','うまく読めないゲームのスクリプトと実行ファイルを送信（適応の改善のみ・使用後に削除）');
 for(const engine of ['ollama','lmstudio'])fields.find(f=>f.scope==='translation'&&f.key==='provider').options.push(engine==='ollama'?option(engine,'Ollama（本地模型）',
  'Ollama','Ollama'):option(engine,'LM Studio（本地模型）','LM Studio','LM Studio'));
 choice('lookup','lookup_mode','查词触发方式','Lookup gesture','辞書を開く操作',[option('click','单击','Click','クリック'),option('hover','悬停','Hover','ホバー')]);
