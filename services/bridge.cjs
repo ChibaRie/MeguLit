@@ -242,6 +242,10 @@ function deleteWord(db,id) {
   return {deleted:id};
 }
 // E280: after a Japanese import (or its undo) the game starts from the Japanese program (or the translated one again).
+/* 2026-11-15 (night test, 死に逝く君 汉化硬盘版): turning a Chinese overlay off keeps the same program, so the record still said
+   contentLanguage zh and the launch was refused with JAPANESE_EXECUTABLE_REQUIRED right after 恢复日文 succeeded. A restore that
+   changed files marks the program on record as the Japanese original; its undo marks it translated again. */
+const changedFiles=r=>!!r&&((r.removed|0)+(r.replaced|0)+(r.added|0)+(r.imported|0))>0;
 function importedExecutable(db,id,file,language){
   if(language==='ja'){require('./game-language.cjs').originalExecutable(db,id,root,'select',file);}
   const row=db.prepare('SELECT original FROM games WHERE id=?').get(id),original=JSON.parse(row?.original||'{}'),lib=original.library||{};
@@ -353,8 +357,8 @@ async function dispatch(request,runtime=null) {
        if(request.action==='jp_import_cancel'){jio.cleanup(dir);return {ok:true};}
        /* E339: show the .iso made from an installer disc in Explorer (selected, not opened) */
        if(request.action==='jp_import_reveal'){const file=require('node:path').resolve(String(request.path||''));if(!/\.iso$/i.test(file)||!fs.existsSync(file))throw Error('IMPORT_SOURCE_MISSING');const child=spawn('explorer.exe',['/select,'+file],{windowsHide:true,detached:true,stdio:'ignore'});child.on('error',()=>{});child.unref();return {ok:true};}
-       if(request.action==='jp_import_apply'&&imported?.state!=='importable'){if(jr._internal.gameRunning(dir))throw Error('GAME_RUNNING');return jio.apply(dir,String(request.source||''),row.executable).then(r=>{try{r.sourceHidden=require('./import-source.cjs').link(db,id,String(request.source||'')).length;}catch{}if(r.separate){importedExecutable(db,id,r.exe,'ja');return r;}if(r.exe&&require('node:path').basename(r.exe).toLowerCase()!==require('node:path').basename(row.executable).toLowerCase())importedExecutable(db,id,r.exe,'ja');return withPatch(r);});}
-       if(request.action==='jp_restore_undo'&&generic){if(jr._internal.gameRunning(dir))throw Error('GAME_RUNNING');const r=jio.restore(dir);if(!r.skipped.length&&r.exe&&r.exe.toLowerCase()!==row.executable.toLowerCase())importedExecutable(db,id,r.exe,'zh');return r;}
+       if(request.action==='jp_import_apply'&&imported?.state!=='importable'){if(jr._internal.gameRunning(dir))throw Error('GAME_RUNNING');return jio.apply(dir,String(request.source||''),row.executable).then(r=>{try{r.sourceHidden=require('./import-source.cjs').link(db,id,String(request.source||'')).length;}catch{}if(r.separate){importedExecutable(db,id,r.exe,'ja');return r;}if(r.exe&&require('node:path').basename(r.exe).toLowerCase()!==require('node:path').basename(row.executable).toLowerCase())importedExecutable(db,id,r.exe,'ja');else if(changedFiles(r))importedExecutable(db,id,row.executable,'ja');return withPatch(r);});}
+       if(request.action==='jp_restore_undo'&&generic){if(jr._internal.gameRunning(dir))throw Error('GAME_RUNNING');const r=jio.restore(dir);if(!r.skipped.length)importedExecutable(db,id,r.exe&&r.exe.toLowerCase()!==row.executable.toLowerCase()?r.exe:row.executable,'zh');return r;}
        if(request.action==='jp_restore_detect'){const r=jr.detect(dir,lsOptions);if(imported&&(imported.state==='imported'||['none','unsupported'].includes(r.state)))return imported;
         /* 2026-11-14 one shared "does this install have Japanese" (japanese-presence.cjs): a script read as Japanese, or
            Japanese captured while playing, means already Japanese (BRUNS gameplay.exe), not "no Japanese script found" */
@@ -364,7 +368,7 @@ async function dispatch(request,runtime=null) {
        if(request.action==='jp_import_apply'){if(jr._internal.gameRunning(dir))throw Error('GAME_RUNNING');const r=ji.apply(dir,row.executable,request.source);importedExecutable(db,id,r.exe,'ja');try{r.sourceHidden=require('./import-source.cjs').link(db,id,String(request.source||'')).length;}catch{}return withPatch(r);}
        if(request.action==='jp_restore_undo'&&imported?.state==='imported'){if(jr._internal.gameRunning(dir))throw Error('GAME_RUNNING');const r=ji.restore(dir);if(!r.skipped.length)importedExecutable(db,id,r.exe,'zh');return r;}
        /* E595 a Chinese patch over the release: turned off by the import's backed-up remove step (undo = jp_restore_undo) */
-       if(request.action==='jp_restore_apply'&&jr.detect(dir,lsOptions).adapter==='overlay-patch'){if(jr._internal.gameRunning(dir))throw Error('GAME_RUNNING');return jio.apply(dir,dir,row.executable).then(withPatch);}
+       if(request.action==='jp_restore_apply'&&jr.detect(dir,lsOptions).adapter==='overlay-patch'){if(jr._internal.gameRunning(dir))throw Error('GAME_RUNNING');return jio.apply(dir,dir,row.executable).then(r=>{if(changedFiles(r))importedExecutable(db,id,r.exe||row.executable,'ja');return withPatch(r);});}
        return request.action==='jp_restore_apply'?withPatch(jr.apply(dir,lsOptions)):jr.restore(dir,lsOptions);}
       case 'game_cover':return require('./game-cover.cjs').setCover(db,root,String(request.id),request.path);
       /* E362 adaptation overview + one-click diagnostic package (built locally; shown to the user before any upload) */
