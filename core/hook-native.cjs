@@ -15,6 +15,7 @@ function speakerName(raw){const n=String(raw||'').replace(/[\x00-\x1f]/g,'').rep
    Whatever the engine, a name is split off into the speaker field: 【名前】 / ［名前］ alone or before the line, a name before
    a quote with a line break, ideographic space or colon in between, and – for names already seen – 名前「…」 and a bare
    名前 line. Returns {name,text}; text is '' when the string was only a name. */
+/* side-stream text waits this long for the dialogue line of the same moment before it may be art text */const AUX_ART_DELAY_MS=120;
 const QUOTE_OPEN='「『（(',QUOTE_CLOSE='」』）)';
 function splitSpeaker(raw,known){const s=String(raw||'');const t=s.replace(/^[\s　]+/,'');if(!t)return {name:'',text:s};
  const kn=n=>!!known&&typeof known.has==='function'&&known.has(n);
@@ -265,7 +266,7 @@ class HookNative{
     invisible copy and the translation over it): a Japanese line from another stream that is not the current dialogue line
     is looked for on the picture (PageLocator art mode); once per text within 20 s. */
  artCandidate(text){try{const t=String(text||'').trim(),flat=HookNative.flat(t);if(typeof this.artLocate!=='function'||[...flat].length<2||[...flat].length>60)return;
-  {const lt=require('./language-tracks.cjs');if(lt.stuttered(t)||lt.soundCaption(t))return;}
+  {const lt=require('./language-tracks.cjs');if(lt.stuttered(t)||lt.soundCaption(t))return;if(lt.typedOut(t))return;}
   /* 2026-11-15 (沙耶の唄: the dialogue stream dropped the game's own noise line, then the art path translated it and drew 「对了对了，这次暑假…」
      over it): a line no one can read is no art text either */
   if(require('./text-sanity.cjs').garbledSource(t,{controls:false})){this.trace('art text unreadable, left to the game '+JSON.stringify(t.slice(0,20)));return;}
@@ -285,7 +286,10 @@ class HookNative{
     came here as aux text, went to the art path and its translation was drawn over the game's own line. A line from the same hook
     as the dialogue stream is dialogue, never art text. */
   if(m.sourceName&&this.dialogueHook&&String(m.sourceName)===this.dialogueHook)return;/* nor choice text (user: 「不是选项」) */
-  this.artCandidate(m.text);const C=this.choice||(this.choice=this.newChoiceCapture());const added=C.add(m.text,this.lastSource,this.speaker?.text);
+  /* 2026-11-15 (死に逝く君、館に芽吹く憎悪: the side stream's 「X　X　」 frame came 4-25 ms before the dialogue stream's line, was located
+     as art text and drawn translated next to the subtitle): a side-stream text waits until the dialogue line of that moment
+     has arrived, then the usual "part of the current line" check drops it */
+  {const t=m.text;const at=setTimeout(()=>this.artCandidate(t),AUX_ART_DELAY_MS);at.unref?.();}const C=this.choice||(this.choice=this.newChoiceCapture());const added=C.add(m.text,this.lastSource,this.speaker?.text);
   this.trace('choice aux '+String(m.sourceName||'').slice(0,40)+' role='+(m.role??'')+' added='+JSON.stringify(added)+' text='+JSON.stringify(String(m.text).slice(0,80)));
   if(!added.length)return;clearTimeout(this.choiceTimer);this.choiceTimer=setTimeout(()=>this.requestChoices(0),450);this.choiceTimer.unref?.();}
  requestChoices(round){const options=round>0&&this.choiceOptions?this.choiceOptions:this.choice?.options();
@@ -364,10 +368,14 @@ class HookNative{
   this.attempt=0;/* 2026-11-13 (user: DDLC Plus set to English showed nothing): a line in another language is first looked up in the
      game's own parallel language tables (foreignJapanese, original-text.cjs), so the reader gets the Japanese line */
   {const raw=scriptSource(cleanSource(m.text,name,String(m.sourceCode||'')));const ja=this.foreignJapanese(raw);if(ja){m={...m,text:ja};}}
-  let text=this.originalTextFor(this.repeats.normalize(String(m.sourceCode||m.sourceName||name||''),require('./language-tracks.cjs').japaneseTrack(scriptSource(cleanSource(m.text,name,String(m.sourceCode||''))))).replace(/\n+$/,''));
+  const frame=require('./language-tracks.cjs').japaneseTrack(scriptSource(cleanSource(m.text,name,String(m.sourceCode||''))));let drawn=this.repeats.normalize(String(m.sourceCode||m.sourceName||name||''),frame);
+  /* E408 one frame holding the line twice (redraw), collapsed only on same-stream evidence.
+     2026-11-15 (死に逝く君、館に芽吹く憎悪, Krkr2wcs draws every line twice 「X　X　」): judged on the frame as the stream drew it, before
+     the script lookup, with the evidence taken from the frame before repeat-normalizer (core/double-line.cjs). */
+  {const stream=String(m.sourceCode||m.sourceName||name||'');this.sourceStream=stream;if(typeof drawn==='string'){const dbl=(this.doubles||(this.doubles=new DoubleLine(()=>this.now()))).fix(stream,drawn,this.lastSource,typeof frame==='string'?frame:drawn);if(dbl.collapsed){this.trace('source doubled collapsed ('+dbl.reason+') chars='+drawn.length+'->'+dbl.text.length);drawn=dbl.text;}}}
+  let text=String(this.originalTextFor(String(drawn??'').replace(/\n+$/,''))??'').replace(/\n+$/,'');
   if(!text.trim())return;
   /* 2026-11-13 multi-language container (サノバウィッチ 日简繁): the game's own Chinese track is this line's official translation */{const zh=require('./language-tracks.cjs').chineseTrack(scriptSource(cleanSource(m.text,name,String(m.sourceCode||''))),text);if(zh){const k=text.replace(/\s+/g,'');(this.trackPairs||(this.trackPairs=new Map())).set(k,zh);if(this.trackPairs.size>4000)this.trackPairs.delete(this.trackPairs.keys().next().value);}}
-  /* E408 one frame holding the line twice (redraw), collapsed only on same-stream evidence */{const stream=String(m.sourceCode||m.sourceName||name||'');this.sourceStream=stream;const dbl=(this.doubles||(this.doubles=new DoubleLine(()=>this.now()))).fix(stream,text,this.lastSource);if(dbl.collapsed){this.trace('source doubled collapsed ('+dbl.reason+') chars='+text.length+'->'+dbl.text.length);text=dbl.text;}}
   /* E320 WITCH ON THE HOLY NIGHT (flow page): its title-screen help ("Change text display speed.Change auto-scroll speed." ...) came through the dialogue hook
      and was read as a story line, and one line once arrived twice in one piece. Text without any Japanese is menu/help text here, and a line made of
      the same sentence twice is that sentence. */
