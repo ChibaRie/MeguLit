@@ -334,8 +334,10 @@
  // Glass panels (user, 2026-11-03): the menu can be dragged anywhere on the desktop, so the bridge puts a live
  // Windows-blurred window under each glass panel; a captured game frame (E87/E95) showed the game even over the desktop.
  // Reported every animation frame while one is open (dragging and the open/close animations move it by transform).
- let glassKey='',glassFrame=0;
- const glassPanels=()=>[...document.querySelectorAll('.tomoyo-cn-dialog[open]>.tome-menu-bg,.tomoyo-cn-dialog[data-leaving]>.tome-menu-bg,.tome-backlog[data-open]>.tome-menu-bg,.tome-backlog[data-leaving]>.tome-menu-bg,body>.tomoyo-selection-card>.tome-menu-bg')].filter(l=>{
+ let glassKey='',glassFrame=0;const glassHeld=new WeakMap();
+ /* during a drag or resize the panel list cannot change: kept instead of a selector query every frame and every picture */
+ let glassLive=null;const glassPanels=()=>glassLive&&glassLive.every(l=>l.isConnected&&l.parentElement?.matches('.tomoyo-menu-resizing,.tome-menu-dragging'))?glassLive:(glassLive=null,glassQuery());
+ const glassQuery=()=>[...document.querySelectorAll('.tomoyo-cn-dialog[open]>.tome-menu-bg,.tomoyo-cn-dialog[data-leaving]>.tome-menu-bg,.tome-backlog[data-open]>.tome-menu-bg,.tome-backlog[data-leaving]>.tome-menu-bg,body>.tomoyo-selection-card>.tome-menu-bg')].filter(l=>{
   const k=l.parentElement.matches('.tomoyo-cn-dialog')?'menu':l.parentElement.matches('.tome-backlog')?'log':'card';return ['glass','both'].includes(document.documentElement.dataset['tome'+k[0].toUpperCase()+k.slice(1)+'Surface']);
   });
  const glassReport=()=>{const scale=Number(devicePixelRatio)||1,list=document.body.classList.contains('tomoyo-ui-translation')?glassPanels().map(l=>l.parentElement).filter(p=>(p.hasAttribute('data-glass-pending')||p.checkVisibility?.({
@@ -347,16 +349,23 @@
   // The open/close animations scale and fade the panel (the menu unfolds from its centre line): the glass shows the
   // visible box at the panel's current opacity, and reads the full, unscaled box from the start, so the area being read
   // does not change every frame of the animation (user, 2026-11-03: glass covered the unfold and flashed).
-  const rects=list.map(p=>{const r=p.getBoundingClientRect(),v=gcfg.panels[p.matches('.tomoyo-cn-dialog')?'menu':p.matches('.tome-backlog')?'log':'card'],fw=Math.max(r.width,
+  const rects=list.map(p=>{
+   /* 2026-11-15 (user: alt+t现在调整位置和尺寸非常卡): while the menu is dragged or resized its glass read is fixed at the
+      start of the gesture. Rebuilding it every frame sent one galGlass per frame through Tauri to the bridge, which moved
+      its magnifier read each time (and read the whole screen while live): the drag fell to 20-40 ms frames. The drag
+      keeps the read where it was and the picture rides along with the panel's transform; a resize reads, once, as far as
+      the screen edge on the sides being dragged, so a growing panel never shows an empty band. One full update on release. */
+   const live=p.matches('.tomoyo-menu-resizing,.tome-menu-dragging');if(live&&glassHeld.has(p))return glassHeld.get(p);if(!live)glassHeld.delete(p);
+   const r=p.getBoundingClientRect(),v=gcfg.panels[p.matches('.tomoyo-cn-dialog')?'menu':p.matches('.tome-backlog')?'log':'card'],fw=Math.max(r.width,
    p.offsetWidth||0)+96,fh=Math.max(r.height,p.offsetHeight||0)+96,cx=(r.left+r.right)/2,cy=(r.top+r.bottom)/2,op=Math.max(0,Math.min(1,parseFloat(getComputedStyle(p).opacity)));
-   /* 2026-11-15 (user video): while the menu is dragged or resized the read covers the whole layer, so the picture never
-      ends inside a panel that grew or moved faster than the next read (blank band at the new edge). */
-   const live=p.matches('.tomoyo-menu-resizing,.tome-menu-dragging');
-   return {x:Math.round(r.left*scale),y:Math.round(r.top*scale),width:Math.round(r.width*scale),height:Math.round(r.height*scale),fx:live?0:Math.round((cx-fw/2)*scale),
-   fy:live?0:Math.round((cy-fh/2)*scale),fw:Math.round((live?innerWidth:fw)*scale),fh:Math.round((live?innerHeight:fh)*scale),alpha:Math.round((Number.isFinite(op)?op:1)*100),radius:Math.round((parseFloat(getComputedStyle(p).borderTopLeftRadius)||0)*scale),
-   blur:Math.round((Number(v.glassBlur)||0)*scale),dim:Number(v.glassDim)||0,saturate:Number.isFinite(Number(v.glassSaturate))?Number(v.glassSaturate):100};}).filter(r=>r.width>2&&r.height>2).slice(0,
+   const edge=live?String(p.dataset.tomeResizeEdge||''):'';let fl=cx-fw/2,ft=cy-fh/2,fr=cx+fw/2,fb=cy+fh/2;
+   if(edge.includes('w'))fl=0;if(edge.includes('e'))fr=innerWidth;if(edge.includes('n'))ft=0;if(edge.includes('s'))fb=innerHeight;
+   const rect={x:Math.round(r.left*scale),y:Math.round(r.top*scale),width:Math.round(r.width*scale),height:Math.round(r.height*scale),fx:Math.round(fl*scale),
+   fy:Math.round(ft*scale),fw:Math.round((fr-fl)*scale),fh:Math.round((fb-ft)*scale),alpha:Math.round((Number.isFinite(op)?op:1)*100),radius:Math.round((parseFloat(getComputedStyle(p).borderTopLeftRadius)||0)*scale),
+   blur:Math.round((Number(v.glassBlur)||0)*scale),dim:Number(v.glassDim)||0,saturate:Number.isFinite(Number(v.glassSaturate))?Number(v.glassSaturate):100};if(live)glassHeld.set(p,rect);return rect;}).filter(r=>r.width>2&&r.height>2).slice(0,
    16);
   const radius=rects[0]?.radius||0,key=JSON.stringify(rects);
+  if(!glassLive&&list.some(p=>p.matches('.tomoyo-menu-resizing,.tome-menu-dragging')))glassLive=list.map(p=>p.querySelector(':scope>.tome-menu-bg')).filter(Boolean);
   if(key!==glassKey){glassKey=key;try{window.__tomoyoTranslateRequest(JSON.stringify({type:'galGlass',rects,radius}));}catch{}}
   placeGlass(list);
   if(rects.length&&!glassFrame)glassFrame=requestAnimationFrame(()=>{glassFrame=0;glassReport();});};
@@ -368,6 +377,7 @@
  // Lines the picture up with the screen behind each glass panel. The layer sits 40 px outside the panel's unscaled box
  // (the open animation scales the panel around its centre, and the picture with it).
  function placeGlass(list){const scale=Number(devicePixelRatio)||1;for(const p of list){const layer=p.querySelector(':scope>.tome-menu-bg>b');if(!layer)continue;
+   if(p.matches('.tome-menu-dragging')&&glassArea&&layer.style.backgroundImage)continue; /* dragged: the picture moves with the panel's transform */
    if(!glassArea){if(layer.style.backgroundImage)layer.style.backgroundImage='';continue;}
    const r=p.getBoundingClientRect(),w=p.offsetWidth||r.width,h=p.offsetHeight||r.height,left=(r.left+r.right)/2-w/2-40,top=(r.top+r.bottom)/2-h/2-40;
    const size=(glassArea.w/scale)+'px '+(glassArea.h/scale)+'px',pos=(glassArea.x/scale-left)+'px '+(glassArea.y/scale-top)+'px';
