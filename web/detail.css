@@ -20,7 +20,7 @@
 .main .detail-statistics .stat-card strong{color:var(--g-t1)!important;white-space:nowrap}
 
 /* tabs: left aligned, full-width rule */
-.main .detail-tabs{justify-content:flex-start!important;gap:28px!important;margin:0 0 4px!important;padding:0!important;border-bottom:1px solid var(--g-rule)!important}
+.main .detail-tabs{justify-content:flex-start!important;gap:28px!important;margin:0 0 4px!important;padding:24px 0 0!important;border-bottom:1px solid var(--g-rule)!important}
 .main .detail-tabs>button{position:relative;background:none!important;border:0!important;border-radius:0!important;box-shadow:none!important;color:var(--g-t3)!important;padding:14px 0 12px!important;font-size:13px;letter-spacing:.08em;transition:color .2s var(--g-ease)}
 .main .detail-tabs>button:hover{color:var(--g-t1)!important}
 .main .detail-tabs>button[aria-selected="true"]{color:var(--g-t1)!important}
