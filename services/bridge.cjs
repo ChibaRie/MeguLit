@@ -56,11 +56,25 @@ async function launch(db,id,runtime=null,windowsLaunch=false,{retried=false,redi
   /* 2026-11-12 a folder used as another game's Japanese original starts that game (services/import-source.cjs) */
   {let target='';try{const sources=require('./import-source.cjs');sources.backfill(db);target=sources.targetOf(db,db.prepare('SELECT original FROM games WHERE id=?').get(id));}catch{}if(target&&target!==id&&!redirected)return launch(db,target,runtime,windowsLaunch,{redirected:true});}
    const trace=(stage,extra={})=>{try{fs.mkdirSync(path.join(root,'logs'),{recursive:true});fs.appendFileSync(path.join(root,'logs','game-launch.log'),JSON.stringify({at:new Date().toISOString(),gameId:id,stage,...extra})+'\n');}catch{}};
-  let stage='launch-preflight',featureWatch=null;
+  let stage='launch-preflight',featureWatch=null,drmPlan=null;
   try{
   if(!game.executable||!fs.existsSync(game.executable))throw Error('EXECUTABLE_MISSING');
   let original={};try{original=JSON.parse(game.original||'{}')||{};}catch{}const profile=original.library || {};
   if(require('./game-language.cjs').originalExecutable(db,id,root).blocked)throw Error('JAPANESE_EXECUTABLE_REQUIRED');
+  /* E-DRM (user 2026-11-15, 死に逝く君、館に芽吹く憎悪): a DRM-wrapped program (SoftDenchi's SdWrap, DMM, DLsite) quits on
+     its own when started directly. The record is corrected once to the engine program, and a crack / translation launcher
+     beside it starts it (core/drm-wrap.cjs). The game's process and window stay the engine program's. */
+  let launchVia='';
+  {let plan=null;try{plan=require('../core/drm-wrap.cjs').plan(game.executable,{allowTranslated:require('../core/library.cjs').isTranslated(path.dirname(game.executable))||profile.contentLanguage==='zh',source:profile.source});}catch(error){trace('drm-check-failed',{error:String(error?.message||error).slice(0,160)});}
+   if(plan){drmPlan=plan;trace('drm-wrapped',{kind:plan.kind,wrapped:path.basename(plan.wrapped||''),executable:path.basename(plan.executable||''),launcher:path.basename(plan.launchVia||''),changed:plan.changed});
+    if(plan.changed&&plan.executable&&fs.existsSync(plan.executable)){
+     const before=String(game.executable),same=before.toLowerCase()===plan.executable.toLowerCase(),record=profile.drm||{};
+     if(!same||String(profile.launchVia||'')!==plan.launchVia||record.kind!==plan.kind){
+      game.executable=plan.executable;
+      original.library={...profile,exe:plan.executable,launchVia:plan.launchVia,drm:{kind:plan.kind,wrapped:plan.wrapped,from:record.from||before,at:Date.now()}};
+      db.prepare('UPDATE games SET executable=?,original=? WHERE id=?').run(plan.executable,JSON.stringify(original),id);
+      Object.assign(profile,original.library);trace('drm-corrected',{from:path.basename(before),executable:path.basename(plan.executable),launcher:path.basename(plan.launchVia||'')});}
+     launchVia=plan.launchVia||'';}}}
   const elevation=require('./locale-launch.cjs').requiresAdministrator(game.executable);
   runtime?.prepareGame(game.executable,{enter:false});
   /* E370: a first launch with nothing saved here starts from a matching shared adaptation record (stream memory before the Hook starts, locale mode for this launch) */
@@ -97,7 +111,19 @@ async function launch(db,id,runtime=null,windowsLaunch=false,{retried=false,redi
   featureWatch=require('../core/windows-features.cjs').watch(gameDir,{trace,onFeature:feature=>{if(/^directplay$/i.test(feature)){const dp=require('../core/directplay.cjs').prepare(gameDir,{root,exe:game.executable,all:true});trace('directplay',dp);}}});
   let state;
   // "Japanese system environment": non-Unicode Japanese games (WA2) show their own dialogs garbled under a Chinese locale.
-  if(!elevation&&!windowsLaunch&&profile.localeMode==='japanese'&&profile.source!=='steam'&&require('../core/locale-emulator.cjs').x86(game.executable)){
+  if(launchVia&&!windowsLaunch){
+   /* E-DRM: the launcher may first show its own banner (live test: 打开游戏.exe 「Made By 2DJGAME」 waits for OK), so the
+      engine program's window is waited for up to 90 s; the launcher's own windows never count as the game. */
+   stage='launcher-start';const {startProcess,waitForVisibleGame}=require('./game-readiness.cjs');
+   let child={exit:null};
+   if(profile.localeMode==='japanese'&&require('../core/locale-emulator.cjs').x86(launchVia)){
+    const lib=runtime?.library?.()||new(require('../core/library.cjs').Library)(require('../core/layout.cjs'));
+    try{const result=await lib.locale.launch(launchVia,{trace});if(result.needLocaleEmulator){await lib.locale.ensure();await lib.locale.launch(launchVia,{trace});}}catch(error){trace('launcher-locale-wait',{error:error.message});}
+   }else if(require('./locale-launch.cjs').requiresAdministrator(launchVia))await require('./game-process.cjs').shellOpen(root,launchVia);
+   else child=await startProcess(launchVia,[],path.dirname(launchVia),'GAME_LAUNCH_FAILED');
+   trace('launcher-started',{launcher:path.basename(launchVia),pid:child.pid});
+   stage='window-wait';state=await waitForVisibleGame(()=>gameProcesses(root,game.executable),{helper:true,helperError:'GAME_LAUNCH_FAILED',exit:()=>child.exit,trace,attempts:360,timeout:90000});
+  }else if(!elevation&&!windowsLaunch&&profile.localeMode==='japanese'&&profile.source!=='steam'&&require('../core/locale-emulator.cjs').x86(game.executable)){
    stage='locale-start';const lib=runtime?.library?.()||new(require('../core/library.cjs').Library)(require('../core/layout.cjs'));
    let result=await lib.locale.launch(game.executable,{trace});
    if(result.needLocaleEmulator){trace('locale-emulator-install',{});await lib.locale.ensure();result=await lib.locale.launch(game.executable,{trace});if(result.needLocaleEmulator)throw Error('LOCALE_EMULATOR_REQUIRED');}
@@ -177,6 +203,8 @@ async function launch(db,id,runtime=null,windowsLaunch=false,{retried=false,redi
      neededFeature.set(id,feature);error=Object.assign(Error(/^directplay$/i.test(feature)?'DIRECTPLAY_REQUIRED':'WINDOWS_FEATURE_REQUIRED'),{detail:feature});}}
    /* E299: a boxed release whose protection plug-in wants the original DVD quits on start; say so (disc-check.cjs). */
    if(['GAME_PROCESS_EXITED','GAME_WINDOW_NOT_READY'].includes(error.message)&&game.executable&&require('./disc-check.cjs').discProtected(path.dirname(game.executable)))error=Object.assign(Error('GAME_DISC_REQUIRED'),{detail:error.message});
+   /* E-DRM: say which program needs which licence check and what was or can be used instead (launch_hint has the words) */
+   if(drmPlan&&['GAME_PROCESS_EXITED','GAME_WINDOW_NOT_READY','GAME_LAUNCH_FAILED'].includes(error.message))error=Object.assign(Error(drmPlan.launchVia?'GAME_DRM_LAUNCHER_FAILED':'GAME_DRM_WRAPPED'),{detail:error.message});
    trace('launch-failed',{phase:stage,error:error.message,detail:error.detail||error.code});try{require('../core/japanese-auto.cjs').launchResult(root,id,false);}catch{}throw error;}
 }
 function deleteWord(db,id) {
@@ -573,6 +601,9 @@ async function dispatch(request,runtime=null) {
       case 'statistics':return require('./statistics.cjs').statistics(db,request);
       case 'focus_game':{const game=db.prepare('SELECT executable FROM games WHERE id=? AND removed_at IS NULL').get(String(request.id));if(!game)throw Error('GAME_NOT_FOUND');return {status:await require('./game-process.cjs').gameProcess(root,game.executable,{focus:true})};}
       case 'launch':return await launch(db,String(request.id),runtime,request.windowsLaunch===true);
+      /* E-DRM: the words for a DRM launch failure (which program, which licence check, what to choose instead) */
+      case 'launch_hint':{const row=db.prepare('SELECT executable,original FROM games WHERE id=?').get(String(request.id));if(!row?.executable)return {text:''};let lib={};try{lib=JSON.parse(row.original||'{}').library||{};}catch{}
+       const drm=require('../core/drm-wrap.cjs');let plan=null;try{plan=drm.plan(row.executable,{allowTranslated:true,source:lib.source});}catch{}return {text:drm.hint(plan,String(request.locale||'zh'))};}
       case 'migration_status':return store.readJSON(path.join(root,'migration','migration-report.json'));
       default:throw Error('UNKNOWN_ACTION');
     }
