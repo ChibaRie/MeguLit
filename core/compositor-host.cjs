@@ -112,6 +112,7 @@ class CompositorHost {
     }
     const marks = chars.length - plain.length;
     if (!marks) return;
+    this.cc.lines?.set?.(Number(m.seq) || 0, { text: chars.join('') }); // for word lookup on the drawn line
     this.cc.send({ t: 'line', id: Number(m.seq) || 0, text: chars.join(''), expected: marks, plain, marks: 'middle-dot' });
   }
   remember(id, text) { this.lines.set(id, strip(text).text); if (this.lines.size > 64) this.lines.delete(this.lines.keys().next().value); this.lastId = id; }
@@ -156,7 +157,7 @@ class CompositorHost {
     if (e.e === 'line') this.lastStatus = e.status;
     if (e.e === 'fallback') { this.failedFor = this.identity; this.setDrawing(false); this.onEvent({ type: 'compositorState', state: 'fallback', reason: e.reason }); this.stop(); }
     else if (e.e === 'exit') { this.cc = null; this.setDrawing(false); if (e.reason === 'game-closed') { this.identity = ''; this.onEvent({ type: 'compositorState', state: 'gameClosed' }); } } // a launcher window closed: the owner binds the game's next window
-    else if (e.e === 'lookup') this.onEvent({ type: 'compositorLookup', id: e.id, index: e.index, char: e.char, x: e.x, y: e.y });
+    else if (e.e === 'lookup') { const text = String(this.cc?.lines?.get?.(e.id)?.text || ''); if (text) this.onEvent({ type: 'compositorLookup', id: e.id, index: e.index, text, x: e.x, y: e.y }); } // a click on a composited glyph: the reader opens its word card there
     else if (e.e === 'conv') this.onEvent({ type: 'compositorConv', ok: e.ok === true }); // oss-universal conv source: confirm / reject
     else if (e.e === 'ready') { this.setDrawing(true); this.onEvent({ type: 'compositorState', state: 'running' }); }
   }

@@ -88,6 +88,7 @@ struct LineMsg {
   // search, no erasing: MeguLit's glyphs go straight onto these client rects (one per character of text, blanks too).
   bool rectMode = false; bool rectHidden = false; std::vector<Box> rects;
   bool conv = false;          // dots from oss-universal's conv source (MeguLitFont waits for our CONV ok / off)
+  std::vector<Dot> good; double goodAt = 0; // the line's locked layout (no flicker: reused while frames miss marks)
   std::vector<int> plain; int markCount = -1; // per-character marks: characters the game still draws itself (ASCII), by character index; marks expected
   bool centered = false;      // ④'s text marks: the mark is the centre of the character's cell (not a top-left dot)
   bool bestFit = false;       // more marks than characters: all erased, the text drawn on the first ones
@@ -383,7 +384,7 @@ private:
   std::map<uint64_t, Glyph> layouts;
   // tracking
   double lastFrameAt = 0, recheckAt = 0; bool haveFrame = false; int recheck = 0; // Recheck(): passes left over the last frame
-  std::map<int, std::vector<Json>> earlyGlyphs; std::map<int, int> alias; /* repeated line id → the line it repeats */ int convVerdict = 0; std::vector<Dot> menuMarks; CompositorBeat *beat = nullptr; bool hadLine = false; HANDLE beatMap = nullptr; int flood = 0; double starveSince = 0; DotTracker tracker; ChoiceTracker choiceTracker; TrackResult lastResult; ChoiceTracker::Out lastChoices;
+  std::map<int, std::vector<Json>> earlyGlyphs; std::map<int, int> alias; /* repeated line id → the line it repeats */ int convVerdict = 0; std::vector<Dot> menuMarks; CompositorBeat *beat = nullptr; bool hadLine = false; HANDLE beatMap = nullptr; int flood = 0; double starveSince = 0; DotTracker tracker; ChoiceTracker choiceTracker; TrackResult lastResult; ChoiceTracker::Out lastChoices; std::vector<Dot> strayMarks; Box markArea; int markW = 0, markH = 0;
   bool dotsSeen = false; // ① reported at least one dot in this game session
   LineMsg cur; std::map<int, LineMsg> kept; int autoId = 0, autoMax = 0, autoEmpty = 0;
   std::vector<ChoiceText> choices; bool choicesOn = false, choiceUndot = false; double choiceStart = 0;
@@ -648,6 +649,7 @@ private:
   }
 
   void Track(const Image &im) {
+    strayMarks.clear();
     if (choicesOn) {
       lastChoices = choiceTracker.Update(im);
       // Choices whose dots never all line up within 1.5 s fall back to the game's own drawing.
@@ -738,7 +740,47 @@ private:
       if (!cur.bestFit) { cur.bestFit = true; Emit("{\"e\":\"line\",\"id\":" + std::to_string(cur.id) + ",\"status\":\"complete\",\"bestFit\":true,\"found\":" + std::to_string(found) + ",\"expected\":" + std::to_string(Expected(cur)) + "}"); }
     }
     if (!cur.undot && !cur.plain.empty() && cur.complete && int(lastResult.dots.size()) == cur.markCount) PlaceUnmarked(lastResult);
+    // Layout lock: once the line is complete its cells stay put; a frame that finds the same count within 2 px reuses
+    // the locked cells, and frames that miss marks (count drops, a "waiting" frame) keep drawing the locked line for
+    // up to 600 ms instead of toggling it off and on.
+    if (!cur.undot && cur.complete) {
+      const int n = int(lastResult.dots.size()), g = int(cur.good.size());
+      if (n >= g && n > 0 && lastResult.status != LineStatus::Fading) {
+        bool same = n == g;
+        for (int i = 0; same && i < n; ++i) same = std::abs(lastResult.dots[i].cx - cur.good[i].cx) <= 2 && std::abs(lastResult.dots[i].cy - cur.good[i].cy) <= 2;
+        if (same) { for (int i = 0; i < n; ++i) cur.good[i].alpha = lastResult.dots[i].alpha; lastResult.dots = cur.good; } else cur.good = lastResult.dots;
+        cur.goodAt = NowMs();
+      } else if (g > 0 && NowMs() - cur.goodAt < 600) { lastResult.dots = cur.good; lastResult.status = LineStatus::Complete; }
+    }
     if (cur.undot) lastResult.dots.clear();
+    StrayMarks(im);
+  }
+
+  // Owner rule 4: no mark is ever visible. Marks the game draws before their line reaches us (a typewriter running
+  // ahead of the hook, a per-character hook whose line arrives at its end) belong to no placed line yet: every mark of
+  // the learned text colour and the learned mark size inside the text area seen so far is erased in every frame.
+  void StrayMarks(const Image &im) {
+    strayMarks.clear();
+    if (!tracker.HasColor() || opt.demo) return;
+    if (!lastResult.dots.empty()) {
+      std::vector<int> ws, hs; for (const Dot &d : lastResult.dots) if (!d.cell) { ws.push_back(d.box.w()); hs.push_back(d.box.h()); }
+      if (!ws.empty()) { std::nth_element(ws.begin(), ws.begin() + ws.size() / 2, ws.end()); std::nth_element(hs.begin(), hs.begin() + hs.size() / 2, hs.end()); markW = ws[ws.size() / 2]; markH = hs[hs.size() / 2]; }
+      const Box &a = lastResult.area; if (!a.empty()) markArea = markArea.empty() ? a : Box{ std::min(markArea.x0, a.x0), std::min(markArea.y0, a.y0), std::max(markArea.x1, a.x1), std::max(markArea.y1, a.y1) };
+    }
+    if (markArea.empty() || markW <= 0) return;
+    const int pad = std::max(markW, markH) * 12;
+    const Box roi{ std::max(0, markArea.x0 - pad), std::max(0, markArea.y0 - pad), std::min(im.w, markArea.x1 + pad), std::min(im.h, markArea.y1 + pad) };
+    if (roi.empty()) return;
+    std::vector<Blob> blobs; std::vector<int> parent;
+    PlateauBlobs(im, roi, 2, 14, blobs, parent);
+    const Rgb c = tracker.Color();
+    for (const Blob &b : blobs) {
+      if (!DotShaped(b, 2, 14) || std::abs(b.box.w() - markW) > std::max(markW >= 4 ? 1 : 0, markW / 3) || std::abs(b.box.h() - markH) > std::max(markH >= 4 ? 1 : 0, markH / 3) || ColorDist(b.mean(), c) > 60) continue;
+      bool known = false; for (const Dot &d : lastResult.dots) if (std::abs(d.cx - b.cx()) < 2 && std::abs(d.cy - b.cy()) < 2) { known = true; break; }
+      if (known) continue;
+      Dot d; d.box = b.box; d.cx = b.cx(); d.cy = b.cy(); d.color = b.mean(); strayMarks.push_back(d);
+      if (strayMarks.size() > 400) break;
+    }
   }
 
   // Per-character marks leave ASCII to the game (engines keep their codes there): those characters (a name's brackets)
@@ -817,6 +859,7 @@ private:
       ctx->UpdateSubresource(srcTex.get(), 0, &b, static_cast<uint8_t *>(map.pData) + size_t(b.top) * map.RowPitch + size_t(b.left) * 4, map.RowPitch, 0);
     };
     if (!cur.rectMode) for (const Dot &d : lastResult.dots) patch(d.box, d.cell); // ③ lines: the game drew nothing to erase
+    for (const Dot &d : strayMarks) patch(d.box);
     for (const auto &k : lastResult.kept) if (kept.count(k.id)) for (const Dot &d : k.dots) patch(d.box);
     if (choicesOn && !menuMarks.empty()) for (const Dot &d : menuMarks) patch(d.box);
     if (choicesOn && lastChoices.ok && !choiceUndot) for (const auto &it : lastChoices.items) {
