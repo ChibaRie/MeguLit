@@ -56,21 +56,45 @@ async function one(root,db,game,result,s,{fetcher,endpoint,hasEndpoint,sampler,n
  if(u.state==='not-configured')return 'offline';
  const attempts=(rec.attempts|0)+1;s.games[game.id]={identity:ident.id,state:'failed',error:String(u.error||'').slice(0,40),items,hash:prep.hash,at:now,attempts,nextAt:now+Math.min(RETRY_MAX,RETRY_MIN*2**Math.min(6,attempts-1)),runtimeAt:rtAt,...seen};return 'failed';}
 
+/* 2026-11-15 closed beta: the full probe of a problem game (probe-full.cjs: its script entries, its exe and DLLs cut down
+   to code, versions), once per identity, after the desensitized one. Kept under games[id].full {identity,state,hash,
+   bytes,at,attempts,nextAt}; the collected file stays in data/adapter-probe/full only until the relay has it. */
+const appVersion=root=>{try{return require('./shared-adaptation.cjs').appVersion(root);}catch{return '';}};
+async function fullOne(root,db,game,result,s,{fetcher,fullBase,fuller,now=Date.now()}){
+ const pf=require('./probe-full.cjs'),pi=require('./probe-identity.cjs');
+ const ident=pi.identity({executable:game.executable,result,vndb:pi.vndbOf(db,game.id)});if(!ident.id)return 'skipped';
+ const rec=s.games[game.id]||(s.games[game.id]={}),f=rec.full&&rec.full.identity===ident.id?rec.full:{};
+ if(['sent','duplicate','nothing'].includes(f.state)||f.nextAt&&f.nextAt>now)return 'skipped';
+ const retry=(state,extra={})=>{const attempts=(f.attempts|0)+1;rec.full={...f,identity:ident.id,state,at:now,attempts,nextAt:now+Math.min(RETRY_MAX,RETRY_MIN*2**Math.min(6,attempts-1)),...extra};return state;};
+ let file=pf.pending(root,f.hash),bytes=f.bytes|0,hash=f.hash||'';
+ if(!file){const c=await fuller(game,result,{out:pf.fullDir(root),identity:ident.id,title:String(game.title||''),vndb:ident.vndb||'',app:appVersion(root)});
+  if(c?.empty){rec.full={identity:ident.id,state:'nothing',at:now};return 'nothing';}
+  if(!c?.file)return retry('failed',{error:String(c?.error||'COLLECT').slice(0,40)});
+  file=c.file;bytes=c.bytes;hash=c.sha256;}
+ const u=await pf.upload(root,{file,identity:ident.id,title:String(game.title||''),vndb:ident.vndb||'',step:result.step||'',app:appVersion(root),fetcher,base:fullBase});
+ if(u.state==='uploaded'||u.state==='duplicate'){const state=u.state==='uploaded'?'sent':'duplicate';rec.full={identity:ident.id,state,hash,bytes,at:now};
+  logEntry(s,{gameId:game.id,title:game.title,identity:ident.id,hash,bytes,state,kind:'full'});return state;}
+ if(u.state==='not-configured')return 'offline';
+ return retry('failed',{hash,bytes,error:String(u.error||'').slice(0,40)});}
+
 /* run(root,db,opts) → {state, results:{gameId:outcome}}: the library probe when due, then every problem game in turn */
 let busy=null;
-async function run(root,db,{ids=null,fetcher=globalThis.fetch,endpoint,hasEndpoint,sampler,probeFirst=true,wait=ms=>new Promise(r=>setTimeout(r,ms))}={}){
+async function run(root,db,{ids=null,fetcher=globalThis.fetch,endpoint,hasEndpoint,fullBase,sampler,fuller,probeFirst=true,wait=ms=>new Promise(r=>setTimeout(r,ms))}={}){
  if(!enabled(root))return {state:'off',results:{}};
  if(busy)return {state:'busy',results:{}};
- busy=(async()=>{const probe=require('./adapter-probe.cjs');sampler=sampler||probe.sampleInWorker;
+ busy=(async()=>{const probe=require('./adapter-probe.cjs');sampler=sampler||probe.sampleInWorker;fuller=fuller||probe.fullInWorker;try{require('./probe-full.cjs').sweep(root);}catch{}
   const s=load(root);
   if(probeFirst&&!ids&&Date.now()-s.probedAt>PROBE_EVERY&&probe.status(root).state!=='running'){
    s.probedAt=Date.now();save(root,s);probe.start(root,db,{reason:'auto'});
    for(let i=0;i<2400&&probe.status(root).state==='running';i++)await wait(1000);}
-  const results=probe.results(root),games=probe.libraryGames(db),want=ids?new Set(ids.map(String)):null,out={};
+  const results=probe.results(root),games=probe.libraryGames(db),want=ids?new Set(ids.map(String)):null,out={},full={};
   for(const p of probe.problems(root)){if(want&&!want.has(p.id))continue;const g=games.find(x=>x.id===p.id);if(!g||!results[p.id])continue;
-   let o;try{o=await one(root,db,g,results[p.id],s,{fetcher,endpoint,hasEndpoint,sampler});}catch{o='failed';}
-   out[p.id]=o;save(root,s);if(o==='offline')break;await wait(o==='skipped'?0:1500);}
-  save(root,s);return {state:'done',results:out};})();
+   const keep=s.games[p.id]?.full;let o;try{o=await one(root,db,g,results[p.id],s,{fetcher,endpoint,hasEndpoint,sampler});}catch{o='failed';}
+   if(keep&&s.games[p.id]&&!s.games[p.id].full)s.games[p.id].full=keep;
+   out[p.id]=o;save(root,s);if(o==='offline')break;await wait(o==='skipped'?0:1500);
+   let fo;try{fo=await fullOne(root,db,g,results[p.id],s,{fetcher,fullBase,fuller});}catch{fo='failed';}
+   full[p.id]=fo;save(root,s);if(fo==='offline')break;if(fo!=='skipped')await wait(1500);}
+  save(root,s);return {state:'done',results:out,full};})();
  try{return await busy;}finally{busy=null;}}
 
 /* status(root) → {enabled, busy, games, log} (the probe dialog shows log + each bundle's manifest as the record) */
@@ -82,4 +106,4 @@ function schedule(root,delay){if(!opener)return;clearTimeout(timer);timer=setTim
 function start(root,openDb,{delay=FIRST_DELAY}={}){if(process.env.NODE_TEST_CONTEXT||started===root)return null;started=root;opener=openDb;schedule(root,delay);return true;}
 function kick(root,{delay=KICK_DELAY}={}){if(!opener||started!==root||!enabled(root))return false;schedule(root,delay);return true;}
 
-module.exports={enabled,setEnabled,has,covered,run,status,start,kick,load,fileOf,RETRY_MIN,RETRY_MAX};
+module.exports={enabled,setEnabled,has,covered,run,fullOne,status,start,kick,load,fileOf,RETRY_MIN,RETRY_MAX};

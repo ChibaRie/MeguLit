@@ -22,6 +22,7 @@
      POST /api/adapters/withdraw       {id,version}      off the feed; apps that use it roll back
      POST /api/adapters/probe-request  {id,keys:[...]}   ask those games for a fresh probe; {id,close:true} ends it
      GET  /api/adapters/reports?pack=  the before/after numbers */
+import {probeFullRoute} from './probe-full.js';
 const HEX64=/^[a-f0-9]{64}$/,ID=/^[a-z0-9][a-z0-9-]{2,63}$/,SEMVER=/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
 export const ADAPTER_LIMITS={pack:256*1024,bundle:8*1024*1024,chunk:512*1024,parts:16,reports:50,keys:200,feed:300};
 const encoder=new TextEncoder();
@@ -160,6 +161,8 @@ export async function adaptersRoute(request,env,ip,now,url,path,deps){
  if(path==='/api/adapters/feed'&&m==='GET')return await hit(env,'adapt-feed',ip,now.getTime())?feed(env,url,deps):fail('RATE_LIMITED',429);
  const pm=/^\/api\/adapters\/pack\/([a-z0-9-]{3,64})\/(\d{1,9})$/.exec(path);if(pm&&m==='GET')return await hit(env,'adapt-pack',ip,now.getTime())?packGet(env,pm[1],pm[2],deps):fail('RATE_LIMITED',429);
  if(path==='/api/adapters/report'&&m==='POST')return await hit(env,'adapt-report',ip,now.getTime())?reportPost(request,env,now,deps):fail('RATE_LIMITED',429);
+ /* 2026-11-15 closed-beta full probes (probe-full.js) */
+ if(path.startsWith('/api/probe/full/'))return probeFullRoute(request,env,ip,now,url,path,deps);
  if(path==='/api/probe'&&m==='POST')return await hit(env,'probe',ip,now.getTime())?probeChunk(request,env,ip,now,url,deps):fail('RATE_LIMITED',429);
  /* no rate-limit row here (D1 write budget): the global per-IP limiter covers it */
  if(path==='/api/probe/has'&&m==='GET')return probeHas(env,url,now,deps);

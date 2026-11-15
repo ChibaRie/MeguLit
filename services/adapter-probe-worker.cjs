@@ -12,6 +12,7 @@ process.on('message',m=>{
  if(m?.type==='probe'){let result;try{result=probeGame({dir:m.dir,executable:m.executable},{budgetMs:m.budgetMs});}catch(e){result={schema:'megulit.probe-result',version:1,step:'parse-failed',detail:'PROBE_ERROR:'+String(e?.message||e).slice(0,60),engines:[],inventory:{files:0,bytes:0,ext:{},archives:[]},lines:0,japaneseLines:0};}
   try{process.send({type:'result',id:m.id,result});}catch{}}
  else if(m?.type==='sample'){let result=null;try{result=require('./adapter-sample.cjs').sampleGame({dir:m.dir,executable:m.executable,result:m.result});}catch{}try{process.send({type:'result',id:m.id,result});}catch{}}
+ else if(m?.type==='full'){let result=null;try{result=require('./probe-full.cjs').collect(m.job);}catch(e){result={error:String(e?.message||e).slice(0,80)};}try{process.send({type:'result',id:m.id,result});}catch{}}
  else if(m?.type==='exit')process.exit(0);
 });
 process.on('disconnect',()=>process.exit(0));

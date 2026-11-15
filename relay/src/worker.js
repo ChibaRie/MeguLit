@@ -3,6 +3,7 @@
    opt-in leaderboard. Deploy steps: relay/README.md. Bindings: DB (D1), BUCKET (R2). Secrets: GITHUB_TOKEN,
    LINK_SECRET (HMAC key for download links), optional HASH_SALT and DIAG_TOKEN. Vars: GITHUB_REPO, LINK_DAYS,
    ALLOWED_ORIGINS. Nothing here trusts the client: every body is size-capped and validated (validate.js). */
+import {cleanupProbeFull} from './probe-full.js';
 import {LIMITS,validateLeaderboard,validateBoardQuery,validateAdaptationRecord,validateKeys,validateMeta,issueBody,validateHot,INSTALL_ID,HEX64} from './validate.js';
 /* E379 accounts (relay/ACCOUNTS.md) and community features (avatars, hot words) */
 import {handleAccounts,isAccountsPath,authenticate,ROTATED} from './accounts.js';
@@ -23,7 +24,7 @@ import {adaptersRoute} from './adapters.js';
    internet café or a school behind one IP no longer share 120 a minute; 'ip-shared' still caps one IP as a whole.
    Old: ip 120/60 s, lb-get 60, adapt-get 120/h, avatar-get 600, hot 60, daily 60, daily-img 240, release 30,
    social-get 120, forum-get 120. */
-export const RATE={ip:[600,60],user:[600,60],'ip-shared':[3000,60],'adapt-feed':[60,3600],'adapt-pack':[1200,3600],'adapt-report':[30,3600],probe:[64,3600],feedback:[4,3600],'feedback-day':[12,86400],'lb-post':[6,600],'lb-id':[20,3600],'lb-get':[300,60],'adapt-post':[30,3600],'adapt-get':[600,3600],diag:[20,3600],'diag-dl':[30,3600],avatar:[5,3600],'avatar-get':[1200,60],report:[20,3600],hot:[300,60],daily:[300,60],'daily-img':[900,60],release:[120,60],appeal:[3,86400],profile:[30,3600],'social-get':[600,60],follow:[60,3600],'profile-report':[3,86400],'profile-appeal':[3,86400],'forum-get':[600,60],'forum-post':[5,3600],'forum-reply':[30,3600],'forum-day':[60,86400],'forum-ip':[40,3600],'forum-img':[60,3600]};
+export const RATE={ip:[600,60],user:[600,60],'ip-shared':[3000,60],'adapt-feed':[60,3600],'adapt-pack':[1200,3600],'adapt-report':[30,3600],probe:[64,3600],'probe-full':[300,3600],feedback:[4,3600],'feedback-day':[12,86400],'lb-post':[6,600],'lb-id':[20,3600],'lb-get':[300,60],'adapt-post':[30,3600],'adapt-get':[600,3600],diag:[20,3600],'diag-dl':[30,3600],avatar:[5,3600],'avatar-get':[1200,60],report:[20,3600],hot:[300,60],daily:[300,60],'daily-img':[900,60],release:[120,60],appeal:[3,86400],profile:[30,3600],'social-get':[600,60],follow:[60,3600],'profile-report':[3,86400],'profile-appeal':[3,86400],'forum-get':[600,60],'forum-post':[5,3600],'forum-reply':[30,3600],'forum-day':[60,86400],'forum-ip':[40,3600],'forum-img':[60,3600]};
 const encoder=new TextEncoder();
 const hex=buffer=>[...new Uint8Array(buffer)].map(b=>b.toString(16).padStart(2,'0')).join('');
 export async function sha256(value){return hex(await crypto.subtle.digest('SHA-256',typeof value==='string'?encoder.encode(value):value));}
@@ -298,7 +299,7 @@ export async function handle(request,env,now=new Date(),ctx=null){
 export async function scheduled(event,env,ctx){
  /* every 30 minutes: website feedback still waiting for its GitHub issue; the weekly cron settles hot words */
  if(event?.cron==='20 21 * * *'){const job=refreshDaily(env,new Date(event?.scheduledTime||Date.now())).catch(()=>0);if(ctx?.waitUntil)ctx.waitUntil(job);return job;}
- if(event?.cron==='*/30 * * * *'){const job=Promise.all([syncPendingFeedback(env).catch(()=>0),refreshRelease(env,'latest').catch(()=>null),cleanupForumImages(env,new Date(event?.scheduledTime||Date.now())).catch(()=>0)]);if(ctx?.waitUntil)ctx.waitUntil(job);return job;}
+ if(event?.cron==='*/30 * * * *'){const job=Promise.all([syncPendingFeedback(env).catch(()=>0),refreshRelease(env,'latest').catch(()=>null),cleanupForumImages(env,new Date(event?.scheduledTime||Date.now())).catch(()=>0),cleanupProbeFull(env,new Date(event?.scheduledTime||Date.now())).catch(()=>0)]);if(ctx?.waitUntil)ctx.waitUntil(job);return job;}
  const when=new Date(event?.scheduledTime||Date.now());const job=settleDue(env,when).then(async done=>{await cleanupAvatars(env,when).catch(()=>0);return done;});if(ctx?.waitUntil)ctx.waitUntil(job);return job;}
 /* a token rotated while answering any request goes back on that answer, whichever endpoint it was */
 export default {fetch:async(request,env,ctx)=>{const response=await handle(request,env,new Date(),ctx);const token=ROTATED.get(request);if(!token||response.headers.get('x-megulit-token'))return response;const copy=new Response(response.body,response);copy.headers.set('x-megulit-token',token);return copy;},scheduled};
