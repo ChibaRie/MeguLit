@@ -60,21 +60,41 @@ class OverlayPlacement {
      right after the previous placed one on the same row (advance), as long as a later character of the line was drawn. */
   glyph(table) {
     if (!this.on || !table || typeof table.text !== 'string' || !table.text) return;
-    const chars = [...table.text], { rects, drawn, sizes } = this.rectsOf(table, ['d', 'c']);
-    let last = -1; for (let i = rects.length - 1; i >= 0; i--) if (rects[i]) { last = i; break; }
+    const chars = [...table.text], { rects, drawn: recorded, sizes } = this.rectsOf(table, ['d', 'c']);
     const id = 'glyph:' + (Number(table.seq) || 0);
+    /* 2026-11-16 (死に逝く君、館に芽吹く憎悪, KiriKiri: 「間　側　法律　当　　ば　ほとんど　犯罪行」): an engine with a glyph
+       cache rasterises a character once and reuses the bitmap, so a character an earlier line used has no record in
+       this one. "Drawn" used to mean "has a record", and every reused character stayed out for good: the reader drew
+       only the line's new characters, with holes. The game types in reading order, so a character before a drawn one
+       has been drawn; the characters after the last record are let in once the line is complete (no new record for
+       DoneAfter ms: a typing engine sends one every few tens of ms). */
+    const typed = this.typed(table, chars.length, recorded), drawn = new Set(chars.map((c, i) => i).filter(i => i < typed));
+    let first = -1, last = -1; for (let i = 0; i < rects.length; i++) if (rects[i]) { if (first < 0) first = i; last = i; }
     if (last >= 0) {
-      for (let i = 1; i < last; i++) if (!rects[i] && rects[i - 1]) { const p = rects[i - 1]; rects[i] = [p[0] + p[2], p[1], p[2], p[3]]; }
+      for (let i = first + 1; i < typed; i++) if (!rects[i] && rects[i - 1]) { const p = rects[i - 1]; rects[i] = [p[0] + p[2], p[1], p[2], p[3]]; }
+      for (let i = first - 1; i >= 0; i--) { const n = rects[i + 1]; rects[i] = [n[0] - n[2], n[1], n[2], n[3]]; }
+      for (let i = typed; i < rects.length; i++) rects[i] = null;
       return this.emitLine({ id, engine: 'glyph', text: table.text, rects, client: this.client.slice() });
     }
     /* no device position at all (GetGlyphOutline engines: Siglus, AdvHD...): lay the line out from the anchor (the last
        exactly placed line of this game, or an outside locator: anchor()), one advance per character, wrapping at the
        anchor's width; only characters the game has drawn so far (typing). Without an anchor: fallback. */
     /* glyph-dots' locating marks learned this game's text position (core/glyph-locate-host.cjs) */
-    const located = this.locator?.(table);
+    const located = this.locator?.(table, typed);
     if (Array.isArray(located) && located.length === chars.length && located.some(Boolean)) return this.emitLine({ id, engine: 'glyph', text: table.text, rects: located, client: this.client.slice(), located: true });
     if (this.anchorBox) return this.emitLine({ id, engine: 'glyph', text: table.text, rects: this.estimate(chars, drawn, sizes), client: this.client.slice(), approx: true });
     this.emitLine({ id, engine: 'glyph', text: table.text, fallback: true, client: this.client.slice() });
+  }
+  /* how many characters of the line the game has drawn: up to the last one with a record, all of them once no record
+     came for DoneAfter ms (the timer lays the line out again then) or the line has no record at all */
+  typed(table, n, recorded) {
+    const key = (Number(table.seq) || 0) + '|' + table.text, count = recorded.size, last = count ? Math.max(...recorded) + 1 : 0;
+    clearTimeout(this.doneTimer);
+    if (this.typing?.key !== key || this.typing.count !== count) this.typing = { key, count, done: false };
+    if (!count || this.typing.done || last >= n) return n;
+    this.doneTimer = setTimeout(() => { if (this.typing?.key !== key) return; this.typing.done = true; this.glyph(table); }, OverlayPlacement.DoneAfter);
+    this.doneTimer.unref?.();
+    return last;
   }
   /* one box per character of a glyph table (null = no record / no device position); kinds: record kinds that count */
   rectsOf(table, accept) {
@@ -192,8 +212,11 @@ class OverlayPlacement {
     if (key === this.lastKey) return; this.lastKey = key; this.current = line;
     this.send({ type: 'textPlace', ...line });
   }
-  stop() { this.clear(); if (this.paged) { this.paged = false; this.pageKey = ''; this.send({ type: 'textPlacePage', awake: false, armed: false, lines: [] }); } if (this.extraKey && this.extraKey !== '[]') this.send({ type: 'textPlaceExtra', items: [] }); this.extraKey = ''; this.on = false; }
+  stop() { clearTimeout(this.doneTimer); this.typing = null; this.clear(); if (this.paged) { this.paged = false; this.pageKey = ''; this.send({ type: 'textPlacePage', awake: false, armed: false, lines: [] }); } if (this.extraKey && this.extraKey !== '[]') this.send({ type: 'textPlaceExtra', items: [] }); this.extraKey = ''; this.on = false; }
 }
+
+/* a typing engine sends a record every few tens of ms; this long without one, the line is complete */
+OverlayPlacement.DoneAfter = 450;
 
 /* "ToMe_PAGE sw=1280 sh=960 awake=1 armed=1 gh=41 own=0" then, per line, TAB id TAB n TAB x,y,w,h;... TAB text */
 function parsePage(raw) {

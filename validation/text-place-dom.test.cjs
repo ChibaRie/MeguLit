@@ -64,6 +64,15 @@ const html = `<!doctype html><html><head><meta charset="utf-8"><style>
     for (const [l, t, r, bt] of inside) assert.ok(l >= 200 && t >= 100 && r <= 1000 && bt <= 600, 'inside the game client: ' + [l, t, r, bt]);
     assert.strictEqual(await page.evaluate(() => getComputedStyle([...document.querySelectorAll('.sentence-text .char-token')].pop()).display), 'none', 'a box outside the client is not drawn');
     await page.evaluate(() => { delete window.__tomoyoChinese.galLayoutInfo; window.__tomoyoChinese.textPlace({ fallback: true, text: '今日は晴れ' }); }); await frame();
+    /* 2026-11-16 the reader's text differs a little from the placed line (doubled dash, repeated copy): still placed on
+       the game's boxes, never at the reader's own place */
+    await page.evaluate(() => window.__tomoyoChinese.textPlace({ text: '今日―晴れ', client: [1280, 720], rects: [[100, 500, 30, 32], [130, 500, 30, 32], [160, 500, 30, 32], [190, 500, 30, 32], [220, 500, 30, 32]] })); await frame();
+    assert.strictEqual(await page.evaluate(() => document.body.classList.contains('megulit-placed')), true, 'は vs ― : most characters found, placed');
+    assert.deepStrictEqual(await box(nth(4)), [220, 500, 30, 32], 'later characters keep their own boxes (れ)');
+    assert.deepStrictEqual(await page.evaluate(() => window.__tomoyoChinese.textPlaceAlign([...'そして――殺人――。'], [...'そして―殺人―。'])), [0, 1, 2, 3, 3.5, 4, 5, 6, 6.5, 7], 'two reader dashes share the game dash');
+    assert.deepStrictEqual(await page.evaluate(() => window.__tomoyoChinese.textPlaceAlign([...'晴れ。晴れ。'], [...'晴れ。'])), [0, 1, 2, null, null, null], 'a repeated copy is not drawn twice');
+    assert.strictEqual(await page.evaluate(() => window.__tomoyoChinese.textPlaceAlign([...'あいう'], [...'かきく'])), null, 'another line');
+    await page.evaluate(() => window.__tomoyoChinese.textPlace({ fallback: true, text: '今日は晴れ' })); await frame();
     /* name plate and a choice drawn on their boxes, click-through */
     await page.evaluate(() => window.__tomoyoChinese.textPlaceExtra({ client: [1280, 720], items: [{ id: 1, kind: 'n', text: '朋也', rects: [[80, 450, 28, 30], [108, 450, 28, 30]] }, { id: 2, kind: 'o', text: 'はい', rects: [[600, 200, 32, 34], [632, 200, 32, 34]] }] })); await frame();
     assert.deepStrictEqual(await box('.megulit-place-name span:nth-child(2)'), [108, 450, 28, 30], 'name plate on its boxes');
