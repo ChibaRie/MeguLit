@@ -34,7 +34,7 @@ test('compositor follows foreground / minimise events and never inserts itself a
 
 const exe = path.join(root, 'native', 'GalWindowBridge.exe');
 test('stand-in windows: layer under the program in front, down within 100 ms of a minimise, at the bottom when the game closed (when GalWindowBridge.exe is built)', { skip: !fs.existsSync(exe) }, () => {
-  const r = require('node:child_process').spawnSync(exe, ['--topmost-guard-self-test'], { encoding: 'utf8', timeout: 20000 });
+  const r = require('node:child_process').spawnSync(exe, ['--topmost-guard-self-test'], { encoding: 'utf8', timeout: 20000, windowsHide: true });
   assert.equal(r.status, 0, r.stdout + r.stderr);
   assert.match(r.stdout, /"passed":true/);
 });
