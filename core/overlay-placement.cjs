@@ -177,7 +177,7 @@ class OverlayPlacement {
 
 /* "ToMe_PAGE sw=1280 sh=960 awake=1 armed=1 gh=41 own=0" then, per line, TAB id TAB n TAB x,y,w,h;... TAB text */
 function parsePage(raw) {
-  const parts = String(raw || '').split('	'), head = /^ToMe_PAGE sw=(\d+) sh=(\d+) awake=([01]) armed=([01]) gh=(\d+) own=(\d+) ownr=([-\d,;]*)$/.exec(parts[0]);
+  const parts = String(raw || '').split('	'), head = /^ToMe_PAGE sw=(\d+) sh=(\d+) awake=([01]) armed=([01]) gh=(\d+) own=(\d+) ownr=([-\d,;]*)(?: t=(\d+))?$/.exec(parts[0]);
   if (!head || (parts.length - 1) % 4) return null;
   const blank = c => c <= ' ' || c === '　' || c === '​' || c === '﻿', lines = [];
   for (let i = 1; i < parts.length; i += 4) {
@@ -185,7 +185,7 @@ function parsePage(raw) {
     if (rects.some(q => q.length !== 4 || q.some(n => !Number.isFinite(n)))) return null;
     lines.push({ id: Number(parts[i]), n: Number(parts[i + 1]), rects, text: [...parts[i + 3]].filter(c => !blank(c)).join('').slice(0, 4000) });
   }
-  return { type: 'hookGpuPage', sw: +head[1], sh: +head[2], awake: head[3] === '1', armed: head[4] === '1', glyphHeight: +head[5], own: +head[6], ownRects: head[7], lines };
+  return { type: 'hookGpuPage', sw: +head[1], sh: +head[2], awake: head[3] === '1', armed: head[4] === '1', glyphHeight: +head[5], own: +head[6], ownRects: head[7], tick: head[8] ? +head[8] : 0, lines };
 }
 
 module.exports = { OverlayPlacement, parsePage };

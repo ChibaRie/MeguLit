@@ -36,7 +36,7 @@ public static partial class HookBridge {
  static string GpuCalibrationLoad(){try{string f=GpuCalibrationFile();if(f==""||!File.Exists(f))return "";string v=File.ReadAllText(f).Trim();return System.Text.RegularExpressions.Regex.IsMatch(v,@"^[0-9.]{1,6} \d{2,5} \d{2,5}( b)?$")?v:"";}catch{return "";}}
  static void GpuReport(string s){
   /* page model (GlyphQuads.h): the whole page, every line with its places; core/overlay-placement.cjs page() */
-  if(s.StartsWith("ToMe_PAGE ",StringComparison.Ordinal)){if(!GpuPageOn&&s.IndexOf('\t')>0){GpuPageOn=true;Diagnostic("gpu page model on");}Emit(new{type="hookGpuPage",line=s});if(GpuPageLog!=s.Substring(0,Math.Min(s.Length,150))){GpuPageLog=s.Substring(0,Math.Min(s.Length,150));Diagnostic("gpu page "+GpuPageLog.Replace("	"," | "));}return;}
+  if(s.StartsWith("ToMe_PAGE ",StringComparison.Ordinal)){if(!GpuPageOn&&s.IndexOf('\t')>0){GpuPageOn=true;Diagnostic("gpu page model on");}Emit(new{type="hookGpuPage",line=s});{string head=System.Text.RegularExpressions.Regex.Replace(s.Substring(0,Math.Min(s.Length,170)),@" t=\d+","");/* the send tick changes with every message: not part of what is worth a log line */if(GpuPageLog!=head){GpuPageLog=head;Diagnostic("gpu page "+GpuPageLog.Replace("	"," | "));}}return;}
   if(s.StartsWith("ToMe_CHARS ",StringComparison.Ordinal)){Emit(new{type="hookChars",line=s});Diagnostic("gpu chars "+(s.Length>90?s.Substring(0,90):s));return;}
   // glyph trace (GlyphTrace.h): where the GetGlyphOutline glyphs of the line were drawn; core/gpu-glyph-pos.cjs reads it
   if(s.StartsWith("ToMe_GLYPHPOS ",StringComparison.Ordinal)){Emit(new{type="hookGlyphPos",line=s});return;}

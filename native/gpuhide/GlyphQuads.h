@@ -161,6 +161,9 @@ struct GlyphLearner {
  void PageWalk(const PLine &l, std::vector<Rect> &chars, std::vector<Rect> &left) const {
   std::vector<std::vector<Rect>> rows; bool sep = PageRows(l, rows); chars.clear(); left.clear();
   std::vector<Rect> flat; std::vector<size_t> rowOf; for (size_t ri = sep ? 1 : 0; ri < rows.size(); ri++) for (auto &r : rows[ri]) { flat.push_back(r); rowOf.push_back(ri); }
+  if (l.sep && !flat.empty()) { flat.erase(flat.begin()); rowOf.erase(rowOf.begin()); } // the paragraph row's place
+  /* the line's only place so far, at the left edge, before text that starts with no blank: it may be the paragraph row; told apart once the next place is there */
+  if (pageBlankQuads && !l.sep && flat.size() == 1 && l.n > 1 && !l.mask.empty() && !l.mask[0]) return;
   size_t k = 0, done = 0;
   for (size_t i = 0; i < l.mask.size(); i++) {
    if (l.mask[i]) { if (pageBlankQuads && k < flat.size()) k++; continue; }
@@ -200,7 +203,15 @@ struct GlyphLearner {
    std::vector<int> flow; for (size_t i = 0; i < ppos.size(); i++) if (ppos[i].line != -2 && ppos[i].lastFrame + 2 >= frameNo) flow.push_back((int)i);
    std::sort(flow.begin(), flow.end(), [&](int x, int y) { const Rect &a = ppos[x].r, &b = ppos[y].r; if (std::fabs(a.y0 - b.y0) >= pageH * 0.5f) return a.y0 < b.y0; return a.x0 < b.x0; });
    size_t k = 0; unsigned room = 0;
-   for (auto &l : plines) { unsigned cap = l.n + (pageBlankQuads ? l.nb : 0), c = 0; for (; k < flow.size() && c < cap; k++, c++) { PPos &q = ppos[flow[k]]; if (q.line != l.id) { q.line = l.id; pageDirty = true; } } if (l.claimed != c) pageDirty = true; l.claimed = c; room += cap - c; }
+   float left = 1e30f; for (int i : flow) left = (std::min)(left, ppos[i].r.x0);
+   for (auto &l : plines) { unsigned cap = l.n + (pageBlankQuads ? l.nb : 0), c = 0;
+    /* A blank row between two sentences is a glyph of its own in engines that draw blanks, and no line's text has it when
+       the next sentence does not begin with a blank: one place alone on its row, at the page's left edge, with the line's
+       text starting on a later row. It goes with the line (left out with it) but is none of its characters (2026-11-15:
+       the opening bracket of a dialogue line sat alone on the blank row and the whole line was one place off). */
+    l.sep = 0;
+    if (pageBlankQuads && !l.mask.empty() && !l.mask[0] && k + 1 < flow.size()) { const Rect &a = ppos[flow[k]].r, &b = ppos[flow[k + 1]].r; if (std::fabs(a.y0 - b.y0) >= pageH * 0.5f && a.x0 <= left + pageH * 0.5f) { PPos &q = ppos[flow[k]]; if (q.line != l.id) { q.line = l.id; pageDirty = true; } l.sep = 1; k++; } }
+    for (; k < flow.size() && c < cap; k++, c++) { PPos &q = ppos[flow[k]]; if (q.line != l.id) { q.line = l.id; pageDirty = true; } } if (l.claimed != c) pageDirty = true; l.claimed = c; room += cap - c; }
    unsigned extra = (unsigned)(flow.size() - k), oldest = 0; bool blanks = false; for (auto &l : plines) if (l.nb) blanks = true;
    for (; k < flow.size(); k++) { PPos &q = ppos[flow[k]]; if (q.line >= 0) { q.line = -1; pageDirty = true; } if (now - q.firstAt > oldest) oldest = now - q.firstAt; }
    // many places at once that no line can take: not a typing sentence, shown until a LINE claims them
@@ -225,7 +236,7 @@ struct GlyphLearner {
    s += "\t" + std::to_string(l.id) + "\t" + std::to_string(l.n) + "\t" + rects + "\t" + l.text;
   }
   pageDirty = false; if (s == pageSent) { pageSentAt = now; return; }
-  pageSent = s; pageSentAt = now; emit(s);
+  pageSent = s; pageSentAt = now; { size_t tab = s.find('\t'); std::string head = s.substr(0, tab == std::string::npos ? s.size() : tab) + " t=" + std::to_string(now); emit(tab == std::string::npos ? head : head + s.substr(tab)); }
  }
 
  // One draw call: returns the indices of the quads to leave out.

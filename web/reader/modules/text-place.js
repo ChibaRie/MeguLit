@@ -131,7 +131,8 @@
     }
     return { place, size, shown };
   }
-  function plain(text) { const s = document.createElement('div'); s.className = 'sentence-text'; [...text].forEach((c, i) => { const span = document.createElement('span'); span.className = 'char-token'; span.dataset.index = String(i); span.textContent = c; s.append(span); }); return s; }
+  /* a line (or part of one) the reader has no tokens for: plain characters, in the reader sentence's own classes so they sit and look like its characters */
+  function plain(text) { const s = document.createElement('div'), like = target()?.querySelector('.sentence-text:not(.megulit-old-line)'); s.className = like ? like.className : 'sentence-text'; [...text].forEach((c, i) => { const span = document.createElement('span'); span.className = 'char-token'; span.dataset.index = String(i); span.textContent = c; s.append(span); }); return s; }
   function dropOld(win, keep) { for (const n of document.querySelectorAll('.megulit-old-line')) if (!keep || !keep.has(n) || n.parentElement !== win) n.remove(); }
   /* layer 4 page model: the whole page on the game's own places. The reader's line is the page line with its text; the
      page's other lines are drawn from the copy kept when they were the reader's line (ruby, word tokens), or as plain
