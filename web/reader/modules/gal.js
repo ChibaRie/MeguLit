@@ -635,12 +635,17 @@
     }
     if (message.type === 'pickWindow' && typeof message.active === 'boolean') bridge.galPickState?.(message.active);
     /* 绑定游戏窗口: which window is bound right now (title), or 未绑定 */
-    const boundLabel = document.querySelector('[data-gal-bound-window]');
-    if (boundLabel) { const lang = (window.__tomeI18n?.get?.()||'zh').slice(0,2), w = {zh:['当前：','未绑定'],en:['Bound: ','Not bound'],ja:['割り当て中：','未割り当て']}[lang] || ['当前：','未绑定'];
-      if (message.type === 'bound' && message.bound !== false && typeof message.gameTitle === 'string') bridge.galBoundTitle = message.gameTitle || '?';
-      else if (message.gameAttached === false || message.type === 'bound' && message.bound === false && message.gameAttached !== true) bridge.galBoundTitle = '';
-      boundLabel.textContent = bridge.galBoundTitle ? w[0] + bridge.galBoundTitle : w[1]; boundLabel.title = bridge.galBoundTitle || ''; }
+    /* 2026-11-15 (1.4.10, 死に逝く君、館に芽吹く憎悪: 「绑定游戏窗口：未绑定」 next to a bound, embedding game): the window is tracked from every
+       bridge message, menu open or not. The game binds before Alt+T is opened, so a title kept only while the label existed was never
+       set. A 'bound' message says bound:false in the normal interface even with a window attached: gameAttached / gameHwnd decide. */
+    if (message.type === 'bound' && typeof message.gameTitle === 'string' && (message.bound !== false || message.gameAttached === true || /^[1-9]\d*$/.test(String(message.gameHwnd || '')))) bridge.galBoundTitle = message.gameTitle || '?';
+    else if (message.gameAttached === false || message.type === 'gameClosed' || message.type === 'bound' && message.bound === false && message.gameAttached !== true && !/^[1-9]\d*$/.test(String(message.gameHwnd || ''))) bridge.galBoundTitle = '';
+    paintBoundWindow();
   };
+  const paintBoundWindow = () => { const boundLabel = document.querySelector('[data-gal-bound-window]'); if (!boundLabel) return;
+    const lang = (window.__tomeI18n?.get?.()||'zh').slice(0,2), w = {zh:['当前：','未绑定'],en:['Bound: ','Not bound'],ja:['割り当て中：','未割り当て']}[lang] || ['当前：','未绑定'];
+    boundLabel.textContent = bridge.galBoundTitle ? w[0] + bridge.galBoundTitle : w[1]; boundLabel.title = bridge.galBoundTitle || ''; };
+  bridge.paintBoundWindow = paintBoundWindow;
   const open = bridge.openSettings;
   bridge.openSettings = () => {
     open();
@@ -884,7 +889,7 @@
     const pickLabel = on => { const w = pickWords[(window.__tomeI18n?.get?.()||'zh').slice(0,2)] || pickWords.zh; pickButton.dataset.noI18n = ''; pickButton.textContent = w[on?1:0]; pickButton.classList.toggle('tome-picking', on); pickButton.setAttribute('aria-pressed', String(on)); };
     bridge.galPickState = on => pickLabel(on === true);
     pickButton.onclick = () => { const on = !pickButton.classList.contains('tome-picking'); pickLabel(on); send({ type: 'galPickWindow', active: on }); };
-    pickLabel(false);
+    pickLabel(false); bridge.paintBoundWindow?.();
     group.querySelector('[data-gal-unbind]').onclick = () => { preferences.bindEnabled = false; send({ type: 'galUnbind' }); save(); };
     // Drag the text box with the mouse: first click starts, dragging moves it live, second click keeps the position.
     const dragButton = group.querySelector('[data-gal-drag]'), dragWords = {zh:['拖动文本框','确定位置'],en:['Drag text box','Confirm position'],ja:['テキスト枠をドラッグ','位置を確定']};
