@@ -83,7 +83,7 @@ test('packaged MeguLitFont32/64.dll are the glyph-hide build (version export >= 
   const ex=peExports(buf);assert.ok(ex.includes('MeguLitFontVersion')&&ex.includes('MeguLitFontVersionTag'),n+' has no MeguLitFontVersion export: stale DLL from before the glyph hide');
   const tag=/MeguLitFont version=(\d+)/.exec(buf.toString('latin1'));assert.ok(tag&&Number(tag[1])>=want,n+' version '+(tag?tag[1]:'none')+' < '+want);}
  const b=read('Build.ps1');assert.ok(b.includes("foreach ($taskNb in (Get-Content -LiteralPath (Join-Path $taskRoot 'native/native-builds.json')"),'Build.ps1 builds every listed native binary');
- assert.ok(b.includes('throw "Native self-test failed:'),'self-tests fail the build');assert.ok(b.includes("tools/native-stale.cjs'); if ($LASTEXITCODE -ne 0) { throw"),'staleness check fails the build');
+ assert.ok(b.includes('throw "Native self-test failed:'),'self-tests fail the build');assert.match(b,/tools\/native-stale\.cjs'\)( @\w+)?; if \(\$LASTEXITCODE -ne 0\) \{ throw/,'staleness check fails the build');
  const ci=read('.github/workflows/ci.yml');assert.ok(ci.includes('native\\native-builds.json'));assert.ok(ci.includes('node tools/native-stale.cjs --ci'));
  assert.ok(read('Release.ps1').includes('& node tools/native-stale.cjs;if($LASTEXITCODE -ne 0){throw'),'Release stops on a stale native binary even when it reuses a build');
  const h=read('native/HookBridge.cs');assert.ok(h.includes('hideTrying=item.Key==Selected&&c.gdiProbe&&!c.hideOnly&&(ReplacementEnabled||ProbeWanted)&&!GlyphCached'));
