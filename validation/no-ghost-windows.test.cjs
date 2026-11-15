@@ -60,8 +60,8 @@ class F{
 
 test('a hung window gets a ghost by default and none after DisableProcessWindowsGhosting (off-screen fixtures)',{skip:process.platform!=='win32'||!csc||process.env.MEGULIT_HEADLESS_ONLY==='1'},()=>{
  fs.mkdirSync(work,{recursive:true});const src=path.join(work,'GhostFixture.cs'),exe=path.join(work,'GhostFixture.exe');
- fs.writeFileSync(src,fixture);execFileSync(csc,['-nologo','-out:'+exe,src],{stdio:'pipe'});
- const result=JSON.parse(execFileSync(exe,['probe'],{encoding:'utf8',timeout:30000}).trim().split(/\r?\n/).pop());
+ fs.writeFileSync(src,fixture);execFileSync(csc,['-nologo','-out:'+exe,src],{stdio:'pipe',windowsHide:true});
+ const result=JSON.parse(execFileSync(exe,['probe'],{windowsHide:true,encoding:'utf8',timeout:30000}).trim().split(/\r?\n/).pop());
  assert.ok(result.hungDefault&&result.hungOptedOut,'both fixtures stopped answering: '+JSON.stringify(result));
  if(!result.ghostDefault)return; /* a session without DWM ghosting (service, locked) cannot show the difference */
  assert.equal(result.ghostOptedOut,false,'the opted-out window must never be replaced by a ghost: '+JSON.stringify(result));

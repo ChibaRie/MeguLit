@@ -50,10 +50,10 @@ test('crash canary: only an exception exit code turns a path off; kill, clean qu
  const cs=read('native/TextPathCanary.cs');assert.match(cs,/public const long SafeAfter=20000;/);assert.match(read('native/HookBridge.cs'),/TextPathCanary\.SelfTest\(\)/);
 });
 
-function python(){for(const [cmd,args] of [['python',['-I']],['py',['-3','-I']]]){const r=spawnSync(cmd,[...args,'-c','import sys;print(sys.version_info[0])'],{encoding:'utf8'});if(r.status===0&&r.stdout.trim()==='3')return [cmd,args];}return null;}
+function python(){for(const [cmd,args] of [['python',['-I']],['py',['-3','-I']]]){const r=spawnSync(cmd,[...args,'-c','import sys;print(sys.version_info[0])'],{encoding:'utf8',windowsHide:true});if(r.status===0&&r.stdout.trim()==='3')return [cmd,args];}return null;}
 const py=python();
 test('Ren\'Py: every located sentence (ADV too) sends its character boxes; the say Text is drawn at alpha 0 only while asked, and back at once',{skip:!py&&'no CPython 3 on PATH'},()=>{
- const r=spawnSync(py[0],[...py[1],path.join(root,'native/renpytext/selftest/host.py'),'--sink',path.join(root,'native/MeguLitRenpy.py')],{encoding:'utf8'});assert.equal(r.status,0,r.stderr);
+ const r=spawnSync(py[0],[...py[1],path.join(root,'native/renpytext/selftest/host.py'),'--sink',path.join(root,'native/MeguLitRenpy.py')],{encoding:'utf8',windowsHide:true});assert.equal(r.status,0,r.stderr);
  const lines=JSON.parse(r.stdout),chars=lines.filter(l=>l.startsWith('ToMe_CHARS ')).map(TP.parseChars);
  assert.ok(chars.every(Boolean),'every record parses');
  assert.deepEqual(chars.map(c=>[c.line,c.hidden,c.rects.length,c.text]),[[1,false,14,'春の風が吹いた。\n二行目です。'],[2,false,6,'漢字を読む。'],[3,true,6,'普通の台詞。'],[3,false,6,'普通の台詞。'],[4,false,5,'新しい頁。']],'line 3 sent again as drawn when MeguLit stops asking');

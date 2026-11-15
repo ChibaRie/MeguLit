@@ -244,6 +244,8 @@ public class GalWindowBridge {
         if(++HostedFrameUpdates<=12)Emit(new{type="hostFrame",update=HostedFrameUpdates,styleBefore=style,styleAfter=GetWindowLong(Overlay,-16),exStyleBefore=ex,exStyleAfter=GetWindowLong(Overlay,-20)});
     }
     static void FindOverlay(){
+        // Self-test modes run without an overlay process (OverlayPid 0): never adopt, move or raise someone else's window.
+        if(OverlayPid<=0){Overlay=IntPtr.Zero;return;}
         if(PreferredOverlay!=IntPtr.Zero&&IsWindow(PreferredOverlay)){uint owner;GetWindowThreadProcessId(PreferredOverlay,out owner);if(owner==OverlayPid){Overlay=PreferredOverlay;PrepareHostedFrame();return;}}
         // Tauri also owns hidden event-loop/tool windows. Select its actual application surface.
         // A minimised main window has an empty client rectangle; retain its identity until it is destroyed.
@@ -635,7 +637,7 @@ public class GalWindowBridge {
             Emit(new{type="host-frame-selftest",passed=true,noCaption=true,noResizeFrame=true,popup=true});return 0;
         }
         if(args.Length>0&&args[0]=="--game-window-policy-self-test"){
-            using(var fixture=new System.Windows.Forms.Form()){fixture.Text="MeguLit hidden game fixture";Target=fixture.Handle;TrackedGame=Process.GetCurrentProcess();TrackedGameStarted=TrackedGame.StartTime.ToUniversalTime().Ticks;WindowGoneAt=DateTime.UtcNow.AddSeconds(-10);
+            using(var fixture=new System.Windows.Forms.Form{StartPosition=System.Windows.Forms.FormStartPosition.Manual,Location=new System.Drawing.Point(-32000,-32000),ShowInTaskbar=false}){fixture.Text="MeguLit hidden game fixture";Target=fixture.Handle;TrackedGame=Process.GetCurrentProcess();TrackedGameStarted=TrackedGame.StartTime.ToUniversalTime().Ticks;WindowGoneAt=DateTime.UtcNow.AddSeconds(-10);
                 bool preserved=!CheckGameExit()&&WindowGoneAt==DateTime.MinValue;
                 ForgetGame();Target=IntPtr.Zero;if(!preserved)return 9;
                 Emit(new{type="game-window-policy-selftest",passed=true,hiddenWindowPreserved=true});return 0;

@@ -13,9 +13,9 @@ const root=path.join(__dirname,'..'),read=f=>fs.readFileSync(path.join(root,f),'
 function pageInfo(s){const m=/^ToMe_(KRKR|RENPY) (begin|end) line=(\d+) same=([01]) nvl=([01]) x0=(-?\d+) y0=(-?\d+) x1=(-?\d+) y1=(-?\d+) size=(\d+) sw=(\d+) sh=(\d+) n=(\d+)(?: text=(.*))?$/.exec(s);if(!m)return null;const n=i=>Number(m[i]);
  return {type:'hookEngineLine',engine:m[1].toLowerCase(),phase:m[2],line:n(3),same:m[4]==='1',nvl:m[5]==='1',x0:n(6),y0:n(7),x1:n(8),y1:n(9),size:n(10),sw:n(11),sh:n(12),count:n(13),text:(m[14]??'').replace(/\u001f/g,'\n')};}
 
-function python(){for(const [cmd,args] of [['python',['-I']],['py',['-3','-I']]]){const r=spawnSync(cmd,[...args,'-c','import sys;print(sys.version_info[0])'],{encoding:'utf8'});if(r.status===0&&r.stdout.trim()==='3')return [cmd,args];}return null;}
+function python(){for(const [cmd,args] of [['python',['-I']],['py',['-3','-I']]]){const r=spawnSync(cmd,[...args,'-c','import sys;print(sys.version_info[0])'],{encoding:'utf8',windowsHide:true});if(r.status===0&&r.stdout.trim()==='3')return [cmd,args];}return null;}
 const py=python();
-function scriptLines(){const r=spawnSync(py[0],[...py[1],path.join(root,'native/renpytext/selftest/host.py'),'--sink',path.join(root,'native/MeguLitRenpy.py')],{encoding:'utf8'});assert.equal(r.status,0,r.stderr);/* text architecture 3 records (ToMe_CHARS) and the host's own notes are tested in text-paths.test.cjs */return JSON.parse(r.stdout).filter(l=>!/^(ToMe_CHARS|HOST) /.test(l));}
+function scriptLines(){const r=spawnSync(py[0],[...py[1],path.join(root,'native/renpytext/selftest/host.py'),'--sink',path.join(root,'native/MeguLitRenpy.py')],{encoding:'utf8',windowsHide:true});assert.equal(r.status,0,r.stderr);/* text architecture 3 records (ToMe_CHARS) and the host's own notes are tested in text-paths.test.cjs */return JSON.parse(r.stdout).filter(l=>!/^(ToMe_CHARS|HOST) /.test(l));}
 
 function fixture(t){t.mock.timers.enable({apis:['setTimeout']});let now=100000;const events=[];
  const hook=new HookNative({native:__dirname,hook:__dirname,logs:'Z:/no-fixture-log'},m=>events.push(m),()=>{},()=>now);hook.trace=()=>{};t.after(()=>hook.stop());

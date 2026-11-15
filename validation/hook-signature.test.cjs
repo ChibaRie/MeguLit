@@ -13,7 +13,7 @@ const hex=a=>Buffer.from(a).toString('hex');
 function host(dir,pad,fn,seed){fs.mkdirSync(dir,{recursive:true});let x=seed;const rnd=()=>(x=(x*1103515245+12345)>>>0)>>>24;
  const bytes=n=>Array.from({length:n},rnd).join(',');
  const src=`using System;static class G{static readonly byte[] Pad={${bytes(pad)}};static readonly byte[] Fn={${fn.join(',')}};static readonly byte[] Tail={${bytes(3000)}};static void Main(){Console.WriteLine(Pad.Length+Fn.Length+Tail.Length);Console.Out.Flush();System.Threading.Thread.Sleep(60000);}}`;
- fs.writeFileSync(path.join(dir,'game.cs'),src);execFileSync(csc,['/nologo','/platform:x86','/out:'+path.join(dir,'game.exe'),path.join(dir,'game.cs')]);return path.join(dir,'game.exe');}
+ fs.writeFileSync(path.join(dir,'game.cs'),src);execFileSync(csc,['/nologo','/platform:x86','/out:'+path.join(dir,'game.exe'),path.join(dir,'game.cs')],{windowsHide:true});return path.join(dir,'game.exe');}
 function launch(exe){return new Promise((ok,no)=>{const p=spawn(exe,[],{windowsHide:true,stdio:['ignore','pipe','ignore']});p.stdout.once('data',()=>ok(p));p.once('error',no);});}
 
 test('pure signature logic passes the bridge self-test routine (synthetic builds, code rewrite)',()=>{
@@ -43,10 +43,10 @@ test('bridge: review fixes (hooked capture, no early insert, off the Gate lock, 
 test('mock game builds A and B: function moved + operands changed, ASLR on: signature relocates it',{skip:!csc&&'no csc'},async()=>{
  const src=[path.join(root,'native/HookSignature.cs'),path.join(__dirname,'hook-signature-harness.cs')];
  fs.mkdirSync(work,{recursive:true});const harness=path.join(work,'harness.exe');
- execFileSync(csc,['/nologo','/platform:x64','/out:'+harness,...src]);
+ execFileSync(csc,['/nologo','/platform:x64','/out:'+harness,...src],{windowsHide:true});
  const a=host(path.join(work,'v1'),4000,fnA,1),b=host(path.join(work,'v2'),9100,fnB,2);
  const pa=await launch(a),pb=await launch(b);
- try{const out=JSON.parse(execFileSync(harness,[String(pa.pid),String(pb.pid),hex(fnA),hex(fnB),'game.exe','6'],{encoding:'utf8'}));
+ try{const out=JSON.parse(execFileSync(harness,[String(pa.pid),String(pb.pid),hex(fnA),hex(fnB),'game.exe','6'],{windowsHide:true,encoding:'utf8'}));
   assert.ok(!out.error,out.error);
   assert.notEqual(out.offA,out.expectB,'the function really moved between builds');
   assert.equal(out.offB,out.expectB,'relocated to the moved function');
@@ -56,7 +56,7 @@ test('mock game builds A and B: function moved + operands changed, ASLR on: sign
  }finally{pa.kill();pb.kill();}
  // captured from an already hooked process (E9 at the hook point), relocated in a clean build
  const h=host(path.join(work,'v1hooked'),4000,fnH,1),ph=await launch(h),pc=await launch(b);
- try{const out=JSON.parse(execFileSync(harness,[String(ph.pid),String(pc.pid),hex(fnH),hex(fnB),'game.exe','6'],{encoding:'utf8'}));
+ try{const out=JSON.parse(execFileSync(harness,[String(ph.pid),String(pc.pid),hex(fnH),hex(fnB),'game.exe','6'],{windowsHide:true,encoding:'utf8'}));
   assert.ok(!out.error,out.error);assert.ok(out.pattern.startsWith('?? ?? ?? ?? ??'),out.pattern);assert.equal(out.offB,out.expectB);
  }finally{ph.kill();pc.kill();}
 });
