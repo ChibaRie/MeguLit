@@ -40,7 +40,6 @@
 .main[data-kids~="dtv-bg"] .record{border-radius:2px!important;background:rgba(255,255,255,.03)!important;border:1px solid rgba(255,255,255,.07)!important}
 .main[data-kids~="dtv-bg"] .record:hover{border-color:color-mix(in srgb,var(--g-gold) 45%,transparent)!important}
 @media (prefers-reduced-motion:reduce){.main[data-kids~="dtv-bg"] .detail-cover .cover,.main[data-kids~="dtv-bg"] .detail-cover img{transition:none}}
-.main[data-kids~="dtv-bg"] .detail-cover::after{display:none!important}
 .main[data-kids~="dtv-bg"] .detail-cover.tv-holo{transform:rotate(-3deg);cursor:pointer}
 .main[data-kids~="dtv-bg"] .detail-cover.tv-holo .tv-face{aspect-ratio:3/4;height:auto}
 .main[data-kids~="dtv-bg"] .detail-cover.tv-holo .cover,.main[data-kids~="dtv-bg"] .detail-cover.tv-holo img{display:block;width:100%;height:100%;object-fit:cover;border-radius:0!important;box-shadow:none!important;transform:none!important}

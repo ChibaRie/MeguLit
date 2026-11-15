@@ -50,13 +50,19 @@ function savePreferences(request) {
 }
 /* 2026-11-12 the Windows feature a game could not start without, per game, for the install button (windows_feature_install) */
 const neededFeature=new Map();
+/* real launch progress for the detail page's button: the milestones below are the stages launch() actually passes (the same ones game-launch.log records);
+   the page polls launch_progress and fills the button up to the latest milestone */
+const LAUNCH_MILESTONES={prepare:.08,features:.16,'process-check':.26,request:.36,'process-start':.5,started:.64,'window-wait':.7,ready:1};
+const launchProgress=new Map();
+function markLaunch(id,key,extra={}){const p=LAUNCH_MILESTONES[key];if(p===undefined&&!extra.state)return;const prev=launchProgress.get(id);const keep=prev&&!extra.state&&prev.state==='run'&&prev.p>p?prev.p:p;
+ launchProgress.set(id,{p:extra.state==='failed'?(prev?.p||0):keep,key,state:extra.state||(key==='ready'?'done':'run'),error:extra.error||'',at:Date.now(),next:Object.values(LAUNCH_MILESTONES).find(v=>v>keep)||1});}
 async function launch(db,id,runtime=null,windowsLaunch=false,{retried=false,redirected=false}={}) {
   const game=db.prepare('SELECT * FROM games WHERE id=? AND removed_at IS NULL').get(id);
   if(!game)throw Error('GAME_NOT_FOUND');
   /* 2026-11-12 a folder used as another game's Japanese original starts that game (services/import-source.cjs) */
   {let target='';try{const sources=require('./import-source.cjs');sources.backfill(db);target=sources.targetOf(db,db.prepare('SELECT original FROM games WHERE id=?').get(id));}catch{}if(target&&target!==id&&!redirected)return launch(db,target,runtime,windowsLaunch,{redirected:true});}
    const trace=(stage,extra={})=>{try{fs.mkdirSync(path.join(root,'logs'),{recursive:true});fs.appendFileSync(path.join(root,'logs','game-launch.log'),JSON.stringify({at:new Date().toISOString(),gameId:id,stage,...extra})+'\n');}catch{}};
-  let stage='launch-preflight',featureWatch=null;
+  let stage='launch-preflight',featureWatch=null;if(!retried)markLaunch(id,'prepare');
   try{
   if(!game.executable||!fs.existsSync(game.executable))throw Error('EXECUTABLE_MISSING');
   let original={};try{original=JSON.parse(game.original||'{}')||{};}catch{}const profile=original.library || {};
@@ -73,12 +79,12 @@ async function launch(db,id,runtime=null,windowsLaunch=false,{retried=false,redi
   {let plan=null;try{plan=require('../core/japanese-restore.cjs')._internal.yurisPlan(path.dirname(game.executable));}catch{}const exeName=path.basename(game.executable);if(plan?.updates?.length&&!/(cn\d|chs|汉化|中文)/i.test(exeName)&&require('../core/launcher-language.cjs').languageHint(exeName)!=='zh')throw Error('CHINESE_PATCH_ACTIVE');}
   /* 2026-11-12 (user: 沙耶の唄 opened a Windows DirectPlay install window that then wanted a restart) the game's own folder
      gets what it loads from DirectPlay, so no Windows window and no restart (core/directplay.cjs) */
-  stage='windows-features';
+  stage='windows-features';markLaunch(id,'features');
   const gameDir=path.dirname(game.executable);
   {let dp=null;try{dp=require('../core/directplay.cjs').prepare(gameDir,{root,exe:game.executable});if(dp.copied.length||dp.declined.length||dp.missing.length)trace('directplay',dp);}catch(error){trace('directplay-failed',{error:String(error?.message||error).slice(0,160)});}
    try{const configs=require('../core/windows-features.cjs').prepareDotnet(gameDir);if(configs.length)trace('dotnet-runtime-config',{files:configs});}catch(error){trace('dotnet-config-failed',{error:String(error?.message||error).slice(0,160)});}
    if(dp?.missing?.length){neededFeature.set(id,'DirectPlay');throw Object.assign(Error('DIRECTPLAY_REQUIRED'),{detail:dp.missing.join(',')});}}
-  stage='process-check';
+  stage='process-check';markLaunch(id,'process-check');
   const {gameProcesses}=require('./game-process.cjs');
   const ready=()=>require('./game-readiness.cjs').waitForVisibleGame(()=>gameProcesses(root,game.executable));
   // Paths are passed as literal process arguments, never interpolated into a shell.
@@ -87,11 +93,11 @@ async function launch(db,id,runtime=null,windowsLaunch=false,{retried=false,redi
   if(focused==='focused'||focused==='running') {
     // An earlier instance that never showed (or lost) its window blocks single-instance games: say so (E215.2, user:
     // サノバウィッチ 'would not start' while a hidden copy from a Japanese-locale launch kept running).
-    let readyState=null;try{const state=await ready();readyState=state;trace('existing-window-ready',state);try{require('../core/japanese-auto.cjs').launchResult(root,id,true);}catch{}}catch(error){trace('existing-window-not-ready',{error:error.message});throw error.message==='GAME_WINDOW_NOT_READY'?Object.assign(Error('GAME_RUNNING_HIDDEN'),{detail:path.basename(game.executable)}):error;}
+    let readyState=null;try{const state=await ready();readyState=state;trace('existing-window-ready',state);markLaunch(id,'ready');try{require('../core/japanese-auto.cjs').launchResult(root,id,true);}catch{}}catch(error){trace('existing-window-not-ready',{error:error.message});throw error.message==='GAME_WINDOW_NOT_READY'?Object.assign(Error('GAME_RUNNING_HIDDEN'),{detail:path.basename(game.executable)}):error;}
     db.prepare('UPDATE games SET last_launched_at=? WHERE id=?').run(Math.floor(Date.now()/1000),id);
     runtime?.prepareGame(game.executable);runtime?.bindLaunched?.(readyState?.pid);return {action:focused,connected:false};
   }
-  trace('launch-request',{windowsLaunch});
+  trace('launch-request',{windowsLaunch});markLaunch(id,'request');
   /* a Windows feature install window the game still opens is closed at once (the game goes on as if it was cancelled);
      DirectPlay is prepared while the game runs, anything else is remembered for this folder */
   featureWatch=require('../core/windows-features.cjs').watch(gameDir,{trace,onFeature:feature=>{if(/^directplay$/i.test(feature)){const dp=require('../core/directplay.cjs').prepare(gameDir,{root,exe:game.executable,all:true});trace('directplay',dp);}}});
@@ -107,7 +113,7 @@ async function launch(db,id,runtime=null,windowsLaunch=false,{retried=false,redi
    await require('./game-process.cjs').shellOpen(root,game.executable);
    stage='window-wait';state=await ready();
   }else{
-   stage='process-start';
+   stage='process-start';markLaunch(id,'process-start');
    const steamApp=profile.source==='steam'&&/^\d+$/.test(String(profile.appid||''));
    /* 2026-11-13 (user: STEINS;GATE from MeguLit first pops Steam's launcher): an app with several Steam launch options
       (game + Launcher.exe config tool) makes steam://rungameid show a chooser, and Steam then ran Launcher.exe. When the
@@ -138,8 +144,8 @@ async function launch(db,id,runtime=null,windowsLaunch=false,{retried=false,redi
    const fontDot=early&&!textPath?require('../core/text-paths-launch.cjs').fontDot(root,game.executable,early,trace):null;
    const child=textPath?await startProcess(textPath.exe,[...(companionArgs||[]),...textPath.args],textPath.cwd,'GAME_LAUNCH_FAILED',undefined,{...process.env,...textPath.env}):await startProcess(early?early.file:steam?'explorer.exe':launchExe,early?early.args:steam?['steam://rungameid/'+profile.appid]:companion?companionArgs:[],steamDirect?steamDirect.cwd:path.dirname(game.executable),'GAME_LAUNCH_FAILED',undefined,early?early.env:directEnv);
 
-   trace('launch-process-started',{pid:child.pid,steam,steamDirect:companion||!!steamDirect||undefined});
-   stage='window-wait';
+   trace('launch-process-started',{pid:child.pid,steam,steamDirect:companion||!!steamDirect||undefined});markLaunch(id,'started');
+   stage='window-wait';markLaunch(id,'window-wait');
    /* Steam may start another program in the install folder than the one on record (Summer Pockets: the library has
       SummerPocketsRB.exe, Steam runs SiglusEngine_Steam.exe; user 2026-11-09: the game was up and MeguLit said the launch
       failed). For Steam launches a game process from any program in that folder counts. */
@@ -163,7 +169,7 @@ async function launch(db,id,runtime=null,windowsLaunch=false,{retried=false,redi
    if(textPath){try{const tp=require('../core/text-paths-launch.cjs');const join=(n=0)=>{const hook=runtime?.reader?.gal?.hooks;if(hook){tp.attach(textPath,hook);return;}if(n<20)setTimeout(()=>join(n+1),1500).unref?.();};join();textPath.connect().catch(()=>{});
     const exitWatch=setInterval(()=>{if(child.exit){clearInterval(exitWatch);try{textPath.session.exited(child.exit.code??-1);textPath.session.stop();}catch{}}},2000);exitWatch.unref?.();}catch(error){trace('text-paths-attach-failed',{error:String(error?.message||error).slice(0,160)});}}
   }
-  trace('new-window-ready',state);try{require('../core/japanese-auto.cjs').launchResult(root,id,true);}catch{}
+  trace('new-window-ready',state);markLaunch(id,'ready');try{require('../core/japanese-auto.cjs').launchResult(root,id,true);}catch{}
   {const watch=featureWatch;featureWatch=null;setTimeout(()=>watch.stop(),30000).unref?.();}
   db.prepare('UPDATE games SET last_launched_at=? WHERE id=?').run(Math.floor(Date.now()/1000),id);
   runtime?.prepareGame(game.executable);runtime?.bindLaunched?.(state?.pid);return {action:'launched',connected:false};
@@ -177,7 +183,7 @@ async function launch(db,id,runtime=null,windowsLaunch=false,{retried=false,redi
      neededFeature.set(id,feature);error=Object.assign(Error(/^directplay$/i.test(feature)?'DIRECTPLAY_REQUIRED':'WINDOWS_FEATURE_REQUIRED'),{detail:feature});}}
    /* E299: a boxed release whose protection plug-in wants the original DVD quits on start; say so (disc-check.cjs). */
    if(['GAME_PROCESS_EXITED','GAME_WINDOW_NOT_READY'].includes(error.message)&&game.executable&&require('./disc-check.cjs').discProtected(path.dirname(game.executable)))error=Object.assign(Error('GAME_DISC_REQUIRED'),{detail:error.message});
-   trace('launch-failed',{phase:stage,error:error.message,detail:error.detail||error.code});try{require('../core/japanese-auto.cjs').launchResult(root,id,false);}catch{}throw error;}
+   trace('launch-failed',{phase:stage,error:error.message,detail:error.detail||error.code});markLaunch(id,'failed',{state:'failed',error:error.message});try{require('../core/japanese-auto.cjs').launchResult(root,id,false);}catch{}throw error;}
 }
 function deleteWord(db,id) {
   const word=db.prepare('SELECT * FROM vocabulary WHERE id=?').get(id);
@@ -576,6 +582,7 @@ async function dispatch(request,runtime=null) {
       }
       case 'statistics':return require('./statistics.cjs').statistics(db,request);
       case 'focus_game':{const game=db.prepare('SELECT executable FROM games WHERE id=? AND removed_at IS NULL').get(String(request.id));if(!game)throw Error('GAME_NOT_FOUND');return {status:await require('./game-process.cjs').gameProcess(root,game.executable,{focus:true})};}
+      case 'launch_progress':return launchProgress.get(String(request.id))||{p:0,state:'idle',next:.08};
       case 'launch':return await launch(db,String(request.id),runtime,request.windowsLaunch===true);
       case 'migration_status':return store.readJSON(path.join(root,'migration','migration-report.json'));
       default:throw Error('UNKNOWN_ACTION');

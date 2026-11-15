@@ -13,7 +13,8 @@ test('one plate covers launch, wizard, goal, Anki and dialog primaries; the big 
  for(const s of ['button.primary','.dev-notice-actions button[data-ok]','[data-lg-ok]','.main .detail-actions>button.primary'])assert.ok(css.includes(s),s);
  assert.match(css,/clip-path:polygon\(0 0,calc\(100% - var\(--fold\)\) 0,100% var\(--fold\)/);
  assert.match(css,/detail-actions>button\.primary:not\(\.icon-button\):not\(\.titlebar \*\):not\(\.mgl-x\)\{height:52px/);
- assert.match(css,/\[aria-busy=true\]::before\{width:40%/);
+ assert.match(css,/\[aria-busy=true\]::before\{inset:0 auto 0 0!important;height:100%!important;max-height:none!important;width:calc\(var\(--lp-progress,0\)\*100%\)/);
+ assert.doesNotMatch(css,/mgl-sweep 1\.1s/);
  assert.match(css,/@property --fold\{syntax:"<length>";inherits:true/,'the fold size must reach ::after');
  assert.match(css,/:hover:not\(:disabled\)\{--fold:42px\}/,'hover folds the launch corner down');
  assert.match(css,/prefers-reduced-motion:reduce/);
@@ -22,7 +23,8 @@ test('one plate covers launch, wizard, goal, Anki and dialog primaries; the big 
 
 test('startGame marks the button busy and restores its label',()=>{
  const app=web('app.js');
- assert.match(app,/launchInFlight=true;if\(button\)button\.disabled=true;markLaunching\(button,true\);/);
- assert.match(app,/finally\{launchInFlight=false;if\(button\)button\.disabled=false;markLaunching\(button,false\);\}/);
+ assert.match(app,/launchInFlight=true;if\(button\)button\.disabled=true;markLaunching\(button,true\);const tracker=trackLaunch\(button,id\);/);
+ assert.match(app,/finally\{launchInFlight=false;tracker\.stop\(\);if\(button\)button\.disabled=false;if\(failed&&button\)setTimeout\(\(\)=>markLaunching\(button,false\),2600\)/);
+ assert.match(web('../services/bridge.cjs'),/case 'launch_progress'/);
  assert.match(app,/const LAUNCHING=\{zh:'启动中…',ja:'起動中…',en:'Starting…'\}/);
 });
