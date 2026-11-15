@@ -43,7 +43,7 @@ test('Japanese data not selectable: file restore with backup; next launch self-c
  assert.equal(cells(story)[3][2],'「島に着いた」3');assert.ok(fs.existsSync(path.join(g,'.megulit-japanese','dat','10_story.dbs')),'backup first');
  assert.ok(!jr._internal.sharedPool(story),'strings never shared');assert.equal(auto.verifyFiles(g).ok,true);
  /* launch 1: self-check passes, the launch reaches a window */
- assert.deepEqual(auto.selfCheck(root,'s1',g),{checked:true,ok:true});auto.launchResult(root,'s1',true);
+ assert.deepEqual(auto.selfCheck(root,'s1',g),{checked:true,ok:true});auto.launchResult(root,'s1',true);assert.equal(auto.textSeen(root,'s1'),true,'text read: the switch works');
  /* launch 2: self-check passes, but the game never starts */
  assert.equal(auto.selfCheck(root,'s1',g).ok,true);auto.launchResult(root,'s1',false);
  /* launch 3: reverted */
@@ -120,21 +120,46 @@ test('Artemis multi-language (The Shell layout): an added archive fixes the text
  const ar=require('../core/artemis-language.cjs'),sc=require('../services/original-engines/scenes.cjs'),{pf8}=ar._internal;
  const root=tmp('root'),g=tmp('artemis');
  const ast='astver = 2.0\nast = {\n'+Array.from({length:60},(_,i)=>'\t["0001_'+i+'"] = {\n\t\t{"text"},\n\t\ttext = {\n\t\t\tja = {{"しんと静まりかえった講堂。'+i+'"}},\n\t\t\ten = {{"The auditorium, silent as the grave. '+i+'"}},\n\t\t\ttw = {{"寂靜無聲的禮堂。'+i+'"}},\n\t\t},\n\t},').join('\n')+'\n}';
- const lua='function get_scriptText(block)\n\tlocal l = get_language(true)\n\tlocal v = ast.text[block]\n\tif l and v then v = v[l] end\n\treturn v\nend\nfunction ui_path()\n\tlocal ln = get_language(true)\n\treturn "ui/"..ln\nend\n';
+ const lua='function get_scriptText(block)\n\tlocal l = get_language(true)\n\tlocal v = ast.text[block]\n\tif l and v then v = v[l] end\n\treturn v\nend\nfunction ui_path()\n\tlocal ln = get_language(true)\n\treturn "ui/"..ln\nend\nfunction boot_font()\n\tlocal ln = get_language(true)\n\tfor name, v in pairs(lang.font) do\n\t\tlocal sh = v.show or v[ln] and v[ln].show\n\tend\nend\n';
  fs.writeFileSync(path.join(g,'Game.pfs'),pf8([{name:'script\\a.ast',data:Buffer.from(ast)},{name:'system\\msg\\lang.lua',data:Buffer.from(lua)}]));
  fs.writeFileSync(path.join(g,'Game.pfs.000'),pf8([{name:'system\\x.png',data:Buffer.from('png')}]));
  fs.writeFileSync(path.join(g,'Game.pfs.060'),pf8([{name:'system\\table\\list_windows_en.tbl',data:Buffer.from('lang={}')}]));
  const before=fs.readdirSync(g).map(n=>[n,fs.readFileSync(path.join(g,n))]);
- const d=auto.decide(g);assert.equal(d.action,'files');assert.equal(d.detected.adapter,'artemis-pfs');assert.equal(d.detected.file,'Game.pfs.061');
- const r=auto.run(root,'ar1',g);assert.equal(r.done,true);
+ const d=auto.decide(g);assert.equal(d.action,'unsupported');assert.equal(d.reason,'MANUAL_ONLY','E598: never written unasked');assert.equal(d.detected.adapter,'artemis-pfs');assert.equal(d.detected.file,'Game.pfs.061');
+ assert.equal(auto.run(root,'ar0',g).done,false);assert.ok(!fs.existsSync(path.join(g,'Game.pfs.061')));
+ jr.apply(g);
  for(const [n,b] of before)assert.ok(fs.readFileSync(path.join(g,n)).equals(b),n+' untouched');
  const f=path.join(g,'Game.pfs.061'),l=sc.pfsList(f),t=sc.pfsRead(f,l.files[0],l.key).toString();
- assert.equal(l.files[0].name,'system\\msg\\lang.lua');assert.match(t,/\tlocal l = "ja" --\[\[MeguLit ja\]\]\n\tlocal v = ast\.text\[block\]\n\tif l and v then v = v\[l\]/);assert.match(t,/\tlocal ln = get_language\(true\)\n\treturn "ui\/"\.\.ln/,'image/UI paths keep the game language');
+ assert.equal(l.files[0].name,'system\\msg\\lang.lua');assert.match(t,/\tlocal l = "ja" -- MeguLit ja\n\tlocal v = ast\.text\[block\]\n\tif l and v then v = v\[l\]/);assert.match(t,/\tlocal ln = get_language\(true\)\n\treturn "ui\/"\.\.ln/,'image/UI paths keep the game language');
  assert.equal(auto.verifyFiles(g).ok,true);assert.equal(jr.detect(g).state,'applied');
- /* launch never reached a window -> the added archive is removed */
- auto.selfCheck(root,'ar1',g);auto.launchResult(root,'ar1',false);
- assert.equal(auto.selfCheck(root,'ar1',g).reverted,true);assert.ok(!fs.existsSync(f));assert.ok(!fs.existsSync(path.join(g,'.megulit-japanese')));
- /* a fresh game id: apply, then user undo */
- auto.run(root,'ar2',g);assert.ok(fs.existsSync(f));auto.undo(root,'ar2',g);assert.ok(!fs.existsSync(f));
+ /* E598 a font lookup by language (The Shell boot.lua) keeps the game's language */
+ assert.match(t,/\tlocal ln = get_language\(true\)\n\tfor name, v in pairs\(lang\.font\)/,'font lookups untouched');
+ /* the tool's undo deletes the added archive */
+ jr.restore(g);assert.ok(!fs.existsSync(f));assert.ok(!fs.existsSync(path.join(g,'.megulit-japanese')));
  assert.deepEqual(fs.readdirSync(g).sort(),before.map(b=>b[0]).sort());
+});
+
+test('E598 black screen: a window without one line of text is not a working game; closing it puts the files back at once',()=>{
+ const root=tmp('root'),g=tmp('g');let restored=0;
+ const s=auto.read(root);s.games.b1={state:'auto',mode:'files',dir:g,launch:'pending'};fs.mkdirSync(root,{recursive:true});fs.writeFileSync(path.join(root,'japanese-auto.json'),JSON.stringify(s));
+ auto.launchResult(root,'b1',true);assert.equal(auto.read(root).games.b1.launch,'window');
+ const at=auto.read(root).games.b1.windowAt;
+ assert.equal(auto.gameClosed(root,'b1',{restore:()=>restored++,now:at+5000}).reverted,false,'closed within seconds: no verdict');
+ assert.equal(auto.gameClosed(root,'b1',{restore:()=>restored++,now:at+60000}).reverted,true);assert.equal(restored,1);
+ const after=auto.read(root);assert.equal(after.games.b1.state,'reverted');assert.equal(after.games.b1.reason,'NO_TEXT');assert.equal(after.notices[0].mode,'reverted');
+ /* text seen: closing later changes nothing */
+ after.games.b2={state:'auto',mode:'files',dir:g,launch:'pending'};fs.writeFileSync(path.join(root,'japanese-auto.json'),JSON.stringify(after));
+ auto.launchResult(root,'b2',true);assert.equal(auto.textSeen(root,'b2'),true);
+ assert.equal(auto.gameClosed(root,'b2',{restore:()=>restored++,now:Date.now()+60000}).reverted,false);assert.equal(restored,1);
+ /* MeguLit closed with the game still black: the next launch's self-check puts it back */
+ const s3=auto.read(root);s3.games.b3={state:'auto',mode:'files',dir:g,launch:'window'};fs.writeFileSync(path.join(root,'japanese-auto.json'),JSON.stringify(s3));
+ const c=auto.selfCheck(root,'b3',g,{restore:()=>restored++});assert.equal(c.reverted,true);assert.equal(c.reason,'NO_TEXT');
+});
+
+test('E598 a switched line inside a --[[ ]] block keeps the block closed where the game closed it',()=>{
+ const {patchLua}=require('../core/artemis-language.cjs')._internal;
+ const src='function f()\n--[[\n\tlocal ln = get_language(true)\t-- lang\n\tlocal tx = t.text\n\tlocal s = tx[ln]\n]]\nend\nfunction g() return 1 end\n';
+ const r=patchLua(Buffer.from(src));assert.ok(r,'patched');const out=r.data.toString();
+ assert.ok(!/\]\][^\n]*\n[^\n]*local tx/.test(out),'no ]] before the block end');assert.equal((out.match(/\]\]/g)||[]).length,1,'only the game\'s own ]]');
+ assert.equal(patchLua(r.data),null,'already marked');
 });
