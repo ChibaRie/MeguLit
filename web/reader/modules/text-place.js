@@ -30,7 +30,8 @@
     'body.megulit-place-game-drawn .sentence-window.tomoyo-hook-reader .tomoyo-cn-row{visibility:visible!important}',
     /* layer 4 page model: older lines of the page (their own .sentence-text, placed like the current one) */
     'body.megulit-place-asleep .sentence-window.tomoyo-hook-reader{visibility:hidden!important}',
-    'body:not(.megulit-placed) .megulit-old-line{display:none!important}',
+    'body:not(.megulit-placed) .megulit-old-line,body:not(.megulit-placed) .megulit-row-hold{display:none!important}',
+    '.megulit-row-hold::before,.megulit-row-hold::after{display:none!important;content:none!important}',
     /* page mode: a character shows as soon as the game has drawn its place (the game's own typing pace); the reader's typewriter on top of that made new characters come in uneven bursts */
     'body.megulit-placed .megulit-place-window .sentence-text .char-token.tome-typewriter-pending:not(.megulit-unplaced){opacity:1!important;pointer-events:auto!important}',
     'body.megulit-placed .megulit-place-window .megulit-ruby-base:has(> .tome-typewriter-pending:first-child)::before{opacity:1!important}',
@@ -111,9 +112,12 @@
     const place = new Map();
     shown.forEach((t, j) => { const r = boxes[j]; if (!r) { t.classList.add('megulit-unplaced'); return; } t.classList.remove('megulit-unplaced'); place.set(t, r); });
     for (const base of sentence.querySelectorAll('.megulit-ruby-base')) {
-      const rs = [...base.querySelectorAll('.char-token')].map(t => place.get(t)).filter(Boolean);
+      let rs = [...base.querySelectorAll('.char-token')].map(t => place.get(t)).filter(Boolean);
       if (!rs.length) continue;
-      const x0 = Math.min(...rs.map(r => r[0])), y0 = Math.min(...rs.map(r => r[1])), x1 = Math.max(...rs.map(r => r[0] + r[2])), y1 = Math.max(...rs.map(r => r[1] + r[3]));
+      /* a word the game wrapped (its first characters at the end of a row, the rest on the next): the base is the part
+         on the first row, so the reading sits over it; a box over both rows put the reading in the middle of nowhere */
+      const top = Math.min(...rs.map(r => r[1])); rs = rs.filter(r => r[1] < top + r[3] * .5);
+      const x0 = Math.min(...rs.map(r => r[0])), y0 = top, x1 = Math.max(...rs.map(r => r[0] + r[2])), y1 = Math.max(...rs.map(r => r[1] + r[3]));
       set(base, 'left', x0 + 'px'); set(base, 'top', y0 + 'px'); set(base, 'width', (x1 - x0) + 'px'); set(base, 'height', (y1 - y0) + 'px');
       base.__megulitOrigin = [x0, y0];
     }
@@ -153,6 +157,12 @@
         set(row, 'left', x0 + 'px'); set(row, 'top', (only ? y0 : y1 + size * .25) + 'px');
         set(row, 'width', Math.max(x1 - x0, Math.min(innerWidth - x0 - 8, size * 20)) + 'px');
         set(row, 'font-size', (only ? size : Math.max(12, Math.round(size * .6))) + 'px');
+        /* the reader window paints only inside its regions (interaction.js): the row's own text region came and went while
+           the translation streamed, so the translation flashed. A transparent block over the row keeps it paintable. */
+        let hold = win.querySelector(':scope>.megulit-row-hold');
+        if (!hold) { hold = document.createElement('div'); hold.className = 'sentence-placeholder megulit-row-hold'; hold.setAttribute('aria-hidden', 'true'); win.append(hold); }
+        const rb = row.getBoundingClientRect(), hk = [Math.round(rb.left), Math.round(rb.top), Math.round(Math.max(rb.width, 8)), Math.round(Math.max(rb.height, size * 2.2))].join(',');
+        if (hold.__megulitKey !== hk) { hold.__megulitKey = hk; const v = hk.split(','); hold.style.cssText = 'position:fixed!important;left:' + v[0] + 'px!important;top:' + v[1] + 'px!important;width:' + v[2] + 'px!important;height:' + v[3] + 'px!important;margin:0!important;padding:0!important;background:none!important;border:0!important;box-shadow:none!important;opacity:1!important;visibility:visible!important;display:block!important;pointer-events:none!important;color:transparent!important;font-size:0!important;overflow:hidden!important'; }
       }
       const copy = sentence.cloneNode(true); copy.__megulitText = readerText; copy.__megulitAt = at; clones.set(cur.id, copy);
     }
