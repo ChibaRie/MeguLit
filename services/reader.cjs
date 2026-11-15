@@ -382,10 +382,14 @@ class Reader{
    if(captured)this.cardScreenshots.delete(args.screenshotId);
    const word=await this.runtime.learning().word(args,args.entryId),reading=this.gal?.gameRuby?.dict(this.gal?.styleSync?.profileKey)?.[word.surface];if(reading){word.reading=reading;word.ambiguous=false;word.pitch=[];}
    if(args.pitchChoice!==undefined){if(!word.pitch.includes(args.pitchChoice))throw Error('INVALID_PITCH');word.pitch=[args.pitchChoice];}
+   /* 2026-11-15 学习 › 词典 「加入 Anki」 (args.dictionary): the same card, made from a dictionary entry outside the game. The card's
+      sentence is the example the page passes (a MOJi example, or none), never the word itself; no game picture or game voice is taken,
+      and no example line or saved sentence is written to the word book */
+   if(args.dictionary){word.sentence=String(args.sentence||'').slice(0,1000);word.ambiguous=false;}
    if(action==='word')return word;let audio;
    if(['speak','prefetch'].includes(action)){await this.runtime.services().ensureSpeech(config.aivisUrl,config.aivisGpu);const audio=await this.runtime.speech().synthesize(word,config,{prefetch:action==='prefetch'});return action==='prefetch'?{ready:true}:audio;}
-   const picked=this.sentenceTranslation(args.text,String(args.translation||'').slice(0,1000));args.translation=picked.translation;args.translationSource=picked.translationSource;const extra={aiNote:args.aiNote&&typeof args.aiNote.text==='string'?{kind:args.aiNote.kind==='summary'?'summary':'explain',text:args.aiNote.text.slice(0,2000)}:null,translation:picked.translation.slice(0,1000),translationSource:picked.translationSource,gameTitle:this.gameTitle()};try{const insights=require('./learning-insights.cjs'),learning=this.runtime.learning(),resolved=learning.readings.resolve(await learning.tokenize(args.text));let pairs=[];try{pairs=this.gal?.hooks?.resolveSource?.(args.text)?.ruby||[];}catch{}/* one rule for every example line (core/example-ruby.cjs): game ruby → dictionary reading, names and guesses bare */extra.sentenceHtml=require('../core/example-ruby.cjs').exampleCardHtml(args.text,resolved,{pairs,gameRuby:this.gal?.gameRuby?.dict(this.gal?.styleSync?.profileKey)||{},start:args.start,end:args.end});void insights;}catch{}
-   if(config.ankiGameMedia!==false){
+   const picked=args.dictionary?{translation:String(args.translation||'').slice(0,1000),translationSource:args.translation?'dictionary':''}:this.sentenceTranslation(args.text,String(args.translation||'').slice(0,1000));args.translation=picked.translation;args.translationSource=picked.translationSource;const extra={aiNote:args.aiNote&&typeof args.aiNote.text==='string'?{kind:args.aiNote.kind==='summary'?'summary':'explain',text:args.aiNote.text.slice(0,2000)}:null,translation:picked.translation.slice(0,1000),translationSource:picked.translationSource,gameTitle:args.dictionary?'':this.gameTitle()};if(!args.dictionary)try{const insights=require('./learning-insights.cjs'),learning=this.runtime.learning(),resolved=learning.readings.resolve(await learning.tokenize(args.text));let pairs=[];try{pairs=this.gal?.hooks?.resolveSource?.(args.text)?.ruby||[];}catch{}/* one rule for every example line (core/example-ruby.cjs): game ruby → dictionary reading, names and guesses bare */extra.sentenceHtml=require('../core/example-ruby.cjs').exampleCardHtml(args.text,resolved,{pairs,gameRuby:this.gal?.gameRuby?.dict(this.gal?.styleSync?.profileKey)||{},start:args.start,end:args.end});void insights;}catch{}
+   if(config.ankiGameMedia!==false&&!args.dictionary){
     const media=await this.gal?.gameMedia(args.text,Date.now(),false).catch(()=>null);
     extra.screenshot=screenshot;
     /* E454 (player: the card's voice carried long stretches of BGM): the voice file the script names for this line comes
@@ -402,11 +406,11 @@ class Reader{
     const speechReady=await this.runtime.services().ensureSpeech(config.aivisUrl,config.aivisGpu).then(()=>true,()=>false);
     if(speechReady){
      try{audio=await this.runtime.speech().synthesize(word,config);}catch{}
-     if(!extra.sentenceAudio)try{extra.sentenceAudio=await this.runtime.speech().synthesize({surface:args.text,reading:'',pitch:[]},config);}catch{}
+     if(!extra.sentenceAudio&&(!args.dictionary||word.sentence))try{extra.sentenceAudio=await this.runtime.speech().synthesize({surface:args.dictionary?word.sentence:args.text,reading:'',pitch:[]},config);}catch{}
     }
    }
-   await this.prepareMiningModel(config);const result=await new(require('../core/anki.cjs').Anki)(fetch,{mediaDir:require('../core/anki-media-cache.cjs').dirFor(this.root)}).sync(word,config,audio,extra);const entries=(await this.invoke('lookup_exact',args)).entries||[];const mined=await this.mine({entry:entries.find(e=>e.id===args.entryId)||entries[0],args,noteId:result.id});if(mined?.sentenceSaved)result.sentenceSaved=true;
-   if(config.ankiGameMedia!==false&&!result.screenshotAttached)result.mediaWarning='SCREENSHOT_UNAVAILABLE';
+   await this.prepareMiningModel(config);const result=await new(require('../core/anki.cjs').Anki)(fetch,{mediaDir:require('../core/anki-media-cache.cjs').dirFor(this.root)}).sync(word,config,audio,extra);const entries=(await this.invoke('lookup_exact',args)).entries||[];const mined=await this.mine({entry:entries.find(e=>e.id===args.entryId)||entries[0],args:args.dictionary?{...args,text:''}:args,noteId:result.id});if(mined?.sentenceSaved)result.sentenceSaved=true;
+   if(config.ankiGameMedia!==false&&!args.dictionary&&!result.screenshotAttached)result.mediaWarning='SCREENSHOT_UNAVAILABLE';
    result.sentenceAudioSource=extra.gameAudio?'game':extra.sentenceAudio?'synthesized':'';
    /* E455 a recorded clip on the card is replaced by its voice alone once separated (same media file name, so the
       card keeps pointing at it); the card is not held up while the model runs */

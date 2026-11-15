@@ -4,7 +4,7 @@
    follows by itself; buttons keep controls-b's .primary / .secondary / .text-button. One root with nine id-nots sits above controls-b's eight,
    so the few properties that must beat the app-wide !important chains (fonts, h2/h3, p) win without touching those files.
    Motion lives in GSAP (transform / opacity); CSS only carries hover colours and the static poses. */
-html:not(#dc1):not(#dc2):not(#dc3):not(#dc4):not(#dc5):not(#dc6):not(#dc7):not(#dc8):not(#dc9) body .main .game-detail-content{
+html:not(#dc1):not(#dc2):not(#dc3):not(#dc4):not(#dc5):not(#dc6):not(#dc7):not(#dc8):not(#dc9) body .main :is(.game-detail-content,.study-words,.dict-entries){
 
 & :is(.esr,.gl){--dc-hi:var(--g-t1);--dc-mid:var(--g-t2);--dc-mute:var(--g-t3);--dc-off:color-mix(in srgb,var(--g-t1) 30%,transparent);
  --dc-line:var(--g-rule);--dc-line-2:var(--g-rule-strong);--dc-ruby:color-mix(in srgb,var(--t-red-2) 48%,var(--g-t1));
@@ -42,32 +42,34 @@ html:not(#dc1):not(#dc2):not(#dc3):not(#dc4):not(#dc5):not(#dc6):not(#dc7):not(#
 /* body: a frame that fits the window so both panels own their scroll */
 & .esr-body{height:clamp(470px,calc(100vh - 200px),736px)}
 & .esr-lw{grid-column:1/8;display:flex;flex-direction:column;min-height:0;min-width:0}
-& .esr-vp{position:relative;flex:1;min-height:0;overflow:hidden;
- -webkit-mask-image:linear-gradient(180deg,transparent 0,transparent 3%,rgba(0,0,0,.35) 10%,#000 22%,#000 80%,rgba(0,0,0,.35) 92%,transparent 100%);
- mask-image:linear-gradient(180deg,transparent 0,transparent 3%,rgba(0,0,0,.35) 10%,#000 22%,#000 80%,rgba(0,0,0,.35) 92%,transparent 100%)}
+/* 2026-11-15 a native scroll area (wheel scrolls the list, never the page behind); soft fades only where more rows are hidden */
+& .esr-vp{position:relative;flex:1;min-height:0;overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:var(--dc-line-2) transparent;
+ -webkit-mask-image:linear-gradient(180deg,transparent 0,#000 64px,#000 calc(100% - 64px),transparent 100%);mask-image:linear-gradient(180deg,transparent 0,#000 64px,#000 calc(100% - 64px),transparent 100%)}
 & .is-none .esr-vp{-webkit-mask-image:none;mask-image:none}
-& .esr-vp.at-top{-webkit-mask-image:linear-gradient(180deg,#000 0,#000 80%,rgba(0,0,0,.35) 92%,transparent 100%);mask-image:linear-gradient(180deg,#000 0,#000 80%,rgba(0,0,0,.35) 92%,transparent 100%)}
-& .esr-list{list-style:none;margin:0;padding:0}
+& .esr-vp.at-top{-webkit-mask-image:linear-gradient(180deg,#000 0,#000 calc(100% - 64px),transparent 100%);mask-image:linear-gradient(180deg,#000 0,#000 calc(100% - 64px),transparent 100%)}
+& .esr-vp.at-end:not(.at-top){-webkit-mask-image:linear-gradient(180deg,transparent 0,#000 64px,#000 100%);mask-image:linear-gradient(180deg,transparent 0,#000 64px,#000 100%)}
+& .esr-vp.at-top.at-end{-webkit-mask-image:none;mask-image:none}
+& .esr-list{list-style:none;margin:0;padding:6px 0 24px}
 /* one row = one line: the word on a fixed column, meanings + mastery + times on the same baseline */
-& .esr-row{position:relative;display:flex;align-items:baseline;gap:24px;height:var(--esr-row);padding:0 0 0 18px;cursor:pointer;white-space:nowrap;box-sizing:content-box;outline:none}
-& .esr-row.is-cur{padding-top:30px}
+& .esr-row{position:relative;display:flex;align-items:baseline;gap:24px;height:var(--esr-row);padding:24px 0 0 18px;cursor:pointer;white-space:nowrap;box-sizing:content-box;outline:none}
 & .esr-w{position:relative;display:inline-block;flex:none;width:var(--esr-wcol);font:700 min(var(--esr-row),calc(var(--esr-wcol) / var(--len,3)))/1 var(--dc-sans)!important;letter-spacing:-.02em;color:var(--dc-off);transition:color .25s}
 & .esr-w *{font-family:var(--dc-sans)!important}
 & .esr-w::before{content:"";position:absolute;left:-18px;top:.1em;bottom:.04em;width:6px;background:var(--t-red);transform:scaleY(0);transform-origin:50% 100%;transition:transform .3s cubic-bezier(.2,.8,.2,1)}
 & .esr-w rt{font:700 16px/1 var(--dc-sans)!important;letter-spacing:.06em;color:var(--dc-ruby);visibility:hidden}
 & .esr-row:hover .esr-w{color:color-mix(in srgb,var(--g-t1) 52%,transparent)}
+& .esr-row:not(.is-cur):hover .esr-gm{color:var(--dc-mid)}
+& .esr-row:not(.is-cur):hover .esr-w::before{transform:scaleY(.35);opacity:.45}
 & .esr-row.is-cur .esr-w{color:var(--dc-hi);font-weight:900!important}
 & .esr-row.is-cur .esr-w::before{transform:scaleY(1)}
 & .esr-row.is-cur .esr-w rt{visibility:visible}
 & .esr-g{flex:1;min-width:0;display:grid;grid-template-columns:minmax(0,232px) 92px 44px;column-gap:16px;align-items:baseline;font:14px/1 var(--dc-sans);color:var(--dc-mute)}
 & .esr-gm{overflow:hidden;text-overflow:ellipsis;padding-bottom:8px;margin-bottom:-8px;font-family:var(--dc-sans)!important}
 & .esr-gm .sep{display:inline-block;font-style:normal;margin:0 .4em;color:var(--dc-off)}
-& .esr-row.is-cur .esr-gm{color:var(--dc-hi);font-size:16px;font-weight:700;text-decoration:underline 2px var(--t-red);text-underline-offset:6px}
+& .esr-row.is-cur .esr-gm{color:var(--dc-hi);font-weight:700;text-decoration:underline 2px var(--t-red);text-underline-offset:6px}
 & .esr .cnt{font:600 13px/1 var(--dc-mono)!important;font-variant-numeric:tabular-nums;color:var(--dc-mute);justify-self:end}
-& .esr-row.is-cur .cnt{font:800 15px/1 var(--dc-mono)!important;color:var(--dc-hi)}
+& .esr-row.is-cur .cnt{color:var(--dc-hi)}
 /* keyboard focus: a corner bracket from the red bar's foot, the row opens 12px so it never meets the next word */
-& .esr-row:focus-visible{padding-bottom:12px}
-& .esr-row:focus-visible .esr-w::after{content:"";position:absolute;left:-18px;right:-10px;bottom:-8px;height:16px;border-bottom:2px solid var(--dc-hi);border-right:2px solid var(--dc-hi);pointer-events:none}
+& .esr-row:focus-visible .esr-w::after{content:"";position:absolute;left:-18px;right:-10px;bottom:-6px;height:12px;border-bottom:2px solid var(--dc-hi);border-right:2px solid var(--dc-hi);pointer-events:none}
 
 /* mastery: three ticks + the app's own level name; neutral for learning, gold once known */
 & .esr-mt{display:inline-flex;align-items:center;gap:7px;font:500 12px/1 var(--dc-mono)!important;color:var(--dc-mute);white-space:nowrap}
@@ -126,8 +128,35 @@ html:not(#dc1):not(#dc2):not(#dc3):not(#dc4):not(#dc5):not(#dc6):not(#dc7):not(#
 & .esr-ex{margin:22px 0 4px;font:400 21px/1.6 var(--dc-ja)!important;color:var(--dc-hi);text-wrap:pretty}
 & .esr-ex *{font-family:var(--dc-ja)!important}
 & .esr-ex em{font-style:normal;color:var(--dc-hi);box-shadow:inset 0 -2px 0 var(--t-red)}
-& .esr-ex+.esr-src+.esr-ex{margin-top:14px;font-size:16px!important;color:var(--dc-mid)}
+& .esr-ex+.esr-src+.esr-ex,& .esr-ex+.esr-tr+.esr-src+.esr-ex{margin-top:14px;font-size:16px!important;color:var(--dc-mid)}
+& .esr-tr{margin:0 0 6px;font:400 15px/1.55 var(--dc-sans)!important;color:var(--dc-mid);text-wrap:pretty}
 & .esr-src{margin:0;font:500 12px/1.4 var(--dc-mono)!important;color:var(--dc-mute)}
+/* 学习 › 词典 results (mountEntries): reading in the meter's track, tags and MOJi notes in the detail column */
+& .ent .esr-g{grid-template-columns:minmax(0,1fr) 120px}
+& .ent-r{font:500 13px/1 var(--dc-sans)!important;color:var(--dc-mute);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+& .ent .esr-row.is-cur .ent-r{color:var(--dc-mid)}
+& .ent-acc{font:500 15px/1.2 var(--dc-sans)!important;letter-spacing:.04em;color:var(--dc-mid)}
+& .ent-tags{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 14px}
+& .ent-mean{gap:12px}
+& .ent-mean>li{display:flex;flex-direction:column;gap:4px}
+& .ent-mean>li>small{font:14px/1.5 var(--dc-ja)!important;color:var(--dc-mute)}
+& .ent-mean li.lead>span{font-size:21px;line-height:1.25;font-weight:800;color:var(--dc-hi)}
+& .ent-ex{list-style:none;margin:4px 0 0;padding:0 0 0 12px;border-left:2px solid var(--dc-line-2);display:grid;gap:6px}
+& .ent-ex li{display:flex;flex-direction:column;gap:2px;font:15px/1.5 var(--dc-ja)!important;color:var(--dc-hi)}
+& .ent-ex small{font:13px/1.4 var(--dc-sans)!important;color:var(--dc-mute)}
+& .ent-notes{margin-top:20px;display:grid;gap:8px}
+& .ent-notes ul{list-style:none;margin:0;padding:0;display:grid;gap:8px;font:14px/1.5 var(--dc-sans);color:var(--dc-mid)}
+& .ent-notes b{display:block;color:var(--dc-hi)}
+& .ent-wait{margin-top:14px}
+/* 学习 › 单词: the line's game after the date, the status picker and delete next to 查词典 */
+& .esr-game{appearance:none;margin:0;padding:0;border:0;background:none;font:inherit;color:var(--dc-mid);cursor:pointer}
+& button.esr-game:hover{color:var(--dc-hi);text-decoration:underline 1px var(--t-red);text-underline-offset:3px}
+& .esr-manage{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+& .esr-status{flex:none;width:auto!important;min-width:max-content;display:inline-flex;align-items:center;gap:8px;font:500 12px/1 var(--dc-mono)!important;letter-spacing:.1em;color:var(--dc-mute)}
+& .esr-status>span{font-family:var(--dc-mono)!important;white-space:nowrap;flex:none}
+& .esr-status :is(select,.select-control){width:128px!important;min-width:128px;flex:none}
+& .esr-del{gap:6px}
+& .esr-del:hover{color:var(--t-red-2)}
 & .esr-stats{margin:18px 0 0;display:grid;grid-template-columns:minmax(0,.8fr) minmax(0,1.2fr);border-top:1px solid var(--dc-line);border-bottom:1px solid var(--dc-line)}
 & .esr-stats>div{display:flex;flex-direction:column;gap:10px;padding:12px 0;min-width:0}
 & .esr-stats>div+div{border-left:1px solid var(--dc-line);padding-left:20px}
@@ -341,7 +370,7 @@ html:not(#dc1):not(#dc2):not(#dc3):not(#dc4):not(#dc5):not(#dc6):not(#dc7):not(#
 }
 
 /* light theme: the card shadows soften, the plate keeps its maroon */
-html[data-theme=light]:not(#dc1):not(#dc2):not(#dc3):not(#dc4):not(#dc5):not(#dc6):not(#dc7):not(#dc8):not(#dc9) body .main .game-detail-content{
+html[data-theme=light]:not(#dc1):not(#dc2):not(#dc3):not(#dc4):not(#dc5):not(#dc6):not(#dc7):not(#dc8):not(#dc9) body .main :is(.game-detail-content,.study-words,.dict-entries){
  & .gc{background:var(--t-panel),var(--mgc-plate,#fffaf5);box-shadow:0 18px 34px -20px rgba(60,30,20,.35)}
  & .gc:hover,& .gc:focus-visible{box-shadow:0 24px 44px -20px rgba(60,30,20,.4),0 0 0 2px var(--g-gold)}
  & .gc-how:hover{box-shadow:0 18px 34px -20px rgba(60,30,20,.35)}
@@ -352,5 +381,5 @@ html[data-theme=light]:not(#dc1):not(#dc2):not(#dc3):not(#dc4):not(#dc5):not(#dc
  & .gs.is-open .gs-frame{box-shadow:0 0 0 2px var(--g-gold)}
 }
 @media (prefers-reduced-motion:reduce){
- html body .main .game-detail-content :is(.esr-w,.esr-w::before,.gc,.gs-frame,.gl-fb){transition:none!important}
+ html body .main :is(.game-detail-content,.study-words,.dict-entries) :is(.esr-w,.esr-w::before,.gc,.gs-frame,.gl-fb){transition:none!important}
 }

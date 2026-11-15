@@ -1,5 +1,5 @@
 import {fitLibraryGrid} from './library-grid-fit.js';
-import {definitionHtml} from './dictionary-format.js';
+import {formatDefinition} from './dictionary-format.js';
 import './primary-buttons.js';
 import {embedStatus} from './embed-status.js';
 import {statisticsHTML,statisticsResultsHTML,bindStatistics,bindStatisticsCharts} from './statistics-view.js';
@@ -129,7 +129,7 @@ import {pageNav} from './page-nav.js';
 import {stageFor,applyVeil,veilSettingsHTML,veilsFromForm} from './page-veils.js';
 import {installExampleRuby,exAttr} from './example-ruby.js';
 const quickActions=new Set(['settings_get','vocabulary','unknown_words','home','preferences','ui_state','history','dialogue','sentences','word_trash','statistics',
- 'game_detail','reader_status']);
+ 'game_detail','study_words','reader_status']);
 /* E459: the learning pages' heavier reads get a longer limit, so a page never waits on them for good */
 const slowReads=new Set(['reading_insights','grammar_report','grammar_form_lines','grammar_bluebook','learning_rewards','learning_level','learning_goal','learning_activity','sentences_page']);
 const api=(action,params={})=>{const request=invoke('service',{request:{action,...params}});if(!quickActions.has(action)&&!slowReads.has(action)&&action!=='launch')return request;
@@ -943,6 +943,7 @@ function definitions(value){
    if(d&&typeof d==='object')return Object.values(d).flat().filter(v=>typeof v==='string').join('\n');}
   catch{}return String(value||'');
 }
+let studyWordsState={},studyWordsUnmount=()=>{};
 async function learning(token){
   /* 2026-11-11 假名游戏 is no longer its own tab: old links open 五十音 at its practice block */
   let kanaFocus='';if(subtab==='kanagames'){subtab='kana';kanaFocus='practice';}
@@ -971,6 +972,18 @@ async function learning(token){
    toast,errorMessage,empty,emptyLabel:text.emptySentences,readTime,datetime,icon,isCurrent:()=>token===pageToken,rerender:()=>renderRoute(),lookup:word=>{pendingDictionaryQuery=word;
    navigate('learning','dictionary');},openGame:(id,opts)=>{gameOrigin='library';selectedGameId=id;gameTab=opts?.tab||'';navigate('game');},games:model.games,cover});}catch(error){learningFailed(target,error,token);
    }if(token===pageToken)commit();return;}
+  /* 2026-11-15 单词 = the game page's 关联单词 layout (detail-collect.js mountWords) over every game; status picker and delete live in the
+     detail column, 常查单词 is one of the filters */
+  if(subtab==='words'){let data;try{data=await api('study_words');}catch(error){learningFailed(target,error,token);if(token===pageToken)commit();return;}
+   if(token!==pageToken)return;studyWordsUnmount();target.className='study-words';commit();
+   try{const {mountWords}=await import('./detail-collect.js');if(token!==pageToken)return;
+    studyWordsUnmount=mountWords(target,{scope:'all',words:data.words||[],lookupOnly:data.lookupOnly||[],counts:data.counts,locale,esc,state:studyWordsState,animate:true,
+     onLookup:word=>{pendingDictionaryQuery=word;navigate('learning','dictionary');},
+     onGame:id=>{gameOrigin='library';selectedGameId=id;navigate('game');},
+     onStatus:async(word,status)=>{try{await api('set_word_status',{id:word.id,status});}catch(error){toast(errorMessage(error));throw error;}},
+     onDelete:(word,done)=>confirmDelete(word,{onDone:done}),enhance:enhanceSelects,canLaunch:false,
+     peek:word=>api('dictionary',{query:word,source:'local'}).then(r=>r?.[0]||null)});}
+   catch(error){learningFailed(target,error,token);}return;}
   let items,pending;try{[items,pending]=await Promise.all([api(subtab==='words'?'vocabulary':subtab==='trash'?'word_trash':'sentences'),subtab==='words'?api('unknown_words').catch(()=>[]):[]]);
    }catch(error){learningFailed(target,error,token);if(token===pageToken)commit();return;}if(token!==pageToken)return;
   target.innerHTML=!items.length?empty(subtab==='words'?text.emptyWords:subtab==='trash'?text.emptyTrash:text.emptySentences,'learning'):`<div class="record-list">${items.map(item=>subtab==='sentences'?`<article class="record"><div class="record-meta"><span>${esc(item.title||'')}</span><span>${esc(readTime(item.created_at,locale))||datetime(item.created_at)}</span></div><p lang="ja"${exAttr(item.text,null,esc)}>${esc(item.text)}</p>${item.translation?`<p class="muted">${esc(item.translation)}</p>`:''}<div class="word-actions"><button class="icon-button" data-sentence-delete="${item.id}" aria-label="${{zh:'取消收藏',en:'Remove',ja:'保存を解除'}[locale]}" title="${{zh:'取消收藏',en:'Remove',ja:'保存を解除'}[locale]}">${icon('trash')}</button></div></article>`:`<article class="record word-row${subtab==='trash'?' trash-row':''}"><div><div class="word-spelling">${esc(item.spelling||item.reading)}</div><div class="word-reading">${esc(item.spelling&&item.spelling!==item.reading?item.reading:"")}${subtab==='words'?`<span class="word-jlpt${item.jlpt?'':' is-off'}">${esc(item.jlpt||({zh:'考级外',en:'Beyond JLPT',ja:'試験外'})[locale])}</span>`:''}</div>${subtab==='words'?`<div class="word-def">${esc(definitions(item.definitions))}</div>${item.example_text?`<div class="word-source"><button type="button" class="link-button" data-word-sentence="${item.id}" title="${{zh:'在句子页打开这句',en:'Open this line in Sentences',ja:'文のページで開く'}[locale]}">「<span lang="ja"${exAttr(String(item.example_text).replace(/^[\s　「『]+|[」』\s　]+$/g,''),null,esc)}>${esc((t=>t.length>60?t.slice(0,60)+'…':t)(String(item.example_text).replace(/^[\s　「『]+|[」』\s　]+$/g,'')))}</span>」</button>${item.example_game_id&&item.example_title?` · <button type="button" class="link-button" data-word-game="${esc(item.example_game_id)}">${esc(item.example_title)}</button>`:''}</div>`:''}`:`<div class="record-meta">${esc({zh:'删除于 ',ja:'削除 ',en:'Deleted '}[locale]||'')}${datetime(item.deleted_at)}</div>`}</div><div class="word-actions"><button class="${subtab==='trash'?'es-restore-btn':'icon-button'}" data-${subtab==='trash'?'restore':'delete'}="${item.id}" aria-label="${subtab==='trash'?text.restore:text.delete}">${icon(subtab==='trash'?'restore':'trash')}${subtab==='trash'?`<span class="es-restore">${esc({zh:'恢复到单词本',ja:'単語帳に戻す',en:'Restore to words'}[locale]||text.restore)}</span>`:''}</button></div></article>`).join('')}</div>`;
@@ -992,12 +1005,12 @@ async function learning(token){
    model=await api('home');renderRoute();toast(text.restoreDone);}catch(error){toast(errorMessage(error));}}));
   enhanceSelects(target);commit();
 }
-function confirmDelete(word){if(!word)return;
+function confirmDelete(word,{onDone}={}){if(!word)return;
   const dialog=modal(`<h2>${text.deleteTitle}</h2><p>${text.deleteHint}</p><p class="dialog-word">${esc(word.spelling)}</p><p>${esc(word.reading)}</p><div class="dialog-actions"><button class="secondary" id="cancel-delete">${text.cancel}</button><button class="primary" id="confirm-delete">${text.deleteConfirm}</button></div>`);
   dialog.classList.add('word-delete');
   dialog.querySelector('#cancel-delete').addEventListener('click',()=>dialog.close());
   dialog.querySelector('#confirm-delete').addEventListener('click',async event=>{const button=event.currentTarget;button.disabled=true;try{await api('delete_word',
-   {id:word.id});dialog.close();model=await api('home');renderRoute();toast(text.deleteDone);}catch(error){button.disabled=false;toast(errorMessage(error));}});
+   {id:word.id});dialog.close();if(onDone){onDone();toast(text.deleteDone);model=await api('home');return;}model=await api('home');renderRoute();toast(text.deleteDone);}catch(error){button.disabled=false;toast(errorMessage(error));}});
 }
 function dictionary(target){
   const L={zh:{online:'MOJi 联网查词',local:'本地查词',play:'播放 MOJi 发音',audioFail:'发音暂时无法播放',notes:'MOJi 用户笔记',noNotes:'暂无笔记',likes:'赞',fail:'MOJi 暂时无法查询',login:'扫码登录 MOJi',
@@ -1052,26 +1065,26 @@ function dictionary(target){
     };
     poll=setTimeout(tick,3000);
   }
-  const tags=w=>[w.jlpt?'JLPT '+w.jlpt:'',w.common?'common':'',...(w.partOfSpeech||[]),w.verbType,w.verbGroup].filter(Boolean).map(t=>`<span class="moji-tag">${esc(t)}</span>`).join('');
-  const renderList=()=>{
-    results.innerHTML=lastItems.length?`${lastOnline?'<small class="muted">'+(onlineSource==='jisho'?'Jisho.org':'MOJi 辞書')+'</small>':''}<div class="record-list">${lastItems.map((w,i)=>{const link=lastOnline&&w.id&&w.source!=='jisho';return `<article class="record dict-entry${link?' moji-entry':''}"${link?` tabindex="0" role="button" data-moji-index="${i}"`:''}><div class="word-spelling">${esc(w.spelling||w.reading)}</div><div class="word-reading">${esc(w.spelling&&w.spelling!==w.reading?w.reading:"")}</div>${lastOnline&&tags(w)?`<div class="moji-tags">${tags(w)}</div>`:''}${lastOnline?`<div class="word-def">${esc(w.definition)}</div>`:(definitionHtml(w.definition,esc)||`<div class="word-def">${esc(w.definition)}</div>`)}</article>`;}).join('')}</div>`:empty(text.noDefinition,
-     'word');
-    results.querySelectorAll('[data-moji-index]').forEach(card=>{const open=()=>openDetail(lastItems[Number(card.dataset.mojiIndex)]);card.onclick=open;card.onkeydown=e=>{
-     if(e.key==='Enter'||e.key===' '){e.preventDefault();open();}};});
+  /* 2026-11-15 results use the word page's layout (detail-collect.js mountEntries): headwords left, one row per entry, the current entry on
+     the right with its MOJi detail; click / ↑ ↓ switches, rows never move, the wheel scrolls the list */
+  let unmountEntries=()=>{},savedSet=null,wantedEntry='';
+  const loadSaved=()=>savedSet||(savedSet=api('vocabulary').then(rows=>new Set(rows.flatMap(r=>[r.spelling,r.reading]).filter(Boolean))).catch(()=>new Set()));
+  const renderList=async()=>{unmountEntries();unmountEntries=()=>{};
+    if(!lastItems.length){results.innerHTML=empty(text.noDefinition,'word');return;}
+    const request=ticket,[{mountEntries},saved]=await Promise.all([import('./detail-collect.js'),loadSaved()]);if(request!==ticket||!results.isConnected)return;
+    results.innerHTML='<div class="dict-entries"></div>';const box=results.firstElementChild,wanted=wantedEntry;wantedEntry='';
+    /* local text goes through formatDefinition: clean senses, no →英和 or (n,vs) tags, one sense per line */
+    const items=lastOnline?lastItems:lastItems.map(w=>({...w,definition:formatDefinition(w.definition).map(g=>g.glosses.join('；')).join('\n')||w.definition}));
+    unmountEntries=mountEntries(box,{items,source:lastOnline?onlineSource:'local',locale,esc,wanted,savedSpellings:saved,
+     loadDetail:lastOnline&&onlineSource==='moji'?async item=>{try{return await api('moji_word',{id:item.id});}catch(error){
+      if(String(error?.message||error).includes('MOJI_SESSION_EXPIRED')){toast(L.expiredSession);showStatus({});}throw error;}}:null,
+     onPlay:async item=>{try{const r=await api('moji_audio',{id:item.id});await new Audio(r.audio).play();}catch{toast(L.audioFail);}},
+     onAnki:async(item,example)=>{try{await api('dictionary_anki',{word:item.spelling||item.reading,...example});
+      toast(`${{zh:'已加入 Anki',ja:'Anki に追加しました',en:'Added to Anki'}[locale]} · ${item.spelling||item.reading}`);
+      savedSet=null;}catch(error){toast(errorMessage(error));throw error;}},
+     onSave:async item=>{try{const r=await api('reading_save_word',{key:item.spelling||item.reading,base:item.spelling||item.reading});
+      toast(`${{zh:'已加入单词本',ja:'単語帳に追加しました',en:'Added to your words'}[locale]} · ${r?.spelling||item.spelling}`);}catch(error){toast(errorMessage(error));throw error;}}});
   };
-  async function openDetail(item){
-    const scroller=document.scrollingElement,scroll=scroller.scrollTop,request=++ticket;results.innerHTML=loading();
-    let d;try{d=await api('moji_word',{id:item.id});}catch(error){if(request!==ticket)return;if(String(error?.message||error).includes('MOJI_SESSION_EXPIRED')){
-     toast(L.expiredSession);showStatus({});}else toast(L.detailFail);renderList();return;}
-    if(request!==ticket||!results.isConnected)return;
-    const head={...item,...Object.fromEntries(Object.entries(d).filter(([,v])=>Array.isArray(v)?v.length:v))};
-    const meanings=(d.meanings||[]).map(m=>`<li><div class="moji-meaning">${esc(m.zh||m.ja)}</div>${m.zh&&m.ja?`<div class="moji-meaning-ja" lang="ja">${esc(m.ja)}</div>`:''}${m.examples.length?`<details class="moji-ex"><summary>${L.examples} <b>${m.examples.length}</b></summary><ul class="moji-examples" aria-label="${L.examples}">${m.examples.map(x=>`<li><span lang="ja">${esc(x.ja)}</span>${x.zh?`<small>${esc(x.zh)}</small>`:''}</li>`).join('')}</ul></details>`:''}</li>`).join('')||`<li><div class="moji-meaning">${esc(d.excerpt||item.definition)}</div></li>`;
-    results.innerHTML=`<article class="moji-detail"><button type="button" class="text-button moji-back" data-moji-back>← ${L.back}</button><header><div class="moji-head-row"><div class="word-spelling">${esc(head.spelling)}</div><button type="button" class="moji-play" data-moji-play aria-label="${L.play}" title="${L.play}"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M4 9v6h4l5 4V5L8 9H4zm12.5 3a4.5 4.5 0 0 0-2.5-4v8a4.5 4.5 0 0 0 2.5-4zM14 3.2v2.1a7 7 0 0 1 0 13.4v2.1a9 9 0 0 0 0-17.6z"/></svg></button></div><div class="word-reading">${esc(head.reading||[head.pron,head.accent].filter(Boolean).join('  '))}</div>${tags(head)?`<div class="moji-tags">${tags(head)}</div>`:''}</header><ol class="moji-meanings">${meanings}</ol><section class="moji-notes"><h3>${L.notes}</h3>${(d.notes||[]).map(n=>`<div class="moji-note mine">${n.title?`<div class="moji-note-title">${esc(n.title)}</div>`:''}<div class="moji-note-body">${esc(n.content)}</div></div>`).join('')}${(d.comments||[]).map(c=>`<div class="moji-note"><div class="moji-note-meta"><span>${esc(c.author)}</span><small class="muted">${esc(c.date)} · ${c.likes} ${L.likes}</small></div><div class="moji-note-body" lang="ja">${esc(c.content)}</div>${c.replies.length?`<div class="moji-note-replies">${c.replies.map(r=>`<div><span>${esc(r.author)}</span>：${esc(r.content)}</div>`).join('')}</div>`:''}</div>`).join('')}${!(d.notes||[]).length&&!(d.comments||[]).length?`<p class="muted">${L.noNotes}</p>`:''}</section></article>`;
-    let audio=null;const play=results.querySelector('[data-moji-play]');
-    play.onclick=async()=>{if(play.disabled)return;play.disabled=true;try{if(!audio){const r=await api('moji_audio',{id:item.id});audio=new Audio(r.audio);}audio.currentTime=0;
-     await audio.play();}catch{toast(L.audioFail);}finally{play.disabled=false;}};
-    results.querySelector('[data-moji-back]').onclick=()=>{ticket++;renderList();scroller.scrollTop=scroll;};
-  }
   if(onlineSource==='jisho')account.hidden=true;else api('moji_status').then(state=>{if(account.isConnected&&!account.querySelector('.moji-qr-panel'))showStatus(state);}).catch(()=>showStatus({}));
   target.querySelector('#lookup-form').addEventListener('submit',async event=>{
     event.preventDefault();const query=target.querySelector('#lookup-input').value.trim();if(!query)return;
@@ -1087,8 +1100,7 @@ function dictionary(target){
       if(online&&used&&!items.length){const local=await api('dictionary',{query,source:'local',operationId}).catch(()=>[]);if(local.length){
        items=local;used=false;}}
       if(request!==ticket||!results.isConnected)return;
-      lastItems=items;lastOnline=used;renderList();
-      const exact=wanted&&used&&items.find(w=>w.id&&w.source!=='jisho'&&(w.spelling===query||w.reading===query));if(exact)openDetail(exact);
+      lastItems=items;lastOnline=used;wantedEntry=query;renderList();
       api('home').then(next=>{if(request===ticket&&results.isConnected)model=next;}).catch(()=>{});
     }catch(error){if(request===ticket&&results.isConnected)results.innerHTML=empty(online?L.fail:text.serviceFailed,'word');}
   });
