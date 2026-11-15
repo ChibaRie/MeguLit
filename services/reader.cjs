@@ -17,6 +17,7 @@ class Reader{
   /* Alt+M binds the window in front (services/bind-hotkey.cjs); it no longer opens or closes the home window */
   if(message.type==='bindHotkey'){require('./bind-hotkey.cjs').request(this,message,e=>this.runtime.emit('reader-event',e),this.uiLanguage());return;}
   if(this.hotkeyBind&&(message.type==='bound'||message.type==='error'))require('./bind-hotkey.cjs').follow(this,message,e=>this.runtime.emit('reader-event',e),this.uiLanguage());
+  if(message.type==='ready'||Array.isArray(message.windows))require('./bind-hotkey.cjs').startupScan(this,message,e=>this.runtime.emit('reader-event',e),this.uiLanguage(),()=>{const db=openStore(this.root);try{return db.prepare("SELECT id,title,executable FROM games WHERE removed_at IS NULL AND executable<>''").all();}finally{db.close();}});
   if(message.type==='readerPointer'){this.runtime.emit('reader-pointer-input',message);return;}
   if(message.type==='hookEmbedRequest'){this.embedTranslate(message.id,message.text);return;}
   if(message.type==='artText'){this.artText(message);return;}
@@ -265,7 +266,8 @@ class Reader{
    case 'pointerDiagnostic':try{const file=path.join(this.root,'logs','reader-pointer.log');if(fs.existsSync(file)&&fs.statSync(file).size>1<<20)fs.renameSync(file,file+'.1');fs.appendFileSync(file,JSON.stringify({at:new Date().toISOString(),...r})+'\n');}catch{}break;
    case 'galConfigure':case 'galPreview':if(!g||r.gameStyleKey&&r.gameStyleKey!==g.styleSync.profileKey)break;{const settings={...r.settings,gameProcess:g.preferences.gameProcess,bindEnabled:g.preferences.bindEnabled};settings.maskModeSource=settings.maskMode==='local'?(g.preferences.maskMode==='local'?g.preferences.maskModeSource:'user'):'';/* a Japanese font changed in the settings = the user's own choice from now on */if(settings.japaneseFont==='@game'){settings.japaneseFont=g.preferences.japaneseFont;settings.japaneseFontSource='game';}else settings.japaneseFontSource=settings.japaneseFont!==undefined&&settings.japaneseFont!==g.preferences.japaneseFont?'user':(settings.japaneseFontSource||g.preferences.japaneseFontSource);r.type==='galConfigure'?g.save(settings):g.preview(settings);if(r.type==='galConfigure'&&r.settings?.japaneseFont==='@game'){const values=this.followGameFont();if(values)this.runtime.emit('reader-event',{type:'enginePreferences',values});}}break;
    case 'galWindows':g?.send({type:'windows'});break;
-   case 'galBind':if(!/^\d{1,19}$/.test(r.hwnd||''))throw Error('INVALID_GAME_WINDOW');this.translator().clearContext();g?.bind(r.hwnd,r.settings);break;
+   case 'galBind':if(!/^\d{1,19}$/.test(r.hwnd||''))throw Error('INVALID_GAME_WINDOW');require('./bind-hotkey.cjs').bindWindow(this,{hwnd:r.hwnd,title:r.title,processName:r.processName},r.settings,e=>this.runtime.emit('reader-event',e));break;
+   case 'galPickWindow':g?.send({type:'pickWindow',active:r.active===true});break;
    case 'galUnbind':this.translator().clearContext();g?.save({...g.preferences,bindEnabled:false});this.stats.reset();break;
    case 'galMenu':g?.send({type:'menu',open:r.open===true});break;
    case 'galLookup':g?.send({type:'lookup',open:r.open===true});break;

@@ -24,20 +24,50 @@ function classify(m){
 }
 const words=lang=>WORDS[String(lang||'zh').slice(0,2)]||WORDS.zh;
 const message=(kind,lang,detail='')=>{const w=words(lang);if(kind==='bound')return w.bound+(String(detail||'').trim()||'?');if(kind==='failed')return w.failed+String(detail||'');return w[kind]||w.none;};
-/* reader: the Reader (services/reader.cjs); emit(result) gets {type:'bindHotkeyResult',ok,kind,title,message} */
+/* One bind for Alt+M, the 校准 page's 点选 and its window list (2026-11-15, user: 方便先开游戏再开megulit 或者megulit不小心关了中途要链接).
+   GalNative.bind → the bridge binds the window → 'bound' → HookNative.configure attaches HookBridge to that process (it connects
+   first and injects only when Luna_CheckIfNeedInject says the DLL is not there yet, so a DLL left by an earlier MeguLit is
+   reused, never injected twice; MeguLit's own DLLs reconnect their pipes by themselves), the overlay follows the window and
+   reader.cjs matches the library game from the process. The process name is kept as gameProcess, so a MeguLit restart while
+   the game runs binds it again by itself (the bridge's WantedProcess auto-bind).
+   reader: the Reader (services/reader.cjs); emit(result) gets {type:'bindHotkeyResult',ok,kind,title,message} */
+function bindWindow(reader,w,settings,emit){
+ const g=reader.gal,title=String(w?.title||'').slice(0,200);if(!g)return false;
+ reader.hotkeyBind={hwnd:String(w.hwnd),title,processName:String(w.processName||'').replace(/\.exe$/i,'').slice(0,120),at:Date.now()};
+ try{reader.translator?.().clearContext?.();}catch{}
+ g.bind(String(w.hwnd),{...(settings&&typeof settings==='object'?settings:g.preferences),bindEnabled:true});return true;
+}
 function request(reader,m,emit,lang){
  const kind=classify(m),title=String(m?.title||'').slice(0,200);
- if(kind!=='ok'){emit({type:'bindHotkeyResult',ok:false,kind,title,message:message(kind,lang)});return false;}
- const g=reader.gal;if(!g){emit({type:'bindHotkeyResult',ok:false,kind:'busy',title,message:message('busy',lang)});return false;}
- reader.hotkeyBind={hwnd:String(m.hwnd),title,at:Date.now()};
- try{reader.translator?.().clearContext?.();}catch{}
- g.bind(String(m.hwnd),{...g.preferences,bindEnabled:true});return true;
+ if(kind!=='ok'){emit({type:'bindHotkeyResult',ok:false,kind,title,pick:m?.pick===true,message:message(kind,lang)});return false;}
+ if(!reader.gal){emit({type:'bindHotkeyResult',ok:false,kind:'busy',title,message:message('busy',lang)});return false;}
+ return bindWindow(reader,m,reader.gal.preferences,emit);
 }
 /* bridge messages after a hotkey bind: 'bound' for that window says done, an 'error' soon after says why not */
 function follow(reader,m,emit,lang){
  const pending=reader.hotkeyBind;if(!pending)return;
  if(Date.now()-pending.at>8000){reader.hotkeyBind=null;return;}
- if(m.type==='bound'&&String(m.gameHwnd||'')===pending.hwnd){reader.hotkeyBind=null;const title=String(m.gameTitle||pending.title||'');emit({type:'bindHotkeyResult',ok:true,kind:'bound',title,message:message('bound',lang,title)});}
+ if(m.type==='bound'&&String(m.gameHwnd||'')===pending.hwnd){reader.hotkeyBind=null;const title=String(m.gameTitle||pending.title||'');const g=reader.gal;if(g&&pending.processName&&g.preferences?.gameProcess!==pending.processName)try{g.save({...g.preferences,gameProcess:pending.processName,bindEnabled:true},false);}catch{}
+  emit({type:'bindHotkeyResult',ok:true,kind:'bound',title,message:message('bound',lang,title)});}
  else if(m.type==='error'){reader.hotkeyBind=null;emit({type:'bindHotkeyResult',ok:false,kind:'failed',title:pending.title,message:message('failed',lang,m.message)});}
 }
-module.exports={classify,message,request,follow};
+/* Startup (same request): a library game already running when MeguLit starts is named with a hint to press Alt+M. The game
+   MeguLit binds again by itself (the remembered gameProcess) is left out, and nothing is said once a game is bound. */
+const RUNNING={zh:t=>'检测到「'+t+'」正在运行：先点一下游戏窗口，再按 Alt+M 连接',ja:t=>'「'+t+'」が起動中です。ゲームのウィンドウをクリックしてから Alt+M で接続できます',en:t=>'“'+t+'” is running: click its window, then press Alt+M to connect'};
+const base=exe=>String(exe||'').split(/[\\/]/).pop().replace(/\.exe$/i,'').toLowerCase();
+function runningGames(windows,games,skipProcess=''){
+ const byName=new Map();for(const g of games||[]){const b=base(g.executable);if(b&&!byName.has(b))byName.set(b,g);}
+ const skip=String(skipProcess||'').replace(/\.exe$/i,'').toLowerCase(),seen=new Set(),out=[];
+ for(const w of windows||[]){const name=String(w.processName||'').toLowerCase(),g=byName.get(name);if(!g||!name||name===skip||seen.has(g.id))continue;seen.add(g.id);out.push({id:g.id,title:String(g.title||name),hwnd:String(w.hwnd||''),processName:String(w.processName||'')});}
+ return out;
+}
+function runningHint(found,lang){if(!found.length)return '';const titles=found.slice(0,3).map(f=>f.title).join(lang==='en'?', ':'、');return (RUNNING[String(lang||'zh').slice(0,2)]||RUNNING.zh)(titles);}
+/* reader.event: 'ready' asks the bridge for the open windows once (a few seconds later, after its own auto-bind had a chance);
+   the 'windows' answer to that request is checked against the library */
+function startupScan(reader,m,emit,lang,games){
+ if(m.type==='ready'){if(reader.runningScanDone)return;reader.runningScanDone=true;const t=setTimeout(()=>{if(reader.gamePid||!reader.gal)return;reader.runningScanWanted=Date.now();reader.gal.send({type:'windows'});},4000);t.unref?.();return;}
+ if(!Array.isArray(m.windows)||!reader.runningScanWanted||Date.now()-reader.runningScanWanted>15000)return;reader.runningScanWanted=0;
+ if(reader.gamePid)return;const p=reader.gal?.preferences||{},found=runningGames(m.windows,games(),p.bindEnabled===true?p.gameProcess:'');
+ if(found.length)emit({type:'runningGameHint',games:found.map(f=>({id:f.id,title:f.title})),message:runningHint(found,lang)});
+}
+module.exports={classify,message,request,bindWindow,follow,runningGames,runningHint,startupScan};

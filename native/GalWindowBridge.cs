@@ -222,10 +222,15 @@ public class GalWindowBridge {
     // 2026-11-15 Alt+M binds the window in front (no longer opens or closes the home window). Only the facts are sent;
     // services/bind-hotkey.cjs decides (MeguLit's own windows, the desktop and Explorer are refused) and binds through
     // the same "bind" command as the Alt+T window picker.
-    static void BindHotkey(){IntPtr fg=GetForegroundWindow(),root=fg==IntPtr.Zero?IntPtr.Zero:GetAncestor(fg,2);uint pid=0;var title=new StringBuilder(512);var cls=new StringBuilder(256);
+    static void BindHotkey(bool pick=false){IntPtr fg=GetForegroundWindow(),root=fg==IntPtr.Zero?IntPtr.Zero:GetAncestor(fg,2);uint pid=0;var title=new StringBuilder(512);var cls=new StringBuilder(256);
         if(root!=IntPtr.Zero){GetWindowThreadProcessId(root,out pid);GetWindowText(root,title,title.Capacity);GetClassName(root,cls,cls.Capacity);}
         bool own=pid!=0&&(pid==(uint)OverlayPid||pid==(uint)Process.GetCurrentProcess().Id);
-        Emit(new{type="bindHotkey",hwnd=root.ToInt64().ToString(),pid=pid,title=title.ToString(),className=cls.ToString(),processName=pid==0?"":ProcessName(pid),own=own});}
+        Emit(new{type="bindHotkey",hwnd=root.ToInt64().ToString(),pid=pid,title=title.ToString(),className=cls.ToString(),processName=pid==0?"":ProcessName(pid),own=own,pick=pick});}
+    // Alt+T → 校准 → 绑定游戏窗口 → 点选: the next window the user brings to the front (within 15 s) goes the same way as Alt+M.
+    static DateTime PickUntil=DateTime.MinValue;static IntPtr PickSkip=IntPtr.Zero;
+    static void PickTick(){if(PickUntil==DateTime.MinValue)return;if(DateTime.UtcNow>PickUntil){PickUntil=DateTime.MinValue;Emit(new{type="pickWindow",active=false,timeout=true});return;}
+        IntPtr fg=GetForegroundWindow(),root=fg==IntPtr.Zero?IntPtr.Zero:GetAncestor(fg,2);if(root==IntPtr.Zero||root==PickSkip)return;uint pid;GetWindowThreadProcessId(root,out pid);
+        if(pid==(uint)OverlayPid||pid==(uint)Process.GetCurrentProcess().Id)return;PickUntil=DateTime.MinValue;BindHotkey(true);}
     static IntPtr PreferredOverlay=IntPtr.Zero;
     static int HostedFrameUpdates;
     public static int HostedStyle(int style){return (style&~0x00c40000)|unchecked((int)0x80000000);}
@@ -444,6 +449,7 @@ public class GalWindowBridge {
             if(best!=IntPtr.Zero&&bestArea>=320L*240&&Target!=best){try{Bind(best);}catch{}}}
         else if(type=="bind"){WantedExecutable="";FindOverlay();if(Overlay!=IntPtr.Zero&&IsIconic(Overlay))ShowWindow(Overlay,4);if(d.TryGetValue("settings",out value)&&value is Dictionary<string,object>)Settings((Dictionary<string,object>)value);bool keepMenu=MenuOpen;InterfaceMode(true,false);if(keepMenu){MenuOpen=true;MenuFocusPending=true;}Bind(new IntPtr(Int64.Parse(Str(d,"hwnd"))),true);}
         else if(type=="configure"){if(!ModeConfigured&&d.ContainsKey("interfaceMode")){ModeConfigured=true;InterfaceMode(Str(d,"interfaceMode")=="translation",false);}Settings(d);WantedProcess=Bool(d,"bindEnabled")?Str(d,"gameProcess"):"";if(!Bool(d,"bindEnabled")&&(Target!=IntPtr.Zero||TrackedGame!=null)){RevealGame(Target);ForgetGame();Target=IntPtr.Zero;Restore();Emit(new{type="bound",bound=false,message="已解除窗口绑定"});}}
+        else if(type=="pickWindow"){if(Bool(d,"active")){IntPtr fg=GetForegroundWindow();PickSkip=fg==IntPtr.Zero?IntPtr.Zero:GetAncestor(fg,2);PickUntil=DateTime.UtcNow.AddSeconds(15);}else PickUntil=DateTime.MinValue;Emit(new{type="pickWindow",active=PickUntil!=DateTime.MinValue});}
         else if(type=="unbind"){WantedExecutable="";WantedProcess="";RevealGame(Target);ForgetGame();Target=IntPtr.Zero;Restore();Emit(new{type="bound",bound=false,message="已解除窗口绑定"});}
         // The page passes where the button went down, so the strip stays under the same spot of the cursor even though
         // the drag only starts after a few pixels of movement.
@@ -693,7 +699,7 @@ if(args.Length==2&&args[0]=="--art-scan-file"){Console.OutputEncoding=Encoding.U
         Emit(new{type="ready",hotkey=hotkey,coverHotkey=coverHotkey,modeHotkey=modeHotkey,coverEnabled=true,interfaceMode="normal"});
         DateTime nextHotkeyTry=DateTime.UtcNow.AddSeconds(2);
         var input=new Thread(delegate(){string line;while((line=Console.ReadLine())!=null){try{var command=Json.Deserialize<Dictionary<string,object>>(line);if(Str(command,"type")=="glass"){GlassCommand(command);continue;}Commands.Enqueue(command);}catch{}}Running=false;});input.IsBackground=true;input.Start();
-        try{while(Running){Dictionary<string,object> command;while(Commands.TryDequeue(out command)){try{Command(command);}catch(Exception error){Emit(new{type="error",message=error.Message});}}Msg message;while(PeekMessage(out message,IntPtr.Zero,0,0,1)){if(message.message==0x0312&&message.wParam.ToUInt64()==0x543){BindHotkey();}else if(message.message==0x0312&&message.wParam.ToUInt64()==0x542){ToggleCover();}else if(message.message==0x0312){Emit(new{type="hotkey"});}else{TranslateMessage(ref message);DispatchMessage(ref message);}}try{ModeRequestTick();Tick();}catch{}
+        try{while(Running){Dictionary<string,object> command;while(Commands.TryDequeue(out command)){try{Command(command);}catch(Exception error){Emit(new{type="error",message=error.Message});}}Msg message;while(PeekMessage(out message,IntPtr.Zero,0,0,1)){if(message.message==0x0312&&message.wParam.ToUInt64()==0x543){BindHotkey();}else if(message.message==0x0312&&message.wParam.ToUInt64()==0x542){ToggleCover();}else if(message.message==0x0312){Emit(new{type="hotkey"});}else{TranslateMessage(ref message);DispatchMessage(ref message);}}try{ModeRequestTick();PickTick();Tick();}catch{}
           /* E476: keys another program held are taken as soon as it lets go, so "not ready" heals by itself */
           if((!hotkey||!coverHotkey||!modeHotkey)&&DateTime.UtcNow>=nextHotkeyTry){nextHotkeyTry=DateTime.UtcNow.AddSeconds(2);bool was=hotkey&&coverHotkey&&modeHotkey;if(!hotkey)hotkey=RegisterHotKey(IntPtr.Zero,0x541,0x4001,0x54);if(!coverHotkey)coverHotkey=RegisterHotKey(IntPtr.Zero,0x542,0x4001,0x48);if(!modeHotkey)modeHotkey=RegisterHotKey(IntPtr.Zero,0x543,0x4001,0x4d);if(hotkey||coverHotkey||modeHotkey)Emit(new{type="hotkeyState",hotkey=hotkey,coverHotkey=coverHotkey,modeHotkey=modeHotkey});}
           try{Glass.Follow(Overlay,TranslationMode&&Target!=IntPtr.Zero&&IsShown&&Overlay!=IntPtr.Zero&&IsWindowVisible(Overlay)&&!IsIconic(Overlay)&&!IsIconic(Target));}catch{}Thread.Sleep(Dragging?8:Target==IntPtr.Zero?100:16);}}

@@ -89,8 +89,7 @@
  const ZH={
   '校准':['Calibration','調整'],'字体、字号与显示':['Fonts, size and display','フォント・サイズ・表示'],
   '文字颜色与已读未读':['Text colours, read and unread','文字色・既読と未読'],'行距、间距与留白':['Line spacing, gaps and insets','行間・字間・余白'],
-  '文本位置与实时跟随':['Text position and live tracking','文字位置とリアルタイム追従'],'内嵌没生效，或译文、对话框位置乱跑（部分紫社等作品自动识别不准）：展开「窗口绑定（高级）」，选中游戏窗口，点「绑定此窗口」手动绑定即可':['If embedding does nothing, or the translation or dialog box jumps around (auto-detection misses some games, e.g. Purple software titles): open Window binding (advanced), pick the game window and click Bind this window',
-   '埋め込みが効かない、または訳文や会話欄の位置がずれる場合（パープルソフトウェア作品など自動検出が合わないことがあります）：「ウィンドウ連携（詳細）」を開き、ゲームウィンドウを選んで「このウィンドウと連携」を押してください'],'窗口绑定（高级）':['Window binding (advanced)','ウィンドウ連携（詳細）'],
+  '文本位置与实时跟随':['Text position and live tracking','文字位置とリアルタイム追従'],'先开游戏后开 MeguLit，或 MeguLit 重开后，用这里或 Alt+M 重新连接':['Opened the game before MeguLit, or restarted MeguLit: reconnect here or with Alt+M','ゲームを先に起動したときや MeguLit を開き直したときは、ここか Alt+M で接続し直します'],'绑定游戏窗口':['Bind game window','ゲームウィンドウを割り当て'],'窗口绑定（高级）':['Window binding (advanced)','ウィンドウ連携（詳細）'],
   '未读渐变':['Unread gradient','未読グラデーション'],'已读渐变':['Read gradient','既読グラデーション'],
   '未读渐变上色':['Unread gradient top','未読・上の色'],'未读渐变下色':['Unread gradient bottom','未読・下の色'],
   '已读渐变上色':['Read gradient top','既読・上の色'],'已读渐变下色':['Read gradient bottom','既読・下の色'],
@@ -109,7 +108,7 @@
   '显示速度（字/秒）':['Reveal speed (characters/sec)','表示速度（文字/秒）'],
   '点击游戏或按空格可补全当前文字；按住 Ctrl 快速显示，不拦截游戏操作':['Click the game or press Space to reveal the current text; hold Ctrl for instant text. Game input is passed through','ゲームをクリックするかスペースで全文表示、Ctrl長押しで即時表示。ゲームの操作は妨げません'],
    '位置':['Layout','位置'],'内嵌':['Embedding','埋め込み'],'学习':['Study','学習'],'外观':['Appearance','外観'],'关于':['About','情報'],
-  '切换界面':['Switch view','表示切替'],'开关菜单':['Toggle menu','メニュー開閉'],'绑定当前窗口':['Bind current window','現在のウィンドウを割り当て'],'Alt+M 绑定当前窗口 · Alt+T 开关菜单 · 拖动即时预览':['Alt+M bind current window · Alt+T toggle menu · drag to preview','Alt+M 現在のウィンドウを割り当て · Alt+T メニュー開閉 · ドラッグでプレビュー'],'Alt+M 绑定当前游戏窗口，Alt+T 开关菜单':['Alt+M binds the game window in front, Alt+T toggles the menu','Alt+M 前面のゲームウィンドウを割り当て、Alt+T メニュー開閉'],'在台词上拖选文字：查词、加 Anki 或收藏句子':['Drag across a line: look up, add to Anki or save the sentence','台詞をドラッグで選択：辞書・Anki 追加・文を保存'],
+  '切换界面':['Switch view','表示切替'],'开关菜单':['Toggle menu','メニュー開閉'],'绑定窗口':['Bind window','ウィンドウ割り当て'],'Alt+M 绑定窗口 · Alt+T 开关菜单 · 拖动即时预览':['Alt+M bind window · Alt+T toggle menu · drag to preview','Alt+M ウィンドウ割り当て · Alt+T メニュー開閉 · ドラッグでプレビュー'],'Alt+M 绑定当前游戏窗口，Alt+T 开关菜单':['Alt+M binds the game window in front, Alt+T toggles the menu','Alt+M 前面のゲームウィンドウを割り当て、Alt+T メニュー開閉'],'在台词上拖选文字：查词、加 Anki 或收藏句子':['Drag across a line: look up, add to Anki or save the sentence','台詞をドラッグで選択：辞書・Anki 追加・文を保存'],
    '开关内嵌 / 覆盖':['Toggle inline / overlay','埋め込み・オーバーレイ切替'],'随时一键关闭 / 恢复内嵌（连同全部 MeguLit 覆盖），用来对比游戏原文':['turns inline text (and every MeguLit overlay) off or back on at any time, to compare with the original game text',
    'でいつでも埋め込み（と MeguLit の全オーバーレイ）をオン・オフし、ゲーム本来の文と比べられます'],'随时一键关闭 / 恢复内嵌（连同全部 MeguLit 覆盖），用来对比游戏原文；开着「译文由游戏自己显示」时，游戏里的译文不受 Alt+H 影响，只由这个开关控制':['turns inline text (and every MeguLit overlay) off or back on at any time, to compare with the original game text; while the game draws the translation itself, Alt+H leaves it alone and only this switch turns it off',
    'でいつでも埋め込み（と MeguLit の全オーバーレイ）をオン・オフし、ゲーム本来の文と比べられます。ゲーム側で訳を表示中は Alt+H の影響を受けず、このスイッチだけで切り替えます'],'隐藏覆盖':['Hide overlay','オーバーレイ非表示'],'拖动滑块即时预览':['Drag sliders to preview',
