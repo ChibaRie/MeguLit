@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-3.0-or-later
+﻿// SPDX-License-Identifier: GPL-3.0-or-later
 // Adapter to LunaHook's C ABI. See third_party/LunaHook/UPSTREAM.json.
 using System;
 using System.Collections.Generic;
@@ -428,7 +428,7 @@ static void Deactivate(string reason){if(WaitHook!=null)WaitHook.Disable();lock(
     an engine that hooks one character per typewriter step would split, so it is only for that case). Back to 180
     otherwise. Embed hooks that set their own delay (0) are not touched. */
  static int FlushMs=180;
- static void FlushFit(){bool fast;lock(Gate){Candidate c;fast=GlyphAll&&Selected!=""&&Candidates.TryGetValue(Selected,out c)&&!c.embed;}int want=fast?30:180;if(want!=FlushMs&&(fast||FlushMs==30)){FlushMs=want;try{Luna_Settings(want,932,4000,4000,false);Diagnostic("hook flush delay "+want+" ms"+(fast?" (read-only stream under glyph placement)":""));}catch{}}}
+ static void FlushFit(){bool fast;lock(Gate){Candidate c;fast=(GlyphAll||GpuPageOn)&&Selected!=""&&Candidates.TryGetValue(Selected,out c)&&!c.embed;/* 2026-11-15 layer 4 page model: the game keeps drawing (hidden) while the line waits for the flush, so every sentence came 0.25-0.35 s late; a read-only stream that hands the sentence over in one go needs no 180 ms */}int want=fast?30:180;if(want!=FlushMs&&(fast||FlushMs==30)){FlushMs=want;try{Luna_Settings(want,932,4000,4000,false);Diagnostic("hook flush delay "+want+" ms"+(fast?" (read-only stream under glyph placement)":""));}catch{}}}
  /* lines of the selected stream: unreadable in a row / readable since selection (a readable stream's noise lines are the game's own text) */static int SelectedUnreadableRun,SelectedReadableRun;
  static void GlyphLine(string text){FlushFit();/* 2026-11-15 a line no one can read stays the game's own (EmbedTextPolicy.Unreadable) */string selCode;lock(Gate){Candidate sc;selCode=Selected!=""&&Candidates.TryGetValue(Selected,out sc)?sc.code:"";}if(EmbedTextPolicy.Unreadable(text)&&SelectedReadableRun<2&&!EmbedTextPolicy.EngineText(selCode)){Diagnostic("unreadable line left to the game chars="+(text??"").Length);GlyphOff();return;}GpuLine(text);if(GlyphWanted()){lock(GlyphGate){GlyphSent=true;}GlyphSend("LINE "+System.Text.RegularExpressions.Regex.Replace(text??"",@"[\r\n\u2028\u2029]+"," "));}else GlyphFontOff();}
  /* 2026-11-15 (沙耶の唄: every LINE to the GPU layer was followed by OFF): a game whose glyphs the font layer cannot blank (GlyphCached, learned
