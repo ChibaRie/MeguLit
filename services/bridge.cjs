@@ -496,8 +496,12 @@ async function dispatch(request,runtime=null) {
         }
         const library=require('./library.cjs'),match=library.matchGame(db,{title,exe:executable},{manual:true});
         const id=match?.id||'game-'+crypto.randomUUID(),original=match?JSON.parse(match.original):{};
-        original.library={...original.library,source:'manual',steamRejected:false,dir:path.dirname(executable),exe:executable,executableSignature:library.signature(executable)};
-        if(match)db.prepare("UPDATE games SET title=?,executable=?,source='manual',removed_at=NULL,original=? WHERE id=?").run(title,executable,JSON.stringify(original),id);
+        /* E599 (live 2026-11-15: The Shell re-added by hand turned 'manual', MeguLit then started TheShell.exe directly and the game
+           stopped at Steam's CODE 00013): the same program of a Steam entry stays a Steam game, so it keeps starting through Steam */
+        const sameSteam=match&&!match.removed_at&&original.library?.source==='steam'&&!original.library?.steamRejected&&/^\d+$/.test(String(original.library?.appid||''))&&String(match.executable||'').toLowerCase()===executable.toLowerCase();
+        const source=sameSteam?'steam':'manual';
+        original.library={...original.library,source,steamRejected:false,dir:path.dirname(executable),exe:executable,executableSignature:library.signature(executable)};
+        if(match)db.prepare("UPDATE games SET title=?,executable=?,source=?,removed_at=NULL,original=? WHERE id=?").run(title,executable,source,JSON.stringify(original),id);
         else db.prepare('INSERT INTO games(id,title,executable,source,original) VALUES (?,?,?,?,?)').run(id,title,executable,'manual',JSON.stringify(original));
         require('./series.cjs').autoGroup(db,root);runtime?.metadata().enqueue([id]);return {id};
       }
