@@ -31,11 +31,13 @@ function luaFiles(dir,files){
   for(const e of list.files.filter(e=>/\.lua$/i.test(e.name))){let t;try{t=sc().pfsRead(path.join(dir,f),e,list.key);}catch{continue;}out.set(e.name.toLowerCase(),{archive:f,name:e.name,data:t});}}
  return [...out.values()];
 }
-const MARK='--[[MeguLit ja]]';
+/* E598 a plain line comment: the switched line can sit inside a --[[ ]] block (The Shell title.lua 344), where a ]] in the
+   mark closed that block early and the game stopped at boot. MARKED also knows the old mark. */
+const MARK='-- MeguLit ja',MARKED=/MeguLit ja/;
 /* only where the current language picks a text table (p[ln], v[l], lang=(ln)) is it set to "ja"; image paths, fonts
    of the UI and the language list keep the game's language (fixing get_language itself left The Shell on a black screen) */
 function patchLua(buf){
- const t=buf.toString('utf8');if(t.includes(MARK))return null;
+ const t=buf.toString('utf8');if(MARKED.test(t))return null;
  const lines=t.split('\n');let n=0;
  for(let i=0;i<lines.length;i++){const m=/^(\s*local\s+(\w+)\s*=\s*)get_language\(\s*true\s*\)/.exec(lines[i]);if(!m)continue;
   /* the next lines of the same function only (a function ends at an "end" or starts at "function" in column 0) */
@@ -69,7 +71,7 @@ function plan(gameDir){
  for(const set of archives(gameDir)){
   if(!multilingual(gameDir,set.files))continue;
   const lua=luaFiles(gameDir,set.files);
-  if(lua.some(l=>l.data.toString('utf8').includes(MARK)))return {state:'already',adapter:ADAPTER};
+  if(lua.some(l=>MARKED.test(l.data.toString('utf8'))))return {state:'already',adapter:ADAPTER};
   const changed=lua.map(l=>({...l,next:patchLua(l.data)})).filter(l=>l.next);
   if(!changed.length)return {state:'unsupported',reason:'ARTEMIS_NO_TEXT_LANGUAGE'};
   const used=set.files.map(f=>/\.(\d{3})$/.exec(f)?.[1]).filter(Boolean).map(Number),n=Math.max(-1,...used)+1;
@@ -109,7 +111,7 @@ function verify(gameDir){
  const m=readManifest(path.resolve(gameDir));if(!m)return {ok:false,reason:'MANIFEST_MISSING'};
  const f=path.join(gameDir,m.added);if(!fs.existsSync(f))return {ok:false,reason:'FILE_MISSING',file:m.added};
  if(sha(fs.readFileSync(f))!==m.sha256)return {ok:true};
- const list=entries(f),names=[].concat(m.lua),ok=list&&names.every(n=>{const b=readEntry(f,list,n);return b&&b.toString('utf8').includes(MARK);});
+ const list=entries(f),names=[].concat(m.lua),ok=list&&names.every(n=>{const b=readEntry(f,list,n);return b&&MARKED.test(b.toString('utf8'));});
  return ok?{ok:true}:{ok:false,reason:'TABLE_UNREADABLE',file:m.added};
 }
 module.exports={detect,apply,restore,verify,readManifest,ADAPTER,_internal:{pf8,patchLua,archives,plan}};

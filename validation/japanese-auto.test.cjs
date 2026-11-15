@@ -130,7 +130,7 @@ test('Artemis multi-language (The Shell layout): an added archive fixes the text
  jr.apply(g);
  for(const [n,b] of before)assert.ok(fs.readFileSync(path.join(g,n)).equals(b),n+' untouched');
  const f=path.join(g,'Game.pfs.061'),l=sc.pfsList(f),t=sc.pfsRead(f,l.files[0],l.key).toString();
- assert.equal(l.files[0].name,'system\\msg\\lang.lua');assert.match(t,/\tlocal l = "ja" --\[\[MeguLit ja\]\]\n\tlocal v = ast\.text\[block\]\n\tif l and v then v = v\[l\]/);assert.match(t,/\tlocal ln = get_language\(true\)\n\treturn "ui\/"\.\.ln/,'image/UI paths keep the game language');
+ assert.equal(l.files[0].name,'system\\msg\\lang.lua');assert.match(t,/\tlocal l = "ja" -- MeguLit ja\n\tlocal v = ast\.text\[block\]\n\tif l and v then v = v\[l\]/);assert.match(t,/\tlocal ln = get_language\(true\)\n\treturn "ui\/"\.\.ln/,'image/UI paths keep the game language');
  assert.equal(auto.verifyFiles(g).ok,true);assert.equal(jr.detect(g).state,'applied');
  /* E598 a font lookup by language (The Shell boot.lua) keeps the game's language */
  assert.match(t,/\tlocal ln = get_language\(true\)\n\tfor name, v in pairs\(lang\.font\)/,'font lookups untouched');
@@ -154,4 +154,12 @@ test('E598 black screen: a window without one line of text is not a working game
  /* MeguLit closed with the game still black: the next launch's self-check puts it back */
  const s3=auto.read(root);s3.games.b3={state:'auto',mode:'files',dir:g,launch:'window'};fs.writeFileSync(path.join(root,'japanese-auto.json'),JSON.stringify(s3));
  const c=auto.selfCheck(root,'b3',g,{restore:()=>restored++});assert.equal(c.reverted,true);assert.equal(c.reason,'NO_TEXT');
+});
+
+test('E598 a switched line inside a --[[ ]] block keeps the block closed where the game closed it',()=>{
+ const {patchLua}=require('../core/artemis-language.cjs')._internal;
+ const src='function f()\n--[[\n\tlocal ln = get_language(true)\t-- lang\n\tlocal tx = t.text\n\tlocal s = tx[ln]\n]]\nend\nfunction g() return 1 end\n';
+ const r=patchLua(Buffer.from(src));assert.ok(r,'patched');const out=r.data.toString();
+ assert.ok(!/\]\][^\n]*\n[^\n]*local tx/.test(out),'no ]] before the block end');assert.equal((out.match(/\]\]/g)||[]).length,1,'only the game\'s own ]]');
+ assert.equal(patchLua(r.data),null,'already marked');
 });
