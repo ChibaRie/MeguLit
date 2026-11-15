@@ -78,13 +78,14 @@ function kirikiri(dir){
  const items=new Map(),add=(b,item)=>{if(!items.has(b))items.set(b,{...item,decode:/\.tlg$/i.test(item.file||item.entry.name)?'tlg':undefined});};
  for(const p of looseImages(dir)){const rel=path.relative(dir,p);if(!CGISH.test(rel))continue;const b=base(p);if(seen.has(b))add(b,{name:b,file:p});}
  for(const d of kirikiriCapture(dir))try{for(const f of fs.readdirSync(d))if(IMG.test(f)){const b=base(f);if(seen.has(b))add(b,{name:b,file:path.join(d,f)});}}catch{}
- const xp3=require('./original-engines/xp3.cjs'),gallery=new Set();let closed=false;
+ const xp3=require('./original-engines/xp3.cjs'),gallery=new Set(),sceneOf=new Map();let closed=false;
  for(const file of xp3Archives(dir)){let list;try{list=xp3.list(file)?.files||[];}catch{continue;}const a=path.basename(file);
   let cx=null;if(list.some(e=>e.encrypted)){try{cx=require('./original-engines/cx-filter.cjs').forArchive(file);}catch{}if(!cx&&!plainDespiteFlag(xp3,file,list)){closed=true;continue;}}
   for(const e of list){
-   if(/cg/i.test(e.name)&&/\.(?:tjs|csv)$/i.test(e.name)&&(e.size||0)<1<<20){try{const v=kbadValue(xp3.read(file,e,cx));if(Array.isArray(v))for(const x of v)for(const ev of (x&&Array.isArray(x.events)?x.events:[]))if(typeof ev==='string')gallery.add(base(ev));}catch{}}
+   if(/cg/i.test(e.name)&&/\.(?:tjs|csv)$/i.test(e.name)&&(e.size||0)<1<<20){try{const v=kbadValue(xp3.read(file,e,cx));if(Array.isArray(v))for(const x of v){const scene='g'+(sceneOf.size+1)+':'+e.name;for(const ev of (x&&Array.isArray(x.events)?x.events:[]))if(typeof ev==='string'){gallery.add(base(ev));if(!sceneOf.has(base(ev)))sceneOf.set(base(ev),scene);}}}catch{}}
    if(!IMG.test(e.name))continue;const b=base(e.name);if(!seen.has(b)||items.has(b))continue;if(!CGISH.test(a+'/'+e.name))continue;add(b,{name:b,archive:file,entry:e,cx});}}
  if(gallery.size)for(const k of [...items.keys()])if(!gallery.has(k))items.delete(k);
+ for(const [k,it] of items)if(sceneOf.has(k))it.group=sceneOf.get(k);
  /* seen CGs no archive MeguLit can open holds: the game reads them itself (list() hands them to the cold run) */
  const wanted=closed?[...seen].filter(b=>!items.has(b)&&(gallery.size?gallery.has(b):CGNAME.test(b))):[];
  return {engine:'KiriKiri',supported:true,items,total:gallery.size,wanted};
@@ -184,7 +185,7 @@ function yurisGallery(dir,archives){
  const value=best?esSlots(best):null;
  yurisMemo.delete(dir);yurisMemo.set(dir,{key,value});if(yurisMemo.size>8)yurisMemo.delete(yurisMemo.keys().next().value);return value;}
 /* calls in order: a picture name for CG.SET, null for DEF.SET (which closes the entry): the entry's slot, then its pictures */
-function esSlots(calls){const slots=new Map(),heads=new Set();let slot=1,pending=[];for(const c of calls){if(c!==null){pending.push(c);continue;}heads.add(slot++);for(const p of pending)slots.set(slot++,p);pending=[];}return {slots,heads,size:slot};}
+function esSlots(calls){const slots=new Map(),heads=new Set(),entry=new Map();let slot=1,pending=[];for(const c of calls){if(c!==null){pending.push(c);continue;}const head=slot++;heads.add(head);for(const p of pending){entry.set(slot,head);slots.set(slot++,p);}pending=[];}return {slots,heads,size:slot,entry};}
 function yurisSaves(dir){const out=[];let l=[];try{l=fs.readdirSync(dir,{withFileTypes:true});}catch{return out;}
  for(const e of l)if(e.isDirectory()&&/^save/i.test(e.name)){const f=path.join(dir,e.name,'gsd.sd');if(fs.existsSync(f))out.push(f);}return out;}
 function yuris(dir){
@@ -192,9 +193,11 @@ function yuris(dir){
  const g=yurisGallery(dir,archives);if(!g||!g.slots.size)return null;const on=new Set();
  for(const f of saves){let arrays;try{arrays=yssdArrays(fs.readFileSync(f));}catch{continue;}
   const fit=arrays.filter(a=>a.count>=g.size&&a.set.every(i=>g.slots.has(i))).sort((a,b)=>b.set.length-a.set.length)[0];if(fit)for(const i of fit.set)on.add(base(g.slots.get(i)));}
+ /* 2026-11-15 the scene (gallery entry) each picture belongs to: variants of one scene are grouped on the card page */
+ const sceneOf=new Map();for(const [slot,n] of g.slots){const b=base(n);if(!sceneOf.has(b)&&g.entry?.has(slot))sceneOf.set(b,'e'+g.entry.get(slot));}
  const names=new Set([...g.slots.values()].map(base)),items=new Map(),{ypfList}=require('./original-engines/yuris.cjs')._internal;
  for(const a of archives){let l;try{l=ypfList(a)||[];}catch{continue;}
-  for(const e of l){if(!/\.(?:png|bmp|jpe?g)$/i.test(e.name))continue;const b=base(e.name);if(!on.has(b)||items.has(b))continue;items.set(b,{name:b,archive:a,entry:e});}}
+  for(const e of l){if(!/\.(?:png|bmp|jpe?g)$/i.test(e.name))continue;const b=base(e.name);if(!on.has(b)||items.has(b))continue;items.set(b,{name:b,archive:a,entry:e,group:sceneOf.get(b)});}}
  return {engine:'YU-RIS',supported:true,items,total:names.size};
 }
 

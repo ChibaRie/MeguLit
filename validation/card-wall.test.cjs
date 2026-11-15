@@ -12,7 +12,7 @@ const PNG=Buffer.from('89504e470d0a1a0a0000000d494844520000000100000001080600000
 function fakeDb(rows){return {prepare:sql=>({get:id=>rows.find(r=>r.id===id),all:()=>rows})};}
 function kirikiriGame(root){
  const dir=path.join(root,'game');fs.mkdirSync(path.join(dir,'savedata'),{recursive:true});fs.mkdirSync(path.join(dir,'image','evcg'),{recursive:true});
- for(const n of ['ev101a','ev102a','ev103a','bg_school'])fs.writeFileSync(path.join(dir,'image','evcg',n+'.png'),PNG);
+ for(const n of ['ev101a','ev102a','ev103a','bg_school'])fs.writeFileSync(path.join(dir,'image','evcg',n+'.png'),Buffer.concat([PNG,Buffer.from(n)]));/* distinct bytes: identical pictures are shown once */
  /* the system save marks only ev101a */
  fs.writeFileSync(path.join(dir,'savedata','datasu.ksd'),Buffer.concat([Buffer.from([0xff,0xfe]),Buffer.from('%[ "cg_EV101A" => 1, "next" => "ev102a" ]','utf16le')]));
  const exe=path.join(dir,'game.exe');fs.writeFileSync(exe,'');return exe;}
@@ -77,8 +77,8 @@ test('KiriKiri: a bare CG name in the save (no cg_ mark) never reaches the wall;
 test('undecoded CGs: the list answers at once and the background worker fills them in',()=>{
  const {root,db,exe}=setup();const calls=[];wall._setSpawnWarm((r,e,n)=>calls.push(n));
  try{assert.deepEqual(wall.unlocked(db,root,'g1').map(x=>x.id),['cover']);assert.deepEqual(calls,[['ev101a']]);
-  assert.deepEqual(wall.handle(db,root,{action:'cards_pending',gameId:'g1'}),{pending:1});
-  wall.warm(root,exe,['ev101a']);assert.deepEqual(wall.handle(db,root,{action:'cards_pending',gameId:'g1'}),{pending:0});
+  assert.deepEqual(wall.handle(db,root,{action:'cards_pending',gameId:'g1'}),{pending:1,total:2,paused:false});
+  wall.warm(root,exe,['ev101a']);assert.deepEqual(wall.handle(db,root,{action:'cards_pending',gameId:'g1'}),{pending:0,total:2,paused:false});
   assert.deepEqual(wall.unlocked(db,root,'g1').map(x=>x.id),['cover','save:ev101a']);}
  finally{wall._setSpawnWarm((r,e,n)=>wall.warm(r,e,n));}});
 
@@ -123,3 +123,32 @@ test('a made card can change its finish later; unknown finishes fall back to pla
  s=wall.handle(db,root,{action:'cards_set_finish',cardId:c.id,finish:'holo'});assert.equal(s.cards[0].finish,'holo');
  s=wall.handle(db,root,{action:'cards_set_finish',cardId:c.id,finish:'x'});assert.equal(s.cards[0].finish,'plain');
  assert.throws(()=>wall.handle(db,root,{action:'cards_set_finish',cardId:'nope',finish:'holo'}),/CARD_NOT_FOUND/);});
+
+/* 2026-11-15 (user: the PC froze while save CGs decoded): the polled list never draws a save CG, pictures already on
+   the page come back without their data, and a CG that cannot be decoded stops counting as pending */
+test('save CGs: the polled list never draws them inline; known ids come back without their picture',()=>{
+ const {root,db,exe}=setup();const calls=[];wall._setSpawnWarm((r,e,n)=>calls.push(n));
+ try{require('../services/game-cg.cjs').pictureFile(root,exe,'ev101a');
+  let drawn=[];wall._setRunner(jobs=>{drawn.push(...jobs.map(j=>j.in));return jobs.map(j=>{fs.mkdirSync(path.dirname(j.out),{recursive:true});fs.copyFileSync(j.in,j.out);return {ok:true,w:1280,h:720};});});
+  assert.deepEqual(wall.unlocked(db,root,'g1').map(x=>x.id),['cover']);
+  assert.ok(!drawn.some(f=>/ev101a/.test(f)),'a decoded save CG without a thumbnail goes to the worker, not the poll');
+  assert.equal(calls.length,1);assert.equal(typeof calls[0][0],'object');
+  wall.warm(root,exe,calls[0]);const list=wall.unlocked(db,root,'g1',['cover']);
+  assert.deepEqual(list.map(x=>x.id),['cover','save:ev101a']);assert.equal(list[0].src,'');assert.ok(list[1].src.startsWith('data:'));}
+ finally{wall._setSpawnWarm((r,e,n)=>wall.warm(r,e,n));wall._setRunner(jobs=>jobs.map(j=>{fs.mkdirSync(path.dirname(j.out),{recursive:true});fs.copyFileSync(j.in,j.out);return {ok:true,w:1280,h:720};}));}});
+
+test('a save CG that cannot be decoded stops counting as pending',()=>{
+ const {root,db,exe}=setup();wall._setSpawnWarm(()=>{});
+ try{fs.writeFileSync(path.join(path.dirname(exe),'image','evcg','ev101a.png'),'not a picture');wall.unlocked(db,root,'g1');
+  assert.equal(wall.handle(db,root,{action:'cards_pending',gameId:'g1'}).pending,1);
+  wall.warm(root,exe,['ev101a']);assert.equal(wall.handle(db,root,{action:'cards_pending',gameId:'g1'}).pending,0);}
+ finally{wall._setSpawnWarm((r,e,n)=>wall.warm(r,e,n));}});
+
+test('save CGs: variants of one scene share a group; a byte-identical picture is listed once',()=>{
+ const {root,db,exe}=setup();const dir=path.join(path.dirname(exe),'image','evcg');
+ /* ev101b is a variant of ev101a; ev101c is the very same picture as ev101a under another name */
+ fs.writeFileSync(path.join(dir,'ev101b.png'),Buffer.concat([PNG,Buffer.from('b')]));fs.copyFileSync(path.join(dir,'ev101a.png'),path.join(dir,'ev101c.png'));
+ fs.writeFileSync(path.join(path.dirname(exe),'savedata','datasu.ksd'),Buffer.concat([Buffer.from([0xff,0xfe]),Buffer.from('%[ "cg_EV101A" => 1, "cg_EV101B" => 1, "cg_EV101C" => 1 ]','utf16le')]));
+ wall.unlocked(db,root,'g1');const cgs=wall.unlocked(db,root,'g1').filter(x=>x.kind==='cg');
+ assert.deepEqual(cgs.map(x=>x.id),['save:ev101a','save:ev101b']);
+ assert.equal(cgs[0].group,cgs[1].group);});

@@ -74,13 +74,13 @@ const list=r=>Array.isArray(r)?r:Array.isArray(r?.items)?r.items:Array.isArray(r
 const WORDS={
  zh:{title:'制作收藏卡',games:'选择作品',search:'搜索作品名（中文 / 日文 / 英文）',noGames:'还没有可以做卡的作品。玩一会儿游戏，或在游戏库添加带封面的作品后再来',noMatch:'没有匹配的作品',
   count:'{n} 张可用',cgEmpty:'还没有解锁的 CG，玩到后会出现在这里；也可以用封面或截图做卡',groups:{cg:'游戏 CG',shot:'我的截图',cover:'封面'},src:{save:'存档已解锁',seen:'游戏中见过',shot:'MeguLit 截图',cover:'作品封面'},
-  hover:'悬停预览：卡在卡套里静止显示这个取景，鼠标悬停时从这里开始缓慢移动',hoverShort:'悬停试试',frame:'取景',hint:'拖动平移 · 滚轮或双指缩放 · 双击复原',front:'正面',back:'卡背',make:'生成并放入卡套',only:'只做卡，放进「我的卡」',makeOnly:'生成卡',printing:'正在印卡…',fail:'没能生成这张卡：{e}',back_:'返回',close:'关闭',loading:'正在读取…',pendingNote:'还有 {n} 张存档 CG 正在解码，好了会自动出现',reset:'复原',finish:'卡面',finishes:{plain:'普通',shine:'闪卡',holo:'镭射'},mine:'我的卡',full:'这个卡套里已经有卡了（卡面墙刚刚变过），已经刷新，请换一个空卡套',gone:'这张卡已经不在了，「我的卡」已刷新',madeLoose:'卡做好了，但没能放进卡套（{e}），它在「我的卡」里',insertFail:'没能放进卡套：{e}',mineHint:'取出来的卡在这里，点一下放进这个卡套'},
+  hover:'悬停预览：卡在卡套里静止显示这个取景，鼠标悬停时从这里开始缓慢移动',hoverShort:'悬停试试',frame:'取景',hint:'拖动平移 · 滚轮或双指缩放 · 双击复原',front:'正面',back:'卡背',make:'生成并放入卡套',only:'只做卡，放进「我的卡」',makeOnly:'生成卡',printing:'正在印卡…',fail:'没能生成这张卡：{e}',back_:'返回',close:'关闭',loading:'正在读取…',pendingNote:'正在后台解码存档 CG：还剩 {n} 张（共 {t} 张），解好一张出现一张',variants:'差分 {n}',fold:'收起 {n}',pausedNote:'游戏或全屏程序在前台，存档 CG 解码先暂停（还剩 {n} 张），回到这里会继续',reset:'复原',finish:'卡面',finishes:{plain:'普通',shine:'闪卡',holo:'镭射'},mine:'我的卡',full:'这个卡套里已经有卡了（卡面墙刚刚变过），已经刷新，请换一个空卡套',gone:'这张卡已经不在了，「我的卡」已刷新',madeLoose:'卡做好了，但没能放进卡套（{e}），它在「我的卡」里',insertFail:'没能放进卡套：{e}',mineHint:'取出来的卡在这里，点一下放进这个卡套'},
  ja:{title:'コレクションカードを作る',games:'作品を選ぶ',search:'作品名で検索（日本語 / 中国語 / 英語）',noGames:'カードにできる作品がまだありません。少し遊ぶか、カバー付きの作品をライブラリに追加してください',noMatch:'一致する作品がありません',
   count:'{n} 枚使えます',cgEmpty:'解放済みの CG はまだありません。プレイすると出てきます。カバーやスクリーンショットでも作れます',groups:{cg:'ゲーム CG',shot:'スクリーンショット',cover:'カバー'},src:{save:'セーブで解放済み',seen:'ゲーム中に表示',shot:'MeguLit の撮影',cover:'作品カバー'},
-  hover:'ホバーで動きを確認：スリーブ内ではこの構図で止まり、ホバーするとここからゆっくり動きます',hoverShort:'ホバー',frame:'構図',hint:'ドラッグで移動 · ホイール／ピンチで拡大 · ダブルクリックで戻す',front:'表',back:'裏',make:'作ってスリーブに入れる',only:'作るだけ（マイカードへ）',makeOnly:'カードを作る',printing:'印刷中…',fail:'カードを作れませんでした：{e}',back_:'戻る',close:'閉じる',loading:'読み込み中…',pendingNote:'セーブの CG を {n} 枚デコード中です。終わると自動で表示されます',reset:'戻す',finish:'カード面',finishes:{plain:'ノーマル',shine:'キラ',holo:'ホロ'},mine:'マイカード',full:'このトップローダーにはもうカードがあります（ウォールが更新されました）。空のトップローダーを選んでください',gone:'このカードはもうありません。マイカードを更新しました',madeLoose:'カードはできましたが、トップローダーに入れられませんでした（{e}）。マイカードにあります',insertFail:'トップローダーに入れられませんでした：{e}',mineHint:'取り出したカードはここ。クリックでこのトップローダーに入れます'},
+  hover:'ホバーで動きを確認：スリーブ内ではこの構図で止まり、ホバーするとここからゆっくり動きます',hoverShort:'ホバー',frame:'構図',hint:'ドラッグで移動 · ホイール／ピンチで拡大 · ダブルクリックで戻す',front:'表',back:'裏',make:'作ってスリーブに入れる',only:'作るだけ（マイカードへ）',makeOnly:'カードを作る',printing:'印刷中…',fail:'カードを作れませんでした：{e}',back_:'戻る',close:'閉じる',loading:'読み込み中…',pendingNote:'セーブの CG をバックグラウンドでデコード中：残り {n} 枚（全 {t} 枚）、できた順に表示されます',variants:'差分 {n}',fold:'閉じる {n}',pausedNote:'ゲームか全画面アプリが前面にあるため、セーブ CG のデコードを一時停止中です（残り {n} 枚）',reset:'戻す',finish:'カード面',finishes:{plain:'ノーマル',shine:'キラ',holo:'ホロ'},mine:'マイカード',full:'このトップローダーにはもうカードがあります（ウォールが更新されました）。空のトップローダーを選んでください',gone:'このカードはもうありません。マイカードを更新しました',madeLoose:'カードはできましたが、トップローダーに入れられませんでした（{e}）。マイカードにあります',insertFail:'トップローダーに入れられませんでした：{e}',mineHint:'取り出したカードはここ。クリックでこのトップローダーに入れます'},
  en:{title:'Make a collector card',games:'Choose a work',search:'Search titles (Chinese / Japanese / English)',noGames:'No work has pictures for a card yet. Play for a while, or add a work with a cover to the library',noMatch:'No matching work',
   count:'{n} available',cgEmpty:'No unlocked CGs yet; they appear here once you reach them. You can also use the cover or a screenshot',groups:{cg:'Game CGs',shot:'My screenshots',cover:'Cover'},src:{save:'Unlocked in saves',seen:'Seen in game',shot:'MeguLit shot',cover:'Cover'},
-  hover:'Hover to preview: in the Toploader the card rests on this framing and drifts from here on hover',hoverShort:'hover',frame:'Framing',hint:'Drag to pan · wheel or pinch to zoom · double-click to reset',front:'Front',back:'Back',make:'Make and sleeve it',only:'Just make it (My cards)',makeOnly:'Make card',printing:'Printing…',fail:'Could not make this card: {e}',back_:'Back',close:'Close',loading:'Loading…',pendingNote:'{n} CGs from your saves are still being decoded; they appear here when ready',reset:'Reset',finish:'Finish',finishes:{plain:'Plain',shine:'Sparkle',holo:'Holo'},mine:'My cards',full:'That toploader already holds a card (the wall changed); it has been refreshed, pick an empty one',gone:'That card is gone; My cards has been refreshed',madeLoose:'The card is made but could not go into the toploader ({e}); it is in My cards',insertFail:'Could not put it in the toploader: {e}',mineHint:'Cards you took out wait here; click one to sleeve it here'}};
+  hover:'Hover to preview: in the Toploader the card rests on this framing and drifts from here on hover',hoverShort:'hover',frame:'Framing',hint:'Drag to pan · wheel or pinch to zoom · double-click to reset',front:'Front',back:'Back',make:'Make and sleeve it',only:'Just make it (My cards)',makeOnly:'Make card',printing:'Printing…',fail:'Could not make this card: {e}',back_:'Back',close:'Close',loading:'Loading…',pendingNote:'Decoding CGs from your saves in the background: {n} of {t} left, each appears as soon as it is ready',variants:'{n} variants',fold:'Fold {n}',pausedNote:'Paused while a game or a full-screen program is in front ({n} save CGs left)',reset:'Reset',finish:'Finish',finishes:{plain:'Plain',shine:'Sparkle',holo:'Holo'},mine:'My cards',full:'That toploader already holds a card (the wall changed); it has been refreshed, pick an empty one',gone:'That card is gone; My cards has been refreshed',madeLoose:'The card is made but could not go into the toploader ({e}); it is in My cards',insertFail:'Could not put it in the toploader: {e}',mineHint:'Cards you took out wait here; click one to sleeve it here'}};
 const lang=()=>{const l=(document.documentElement.lang||'zh').toLowerCase();return l.startsWith('ja')?'ja':l.startsWith('en')?'en':'zh';};
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
 const reduced=()=>typeof matchMedia==='function'&&matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -107,7 +107,7 @@ async function mockApi(action,p={}){
   out.push({id:id+'-shot0',kind:'shot',src:mockSvg('#222',a,'SHOT'),w:1600,h:900,source:'shot'},{id:id+'-cover',kind:'cover',src:mockSvg(a,b,title.slice(0,8),600,800),w:600,h:800,source:'cover'});return out;}
  if(action==='cards_create'){const card={id:'c'+Date.now(),gameId:p.gameId,title:game?.[1]||'',initial:game?.[2]||'M',kind:p.kind,finish:p.finish||'plain',src:p.__src||'',w:p.__w||1600,h:p.__h||900,still:p.still,createdAt:Date.now()};mockState.cards.push(card);return card;}
  if(action==='cards_insert'){return mockState;}
- if(action==='cards_pending')return {pending:0};
+ if(action==='cards_pending')return {pending:0,total:0,paused:false};
  if(action==='cards_image'){const it=(await mockApi('cards_unlocked',{gameId:p.gameId})).find(x=>x.id===p.srcId);return it?{id:it.id,src:it.src,w:it.w,h:it.h}:null;}
  return mockState;
 }
@@ -264,22 +264,53 @@ export function openCardMaker({toploaderId=null,from=null,api=null}={}){
   const heroCover=layer.querySelector('.cm-hero-cover');
   push(layer,{fly:()=>{const img=btn.querySelector('img');if(!img)return;const from=rectOf(img);heroCover.style.opacity='0';
    requestAnimationFrame(()=>flight(from,rectOf(heroCover),{src:img.currentSrc||img.src,spring:SPRING.smooth,radius:6}).then(()=>{heroCover.style.opacity='';heroCover.animate([{opacity:0},{opacity:1}],{duration:160});}));}});
-  const groups=layer.querySelector('.cm-groups');let shownOnce=false,lastCount=-1;
-  /* backend: cards_unlocked answers at once; CGs still being decoded from the saves are counted by cards_pending, the
-     wall asks again until none are left (new ones join without the others replaying their entrance) */
-  const poll=async()=>{if(closing||!layer.isConnected)return;const pr=await call('cards_pending',{gameId:g.gameId}).catch(()=>null),n=Number(pr?.pending)||0;
-   let note=layer.querySelector('.cm-pending');if(n>0){if(!note){note=document.createElement('p');note.className='cm-note cm-pending';groups.before(note);}note.textContent=w.pendingNote.replace('{n}',n);setTimeout(()=>{load().then(poll);},2500);}else{note?.remove();if(lastCount>=0)load();}};
-  const load=()=>call('cards_unlocked',{gameId:g.gameId}).then(r=>{if(list(r).length===lastCount)return;lastCount=list(r).length;const first=!shownOnce;shownOnce=true;
-   const sets=groupUnlocked(list(r));
-   if(!sets.length){groups.innerHTML=`<div class="cm-empty-card"><span class="cm-empty-crest" aria-hidden="true">${esc(crestGlyph(g.title))}</span><p>${w.cgEmpty}</p></div>`;return;}
-   const onlyFallback=!sets.some(s=>s.kind==='cg');
-   groups.innerHTML=(onlyFallback?`<p class="cm-note">${w.cgEmpty}</p>`:'')+sets.map(s=>`<section class="cm-group"><h4>${w.groups[s.kind]}<span>${s.items.length}</span></h4><div class="cm-grid cm-cg-grid">${s.items.map((it,i)=>`<button type="button" class="cm-cg${(it.w||16)<(it.h||9)?' is-tall':''}" data-id="${esc(it.id)}" style="--i:${Math.min(i,14)}" aria-label="${esc(w.groups[s.kind]+' '+(i+1))}"><img src="${esc(it.src)}" alt="" loading="lazy" decoding="async"><span class="cm-tag">${esc(w.src[it.source]||w.groups[s.kind])}</span></button>`).join('')}</div></section>`).join('');
-   const byId=new Map(list(r).map(it=>[String(it.id),it]));
-   groups.querySelectorAll('img').forEach(img=>{const show=()=>img.classList.add('is-in');if(img.complete)show();else img.addEventListener('load',show,{once:true});});
-   if(first&&!reduced())groups.querySelectorAll('.cm-cg').forEach((el,i)=>{if(i<20)el.animate([{opacity:0,transform:'translateY(14px) scale(.96)'},{opacity:1,transform:'none'}],{...springEasing(SPRING.smooth),delay:Math.min(i,14)*30,fill:'backwards'});});
-   groups.onclick=e=>{const b=e.target.closest('.cm-cg');if(b&&!layer.inert)openViewer(b,byId.get(b.dataset.id));};
+  const groups=layer.querySelector('.cm-groups');let shownOnce=false,lastIds='',lastPending=-1,pendingNow=0;const known=new Map();
+  /* backend: cards_unlocked answers at once with the pictures that are ready; save CGs still being decoded in the
+     background are counted by cards_pending. The wall asks again while some are left. 2026-11-15 (user: the PC froze
+     while 142 save CGs decoded): ids the page already shows are sent as known and come back without their picture,
+     new ones are appended to their group (the others keep their decoded images and do not replay their entrance),
+     and the "no CG unlocked yet" text waits until decoding is over and really found none */
+  /* 2026-11-15 one picture per scene: the variants of a save CG scene (same group) stay folded behind its first picture
+     and open with the chip on it */
+  const openScenes=new Set();
+  const syncScenes=()=>groups.querySelectorAll('.cm-grid').forEach(grid=>{const lead=new Map(),count=new Map();
+   for(const b of grid.querySelectorAll('.cm-cg')){const g=b.dataset.group;if(!g)continue;count.set(g,(count.get(g)||0)+1);if(!lead.has(g))lead.set(g,b);}
+   for(const b of grid.querySelectorAll('.cm-cg')){const g=b.dataset.group;if(!g)continue;const first=lead.get(g)===b,n=count.get(g),open=openScenes.has(g);
+    b.classList.toggle('is-variant',!first);b.classList.toggle('is-open',open);let chip=b.querySelector('.cm-vars');
+    if(first&&n>1){if(!chip){chip=document.createElement('span');chip.className='cm-vars';chip.setAttribute('role','button');chip.tabIndex=0;b.append(chip);}chip.textContent=(open?w.fold:w.variants).replace('{n}',n);chip.setAttribute('aria-expanded',String(open));}
+    else chip?.remove();}});
+  const button=(s,it,i)=>`<button type="button" class="cm-cg${(it.w||16)<(it.h||9)?' is-tall':''}" data-id="${esc(it.id)}"${it.group?` data-group="${esc(it.group)}"`:''} style="--i:${Math.min(i,14)}" aria-label="${esc(w.groups[s.kind]+' '+(i+1))}"><img src="${esc(it.src)}" alt="" loading="lazy" decoding="async"><span class="cm-tag">${esc(w.src[it.source]||w.groups[s.kind])}</span></button>`;
+  const fadeIn=root=>root.querySelectorAll('img').forEach(img=>{if(img.classList.contains('is-in'))return;const show=()=>img.classList.add('is-in');if(img.complete)show();else img.addEventListener('load',show,{once:true});});
+  const emptyNote=()=>{let n=groups.querySelector('.cm-cg-empty');const want=!pendingNow&&!groups.querySelector('.cm-group[data-kind="cg"]');if(want&&!n){n=document.createElement('p');n.className='cm-note cm-cg-empty';n.textContent=w.cgEmpty;groups.prepend(n);}else if(!want)n?.remove();};
+  const poll=async()=>{if(closing||!layer.isConnected)return;const pr=await call('cards_pending',{gameId:g.gameId}).catch(()=>null),n=Number(pr?.pending)||0;pendingNow=n;
+   let note=layer.querySelector('.cm-pending');
+   if(n>0){if(!note){note=document.createElement('p');note.className='cm-note cm-pending';note.setAttribute('aria-live','polite');groups.before(note);}
+    note.textContent=(pr?.paused?w.pausedNote:w.pendingNote).replace('{n}',n).replace('{t}',Math.max(n,Number(pr?.total)||n));
+    const changed=n!==lastPending;lastPending=n;if(changed)await load();setTimeout(poll,pr?.paused?4000:2000);}
+   else{note?.remove();lastPending=0;await load();emptyNote();}};
+  const load=()=>call('cards_unlocked',{gameId:g.gameId,known:[...known.keys()]}).then(r=>{
+   const items=list(r).map(it=>{if(!it.src&&known.has(String(it.id)))return {...it,src:known.get(String(it.id))};if(it.src)known.set(String(it.id),it.src);return it;}).filter(it=>it.src);
+   const ids=items.map(it=>it.id).join('\n');if(ids===lastIds)return;lastIds=ids;const first=!shownOnce;shownOnce=true;
+   const sets=groupUnlocked(items),byId=new Map(items.map(it=>[String(it.id),it]));
+   groups.onclick=e=>{const chip=e.target.closest('.cm-vars');if(chip){e.stopPropagation();const g=chip.closest('.cm-cg').dataset.group;if(openScenes.has(g))openScenes.delete(g);else openScenes.add(g);syncScenes();return;}
+    const b=e.target.closest('.cm-cg');if(b&&!layer.inert)openViewer(b,byId.get(b.dataset.id));};
+   groups.onkeydown=e=>{if((e.key==='Enter'||e.key===' ')&&e.target.closest('.cm-vars')){e.preventDefault();e.stopPropagation();e.target.click();}};
+   if(!sets.length){if(pendingNow)return;groups.innerHTML=`<div class="cm-empty-card"><span class="cm-empty-crest" aria-hidden="true">${esc(crestGlyph(g.title))}</span><p>${w.cgEmpty}</p></div>`;return;}
+   const fresh=[];
+   if(first||groups.querySelector('.cm-skel,.cm-empty-card')){groups.innerHTML=sets.map(s=>`<section class="cm-group" data-kind="${s.kind}"><h4>${w.groups[s.kind]}<span>${s.items.length}</span></h4><div class="cm-grid cm-cg-grid">${s.items.map((it,i)=>button(s,it,i)).join('')}</div></section>`).join('');fresh.push(...groups.querySelectorAll('.cm-cg'));}
+   else{const order=['cg','shot','cover'];
+    for(const s of sets){let sec=groups.querySelector(`.cm-group[data-kind="${s.kind}"]`);
+     if(!sec){sec=document.createElement('section');sec.className='cm-group';sec.dataset.kind=s.kind;sec.innerHTML=`<h4>${w.groups[s.kind]}<span></span></h4><div class="cm-grid cm-cg-grid"></div>`;
+      const next=[...groups.querySelectorAll('.cm-group')].find(x=>order.indexOf(x.dataset.kind)>order.indexOf(s.kind));groups.insertBefore(sec,next||null);}
+     const grid=sec.querySelector('.cm-grid'),have=new Set([...grid.querySelectorAll('.cm-cg')].map(b=>b.dataset.id));
+     s.items.forEach((it,i)=>{if(have.has(String(it.id)))return;const tmp=document.createElement('div');tmp.innerHTML=button(s,it,i);const el=tmp.firstElementChild;
+      const mates=it.group?[...grid.querySelectorAll('.cm-cg')].filter(b=>b.dataset.group===it.group):[];if(mates.length)mates.at(-1).after(el);else grid.append(el);fresh.push(el);});
+     sec.querySelector('h4 span').textContent=s.items.length;}
+    for(const b of groups.querySelectorAll('.cm-cg'))if(!byId.has(b.dataset.id))b.remove();}
+   syncScenes();emptyNote();fadeIn(groups);
+   if(!reduced())fresh.forEach((el,i)=>{if(i<20)el.animate([{opacity:0,transform:'translateY(14px) scale(.96)'},{opacity:1,transform:'none'}],{...springEasing(SPRING.smooth),delay:first?Math.min(i,14)*30:0,fill:'backwards'});});
   },e=>{groups.innerHTML=`<p class="cm-empty">${esc(w.fail.replace('{e}',String(e?.message||e)))}</p>`;});
-  load().then(poll);
+  poll();
  }
 
  /* ---------- level 2: the viewfinder ---------- */
