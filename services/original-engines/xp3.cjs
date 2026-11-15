@@ -53,4 +53,10 @@ function decodeText(buf){
 // E297: the index's top-level chunk tags. An "Hxv4" chunk marks KiriKiri Z archives whose files only the game's cxdec v2
 // plug-in can open (the cold run in services/kirikiri-cold.cjs reads them through the game).
 function indexTags(file){let fd;try{fd=fs.openSync(file,'r');const index=readIndex(fd,fs.fstatSync(fd).size);return index?[...new Set(chunks(index,0,index.length).map(c=>c.tag))]:[];}catch{return [];}finally{if(fd!==undefined)try{fs.closeSync(fd);}catch{}}}
-module.exports={list,read,decodeText,MAGIC,indexTags};
+// 2026-11-15 raw-bytes outlet for the adaptation contribution (services/adapter-contrib.cjs): the entries a filter keeps,
+// unpacked but not decrypted (an encrypted entry stays as stored; the maintainer decrypts it with the key found in the
+// program's code). [{name,data,encrypted}] or null when the file is not an XP3 archive.
+function rawEntries(file,{filter=()=>true,max=16<<20,limit=4000}={}){const t=list(file);if(!t)return null;const out=[];
+ for(const e of t.files){if(out.length>=limit)break;if(!filter(e.name)||e.size>max||!e.segments.length)continue;try{out.push({name:e.name,data:read(file,e),encrypted:!!e.encrypted});}catch{}}
+ return out;}
+module.exports={list,read,decodeText,MAGIC,indexTags,rawEntries};

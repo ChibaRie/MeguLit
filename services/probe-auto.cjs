@@ -66,11 +66,16 @@ async function run(root,db,{ids=null,fetcher=globalThis.fetch,endpoint,hasEndpoi
   if(probeFirst&&!ids&&Date.now()-s.probedAt>PROBE_EVERY&&probe.status(root).state!=='running'){
    s.probedAt=Date.now();save(root,s);probe.start(root,db,{reason:'auto'});
    for(let i=0;i<2400&&probe.status(root).state==='running';i++)await wait(1000);}
-  const results=probe.results(root),games=probe.libraryGames(db),want=ids?new Set(ids.map(String)):null,out={};
+  const results=probe.results(root),games=probe.libraryGames(db),want=ids?new Set(ids.map(String)):null,out={},contrib=require('./adapter-contrib.cjs'),contribOut={};
+  /* rule 3 (adapter-contrib.cjs): local packages never stay longer than KEEP_DAYS, nor at all once the switch is off */
+  contrib.purgeOutbox(root,contrib.enabled(root)?{olderThan:contrib.KEEP_DAYS*86400000}:{});
   for(const p of probe.problems(root)){if(want&&!want.has(p.id))continue;const g=games.find(x=>x.id===p.id);if(!g||!results[p.id])continue;
    let o;try{o=await one(root,db,g,results[p.id],s,{fetcher,endpoint,hasEndpoint,sampler});}catch{o='failed';}
-   out[p.id]=o;save(root,s);if(o==='offline')break;await wait(o==='skipped'?0:1500);}
-  save(root,s);return {state:'done',results:out};})();
+   out[p.id]=o;save(root,s);if(o==='offline')break;
+   /* 2026-11-15 the adaptation contribution (adapter-contrib.cjs): only with the player's consent, only this library game */
+   if(contrib.enabled(root))try{contribOut[p.id]=await contrib.forGame(root,db,g,results[p.id],{fetcher});}catch{contribOut[p.id]='failed';}
+   await wait(o==='skipped'?0:1500);}
+  save(root,s);return {state:'done',results:out,contrib:contribOut};})();
  try{return await busy;}finally{busy=null;}}
 
 /* status(root) → {enabled, busy, games, log} (the probe dialog shows log + each bundle's manifest as the record) */
