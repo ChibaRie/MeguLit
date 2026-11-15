@@ -274,3 +274,13 @@ html:not(#u):not(#v):not(#w):not(#x) body .game-detail-hero .detail-title{height
 html:not(#u):not(#v):not(#w):not(#x) body .game-detail-hero .detail-title>h1{font-size:var(--dfit,var(--dh1))!important;line-height:1.08!important;height:calc(2.16*var(--dh1))!important;margin:0!important;overflow:visible;align-self:start;word-break:break-word}
 html:not(#u):not(#v):not(#w):not(#x) body .game-detail-hero .detail-title>.detail-actions{margin-top:14px!important}
 html:not(#u):not(#v):not(#w):not(#x) body .game-detail-hero{margin-bottom:18px!important}
+
+/* E600 (user: 优化一下这里的排版) the launch warning row grows with its text, so the buttons below move down instead of being
+   covered; the warning is one short line with a warning mark, no plate, at most two lines (full text in its title) */
+html:not(#u):not(#v):not(#w):not(#x) body .game-detail-hero .detail-title{grid-template-rows:1fr auto auto auto minmax(30px,auto) auto 14px!important}
+html:not(#u):not(#v):not(#w):not(#x) body .game-detail-hero .detail-title>p.detail-warn{display:flex!important;align-items:flex-start;gap:8px;max-width:min(640px,100%);margin-top:8px!important;background:none!important;border:0!important;padding:0!important}
+.detail-warn>.detail-warn-icon{flex:none;width:16px;height:16px;margin-top:2px;color:var(--g-gold,#edb56e)}
+.detail-warn>span{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}
+.detail-warn .detail-warn-link{display:inline;padding:0!important;font:inherit;color:var(--g-gold,#edb56e)!important;text-decoration:underline;text-underline-offset:3px;cursor:pointer}
+.detail-warn .detail-warn-link:hover{color:var(--g-t1,#f1e0d2)!important}
+html:not(#u):not(#v):not(#w):not(#x) body .detail-warn a.detail-warn-link{border:0!important;background:none!important;box-shadow:none!important;height:auto!important;min-height:0!important;padding:0!important;margin:0 0 0 4px!important;font-size:inherit!important;letter-spacing:0!important;color:var(--g-gold,#edb56e)!important;text-decoration:underline!important;text-underline-offset:3px}
