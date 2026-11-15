@@ -490,6 +490,8 @@ export async function mountGrammar(target,{api,locale,esc,toast,isCurrent=()=>tr
   const a=mark.getBoundingClientRect(),h=host.getBoundingClientRect();pop.style.left=Math.max(0,Math.min(a.left-h.left,h.width-260))+'px';pop.style.top=(a.bottom-h.top+6)+'px';
   if(motion())pop.animate([{opacity:0,transform:'translateY(-3px)'},{opacity:1,transform:'none'}],{duration:150,easing:'ease-out'});
  }
+ /* 2026-11-15 原声 or 朗读 on every read-aloud button of a lesson */
+ function labelSpeak(scope){import('./sentence-voice.js').then(m=>m.labelVoices(api,[...scope.querySelectorAll('[data-speak]')].map(b=>({button:b,text:b.dataset.speak})))).catch(()=>{});}
  async function speak(text,button){button.disabled=true;try{audio?.pause();await (await import('./sentence-voice.js')).playSentence(api,text,button);}catch{toast?.(w.speakFail);
   }finally{button.disabled=false;}}
  function bindConj(){const box=root.querySelector('[data-conj]');if(!box)return;let wordIndex=0,form=CONJ_FORM[point.id]||'masu';
@@ -533,7 +535,7 @@ export async function mountGrammar(target,{api,locale,esc,toast,isCurrent=()=>tr
   const draw=i=>{const slot=root.querySelector(`[data-how-row="${i}"]`);if(!slot)return;const e=pick[i];
    const more=!!e&&lists[i].some(x=>x.text!==e.text&&!pick.some((o,j)=>j!==i&&o?.text===x.text));
    slot.innerHTML=e?gameLineHTML(e,{esc,locale,more}):gameNoneHTML({esc,locale,dict});
-   slot.querySelectorAll('[data-speak]').forEach(b=>b.onclick=()=>speak(b.dataset.speak,b));
+   slot.querySelectorAll('[data-speak]').forEach(b=>b.onclick=()=>speak(b.dataset.speak,b));labelSpeak(slot);
    const again=slot.querySelector('[data-how-again]');if(again)again.onclick=()=>{const keep={};pick.forEach((o,j)=>{if(o&&j!==i)keep[j]=o.text;});
     pick=pickLines(lists.map((l,j)=>j===i?l.filter(x=>x.text!==e.text):l),{keep});draw(i);fx.focus(slot);};};
   lists.forEach((_,i)=>draw(i));
@@ -559,7 +561,7 @@ export async function mountGrammar(target,{api,locale,esc,toast,isCurrent=()=>tr
    if(on)keepStep(point.id,step,STEPS.length);if(n){memo.groupOf={...(memo.groupOf||{}),[lv]:n.group};openPoint(n.id);}else renderLesson();}catch(error){toast?.(String(error?.message||error));}};
   root.querySelectorAll('[data-anki]').forEach(b=>b.onclick=async()=>{const e=real[Number(b.dataset.anki)];b.disabled=true;try{await api('grammar_anki',{point:point.id,
    title:loc(point.title,'zh'),gist:loc(point.gist,'zh'),example:e});b.textContent=w.ankiDone;}catch{b.disabled=false;toast?.(w.ankiFail);}});
-  root.querySelectorAll('[data-speak]').forEach(b=>b.onclick=()=>speak(b.dataset.speak,b));
+  root.querySelectorAll('[data-speak]').forEach(b=>b.onclick=()=>speak(b.dataset.speak,b));labelSpeak(root);
   root.querySelectorAll('[data-explain]').forEach(m=>{m.onclick=e=>{e.stopPropagation();explain(m);};m.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();
    explain(m);}};m.onmouseenter=()=>explain(m);});
   root.onclick=e=>{if(!e.target.closest('.gm-pop,[data-explain]'))root.querySelector('.gm-pop')?.remove();};

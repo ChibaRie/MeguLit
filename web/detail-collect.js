@@ -353,7 +353,7 @@ export function mountSentences(target,{sentences=[],locale='zh',esc,state,animat
   if(ratio<1)big.style.setProperty('--gl-fit',ratio.toFixed(4));big.classList.toggle('is-wrap',ratio<.42);}
  function fillHero(){const s=cur(),g=groupOf.get(s.id);
   const head=s.id===newest[0].id?t.lede:state.why==='random'?t.ledeRandom:t.ledeOther;
-  lede.innerHTML=`${esc(head)} <span>${esc(t.ledeSub)}</span>`;big.innerHTML=heroHTML(s);setExample(big,s?.text);fit();
+  lede.innerHTML=`${esc(head)} <span>${esc(t.ledeSub)}</span>`;big.innerHTML=heroHTML(s);setExample(big,s?.text);fit();/* 2026-11-15 原声 or 朗读 on the play button */import('./sentence-voice.js').then(m=>m.labelVoices(api,[{button:root.querySelector('[data-play]'),id:s?.id,text:s?.text}])).catch(()=>{});
   zh.textContent=s.translation||t.noTr;zh.classList.toggle('is-none',!s.translation);
   const link=g&&g.items.length>1||g?.file?`<button type="button" class="text-button gl-goscene" data-scene="${esc(g.key)}">${g.file?IC_S.scene:''}${esc(g.file?t.inScene(g.items.length):t.dayK(g.items.length))}</button>`:'';
   who.innerHTML=`<time>${esc(when(s.created_at,locale,t))}</time><span class="gl-src${isAuto(s)?' on':''}">${esc(srcTag(s))}</span>${link}`;
@@ -466,7 +466,7 @@ export function mountSentences(target,{sentences=[],locale='zh',esc,state,animat
  del.addEventListener('keydown',e=>{if(e.key==='Escape'&&del.classList.contains('armed')){e.preventDefault();e.stopPropagation();resetDelete();}});
  del.addEventListener('blur',()=>{if(del.classList.contains('armed'))setTimeout(()=>{if(document.activeElement!==del)resetDelete();},150);});
  life.off(()=>clearTimeout(armTimer));
- root.querySelector('[data-play]').addEventListener('click',async e=>{const b=e.currentTarget;b.disabled=true;try{await (await import('./sentence-voice.js')).playSentence(api,cur().text,b);}catch{toast?.(t.playFail);}finally{b.disabled=false;}});
+ root.querySelector('[data-play]').addEventListener('click',async e=>{const b=e.currentTarget;b.disabled=true;try{await (await import('./sentence-voice.js')).playSentence(api,cur().text,b,{id:cur().id});}catch{toast?.(t.playFail);}finally{b.disabled=false;}});
  root.querySelector('[data-copy]').addEventListener('click',async()=>{try{await navigator.clipboard.writeText(cur().text);toast?.(t.copied);}catch{toast?.(t.copyFail);}});
  shuffleBtn?.addEventListener('click',shuffle);
  who.addEventListener('click',e=>{const b=e.target.closest('[data-scene]');if(b)openGroup(b.dataset.scene,{scroll:true});});
