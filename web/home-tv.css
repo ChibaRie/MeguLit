@@ -418,7 +418,7 @@ html:not(#u):not(#v):not(#w):not(#x):not(#y) body .tv-home .tv-heat-card .tv-hot
 .tv-rail{-webkit-mask-image:linear-gradient(90deg,#000,#000 92%,transparent);mask-image:linear-gradient(90deg,#000,#000 92%,transparent)}
 /* 2026-11-15 (user: 别让他动 … 最多10张) the strip is still: 10 cards, all the same size, no scrolling, no mask; the current one is lifted in place with the gold edge. If 10 do not fit the cards shrink */
 .tv-rail{overflow:visible;-webkit-mask-image:none;mask-image:none;padding:14px 0 10px}
-.tv-rail-in{width:100%;transform:none!important;transition:none;gap:clamp(4px,.6vw,10px);justify-content:flex-start}
+.tv-rail-in{width:100%;transform:none!important;transition:none;gap:clamp(4px,.6vw,10px);justify-content:flex-end}
 .tv-chip,.tv-chip.on{flex:0 1 68.5px;min-width:0;width:auto;height:auto;aspect-ratio:3/4;transition:opacity .25s,transform .25s cubic-bezier(.2,.8,.2,1),outline-color .25s}
 .tv-chip.on{transform:translateY(-10px);opacity:1}
 .tv-chip:hover{transform:translateY(-6px)}
