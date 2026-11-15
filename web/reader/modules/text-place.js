@@ -25,8 +25,12 @@
     /* fallback (the game drew its line blank but said nowhere where): the reader keeps its own place, without any plate */
     'body.megulit-place-fallback .sentence-window.tomoyo-hook-reader,body.megulit-place-fallback .sentence-window.tomoyo-hook-reader .tomoyo-cn-row{background:none!important;border-color:transparent!important;box-shadow:none!important;backdrop-filter:none!important}',
     'body.megulit-place-fallback .sentence-window.tomoyo-hook-reader::before,body.megulit-place-fallback .sentence-window.tomoyo-hook-reader::after,body.megulit-place-fallback .tome-box-deco{display:none!important}',
-    /* 2026-11-15 the game still draws this line itself (core/overlay-placement.cjs `visible`): no Japanese or ruby over it, the translation stays */
-    'body.megulit-place-game-drawn .sentence-window.tomoyo-hook-reader .sentence-text:not(.megulit-old-line){visibility:hidden!important}',
+    /* 2026-11-15 the game still draws this line itself (core/overlay-placement.cjs `visible`, an unarmed page): the reader
+       is not placed over it but goes back to its own window with its plate, bilingual (Japanese on top, translation under
+       it). Only a placed page (layer 4 live) whose places do not hold the reader's line yet keeps that line's Japanese
+       out of sight until it is placed. 1.4.10 hid the Japanese in every case and the user saw the translation alone
+       (時計仕掛けのレイライン: 「只有翻译了，要替换的原文没了」). */
+    'body.megulit-place-game-drawn.megulit-placed .sentence-window.tomoyo-hook-reader .sentence-text:not(.megulit-old-line){visibility:hidden!important}',
     'body.megulit-place-game-drawn .sentence-window.tomoyo-hook-reader .tomoyo-cn-row{visibility:visible!important}',
     /* layer 4 page model: older lines of the page (their own .sentence-text, placed like the current one) */
     'body.megulit-place-asleep .sentence-window.tomoyo-hook-reader{visibility:hidden!important}',
@@ -313,7 +317,9 @@
   const schedule = () => { if (!frame) frame = requestAnimationFrame(apply); };
   b.textPlace = m => { if (m?.visible === true) { drawnByGame = [...String(m.text || '')].filter(c => !blank(c)).join(''); schedule(); return; } if (m && Array.isArray(m.rects) && m.text) drawnByGame = ''; if (m?.clear) line = null; else if (m?.fallback && m.text) line = { fallback: true, text: String(m.text) }; else if (m && Array.isArray(m.rects) && m.text) line = { text: String(m.text), rects: m.rects, client: Array.isArray(m.client) ? m.client : [innerWidth, innerHeight] }; schedule(); };
   const pageGone = () => { for (const n of document.querySelectorAll('.megulit-old-line')) n.remove(); clones.clear(); document.body.classList.remove('megulit-place-asleep'); };
-  b.textPlacePage = m => { const had = !!page; page = m && Array.isArray(m.lines) ? { awake: m.awake === true, armed: m.armed === true, lines: m.lines.filter(l => l && typeof l.text === 'string' && Array.isArray(l.rects)), client: Array.isArray(m.client) ? m.client : [innerWidth, innerHeight] } : null; if (page) { line = null; drawnByGame = ''; } else if (had) pageGone(); schedule(); };
+  /* 2026-11-15 `elsewhere` (core/overlay-placement.cjs page()): the layer is not armed and another path hides the game's
+     line (write-back, glyph layer); the page says nothing about the line, so the reader places it as without a page */
+  b.textPlacePage = m => { const had = !!page; if (m?.elsewhere === true) { page = null; drawnByGame = ''; if (had) { pageGone(); dropOld(null); document.getElementById('megulit-page-ahead')?.replaceChildren(); document.body.classList.remove('megulit-place-game-drawn'); } schedule(); return; } page = m && Array.isArray(m.lines) ? { awake: m.awake === true, armed: m.armed === true, lines: m.lines.filter(l => l && typeof l.text === 'string' && Array.isArray(l.rects)), client: Array.isArray(m.client) ? m.client : [innerWidth, innerHeight] } : null; if (page) { line = null; drawnByGame = ''; } else if (had) pageGone(); schedule(); };
   b.textPlaceExtra = m => { extras = { items: Array.isArray(m?.items) ? m.items.filter(i => i && typeof i.text === 'string' && Array.isArray(i.rects)) : [], client: Array.isArray(m?.client) ? m.client : null }; schedule(); };
   b.textPlaceMode = m => { on = m?.on === true; if (!on) { line = null; drawnByGame = ''; if (page) { page = null; pageGone(); } } schedule(); };
   b.textPlaceStatus = () => ({ on, line: line ? { text: line.text, n: line.rects?.length || 0, fallback: !!line.fallback } : null, placed: document.body.classList.contains('megulit-placed'), geom: lastGeom.split(';').length });

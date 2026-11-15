@@ -107,7 +107,7 @@ test('the front end never sends a garbled translation to be written into a game'
   assert.match(read('web/reader/host-surface.css'), /body\.megulit-line-unreadable #reader-host,/);
 });
 
-test('reader DOM: a game-drawn line shows the translation only; a placed line shows everything', async t => {
+test('reader DOM: a game-drawn line goes back to the reader window, bilingual; a placed line shows everything', async t => {
   let chromium;
   try { ({ chromium } = require(process.env.MEGULIT_PLAYWRIGHT || 'H:/MeguLit-Work/pw/node_modules/playwright-core')); } catch { t.skip('no playwright-core'); return; }
   const code = read('web/reader/modules/text-place.js');
@@ -124,7 +124,10 @@ test('reader DOM: a game-drawn line shows the translation only; a placed line sh
     await page.evaluate(`${b}.textPlaceMode({ on: true })`); await frame();
     assert.deepEqual(await vis(), ['visible', 'visible', 'visible'], 'nothing known yet: unchanged');
     await page.evaluate(`${b}.textPlace({ visible: true, text: '肉塊が、暗く' })`); await frame();
-    assert.deepEqual(await vis(), ['hidden', 'hidden', 'visible'], 'game draws it: no Japanese or ruby over it, translation stays');
+    /* 2026-11-15 (1.4.10 user group: 「只有翻译了，要替换的原文没了」) the Japanese is never dropped: not placed over the
+       game's line, the reader goes back to its own window with its plate, Japanese on top and the translation under it */
+    assert.deepEqual(await vis(), ['visible', 'visible', 'visible'], 'game draws it: reader window bilingual');
+    assert.deepEqual(await page.evaluate(() => [document.body.classList.contains('megulit-placed'), document.body.classList.contains('megulit-place-fallback')]), [false, false], 'not placed over it, plate kept');
     /* a stale placement of the previous line does not bring the plateless Japanese back */
     await page.evaluate(`${b}.textPlace({ text: 'ぷよぷよ', client: [1280, 960], rects: [[10,10,30,30],[40,10,30,30],[70,10,30,30],[100,10,30,30]] })`); await frame();
     assert.equal(await page.evaluate(() => document.body.classList.contains('megulit-place-fallback')), true, 'another line placed: fallback for this one');

@@ -172,11 +172,19 @@ class OverlayPlacement {
      order (a line still being typed has fewer places than characters). The reader draws the whole page on them: older
      lines keep their Japanese and ruby, the newest one carries the translation. awake false = no page on screen (text
      window hidden, title): everything is cleared. */
-  page(m) {
+  /* o.replaced: another hide path (write-back of the selected stream, or a proven glyph layer) already takes the game's
+     own line away (hook-native originalReplaced). 2026-11-15 (user group, 1.4.10, 時計仕掛けのレイライン / SoftPal: "只有翻译了，
+     要替换的原文没了"): layer 4 reported the text window (awake=1) while it was not armed, because the writable stream was
+     hidden by write-back; the reader took that page for "the game draws its own line" and dropped its Japanese, so the
+     box showed the translation alone. An unarmed page is only the window state: with the line hidden elsewhere it goes
+     out as `elsewhere` and the reader places the line as it would without a page. */
+  page(m, o = {}) {
     if (!this.on || !m) return;
     const [cw, ch] = this.client, kx = m.sw > 0 && cw ? cw / m.sw : 1, ky = m.sh > 0 && ch ? ch / m.sh : kx;
+    const elsewhere = !m.armed && !!m.awake && o.replaced === true;
     const lines = m.awake && m.armed ? m.lines.map(l => ({ id: l.id, text: l.text, rects: l.rects.slice(0, [...l.text].length).map(r => [Math.round(r[0] * kx), Math.round(r[1] * ky), Math.round(r[2] * kx), Math.round(r[3] * ky)]) })) : [];
-    const out = { type: 'textPlacePage', awake: m.awake, armed: m.armed, own: m.own, ownRects: m.ownRects, lines, client: this.client.slice() };
+    const out = elsewhere ? { type: 'textPlacePage', awake: true, armed: false, elsewhere: true, lines: [], client: this.client.slice() }
+      : { type: 'textPlacePage', awake: m.awake, armed: m.armed, own: m.own, ownRects: m.ownRects, lines, client: this.client.slice() };
     const key = JSON.stringify(out);
     if (key === this.pageKey) return; this.pageKey = key; this.paged = true;
     for (const l of lines) this.learn(l.rects);
