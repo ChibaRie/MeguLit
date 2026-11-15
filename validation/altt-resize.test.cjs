@@ -2,7 +2,7 @@
 /* 2026-11-15 (user video, "alt+t面板尺寸调整问题非常大"): resizing the Alt+T panel by an edge left blank areas, cut the
    footer off, flashed and made the panel jump. The window region was rebuilt from the panel on every frame of the
    resize (the bridge cannot keep up, so the visible part lagged the panel), and the frosted-glass picture only covered
-   the old box. Now an edge resize holds one whole-layer region and a whole-layer glass read, like the header drag,
+   the old box. Now an edge resize holds one whole-layer region and one glass read that reaches the dragged screen edges,
    lays out once per frame, and keeps size and position. The real reader page runs in headless Edge with a stub Tauri
    transport that records every reader_message. Skipped without Edge. */
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),os=require('node:os'),path=require('node:path'),http=require('node:http');
@@ -29,7 +29,7 @@ const OPEN=`(async()=>{const w=ms=>new Promise(r=>setTimeout(r,ms));const b=wind
 const AT=(x,y)=>`(()=>{const n=document.elementFromPoint(${x},${y});return n&&n.classList.contains('tomoyo-menu-resize')?n.dataset.edge:(n?n.tagName+'.'+n.className:'')})()`;
 const STATE=`(()=>{const d=document.querySelector('.tomoyo-cn-dialog[open]'),q=n=>{const r=n.getBoundingClientRect();return [r.left,r.top,r.right,r.bottom].map(Math.round);},c=d.querySelector('.tomoyo-menu-content');
  const hits=window.__sent.filter(m=>m.type==='galHitRegions'),glass=window.__sent.filter(m=>m.type==='galGlass'&&m.rects.length);
- return {panel:q(d),footer:q(d.querySelector('form>footer')),content:q(c),scroll:[c.scrollHeight,c.clientHeight,getComputedStyle(c).overflowY],region:hits.at(-1)?.regions,glass:glass.at(-1)?.rects[0],vw:innerWidth,vh:innerHeight,
+ return {panel:q(d),footer:q(d.querySelector('form>footer')),content:q(c),scroll:[c.scrollHeight,c.clientHeight,getComputedStyle(c).overflowY],region:hits.at(-1)?.regions,glass:glass.at(-1)?.rects[0],glassCount:glass.length,vw:innerWidth,vh:innerHeight,
   resizing:d.classList.contains('tomoyo-menu-resizing')};})()`;
 
 test('Alt+T edge resize: whole-layer region and glass during the drag, footer pinned, min size, size and position kept',{skip:!hasEdge&&'Edge not installed',timeout:180000},async()=>{
@@ -51,7 +51,10 @@ test('Alt+T edge resize: whole-layer region and glass during the drag, footer pi
   for(const s of during){
    assert.ok(s.resizing,'resizing while the pointer is down');
    assert.deepEqual(s.region,[{x:0,y:0,width:s.vw,height:s.vh,menu:true}],'one whole-layer region during the resize: '+JSON.stringify(s.region));
-   assert.ok(s.glass&&s.glass.fx===0&&s.glass.fy===0&&s.glass.fw===s.vw&&s.glass.fh===s.vh,'glass reads the whole layer during the resize: '+JSON.stringify(s.glass));
+   /* 2026-11-15 (user: alt+t现在调整位置和尺寸非常卡): the glass read is set once per gesture (no galGlass per frame) and reaches
+      the screen edge on the dragged sides (west and south here), so the growing panel always has a picture */
+   assert.deepEqual(s.glass,during[0].glass,'one glass read for the whole gesture: '+JSON.stringify(s.glass));assert.equal(s.glassCount,during[0].glassCount,'no glass message per frame');
+   assert.ok(s.glass&&s.glass.fx===0&&s.glass.fy+s.glass.fh===s.vh&&s.glass.fx+s.glass.fw>=start[2],'glass read covers the dragged sides: '+JSON.stringify(s.glass));
    assert.equal(s.panel[2],start[2],'the opposite (right) edge stays put');
    assert.equal(s.footer[3],s.panel[3]-1,'footer pinned to the panel bottom');assert.ok(s.footer[1]>s.content[1],'footer below the content');
    assert.ok(s.content[3]<=s.footer[1],'content ends above the footer');

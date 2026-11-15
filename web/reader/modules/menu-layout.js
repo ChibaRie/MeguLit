@@ -103,7 +103,7 @@
    let ready=false,ended=false;surfaceReady().then(()=>{ready=true;if(!ended&&lastEvent!==down&&!frame)frame=requestAnimationFrame(paint);});
    const move=e=>{lastEvent=e.getCoalescedEvents?.().at(-1)||e;if(ready&&!frame)frame=requestAnimationFrame(paint);};
    const up=()=>{ended=true;header.removeEventListener('pointermove',move);header.removeEventListener('pointerup',up);header.removeEventListener('pointercancel',up);if(frame)cancelAnimationFrame(frame);if(frame||lastEvent!==down)paint();
-    dialog.style.removeProperty('transform');place(pos.x,pos.y);dialog.classList.remove('tome-menu-dragging');dialog.classList.add('tome-menu-settle');dialog.classList.remove('tomoyo-menu-resizing');setTimeout(()=>dialog.classList.remove('tome-menu-settle'),220);try{localStorage.setItem(key,JSON.stringify(pos));}catch{}};
+    dialog.style.removeProperty('transform');place(pos.x,pos.y);dialog.classList.remove('tome-menu-dragging');dialog.classList.add('tome-menu-settle');dialog.classList.remove('tomoyo-menu-resizing');window.__tomeGlassReport?.();setTimeout(()=>dialog.classList.remove('tome-menu-settle'),220);try{localStorage.setItem(key,JSON.stringify(pos));}catch{}};
    header.addEventListener('pointermove',move);header.addEventListener('pointerup',up);header.addEventListener('pointercancel',up);
   });
  }
@@ -188,7 +188,7 @@
     const r=dialog.getBoundingClientRect(),startH=form.getBoundingClientRect().height,extra=r.height-startH;
     // Pin the dialog where it is so growing one edge does not move the opposite one.
     for(const [p,v] of [['left',r.left+'px'],['top',r.top+'px'],['right','auto'],['bottom','auto'],['margin','0']])dialog.style.setProperty(p,v,'important');
-    dialog.classList.remove('tome-menu-settle');dialog.classList.add('tomoyo-menu-resizing');
+    dialog.classList.remove('tome-menu-settle');dialog.dataset.tomeResizeEdge=edge;dialog.classList.add('tomoyo-menu-resizing');
     let w=r.width,h=startH,left=r.left,top=r.top,frame=0,last=down,ready=false,ended=false;
     const minW=Math.min(MIN_W,innerWidth-8),minH=Math.min(MIN_H,innerHeight-extra-8);
     const paint=()=>{frame=0;const dx=last.clientX-down.clientX,dy=last.clientY-down.clientY;left=r.left;top=r.top;w=r.width;h=startH;
@@ -201,7 +201,7 @@
     surfaceReady().then(()=>{ready=true;if(!ended&&last!==down&&!frame)frame=requestAnimationFrame(paint);});
     const move=e=>{last=e.getCoalescedEvents?.().at(-1)||e;if(ready&&!frame)frame=requestAnimationFrame(paint);};
     const up=()=>{ended=true;handle.removeEventListener('pointermove',move);handle.removeEventListener('pointerup',up);handle.removeEventListener('pointercancel',up);if(frame)cancelAnimationFrame(frame);if(frame||last!==down)paint();
-     dialog.classList.remove('tomoyo-menu-resizing');window.__tomoyoHitRegionsRefresh?.(true);
+     dialog.classList.remove('tomoyo-menu-resizing');delete dialog.dataset.tomeResizeEdge;window.__tomoyoHitRegionsRefresh?.(true);window.__tomeGlassReport?.();
      if(innerHeight>=520)try{localStorage.setItem(SIZE_KEY,JSON.stringify({w,h}));localStorage.setItem(POS_KEY,JSON.stringify({x:left,y:top}));}catch{}};
     handle.addEventListener('pointermove',move);handle.addEventListener('pointerup',up);handle.addEventListener('pointercancel',up);
    });
