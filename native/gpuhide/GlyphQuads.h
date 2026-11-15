@@ -59,7 +59,18 @@ struct GlyphLearner {
  static bool LineSized(unsigned w, unsigned h) { auto p2 = [](unsigned v) { return v && !(v & (v - 1)); }; return !(p2(w) && p2(h)) && w * h <= 1024u * 256u; }
  bool Armed(unsigned now) const { return n > 0 && (int)(armedUntil - now) > 0; }
 
- void Line(const std::wstring &t, unsigned now) {
+ /* Some hooks hand a sentence over twice in one go (the engine lays it out for the page and again for its log): "X    X".
+    The line is X: counted twice, a line had room for twice its characters and took the next sentences' places, so the
+    reader's Japanese stayed a sentence or three behind and ended with half a sentence again (2026-11-15, みにくいモジカの子).
+    Only with a gap of two or more blanks between the halves: a word that repeats itself (ぶよぶよ) is not a doubled line. */
+ static std::wstring Undouble(const std::wstring &t) {
+  std::wstring s; std::vector<size_t> at; for (size_t i = 0; i < t.size(); i++) if (!Blank(t[i])) { s += t[i]; at.push_back(i); }
+  size_t h = s.size() / 2; if (s.size() < 4 || s.size() % 2 || s.compare(0, h, s, h, h) != 0) return t;
+  if (at[h] - at[h - 1] < 3) return t; // fewer than two blanks between the halves
+  return t.substr(0, at[h - 1] + 1);
+ }
+ void Line(const std::wstring &raw, unsigned now) {
+  const std::wstring t = Undouble(raw);
   std::wstring s; for (wchar_t c : t) if (!Blank(c)) s += c; if (s.empty()) return;
   if (s == text && Armed(now)) { armedUntil = now + 60000; return; } // the same line again (re-read): keep its state
   { size_t a = 0, b = t.size(); while (a < b && Blank(t[a])) a++; while (b > a && Blank(t[b - 1])) b--; blankAt.clear(); nb = 0;
