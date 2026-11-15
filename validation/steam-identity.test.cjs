@@ -255,3 +255,17 @@ test('reviews discover the Steam AppID of a manually added executable',async t=>
  const reviews=new GameReviews(f.root,fetcher);
  assert.equal(await reviews.identity(reviews.game(id),'vndb'),null);
 });
+
+test('E599 saving the same program of a Steam entry by hand keeps it a Steam game (it must start through Steam)',async t=>{
+ const f=fixture(t);network(t,{linked:true});
+ const scanned=await f.library.scan();reconcile(f.root,scanned);
+ const previousRoot=process.env.MEGULIT_ROOT,bridgePath=require.resolve('../services/bridge.cjs');
+ process.env.MEGULIT_ROOT=f.root;delete require.cache[bridgePath];
+ t.after(()=>{if(previousRoot===undefined)delete process.env.MEGULIT_ROOT;else process.env.MEGULIT_ROOT=previousRoot;delete require.cache[bridgePath];});
+ const db0=store.openStore(f.root);let before;try{before=store.games(db0,f.root);}finally{db0.close();}
+ assert.equal(before.length,1);assert.equal(before[0].source,'steam');
+ const {dispatch}=require(bridgePath);
+ const r=await dispatch({action:'save_game',title:'Renamed',executable:f.exe});assert.equal(r.id,before[0].id);
+ const db=store.openStore(f.root);
+ try{const g=store.games(db,f.root)[0];assert.equal(g.source,'steam');assert.equal(g.title,'Renamed');}finally{db.close();}
+});
