@@ -246,10 +246,14 @@ sides, so index numbers stay intact.
 
 维护者工作台（`tools/contrib-workbench.cjs`，工作目录默认 `H:\MeguLit-Work\contrib`，拒绝放 C:）：
 
+令牌用 `MEGULIT_ADMIN_TOKEN` 或 `MEGULIT_ADAPTER_ADMIN_TOKEN`（和 `tools/adapter-pack.cjs` 同一个 relay 密钥，设过一次就不用再设）。`<id>` 可以是上传 id、它的前 6 位以上、游戏 identity，或标题的一部分。api.megulit.com 连不上时自动改走 cn-api.megulit.com。每个包的文件夹里有 `SUMMARY.md`，开适配会话时从它读起。
+
 ```
-set MEGULIT_ADMIN_TOKEN=<ADAPTER_ADMIN_TOKEN>
-node tools/contrib-workbench.cjs list
-node tools/contrib-workbench.cjs get <upload|identity>     下载+校验+解到 <work>/<upload>/files
-node tools/contrib-workbench.cjs done <upload|identity>    适配完成，relay 删包
-node tools/contrib-workbench.cjs clean <upload>            删本地工作副本
+node tools/contrib-workbench.cjs                    总览：relay 上有什么、本地有什么、下一步做什么
+node tools/contrib-workbench.cjs sync               把收齐但还没下载的包全部取回并解开
+node tools/contrib-workbench.cjs get <id>           取一个包：下载+校验+解包+剧本转 UTF-8+写 SUMMARY.md
+node tools/contrib-workbench.cjs info <id>          这个包里有什么（按角色、按编码；日文最多的剧本排在前面）
+node tools/contrib-workbench.cjs text <id>          剧本转成 UTF-8 放到 text/（Shift-JIS、UTF-16、UTF-8；编译/加密的留在 files/）
+node tools/contrib-workbench.cjs done <id>          适配完成：relay 删包，本地副本一起删（--keep 保留本地）
+node tools/contrib-workbench.cjs clean <id>|--all   删本地副本（--all：relay 已不再保存的全部删掉）
 ```
