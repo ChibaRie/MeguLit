@@ -10,7 +10,7 @@ html:not(#mgc1):not(#mgc2):not(#mgc3):not(#mgc4):not(#mgc5):not(#mgc6):not(#mgc7
  outline:var(--mgc-focus)!important;outline-offset:2px!important;box-shadow:var(--mgc-focus-halo)!important}
 
 /* ---------- buttons ---------- */
-& body :is(button.secondary,.g-btn:not(.primary),button.alt,.setting-link,.leaderboard-leave,.about-update,.about-link,.guide-chip,.reader-notice>button,.lb-mychip,.rw-album-btn,.dev-notice-form>button,.lv-dialog footer button:not(.primary)):not(.icon-button):not(.switch):not(.select-trigger):not(.danger-outline):not(.danger):not(.titlebar *){
+& body :is(button.secondary,.g-btn:not(.primary),button.alt,.setting-link,.leaderboard-leave,.about-update,.about-link,.guide-chip,.reader-notice-actions>button,.lb-mychip,.rw-album-btn,.dev-notice-form>button,.lv-dialog footer button:not(.primary)):not(.icon-button):not(.switch):not(.select-trigger):not(.danger-outline):not(.danger):not(.titlebar *){
  position:relative;isolation:isolate;display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:var(--mgc-h);padding:0 16px;
  border:1px solid var(--mgc-line)!important;border-radius:var(--mgc-r)!important;background:transparent!important;color:var(--mgc-ink)!important;
  font:500 13.5px/1 var(--mgc-ui)!important;letter-spacing:.03em!important;text-transform:none!important;box-shadow:none!important;

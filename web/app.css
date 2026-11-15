@@ -130,6 +130,13 @@ input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-
 .app-frame{transform-origin:50% 100%}
 
 .reader-notice{position:fixed;right:22px;top:calc(var(--titlebar-height,70px) + 10px);z-index:80;display:flex;align-items:center;gap:12px;padding:11px 14px;box-shadow:0 8px 30px #0004;font-size:12px}.reader-notice[hidden]{display:none}.reader-notice button{color:var(--accent-light);padding:4px 7px;border-radius:6px}
+/* 2026-11-15 (user: 优化一下这里的排版): the title was squeezed to three characters a line and the buttons to one or two. Title and button labels stay on one line, the
+   buttons move together to a second row (right-aligned) when the window is narrow, and the explanation runs under them at full width. */
+.reader-notice{flex-wrap:wrap;row-gap:6px;width:max-content;max-width:min(560px,calc(100vw - 44px));box-sizing:border-box}
+.reader-notice>.reader-notice-title{flex:1 0 auto;white-space:nowrap;font-weight:600}
+.reader-notice>.reader-notice-actions{display:flex;flex-wrap:nowrap;gap:8px;margin-left:auto;flex-shrink:0}
+.reader-notice>.reader-notice-actions>button{white-space:nowrap;flex:0 0 auto;width:auto;min-width:0}
+.reader-notice>.reader-notice-detail{order:3;flex:1 1 100%;min-width:0;font-size:12px;line-height:1.5;opacity:.85;white-space:normal}
 /* E215.8 (user): the homepage is an app, not a document: no select-all highlight or image dragging. Text fields stay
    editable and selectable. */
 
