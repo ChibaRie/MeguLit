@@ -3,11 +3,13 @@
    rows for half width, no rank numbers; JLPT level tiles and game level segments are buttons that open the level's
    word window (jlpt-words.js). One high-specificity root so it wins over the older override chains. */
 html:not(#wl1):not(#wl2):not(#wl3):not(#wl4):not(#wl5):not(#wl6) body .main{
- & .ri-pair{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:0 36px;max-width:1080px;margin:0 auto 12px;align-items:start}
+ & .ri-pair{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:0 36px;max-width:none;width:100%;margin:0 0 12px;align-items:start}
  & .ri-pair>.ri-panel{max-width:none!important;min-width:0;margin:0!important;padding-left:0!important;padding-right:0!important}
  & .ri-pair .ri-head{flex-wrap:wrap;gap:10px 14px}
  & .ri-pair .ri-head h2{font-size:clamp(19px,1.5vw,23px)!important}
  & .ri-pair .ri-head select,& .ri-pair .ri-head .select-trigger{margin-left:auto}
+ & .ri-pair .ri-head select,& .ri-pair .ri-head .select-trigger{padding-inline:14px 12px!important;box-sizing:border-box}
+ & .ri-pair .ri-head .select-trigger .select-name{padding-left:0}
  & .ri-same{margin:-4px 0 10px!important;padding-left:10px;box-shadow:inset 2px 0 0 var(--g-gold,#edb56e)}
  & .ri-pair .ri-word{display:grid!important;grid-template-columns:minmax(0,1fr) auto!important;grid-template-areas:"m c" "d a"!important;column-gap:14px!important;row-gap:4px!important;align-items:start!important;padding:12px 4px!important}
  & .ri-pair .ri-word-main{grid-area:m;display:flex;align-items:baseline;flex-wrap:wrap;gap:4px 10px;min-width:0}
