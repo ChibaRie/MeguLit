@@ -101,6 +101,7 @@
     if (document.body.classList.contains('megulit-place-game-drawn') !== drawn) { document.body.classList.toggle('megulit-place-game-drawn', drawn); window.__tomoyoHitRegionsRefresh?.(true); }
     return drawn;
   }
+  let reveal = { id: 0, n: 0, t: 0 };
   const DASH = /^[‒-―─━⸺⸻]+$/;
   /* put a sentence's character tokens on their boxes (boxes[j] for the j-th shown token; a missing box = not drawn yet) */
   function layout(sentence, boxes, geom) {
@@ -149,7 +150,14 @@
     const hideCur = !cur; if (body.classList.contains('megulit-place-game-drawn') !== hideCur) body.classList.toggle('megulit-place-game-drawn', hideCur);
     if (cur) {
       const at = [...cur.text.slice(0, cur.text.indexOf(readerText))].length, n = [...readerText].length;
-      const { place, size } = layout(sentence, cur.rects.slice(at, at + n).map(map), geom);
+      /* the places arrive from the game in uneven batches (several characters, then nothing for 0.1 s): the line's
+         characters are let in one after another, catching up with what has arrived within about 0.1 s */
+      const have = Math.max(0, Math.min(n, cur.rects.length - at)), nowT = performance.now();
+      if (reveal.id !== cur.id) reveal = { id: cur.id, n: 0, t: nowT };
+      if (reveal.n > have) reveal.n = have;
+      else if (reveal.n < have && nowT - reveal.t >= 8) { reveal.n = Math.min(have, reveal.n + Math.max(1, (have - reveal.n) * (nowT - reveal.t) / 100)); reveal.t = nowT; }
+      if (reveal.n < have) schedule(); else reveal.t = nowT;
+      const { place, size } = layout(sentence, cur.rects.slice(at, at + Math.floor(reveal.n)).map(map), geom);
       const row = win.querySelector('.tomoyo-cn-row'), all = [...place.values()];
       if (row && all.length) {
         const x0 = Math.min(...all.map(r => r[0])), y0 = Math.min(...all.map(r => r[1])), x1 = Math.max(...all.map(r => r[0] + r[2])), y1 = Math.max(...all.map(r => r[1] + r[3]));
