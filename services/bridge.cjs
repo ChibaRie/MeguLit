@@ -157,7 +157,10 @@ async function launch(db,id,runtime=null,windowsLaunch=false,{retried=false,redi
    /* ①/③ with 文字显示 = compositor: a Steam game is started directly (SteamAppId; shadow + steam_appid.txt when the folder
       has none, core/text-paths-launch.cjs steamDirect) so MeguLitLaunch can load the glyph dots and the dot font before
       its first glyph. Anything failing keeps the steam:// launch. */
-   let steamDirect=null;if(steamApp&&!companion&&!textPath&&require('../core/glyph-dots.cjs').wanted(root)){try{steamDirect=require('../core/text-paths-launch.cjs').steamDirect({exe:game.executable,appid:profile.appid,trace});}catch(error){steamDirect=null;trace('steam-direct-failed',{error:String(error?.message||error).slice(0,160)});}}
+   /* 2026-11-15 (user: 石头门启动失败, Steam then asked to confirm 'mages_sgate'): a companion start with SteamAppId alone can still
+      make steam_api call SteamAPI_RestartAppIfNecessary (exit 53), and Steam restarts it as steam://run/<id>//<args>, which always
+      asks the user to confirm the arguments. The shadow folder with steam_appid.txt stops the restart, so companion starts use it too. */
+   let steamDirect=null;if(steamApp&&!textPath&&(companion||require('../core/glyph-dots.cjs').wanted(root))){try{steamDirect=require('../core/text-paths-launch.cjs').steamDirect({exe:game.executable,appid:profile.appid,trace});}catch(error){steamDirect=null;trace('steam-direct-failed',{error:String(error?.message||error).slice(0,160)});}}
    const steam=steamApp&&!companion&&!textPath&&!steamDirect;
    const launchExe=steamDirect?steamDirect.exe:game.executable;
    const {startProcess,waitForVisibleGame}=require('./game-readiness.cjs');
@@ -183,11 +186,22 @@ async function launch(db,id,runtime=null,windowsLaunch=false,{retried=false,redi
    catch(error){
     /* E333 (user 2026-11-10, 女装山脈 with 以日文系统环境启动 off): many Japanese x86 games quit at once, without a window,
        under a Chinese system locale. A quit within 3 s is retried once in the Japanese environment (this launch only). */
+    /* 2026-11-15 (石头门): exit 53 is steam_api handing the start to Steam (SteamAPI_RestartAppIfNecessary), not a failed
+       start. No Japanese-environment retry (it would quit the same way and queue a second Steam start); wait for the
+       game Steam starts instead, and when Steam is waiting for the user (confirm launch arguments), say so. */
+    const restart=require('./steam-restart.cjs');
+    if(error.message==='GAME_PROCESS_EXITED'&&steamApp&&restart.restarted(child.exit)){
+     trace('steam-restart',{code:child.exit.code});stage='steam-restart-wait';
+     try{state=await waitForVisibleGame(anyProcess,{helper:true,indirect:true,exit:()=>null,trace,attempts:480,timeout:120000});}
+     catch(waitError){let waiting='';try{waiting=restart.pendingPrompt(await require('../core/library.cjs').findSteam(),profile.appid,startedAt);}catch{}
+      trace('steam-restart-timeout',{waiting});if(waiting==='ShowGameArgs')throw Object.assign(Error('STEAM_CONFIRM_ARGS'),{detail:waiting});if(waiting)throw Object.assign(Error('STEAM_WAITING_USER'),{detail:waiting});throw waitError;}
+    }else{
     const LE=require('../core/locale-emulator.cjs');
     if(error.message!=='GAME_PROCESS_EXITED'||steam||elevation||windowsLaunch||Date.now()-startedAt>3000||!LE.x86(game.executable))throw error;
     const lib=runtime?.library?.()||new(require('../core/library.cjs').Library)(require('../core/layout.cjs'));
     trace('locale-fallback',{});stage='locale-start';const result=await lib.locale.launch(game.executable,{trace});if(result.needLocaleEmulator)throw error;
     state={pid:result.gamePid,locale:'japanese'};
+    }
    }
    /* ③ dot font: the game must live 20 s with it, or the crash canary turns it off for this game */
    if(fontDot)fontDot.watch(state?.pid);
