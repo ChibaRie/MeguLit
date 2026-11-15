@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 /* 2026-11-16 the beta live-usage dashboard served by the relay itself (owner: 我想看实时有多少人在使用).
    GET /dashboard — a public, same-origin page that polls /api/probe/stats; open it on a phone at
-   https://cn-api.megulit.com/dashboard (mainland) or https://api.megulit.com/dashboard. DedSec terminal look. */
+   https://cn-api.megulit.com/dashboard (mainland) or https://api.megulit.com/dashboard. DedSec black/white/red. */
 export const DASHBOARD_HTML=String.raw`<!doctype html>
 <html lang="zh">
 <head>
@@ -9,11 +9,11 @@ export const DASHBOARD_HTML=String.raw`<!doctype html>
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>MeguLit Live Ops</title>
 <style>
-/* DedSec terminal: black ground, phosphor-green on scanlines, one amber alert accent, mono throughout. Single dark world. */
+/* DedSec terminal: pure black ground, bone-white data, blood-red accent on scanlines, mono throughout. Single dark world. */
 :root{
-  --bg:#05060a; --panel:#0a0f0d; --line:#123;
-  --fg:#8bffb0; --dim:#2f6f4f; --ghost:#0e2a1d;
-  --hot:#00ff85; --amber:#ffb400; --red:#ff2d55;
+  --bg:#000000; --panel:#0b0b0b; --line:#1c1c1c;
+  --fg:#f2f2f2; --dim:#767676; --ghost:#1a0008;
+  --hot:#ff0033; --amber:#ff2d2d; --red:#ff0033;
   --mono:"DejaVu Sans Mono",ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
   color-scheme:dark;
 }
@@ -24,7 +24,7 @@ body{
   padding-left:max(16px,env(safe-area-inset-left,0px));
   padding-right:max(16px,env(safe-area-inset-right,0px));
   padding-block:20px 40px;
-  background-image:repeating-linear-gradient(0deg,rgba(0,255,133,.035) 0 1px,transparent 1px 3px);
+  background-image:repeating-linear-gradient(0deg,rgba(255,255,255,.035) 0 1px,transparent 1px 3px);
   -webkit-font-smoothing:none; letter-spacing:.02em;
 }
 .wrap{max-width:720px;margin:0 auto}
@@ -42,7 +42,7 @@ a{color:var(--hot)}
 .hero{margin:18px 0 10px;border:1px solid var(--line);background:var(--panel);padding:18px 16px;position:relative;overflow:hidden}
 .hero::before{content:"● LIVE";position:absolute;top:10px;right:12px;color:var(--red);font-size:11px;letter-spacing:.1em;animation:pulse 1.6s ease-in-out infinite}
 .hero .lbl{color:var(--dim);font-size:12px;letter-spacing:.2em;text-transform:uppercase}
-.big{font-size:clamp(56px,20vw,120px);line-height:.95;font-weight:700;color:var(--hot);font-variant-numeric:tabular-nums;text-shadow:0 0 18px rgba(0,255,133,.35);margin:4px 0 2px}
+.big{font-size:clamp(56px,20vw,120px);line-height:.95;font-weight:700;color:var(--hot);font-variant-numeric:tabular-nums;text-shadow:0 0 22px rgba(255,0,51,.5);margin:4px 0 2px}
 .hero .cap{color:var(--fg);font-size:12px;letter-spacing:.1em}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
 
