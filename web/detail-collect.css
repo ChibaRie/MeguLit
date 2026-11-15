@@ -155,6 +155,9 @@ html:not(#dc1):not(#dc2):not(#dc3):not(#dc4):not(#dc5):not(#dc6):not(#dc7):not(#
 & .esr-status{flex:none;width:auto!important;min-width:max-content;display:inline-flex;align-items:center;gap:8px;font:500 12px/1 var(--dc-mono)!important;letter-spacing:.1em;color:var(--dc-mute)}
 & .esr-status>span{font-family:var(--dc-mono)!important;white-space:nowrap;flex:none}
 & .esr-status :is(select,.select-control){width:128px!important;min-width:128px;flex:none}
+/* 2026-11-15 (user: 学习中都直接贴边了，居中设计) the picked status sits centred with room on both sides */
+& .esr-status .select-trigger{justify-content:center!important;text-align:center!important;padding:0 32px!important}
+& .esr-status .select-trigger .select-name{flex:1 1 auto;min-width:0;margin:0!important;text-align:center!important}
 & .esr-del{gap:6px}
 & .esr-del:hover{color:var(--t-red-2)}
 & .esr-stats{margin:18px 0 0;display:grid;grid-template-columns:minmax(0,.8fr) minmax(0,1.2fr);border-top:1px solid var(--dc-line);border-bottom:1px solid var(--dc-line)}
@@ -383,3 +386,5 @@ html[data-theme=light]:not(#dc1):not(#dc2):not(#dc3):not(#dc4):not(#dc5):not(#dc
 @media (prefers-reduced-motion:reduce){
  html body .main :is(.game-detail-content,.study-words,.dict-entries) :is(.esr-w,.esr-w::before,.gc,.gs-frame,.gl-fb){transition:none!important}
 }
+/* the status list opens as wide as the picker, its entries centred like the picker (select-control: data-select-center) */
+html:not(#u):not(#v):not(#w) body .select-popup.select-popup-center>button{text-align:center!important;justify-content:center!important;padding-left:28px!important;padding-right:28px!important}

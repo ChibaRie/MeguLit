@@ -26,8 +26,8 @@ function playMap(card,templates,html){
  }return result;
 }
 const icon='<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M9 5v14l11-7z"/></svg>';
-function player(src,name){
- const channel=/^tomoyo_g_/i.test(name)?'game':/^tomoyo_s_/i.test(name)?'sentence':/^tomoyo_[a-f0-9]+_[a-f0-9]+\.wav$/i.test(name)?'word':'';
+function player(src,name,override){
+ const channel=override||(/^tomoyo_g_/i.test(name)?'game':/^tomoyo_s_/i.test(name)?'sentence':/^tomoyo_[a-f0-9]+_[a-f0-9]+\.wav$/i.test(name)?'word':'');
  return '<span data-anki-media><button type="button" class="tome-anki-play" data-anki-play aria-label="Play audio">'+icon+'</button><audio controls preload="none" data-anki-channel="'+channel+'" src="'+src+'"></audio></span>';
 }
 function replay(){return '<button type="button" class="tome-anki-play" data-anki-replay aria-label="Replay card audio">'+icon+'</button>';}

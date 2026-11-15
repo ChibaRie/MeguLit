@@ -11,4 +11,12 @@ function read(dir,name){if(!dir||!ours(name))return null;try{const file=path.joi
 function write(dir,name,base64){if(!dir||!ours(name)||typeof base64!=='string'||!base64||base64.length>LIMIT*4/3+4)return false;try{
  fs.mkdirSync(dir,{recursive:true});const file=path.join(dir,name),tmp=file+'.'+process.pid+'.tmp';fs.writeFileSync(tmp,Buffer.from(base64,'base64'));fs.renameSync(tmp,file);return true;}catch{return false;}}
 const dirFor=root=>path.join(root,'data','cache','anki-media');
-module.exports={ours,read,write,dirFor};
+/* 2026-11-15 (user: AI 合成的例句要拉「游戏原声」才能调音量) a synthesized sentence kept under a tomoyo_g_ name (it replaced a
+   wrong game clip) is marked, so it plays on the synthesized-sentence channel and is not synthesized again */
+const mark=(dir,name)=>path.join(dir,name+'.synth');
+function markSynth(dir,name,on=true){if(!dir||!ours(name))return;try{if(on){fs.mkdirSync(dir,{recursive:true});fs.writeFileSync(mark(dir,name),'');}else fs.unlinkSync(mark(dir,name));}catch{}}
+function isSynth(dir,name){if(!dir||!ours(name))return false;try{return fs.existsSync(mark(dir,name));}catch{return false;}}
+/* what an audio clip really is (a game's ogg may sit under a .wav name) */
+function mimeOf(base64,name){const h=String(base64||'').slice(0,8);if(h.startsWith('T2dnUw'))return 'audio/ogg';if(h.startsWith('UklGR'))return 'audio/wav';if(h.startsWith('SUQz')||h.startsWith('//'))return 'audio/mpeg';if(h.startsWith('ZkxhQw'))return 'audio/flac';
+ return /\.mp3$/i.test(name)?'audio/mpeg':/\.ogg$/i.test(name)?'audio/ogg':'audio/wav';}
+module.exports={ours,read,write,dirFor,markSynth,isSynth,mimeOf};

@@ -3,7 +3,7 @@
 const crypto=require('node:crypto');
 const {cleanV4}=require('../core/v4-config.cjs');
 class AnkiReviewer{
- constructor({config={},db,fetcher=fetch,speak=null,mediaDir='',voiceCheck=null}){this.config=cleanV4(config);this.db=db;this.fetch=fetcher;this.speak=speak;this.mediaDir=mediaDir;this.voiceCheck=voiceCheck;db.exec(`CREATE TABLE IF NOT EXISTS anki_actions(operation_id TEXT PRIMARY KEY,card_id INTEGER NOT NULL,ease INTEGER NOT NULL,status TEXT NOT NULL,result TEXT,created_at INTEGER NOT NULL);CREATE TABLE IF NOT EXISTS anki_review_events(operation_id TEXT PRIMARY KEY,card_id INTEGER NOT NULL,ease INTEGER NOT NULL,reviewed_at INTEGER NOT NULL);CREATE UNIQUE INDEX IF NOT EXISTS anki_one_pending_rating ON anki_actions(card_id) WHERE status='pending';`);}
+ constructor({config={},db,fetcher=fetch,speak=null,mediaDir='',voiceCheck=null,gameVoice=null}){this.config=cleanV4(config);this.db=db;this.fetch=fetcher;this.speak=speak;this.mediaDir=mediaDir;this.voiceCheck=voiceCheck;this.gameVoice=gameVoice;db.exec(`CREATE TABLE IF NOT EXISTS anki_actions(operation_id TEXT PRIMARY KEY,card_id INTEGER NOT NULL,ease INTEGER NOT NULL,status TEXT NOT NULL,result TEXT,created_at INTEGER NOT NULL);CREATE TABLE IF NOT EXISTS anki_review_events(operation_id TEXT PRIMARY KEY,card_id INTEGER NOT NULL,ease INTEGER NOT NULL,reviewed_at INTEGER NOT NULL);CREATE UNIQUE INDEX IF NOT EXISTS anki_one_pending_rating ON anki_actions(card_id) WHERE status='pending';`);}
  async call(action,params={}){
   let response;
   try{response=await this.fetch(this.config.ankiUrl,{method:'POST',redirect:'error',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,version:6,params}),signal:AbortSignal.timeout(10000)});}catch(error){const code=error.cause?.code||error.name;throw Error(code==='ECONNREFUSED'?'ANKI_OFFLINE':code==='TimeoutError'?'ANKI_TIMEOUT':'ANKI_UNAVAILABLE');}
@@ -72,7 +72,7 @@ class AnkiReviewer{
  async cardClips(id){const [card]=await this.call('cardsInfo',{cards:[id]});if(!card)return [];const audio=require('./anki-media.cjs'),html=String(card.answer||'');
   let names=[];if(/\[anki:play:a:\d+\]/.test(html)){try{const play=audio.playMap(card,await this.call('modelTemplates',{modelName:card.modelName}),html);names=[...html.matchAll(/\[anki:play:a:(\d+)\]/g)].map(m=>play.get('a:'+m[1]));}catch{}}
   if(!names.length||names.some(n=>!n))names=[...audio.sounds(html),...Object.values(card.fields||{}).sort((a,b)=>(a?.order??0)-(b?.order??0)).flatMap(f=>audio.sounds(f?.value))];
-  const out=[];for(const name of [...new Set(names)].filter(n=>n&&!/[\\/]/.test(n)).slice(0,6)){const data=await this.mediaFile(name);if(data)out.push({name,src:'data:'+(/\.mp3$/i.test(name)?'audio/mpeg':/\.ogg$/i.test(name)?'audio/ogg':'audio/wav')+';base64,'+data});}return out;}
+  const out=[];for(const name of [...new Set(names)].filter(n=>n&&!/[\\/]/.test(n)).slice(0,6)){const data=await this.mediaFile(name);if(!data)continue;const cache=require('../core/anki-media-cache.cjs'),clip={name,src:'data:'+cache.mimeOf(data,name)+';base64,'+data};if(cache.isSynth(this.mediaDir,name))clip.channel='sentence';out.push(clip);}return out;}
  /* one media file: MeguLit's own copy first, then Anki's media folder (copied here for next time) */
  async mediaFile(name){const cache=require('../core/anki-media-cache.cjs');const local=cache.read(this.mediaDir,name);if(local)return local;
   const data=await this.call('retrieveMediaFile',{filename:name});if(typeof data!=='string'||!data||data.length>12*1024*1024)return null;cache.write(this.mediaDir,name,data);return data;}
@@ -80,19 +80,27 @@ class AnkiReviewer{
   const audio=require('./anki-media.cjs');let play=new Map();if(card&&/\[anki:play:[qa]:\d+\]/.test(html)){try{play=audio.playMap(card,await this.call('modelTemplates',{modelName:card.modelName}),html);}catch{}}
   const names=new Set([...play.values()].filter(name=>name&&!/[\\/]/.test(name)));for(const match of html.matchAll(/\[sound:([^\]\r\n]+)\]|(?:src|href)\s*=\s*["']([^"']+)["']/gi)){const name=match[1]||match[2];if(name&&!/^(?:https?:|data:|javascript:|#)/i.test(name)&&!/[\\/]/.test(name))names.add(name);}
   const media=new Map();
-  for(const name of [...names].slice(0,12)){try{const data=await this.mediaFile(name);if(!data)continue;const ext=name.split('.').pop().toLowerCase(),mime={jpg:'image/jpeg',jpeg:'image/jpeg',png:'image/png',gif:'image/gif',webp:'image/webp',mp3:'audio/mpeg',wav:'audio/wav',ogg:'audio/ogg',mp4:'video/mp4',woff:'font/woff',woff2:'font/woff2'}[ext];if(mime)media.set(name,'data:'+mime+';base64,'+data);}catch{}}
+  for(const name of [...names].slice(0,12)){try{const data=await this.mediaFile(name);if(!data)continue;const ext=name.split('.').pop().toLowerCase();let mime={jpg:'image/jpeg',jpeg:'image/jpeg',png:'image/png',gif:'image/gif',webp:'image/webp',mp3:'audio/mpeg',wav:'audio/wav',ogg:'audio/ogg',mp4:'video/mp4',woff:'font/woff',woff2:'font/woff2'}[ext];if(/^(?:wav|mp3|ogg)$/.test(ext))mime=require('../core/anki-media-cache.cjs').mimeOf(data,name);if(mime)media.set(name,'data:'+mime+';base64,'+data);}catch{}}
   /* (user 2026-11-12) a game-voice clip that is silent (music recorded under an unvoiced line, then separated) is
      replaced, once, by the synthesized sentence under the same media name, so the card plays the line again */
-  if(this.speak)for(const [name,src] of media){if(!/^tomoyo_g_[a-f0-9]+\.wav$/.test(name))continue;try{
+  const cache=require('../core/anki-media-cache.cjs');
+  if(this.speak||this.gameVoice)for(const [name,src] of media){if(!/^tomoyo_g_[a-f0-9]+\.wav$/.test(name))continue;try{
    const buf=Buffer.from(src.slice(src.indexOf(',')+1),'base64');
    const at=html.indexOf(name),before=at<0?'':html.slice(Math.max(0,at-4000),at),m=[...before.matchAll(/<span class="tm-jp">([\s\S]*?)<\/span><span class="tm-play">/g)].pop();
    const text=m?m[1].replace(/<rt>[\s\S]*?<\/rt>|<rp>[\s\S]*?<\/rp>/g,'').replace(/<[^>]+>/g,'').replace(/&nbsp;/g,' ').trim():'';if(!text||text.length>400)continue;
    /* 2026-11-15 (user: 有的例句和原配音不一致) also a clip recorded under a line the script plays no voice for, or a piece of a
       voiced line (voiceCheck: game-voice recordedFits), is replaced */
    let wrong=false;try{wrong=!!this.voiceCheck&&!(await this.voiceCheck(text,buf));}catch{}if(!wrong&&!require('../core/voice-trim.cjs').quiet(buf))continue;
-   const voice=await this.speak(text);if(!voice?.data)continue;await this.call('storeMediaFile',{filename:name,data:voice.data});require('../core/anki-media-cache.cjs').write(this.mediaDir,name,voice.data);media.set(name,'data:audio/wav;base64,'+voice.data);}catch{}}
-  return html.replace(/<audio controls preload="none" src="(tomoyo_[a-f0-9_gs]+\.wav)"><\/audio>/gi,(all,name)=>media.has(name)?audio.player(media.get(name),name):all)
-   .replace(/\[anki:play:([qa]):(\d+)\]/g,(_,side,index)=>{const name=play.get(side+':'+index),src=media.get(name);return src?audio.player(src,name):audio.replay();}).replace(/\[sound:([^\]\r\n]+)\]/g,(_,name)=>media.has(name)?audio.player(media.get(name),name):'').replace(/\b(src|href)\s*=\s*(["'])([^"']+)\2/gi,(all,key,quote,name)=>media.has(name)?key+'='+quote+media.get(name)+quote:all);
+   /* 2026-11-15 (user: 游戏里明明有配音，这里却是 AI 合成) the game's own clip the script names for the line (for a piece of a
+      voiced line: the whole line's clip) comes before the synthesized sentence */
+   let real=null;try{real=this.gameVoice?await this.gameVoice(text):null;}catch{}
+   if(real?.data){const data=Buffer.isBuffer(real.data)?real.data:Buffer.from(real.data,'base64');if(data.equals(buf))continue;const b64=data.toString('base64');
+    await this.call('storeMediaFile',{filename:name,data:b64});cache.write(this.mediaDir,name,b64);cache.markSynth(this.mediaDir,name,false);media.set(name,'data:'+cache.mimeOf(b64,name)+';base64,'+b64);continue;}
+   if(!this.speak||cache.isSynth(this.mediaDir,name))continue;
+   const voice=await this.speak(text);if(!voice?.data)continue;await this.call('storeMediaFile',{filename:name,data:voice.data});cache.write(this.mediaDir,name,voice.data);cache.markSynth(this.mediaDir,name);media.set(name,'data:audio/wav;base64,'+voice.data);}catch{}}
+  const ch=name=>cache.isSynth(this.mediaDir,name)?'sentence':undefined;
+  return html.replace(/<audio controls preload="none" src="(tomoyo_[a-f0-9_gs]+\.wav)"><\/audio>/gi,(all,name)=>media.has(name)?audio.player(media.get(name),name,ch(name)):all)
+   .replace(/\[anki:play:([qa]):(\d+)\]/g,(_,side,index)=>{const name=play.get(side+':'+index),src=media.get(name);return src?audio.player(src,name,ch(name)):audio.replay();}).replace(/\[sound:([^\]\r\n]+)\]/g,(_,name)=>media.has(name)?audio.player(media.get(name),name,ch(name)):'').replace(/\b(src|href)\s*=\s*(["'])([^"']+)\2/gi,(all,key,quote,name)=>media.has(name)?key+'='+quote+media.get(name)+quote:all);
  }
 }
 function orderDecks(map){const entries=Object.entries(map||{}).map(([name,id])=>({name,id:Number(id)||0})),groups=new Map();
