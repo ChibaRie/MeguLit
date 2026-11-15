@@ -135,6 +135,10 @@ test('upload: chunked, resumable, local package deleted, one package per game; w
  const rw=workbench.rows(listed,work);assert.equal(rw[0].local,true);assert.equal(rw[0].daysLeft,30);assert.match(workbench.table(rw),/收齐/);assert.match((await workbench.overview(o)).text,/done/);
  assert.deepEqual(workbench.decodeText(Buffer.from([0x82,0xb1,0x82,0xf1,0x82,0xc9,0x82,0xbf,0x82,0xcd])),{encoding:'shift_jis',text:'こんにちは'});
  assert.equal(workbench.decodeText(Buffer.from('吾輩は猫である','utf8')).encoding,'utf-8');assert.equal(workbench.decodeText(Buffer.from('﻿猫','utf16le')).encoding,'utf-16le');assert.equal(workbench.decodeText(Buffer.from([0x00,0x01,0x02,0xff,0xfe,0x00,0x9c])),null,'binary is left alone');
+ /* the admin token: explicit variable first, then the value Windows stores for the user (a terminal opened before a key change carries the old one), then the process value */
+ {const at=require('../tools/admin-token.cjs'),reg=()=>['','HKEY_CURRENT_USER/Environment','    MEGULIT_ADAPTER_ADMIN_TOKEN    REG_SZ    new-key ',''].join(String.fromCharCode(13,10));
+  assert.equal(at.adminToken({env:{MEGULIT_ADAPTER_ADMIN_TOKEN:'old-key'},run:reg,platform:'win32'}),'new-key');assert.equal(at.adminToken({env:{MEGULIT_ADMIN_TOKEN:'explicit',MEGULIT_ADAPTER_ADMIN_TOKEN:'old-key'},run:reg,platform:'win32'}),'explicit');
+  assert.equal(at.adminToken({env:{MEGULIT_ADAPTER_ADMIN_TOKEN:'old-key'},run:()=>{throw Error('no value');},platform:'win32'}),'old-key');assert.equal(at.adminToken({env:{MEGULIT_ADAPTER_ADMIN_TOKEN:'k'},run:reg,platform:'linux'}),'k');assert.equal(at.adminToken({env:{},run:()=>'',platform:'win32'}),'');}
  /* an unreachable relay hands over to the next one; an HTTP error does not */
  {const keep=process.env.MEGULIT_RELAY;let n=0;const f=async(u,i)=>{n++;if(String(u).startsWith('https://api.megulit.com'))throw Object.assign(Error('fetch failed'),{cause:{code:'ENOTFOUND'}});return adminFetch(String(u).replace('https://cn-api.megulit.com','https://relay.test'),i);};
   if(!keep){assert.equal((await workbench.list({fetcher:f})).length,1);assert.equal(n,2);}}
