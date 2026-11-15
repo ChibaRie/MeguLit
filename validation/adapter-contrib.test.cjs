@@ -126,8 +126,20 @@ test('upload: chunked, resumable, local package deleted, one package per game; w
  const o={fetcher:adminFetch,relay:'https://relay.test',work};const listed=await workbench.list(o);assert.equal(listed.length,1);assert.equal(listed[0].upload,id);
  const p=await workbench.pull(id,o);const x=workbench.unpack(p.file);assert.ok(fs.existsSync(path.join(x.out,'data.xp3','scenario','first.ks')));assert.ok(fs.existsSync(path.join(x.out,'Game.exe.section..text.bin')));
  assert.equal(fs.readdirSync(x.out).some(n=>/png|ogg/i.test(n)),false);
+ /* workbench extras: id by prefix / title, a second pull keeps the checked copy, sync finds nothing new, text + SUMMARY.md, the table */
+ assert.equal(workbench.match(listed,id.slice(0,8)).upload,id);assert.equal(workbench.match(listed,'テスト').upload,id);assert.throws(()=>workbench.match(listed,'zzzz'),/no complete package/);assert.throws(()=>workbench.match(listed,''),/which package/);
+ assert.equal((await workbench.pull(id.slice(0,8),o)).cached,true,'same sha256: not downloaded again');
+ const g=await workbench.get(id,o);assert.ok(fs.existsSync(path.join(g.dir,'SUMMARY.md')));assert.match(g.info.text,/## Files by role/);assert.match(g.info.text,/exe-code/);
+ assert.ok(fs.existsSync(path.join(g.dir,'text','data.xp3','scenario','first.ks')),'scripts decoded to UTF-8 under text/');assert.equal(fs.existsSync(path.join(g.dir,'text','Game.exe.section..text')),false,'exe sections are not text');
+ const sy=await workbench.sync(o);assert.equal(sy.got.length,0);assert.equal(sy.kept.length,1);assert.equal(sy.failed.length,0);
+ const rw=workbench.rows(listed,work);assert.equal(rw[0].local,true);assert.equal(rw[0].daysLeft,30);assert.match(workbench.table(rw),/收齐/);assert.match((await workbench.overview(o)).text,/done/);
+ assert.deepEqual(workbench.decodeText(Buffer.from([0x82,0xb1,0x82,0xf1,0x82,0xc9,0x82,0xbf,0x82,0xcd])),{encoding:'shift_jis',text:'こんにちは'});
+ assert.equal(workbench.decodeText(Buffer.from('吾輩は猫である','utf8')).encoding,'utf-8');assert.equal(workbench.decodeText(Buffer.from('﻿猫','utf16le')).encoding,'utf-16le');assert.equal(workbench.decodeText(Buffer.from([0x00,0x01,0x02,0xff,0xfe,0x00,0x9c])),null,'binary is left alone');
+ /* an unreachable relay hands over to the next one; an HTTP error does not */
+ {const keep=process.env.MEGULIT_RELAY;let n=0;const f=async(u,i)=>{n++;if(String(u).startsWith('https://api.megulit.com'))throw Object.assign(Error('fetch failed'),{cause:{code:'ENOTFOUND'}});return adminFetch(String(u).replace('https://cn-api.megulit.com','https://relay.test'),i);};
+  if(!keep){assert.equal((await workbench.list({fetcher:f})).length,1);assert.equal(n,2);}}
  /* done: the relay deletes the parts, has → done, a new upload is a duplicate */
- assert.ok(parts().length>0);const d=await workbench.done(id,o);assert.equal(d.ok,true);assert.equal(parts().length,0,'parts deleted on done');
+ assert.ok(parts().length>0);const d=await workbench.done(id,o);assert.equal(d.ok,true);assert.equal(d.localRemoved,1,'the local copy goes with done');assert.equal(fs.existsSync(path.join(work,id)),false);assert.equal(parts().length,0,'parts deleted on done');
  assert.equal(await contrib.has(u.root,c.identity,{fetcher:flaky,relay:'https://relay.test'}),'done');
  /* non-admin cannot list or download */
  const anon=await user('203.0.113.50')('https://relay.test/api/contrib/list');assert.equal(anon.status,401);
