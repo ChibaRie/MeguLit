@@ -273,12 +273,13 @@ export function cardify(card){const face=card.querySelector('.tv-face');let pres
   face.style.transform='';});}
 
 /* 2026-11-15 (user: 热力图重新设计，只展示当月) this month as a calendar (Monday first, today marked, later days faint, four tiers of reading) with the month's totals beside it */
-function monthHTML(all,locale,esc,w,fmtNum,today=new Date()){const y=today.getFullYear(),m=today.getMonth(),pre=`${y}-${String(m+1).padStart(2,'0')}`,N=new Date(y,m+1,0).getDate(),first=(new Date(y,m,1).getDay()+6)%7,td=today.getDate();
+export function monthHTML(all,locale,esc,w,fmtNum,today=new Date()){const y=today.getFullYear(),m=today.getMonth(),pre=`${y}-${String(m+1).padStart(2,'0')}`,N=new Date(y,m+1,0).getDate(),first=(new Date(y,m,1).getDay()+6)%7,td=today.getDate();
  const by=new Map(all.filter(c=>String(c.day).startsWith(pre)).map(c=>[+String(c.day).slice(8),c]));let run=0,best=0,chars=0,looks=0,active=0;const days=[];
  for(let d=1;d<=N;d++){const c=by.get(d),lv=d>td?-1:(c?.level||0);if(d<=td){run=lv>0?run+1:0;best=Math.max(best,run);}chars+=c?.characters||0;looks+=c?.lookups||0;if(lv>0)active++;
-  days.push(`<i class="${d===td?'today ':''}${lv<0?'later':lv?'l'+lv:''}"${d===1?` style="grid-column:${first+1}"`:''} data-day="${pre}-${String(d).padStart(2,'0')}" data-min="${Math.round((c?.seconds||0)/60)}"></i>`);}
+  const at=first+d-1;days.push(`<i class="${d===td?'is-today ':''}${lv<0?'later':lv?'l'+lv:''}" style="grid-column:${at%7+1};grid-row:${Math.floor(at/7)+1}" data-day="${pre}-${String(d).padStart(2,'0')}" data-min="${Math.round((c?.seconds||0)/60)}"></i>`);}
+ /* every day carries its own grid cell: automatic placement after leading blanks was fragile (grimoire.css made days spill into extra columns and the month sat a day off) */
  const wd=locale==='en'?'MTWTFSS':'一二三四五六日',lk={zh:'查词',ja:'辞書引き',en:'lookups'}[locale]||'查词';
- return {active,month:m+1,html:`<div class="tv-month-cal"><div class="tv-month-wd">${[...wd].map(x=>`<span>${x}</span>`).join('')}</div><div class="tv-month-days">${days.join('')}</div></div><div class="tv-month-sum"><span><b>${fmtNum(chars)}</b>${esc(w.chars)}</span><span><b>${fmtNum(looks)}</b>${esc(lk)}</span><span><b>${best}</b>${esc(w.days)}${esc(w.streak)}</span></div>`};}
+ return {active,month:m+1,html:`<div class="tv-month-cal"><div class="tv-month-wd">${[...wd].map(x=>`<span>${x}</span>`).join('')}</div><div class="tv-month-days">${days.join('')}</div></div><div class="tv-month-sum"><span><b>${fmtNum(chars)}</b><em>${esc(w.figChars||w.chars)}</em></span><span><b>${fmtNum(looks)}</b><em>${esc(lk)}</em></span><span><b>${best}<small>${esc(w.days)}</small></b><em>${esc(w.streak)}</em></span></div>`};}
 export function stopHomeTV(){if(!live)return;live.tl?.kill();clearTimeout(live.timer);clearInterval(live.beat);clearInterval(live.typer);live.depth?.stop();live.hand?.stop();live=null;}
 
 export function homeTVSignature(model){return JSON.stringify([model.games.map(g=>[g.id,g.available,g.cover?.length,g.title,g.lastPlayedAt,g.readingSeconds,g.characters,
@@ -356,10 +357,13 @@ export function renderHomeTV(main,ctx){
   rail();
  }
  /* 2026-11-14 (user: "右边下面不是卡牌，是正常选的那种") the games are picked from the cover strip again (thumbnails, the current one wider with its timer bar); the card hand is gone */
- function rail(){const r=$('.tv-rail');r.innerHTML='<div class="tv-rail-in"></div>';const track=r.firstElementChild;track.innerHTML=list.map((g,i)=>`<button class="tv-chip${g===shown?' on':''}" data-i="${i}" title="${esc(g.title)}" aria-label="${esc(g.title)}" style="--dur:${DUR}ms">${g.cover?`<img src="${esc(g.cover)}" alt="">`:''}${setting.pinned.includes(g.id)?'<span class="pin"></span>':''}<span class="bar"></span></button>`).join('');
+ /* 2026-11-15 (user: 当前卡要在牌的正中间，两边都有牌) the strip is the library three times in a row and the current card is the one in the middle copy, so cards stand on both sides of it whichever game is current; the track element stays, so the strip slides from where it was */
+ function rail(){const r=$('.tv-rail');let track=r.firstElementChild;if(!track){track=document.createElement('div');track.className='tv-rail-in';r.append(track);}
+  const chip=(g,i,on)=>`<button class="tv-chip${on?' on':''}" data-i="${i}" title="${esc(g.title)}" aria-label="${esc(g.title)}" style="--dur:${DUR}ms">${g.cover?`<img src="${esc(g.cover)}" alt="">`:''}${setting.pinned.includes(g.id)?'<span class="pin"></span>':''}<span class="bar"></span></button>`;
+  track.innerHTML=[0,1,2].map(c=>list.map((g,i)=>chip(g,i,c===1&&g===shown)).join('')).join('');
   track.querySelectorAll('.tv-chip').forEach(b=>b.addEventListener('click',()=>{const i=+b.dataset.i;if(list[i]&&list[i]!==shown)paint(i,true,'fade');}));centerRail(r);}
  /* 2026-11-15 (user: 展示的卡不管任何尺寸都要在下面牌的中心稍微偏左) the current card always sits at the same spot, a little left of the strip's centre; the strip slides under it */
- function centerRail(r){const track=r.firstElementChild,on=track?.querySelector('.tv-chip.on');if(!on)return;const fresh=!track.dataset.set;track.dataset.set='1';if(fresh)track.style.transition='none';track.style.transform=`translateX(${(r.clientWidth*.46-(on.offsetLeft+on.offsetWidth/2)).toFixed(1)}px)`;if(fresh)requestAnimationFrame(()=>requestAnimationFrame(()=>{track.style.transition='';}));}
+ function centerRail(r){const track=r.firstElementChild,on=track?.querySelector('.tv-chip.on');if(!on)return;let first=on;for(let k=0;k<3&&first.previousElementSibling;k++)first=first.previousElementSibling;/* 2026-11-15 (user: 让这个手卡就固定在这) the current card is always the 4th: three cards stand to its left, the strip slides so the new current card lands there, the rest of the width fills with the cards on its right */const fresh=!track.dataset.set;track.dataset.set='1';if(fresh)track.style.transition='none';track.style.transform=`translateX(${(-first.offsetLeft).toFixed(1)}px)`;if(fresh)requestAnimationFrame(()=>requestAnimationFrame(()=>{track.style.transition='';}));}
  function commit(){model.preferences.homeShowcase=setting;savePreferences({homeShowcase:setting});const id=shown?.id;list=showcaseGames(model.games,setting);
   paint(Math.max(0,list.findIndex(g=>g.id===id)),false);}
  /* 2026-11-13 (user: "不要全部作品 … 把＋卡移到最右边 不要是卡牌了 鼠标放上去再出来") the hand editor is a tab docked on the right edge that slides out

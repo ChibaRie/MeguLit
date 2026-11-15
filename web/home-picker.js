@@ -5,11 +5,11 @@
 /* (user: "手卡上限10张牌") */
 export const HAND_MAX=10;
 const COPY={
- zh:{dock:'选择手牌',title:'选择手牌',sub:'勾选的作品放进首页手牌，没勾的不出现',search:'搜索作品',auto:'恢复按最近游玩',count:n=>`已选 ${n} / ${HAND_MAX}`,full:`最多 ${HAND_MAX} 张`,
+ zh:{dock:'选择作品',title:'选择手牌',sub:'勾选的作品放进首页手牌，没勾的不出现',search:'搜索作品',auto:'恢复按最近游玩',count:n=>`已选 ${n} / ${HAND_MAX}`,full:`最多 ${HAND_MAX} 张`,
   save:'保存',cancel:'取消',none:'没有找到作品',in:'在手牌中',out:'不在手牌'},
- ja:{dock:'手札を選ぶ',title:'手札を選ぶ',sub:'チェックした作品だけがホームの手札に並びます',search:'作品を検索',auto:'最近プレイ順に戻す',count:n=>`${n} / ${HAND_MAX} 枚`,full:`最大 ${HAND_MAX} 枚`,
+ ja:{dock:'作品を選ぶ',title:'手札を選ぶ',sub:'チェックした作品だけがホームの手札に並びます',search:'作品を検索',auto:'最近プレイ順に戻す',count:n=>`${n} / ${HAND_MAX} 枚`,full:`最大 ${HAND_MAX} 枚`,
   save:'保存',cancel:'キャンセル',none:'作品が見つかりません',in:'手札に入っています',out:'手札に入っていません'},
- en:{dock:'Choose hand',title:'Choose your hand',sub:'Ticked games are dealt into the home hand; the rest stay out',search:'Search games',auto:'Back to recently played',
+ en:{dock:'Choose games',title:'Choose your hand',sub:'Ticked games are dealt into the home hand; the rest stay out',search:'Search games',auto:'Back to recently played',
   count:n=>`${n} / ${HAND_MAX} chosen`,full:`Up to ${HAND_MAX} cards`,save:'Save',cancel:'Cancel',none:'No games found',in:'In the hand',out:'Not in the hand'}};
 export const pickerCopy=locale=>COPY[locale]||COPY.zh;
 
@@ -27,7 +27,7 @@ export function togglePick(ids,id){const has=ids.includes(id);if(has)return ids.
 
 /* the docked tab; returns the button */
 export function createDock(root,{locale,onOpen}){const w=pickerCopy(locale),b=document.createElement('button');b.type='button';b.className='tv-dock';b.setAttribute('aria-label',w.dock);
- b.innerHTML=`<b aria-hidden="true">＋</b><span>${w.dock}</span>`;b.addEventListener('click',onOpen);
+ b.innerHTML=`<b aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 1.5C12.7 8.2 15.8 11.3 22.5 12C15.8 12.7 12.7 15.8 12 22.5C11.3 15.8 8.2 12.7 1.5 12C8.2 11.3 11.3 8.2 12 1.5Z"/></svg></b><span>${w.dock}</span>`;b.addEventListener('click',onOpen);
  /* (QQ-style) it stays out while the pointer is on it and tucks back a moment after the pointer leaves */
  let t=0;b.addEventListener('pointerenter',()=>{clearTimeout(t);b.classList.add('out');});b.addEventListener('pointerleave',()=>{clearTimeout(t);t=setTimeout(()=>b.classList.remove('out'),260);});
  b.addEventListener('focus',()=>b.classList.add('out'));b.addEventListener('blur',()=>b.classList.remove('out'));root.appendChild(b);return b;}
