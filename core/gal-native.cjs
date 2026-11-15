@@ -39,7 +39,7 @@ class GalNative {
       if (message.type === 'bound' && message.processName) {this.artScanKey='';this.state={...this.state,...message}; this.save({ ...(this.pending || this.preferences), gameProcess: message.processName, bindEnabled: true }, false); this.pending=null; }
       if(message.type==='error')this.pending=null;
       if(message.type==='hotkeyState'){/* E476: Alt+T taken back once another program let go */this.notify({hotkey:message.hotkey,coverHotkey:message.coverHotkey,modeHotkey:message.modeHotkey});this.onEvent(message);return;}
-      if ((message.type === 'hotkey'||message.type==='homeHotkey')) { this.onEvent(message); return; }
+      if ((message.type === 'hotkey'||message.type==='bindHotkey')) { this.onEvent(message); return; }
       if (message.type === 'modeRequest' || message.type === 'backlogHotkey' || message.type === 'regionApplied' || message.type === 'readerInput') { this.onEvent(message); return; }
       if(message.type==='waitMarkerFrame'){this.onEvent(message);return;}
       if(message.type==='glassFrame'){this.onEvent(message);return;}

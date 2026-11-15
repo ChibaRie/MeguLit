@@ -83,7 +83,7 @@ test('bridge: ① events and reader annotations become compositor commands', () 
 // Built native self-tests run when their binaries are there (Build.ps1 / CI build them; a source checkout may not have).
 const out = process.env.MEGULIT_BUILD_OUT || path.join(root, 'native', 'compositor', 'obj');
 test('DotSelfTest: synthetic frames (typewriter, fades, shake, scroll, NVL, spec-1, shadows, dither, choices)', { skip: !fs.existsSync(path.join(out, 'DotSelfTest.exe')) && 'DotSelfTest.exe not built' }, () => {
-  const r = spawnSync(path.join(out, 'DotSelfTest.exe'), { encoding: 'utf8', timeout: 120000 });
+  const r = spawnSync(path.join(out, 'DotSelfTest.exe'), { windowsHide: true, encoding: 'utf8', timeout: 120000 });
   const summary = JSON.parse(r.stdout.trim().split('\n').pop()).summary;
   assert.strictEqual(r.status, 0, r.stdout);
   assert.strictEqual(summary.failed, 0);

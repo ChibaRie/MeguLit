@@ -111,7 +111,7 @@
   if(!dialog||dialog.dataset.menuOrganized)return;
   const form=dialog.querySelector('form'),group=dialog.querySelector('.tomoyo-gal-fields');if(!form||!group)return;
   dialog.dataset.menuOrganized='true';
-  const header=document.createElement('header');header.className='tomoyo-menu-header';header.innerHTML='<h3>MeguLit</h3><small>Alt+M 开关主页 · Alt+T 开关菜单 · 拖动即时预览</small>';
+  const header=document.createElement('header');header.className='tomoyo-menu-header';header.innerHTML='<h3>MeguLit</h3><small>Alt+M 绑定窗口 · Alt+T 开关菜单 · 拖动即时预览</small>';
   const nav=document.createElement('nav');nav.className='tomoyo-menu-tabs';nav.setAttribute('role','tablist');
   const content=document.createElement('div');content.className='tomoyo-menu-content';
   const footer=form.querySelector('footer');
@@ -124,7 +124,9 @@
   const jp=section(text,'日文设置','textJapanese'),cn=section(text,'中文设置','textChinese'),ruby=section(text,'注音设置','textRuby'),palette=section(text,'颜色设置','textColours'),colours=section(palette,'已读 / 未读设置','textDialogueColours'),choiceColours=section(palette,'已选 / 未选设置','textChoiceColours'),spacing=section(text,'行距与间距','textSpacing'),gameFont=section(text,'游戏字体','textGameFont');
   // Position and live follow sit directly in the calibration page, not in a fold (user, 2026-11-02); only window binding folds.
   const position=document.createElement('div');position.dataset.calibrationPosition='';calibration.append(position);
-  const advanced=document.createElement('details');advanced.innerHTML='<summary>窗口绑定（高级）</summary>';position.append(advanced);
+  /* 绑定游戏窗口 (2026-11-15): after 拖动文本框 and its hint, before the imports; the old 「窗口绑定（高级）」 fold is gone, the
+     layout preset sits with the text box position */
+  const windowBind=document.createElement('div');windowBind.dataset.calibrationWindowBind='';calibration.append(windowBind);
   const layout=group.querySelector('.tomoyo-gal-layout');if(layout){for(const n of [...layout.children])if(n.tagName!=='SUMMARY')group.insertBefore(n,layout);layout.remove();}
   const unwrap=(node,host)=>{for(const child of [...node.children])if(child.tagName!=='SUMMARY')host.append(child);node.remove();};
   const sizes=[];
@@ -135,7 +137,8 @@
    if(mask){panels.mask.append(n);continue;}
    if(n.classList.contains('tome-game-style-sync')){calibration.prepend(n);continue;}
    const pos=names.some(x=>/^gal(X|Y|Width|Height|Preset|Game|LivePosition)$/.test(x))||['bind','unbind','refresh','drag'].some(k=>n.hasAttribute('data-gal-'+k))||n.classList.contains('tome-position-sync')||n.classList.contains('tomoyo-gal-state');
-   if(pos){const windowControl=names.some(x=>/^gal(Game|Preset)$/.test(x))||['bind','unbind','refresh'].some(k=>n.hasAttribute('data-gal-'+k))||n.classList.contains('tomoyo-gal-state');(windowControl?advanced:position).append(n);continue;}
+   if(n.hasAttribute('data-gal-window-bind')||n.classList.contains('tomoyo-gal-state')||n.hasAttribute('data-gal-bind-hint')){windowBind.append(n);continue;}
+   if(pos){if(names.includes('galPreset'))position.prepend(n);else position.append(n);continue;}
    if(n.classList.contains('tomoyo-gal-spacing')){unwrap(n,spacing);continue;}
    if(n.hasAttribute('data-megulit-english')){text.insertBefore(n,ruby);continue;}
    if(n.classList.contains('tomoyo-ruby-menu')){unwrap(n,ruby);continue;}

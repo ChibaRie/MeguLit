@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // The usage guide: what "working" looks like (calibrate, then see the original replaced), first run, translation
 // choices, look-up and study, shortcuts, reporting a problem. One source for the notice's guide pane and the
-// "Get started" section. Shortcuts and menu names follow the app (Alt+T menu, Alt+H inline/overlay, Alt+M home, L log;
+// "Get started" section. Shortcuts and menu names follow the app (Alt+T menu, Alt+H inline/overlay, Alt+M bind the window in front, L log;
 // Alt+T → 校准 → 校准当前句; settings-guides.js for the translation choices).
 
 const T = (zh, ja, en) => ({ zh, ja, en });
@@ -49,9 +49,9 @@ export const STEPS = [
   {
     t: T('常用快捷键', 'ショートカット', 'Shortcuts'),
     d: T(
-      [k('Alt') + ' + ' + k('T') + ' 开关菜单', k('Alt') + ' + ' + k('H') + ' 一键开关内嵌和全部 MeguLit 显示（对比游戏原文）', k('Alt') + ' + ' + k('M') + ' 显示 / 隐藏 MeguLit 主页', '菜单里按 ' + k('L') + ' 打开日志'],
-      [k('Alt') + ' + ' + k('T') + ' メニューの開閉', k('Alt') + ' + ' + k('H') + ' 埋め込みと MeguLit の表示を一括オン／オフ（原文と比べる）', k('Alt') + ' + ' + k('M') + ' MeguLit ホームの表示／非表示', 'メニューで ' + k('L') + ' を押すとログ'],
-      [k('Alt') + ' + ' + k('T') + ' opens and closes the menu', k('Alt') + ' + ' + k('H') + ' turns inline text and all of MeguLit\'s display on or off (to compare with the game)', k('Alt') + ' + ' + k('M') + ' shows or hides the MeguLit home', 'In the menu, ' + k('L') + ' opens the log'],
+      [k('Alt') + ' + ' + k('T') + ' 开关菜单', k('Alt') + ' + ' + k('H') + ' 一键开关内嵌和全部 MeguLit 显示（对比游戏原文）', k('Alt') + ' + ' + k('M') + ' 把当前在前面的游戏窗口绑定给 MeguLit', '菜单里按 ' + k('L') + ' 打开日志'],
+      [k('Alt') + ' + ' + k('T') + ' メニューの開閉', k('Alt') + ' + ' + k('H') + ' 埋め込みと MeguLit の表示を一括オン／オフ（原文と比べる）', k('Alt') + ' + ' + k('M') + ' 前面のゲームウィンドウを MeguLit に割り当て', 'メニューで ' + k('L') + ' を押すとログ'],
+      [k('Alt') + ' + ' + k('T') + ' opens and closes the menu', k('Alt') + ' + ' + k('H') + ' turns inline text and all of MeguLit\'s display on or off (to compare with the game)', k('Alt') + ' + ' + k('M') + ' binds the game window in front to MeguLit', 'In the menu, ' + k('L') + ' opens the log'],
     ),
   },
   {

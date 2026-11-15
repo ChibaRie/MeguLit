@@ -62,7 +62,7 @@ test('scene probe: the text window alone going away hides MeguLit\'s line, and i
  assert.match(s,/E578: the text window alone is hidden/,'covered by GameSceneProbe.SelfTest (--mode-self-test)');
 });
 test('scene probe self-test passes (when GalWindowBridge.exe is built)',{skip:!fs.existsSync(path.join(__dirname,'..','native','GalWindowBridge.exe'))},()=>{
- const r=require('node:child_process').spawnSync(path.join(__dirname,'..','native','GalWindowBridge.exe'),['--mode-self-test'],{encoding:'utf8',timeout:20000});
+ const r=require('node:child_process').spawnSync(path.join(__dirname,'..','native','GalWindowBridge.exe'),['--mode-self-test'],{windowsHide:true,encoding:'utf8',timeout:20000});
  assert.equal(r.status,0,r.stdout+r.stderr);
 });
 

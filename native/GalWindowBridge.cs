@@ -218,6 +218,19 @@ public class GalWindowBridge {
         },IntPtr.Zero);return list;
     }
     [DllImport("user32.dll",CharSet=CharSet.Unicode)]static extern int GetWindowTextLength(IntPtr h);
+    [DllImport("user32.dll",CharSet=CharSet.Unicode)]static extern int GetClassName(IntPtr h,StringBuilder s,int c);
+    // 2026-11-15 Alt+M binds the window in front (no longer opens or closes the home window). Only the facts are sent;
+    // services/bind-hotkey.cjs decides (MeguLit's own windows, the desktop and Explorer are refused) and binds through
+    // the same "bind" command as the Alt+T window picker.
+    static void BindHotkey(bool pick=false){IntPtr fg=GetForegroundWindow(),root=fg==IntPtr.Zero?IntPtr.Zero:GetAncestor(fg,2);uint pid=0;var title=new StringBuilder(512);var cls=new StringBuilder(256);
+        if(root!=IntPtr.Zero){GetWindowThreadProcessId(root,out pid);GetWindowText(root,title,title.Capacity);GetClassName(root,cls,cls.Capacity);}
+        bool own=pid!=0&&(pid==(uint)OverlayPid||pid==(uint)Process.GetCurrentProcess().Id);
+        Emit(new{type="bindHotkey",hwnd=root.ToInt64().ToString(),pid=pid,title=title.ToString(),className=cls.ToString(),processName=pid==0?"":ProcessName(pid),own=own,pick=pick});}
+    // Alt+T → 校准 → 绑定游戏窗口 → 点选: the next window the user brings to the front (within 15 s) goes the same way as Alt+M.
+    static DateTime PickUntil=DateTime.MinValue;static IntPtr PickSkip=IntPtr.Zero;
+    static void PickTick(){if(PickUntil==DateTime.MinValue)return;if(DateTime.UtcNow>PickUntil){PickUntil=DateTime.MinValue;Emit(new{type="pickWindow",active=false,timeout=true});return;}
+        IntPtr fg=GetForegroundWindow(),root=fg==IntPtr.Zero?IntPtr.Zero:GetAncestor(fg,2);if(root==IntPtr.Zero||root==PickSkip)return;uint pid;GetWindowThreadProcessId(root,out pid);
+        if(pid==(uint)OverlayPid||pid==(uint)Process.GetCurrentProcess().Id)return;PickUntil=DateTime.MinValue;BindHotkey(true);}
     static IntPtr PreferredOverlay=IntPtr.Zero;
     static int HostedFrameUpdates;
     public static int HostedStyle(int style){return (style&~0x00c40000)|unchecked((int)0x80000000);}
@@ -231,6 +244,8 @@ public class GalWindowBridge {
         if(++HostedFrameUpdates<=12)Emit(new{type="hostFrame",update=HostedFrameUpdates,styleBefore=style,styleAfter=GetWindowLong(Overlay,-16),exStyleBefore=ex,exStyleAfter=GetWindowLong(Overlay,-20)});
     }
     static void FindOverlay(){
+        // Self-test modes run without an overlay process (OverlayPid 0): never adopt, move or raise someone else's window.
+        if(OverlayPid<=0){Overlay=IntPtr.Zero;return;}
         if(PreferredOverlay!=IntPtr.Zero&&IsWindow(PreferredOverlay)){uint owner;GetWindowThreadProcessId(PreferredOverlay,out owner);if(owner==OverlayPid){Overlay=PreferredOverlay;PrepareHostedFrame();return;}}
         // Tauri also owns hidden event-loop/tool windows. Select its actual application surface.
         // A minimised main window has an empty client rectangle; retain its identity until it is destroyed.
@@ -258,7 +273,7 @@ public class GalWindowBridge {
     static string ExecutableHash(uint pid){try{using(var sha=System.Security.Cryptography.SHA256.Create())using(var input=File.OpenRead(Process.GetProcessById((int)pid).MainModule.FileName))return BitConverter.ToString(sha.ComputeHash(input)).Replace("-","").ToLowerInvariant();}catch{return "";}}
     static void Bind(IntPtr target,bool activate=false){Scene.Reset();GameUi.Clear();if(target==IntPtr.Zero||target==Overlay||!IsWindow(target))throw new Exception("请选择有效的游戏窗口");FindOverlay();if(Overlay==IntPtr.Zero)throw new Exception("MeguLit 窗口尚未准备好，请稍后再绑定");if(TranslationMode)Capture();Target=target;HasLastRect=false;uint pid;GetWindowThreadProcessId(target,out pid);ForgetGame();TrackedGame=Process.GetProcessById((int)pid);TrackedGameStarted=TrackedGame.StartTime.ToUniversalTime().Ticks;WindowGoneAt=DateTime.MinValue;WantedProcess=ProcessName(pid);string executableHash=ExecutableHash(pid);Dialog.Reset();DialogVisible=true;if(activate){CoverEnabled=true;RevealGame(Target);
             // Binding from the menu keeps the menu open (and the keyboard on it); the game only comes forward without one.
-            if(!MenuOpen)SetForegroundWindow(GetAncestor(Target,2));LastZCheck=DateTime.MinValue;}if(AudioWanted)Audio.Start(pid);var gameCaption=new StringBuilder(512);GetWindowText(target,gameCaption,gameCaption.Capacity);Emit(new{type="bound",activateGame=activate,coverEnabled=CoverEnabled,bound=TranslationMode,gameProcessId=pid,gameStarted=Process.GetProcessById((int)pid).StartTime.ToUniversalTime().Ticks.ToString(),gameHwnd=target.ToInt64().ToString(),gameStyleKey=executableHash,gameTitle=gameCaption.ToString(),hookExact474=executableHash=="e77a11486b6d94a42f9d7d39fd768b4e763f163b977d3eaed94cf9e13217f995",interfaceMode=TranslationMode?"translation":"normal",processName=WantedProcess,message="游戏窗口已记住；Alt+M 切换普通界面和翻译文本框"});}
+            if(!MenuOpen)SetForegroundWindow(GetAncestor(Target,2));LastZCheck=DateTime.MinValue;}if(AudioWanted)Audio.Start(pid);var gameCaption=new StringBuilder(512);GetWindowText(target,gameCaption,gameCaption.Capacity);Emit(new{type="bound",activateGame=activate,coverEnabled=CoverEnabled,bound=TranslationMode,gameProcessId=pid,gameStarted=Process.GetProcessById((int)pid).StartTime.ToUniversalTime().Ticks.ToString(),gameHwnd=target.ToInt64().ToString(),gameStyleKey=executableHash,gameTitle=gameCaption.ToString(),hookExact474=executableHash=="e77a11486b6d94a42f9d7d39fd768b4e763f163b977d3eaed94cf9e13217f995",interfaceMode=TranslationMode?"translation":"normal",processName=WantedProcess,message="游戏窗口已记住；在游戏里按 Alt+M 可重新绑定当前窗口"});}
     // The game's own sound for Anki (GameAudio.cs): recorded only while MeguLit asks for it and a game is bound.
     static readonly GameAudio Audio=new GameAudio();static bool AudioWanted;
     // #113: binding, unbinding or closing never leaves the game unreachable. Its top-level window comes back if it is
@@ -308,7 +323,7 @@ public class GalWindowBridge {
             // No game: shrink to the dialogue strip right away (the tick loop runs only every 100 ms without a game).
             if(PreferredOverlay==IntPtr.Zero&&translation&&Target==IntPtr.Zero){FindOverlay();if(Overlay!=IntPtr.Zero){Capture();Rect r=FloatingBase();SetWindowPos(Overlay,new IntPtr(-2),r.Left+FloatDX,r.Top+FloatDY,r.Right-r.Left,r.Bottom-r.Top,0x0020|0x0010);FloatingPlaced=true;}}
         }
-        Emit(new{type=userAction?"interfaceMode":"bound",interfaceMode=translation?"translation":"normal",bound=translation&&Target!=IntPtr.Zero,gameAttached=Target!=IntPtr.Zero,coverEnabled=CoverEnabled,message=translation?"翻译文本框模式 · Alt+M 开关 MeguLit 主页":"普通 MeguLit 界面 · Alt+M 切换翻译文本框"});
+        Emit(new{type=userAction?"interfaceMode":"bound",interfaceMode=translation?"translation":"normal",bound=translation&&Target!=IntPtr.Zero,gameAttached=Target!=IntPtr.Zero,coverEnabled=CoverEnabled,message=translation?"翻译文本框模式 · Alt+M 绑定当前游戏窗口":"普通 MeguLit 界面 · Alt+M 绑定当前游戏窗口"});
     }
     // Right after switching to normal mode the main window must end up visible; it was seen staying hidden when the
     // switch landed while the reading layer was auto-hidden. Only this short window is enforced, so hiding it later still works.
@@ -368,7 +383,7 @@ public class GalWindowBridge {
     // One startup.log line ("Visibility: ...") each time the bridge hides the MeguLit window, with the deciding state.
     static void HideReason(string why){Emit(new{type="coverDebug",text="阅读层隐藏 ("+(TranslationMode?"translation":"normal")+", target="+(Target!=IntPtr.Zero)+") "+why});}
     static void ToggleInterface(){if((DateTime.UtcNow-LastModeToggle).TotalMilliseconds<180)return;LastModeToggle=DateTime.UtcNow;InterfaceMode(!TranslationMode,true);}
-    // Alt+M: ask the page first so it can play the leaving half of the transition, then it sends "toggleMode".
+    // Interface switch requested by the page (galToggleMode): ask the page first so it can play the leaving half of the transition, then it sends "toggleMode".
     // If the page does not answer in time (busy or an older page script), switch anyway.
     static DateTime ModeRequestAt=DateTime.MinValue,ModeFallbackAt=DateTime.MinValue;
     static void RequestModeToggle(){if(PreferredOverlay!=IntPtr.Zero&&!TranslationMode&&Target==IntPtr.Zero){ManualBindUntil=DateTime.UtcNow.AddSeconds(20);NextAutoBind=DateTime.MinValue;Emit(new{type="bindPending"});return;}if(ModeRequestAt!=DateTime.MinValue&&(DateTime.UtcNow-ModeRequestAt).TotalMilliseconds<1500)return;ModeRequestAt=DateTime.UtcNow;Emit(new{type="modeRequest",interfaceMode=TranslationMode?"normal":"translation"});}
@@ -436,6 +451,7 @@ public class GalWindowBridge {
             if(best!=IntPtr.Zero&&bestArea>=320L*240&&Target!=best){try{Bind(best);}catch{}}}
         else if(type=="bind"){WantedExecutable="";FindOverlay();if(Overlay!=IntPtr.Zero&&IsIconic(Overlay))ShowWindow(Overlay,4);if(d.TryGetValue("settings",out value)&&value is Dictionary<string,object>)Settings((Dictionary<string,object>)value);bool keepMenu=MenuOpen;InterfaceMode(true,false);if(keepMenu){MenuOpen=true;MenuFocusPending=true;}Bind(new IntPtr(Int64.Parse(Str(d,"hwnd"))),true);}
         else if(type=="configure"){if(!ModeConfigured&&d.ContainsKey("interfaceMode")){ModeConfigured=true;InterfaceMode(Str(d,"interfaceMode")=="translation",false);}Settings(d);WantedProcess=Bool(d,"bindEnabled")?Str(d,"gameProcess"):"";if(!Bool(d,"bindEnabled")&&(Target!=IntPtr.Zero||TrackedGame!=null)){RevealGame(Target);ForgetGame();Target=IntPtr.Zero;Restore();Emit(new{type="bound",bound=false,message="已解除窗口绑定"});}}
+        else if(type=="pickWindow"){if(Bool(d,"active")){IntPtr fg=GetForegroundWindow();PickSkip=fg==IntPtr.Zero?IntPtr.Zero:GetAncestor(fg,2);PickUntil=DateTime.UtcNow.AddSeconds(15);}else PickUntil=DateTime.MinValue;Emit(new{type="pickWindow",active=PickUntil!=DateTime.MinValue});}
         else if(type=="unbind"){WantedExecutable="";WantedProcess="";RevealGame(Target);ForgetGame();Target=IntPtr.Zero;Restore();Emit(new{type="bound",bound=false,message="已解除窗口绑定"});}
         // The page passes where the button went down, so the strip stays under the same spot of the cursor even though
         // the drag only starts after a few pixels of movement.
@@ -621,7 +637,7 @@ public class GalWindowBridge {
             Emit(new{type="host-frame-selftest",passed=true,noCaption=true,noResizeFrame=true,popup=true});return 0;
         }
         if(args.Length>0&&args[0]=="--game-window-policy-self-test"){
-            using(var fixture=new System.Windows.Forms.Form()){fixture.Text="MeguLit hidden game fixture";Target=fixture.Handle;TrackedGame=Process.GetCurrentProcess();TrackedGameStarted=TrackedGame.StartTime.ToUniversalTime().Ticks;WindowGoneAt=DateTime.UtcNow.AddSeconds(-10);
+            using(var fixture=new System.Windows.Forms.Form{StartPosition=System.Windows.Forms.FormStartPosition.Manual,Location=new System.Drawing.Point(-32000,-32000),ShowInTaskbar=false}){fixture.Text="MeguLit hidden game fixture";Target=fixture.Handle;TrackedGame=Process.GetCurrentProcess();TrackedGameStarted=TrackedGame.StartTime.ToUniversalTime().Ticks;WindowGoneAt=DateTime.UtcNow.AddSeconds(-10);
                 bool preserved=!CheckGameExit()&&WindowGoneAt==DateTime.MinValue;
                 ForgetGame();Target=IntPtr.Zero;if(!preserved)return 9;
                 Emit(new{type="game-window-policy-selftest",passed=true,hiddenWindowPreserved=true});return 0;
@@ -685,7 +701,7 @@ if(args.Length==2&&args[0]=="--art-scan-file"){Console.OutputEncoding=Encoding.U
         Emit(new{type="ready",hotkey=hotkey,coverHotkey=coverHotkey,modeHotkey=modeHotkey,coverEnabled=true,interfaceMode="normal"});
         DateTime nextHotkeyTry=DateTime.UtcNow.AddSeconds(2);
         var input=new Thread(delegate(){string line;while((line=Console.ReadLine())!=null){try{var command=Json.Deserialize<Dictionary<string,object>>(line);if(Str(command,"type")=="glass"){GlassCommand(command);continue;}Commands.Enqueue(command);}catch{}}Running=false;});input.IsBackground=true;input.Start();
-        try{while(Running){Dictionary<string,object> command;while(Commands.TryDequeue(out command)){try{Command(command);}catch(Exception error){Emit(new{type="error",message=error.Message});}}Msg message;while(PeekMessage(out message,IntPtr.Zero,0,0,1)){if(message.message==0x0312&&message.wParam.ToUInt64()==0x543){Emit(new{type="homeHotkey"});}else if(message.message==0x0312&&message.wParam.ToUInt64()==0x542){ToggleCover();}else if(message.message==0x0312){Emit(new{type="hotkey"});}else{TranslateMessage(ref message);DispatchMessage(ref message);}}try{ModeRequestTick();Tick();}catch{}
+        try{while(Running){Dictionary<string,object> command;while(Commands.TryDequeue(out command)){try{Command(command);}catch(Exception error){Emit(new{type="error",message=error.Message});}}Msg message;while(PeekMessage(out message,IntPtr.Zero,0,0,1)){if(message.message==0x0312&&message.wParam.ToUInt64()==0x543){BindHotkey();}else if(message.message==0x0312&&message.wParam.ToUInt64()==0x542){ToggleCover();}else if(message.message==0x0312){Emit(new{type="hotkey"});}else{TranslateMessage(ref message);DispatchMessage(ref message);}}try{ModeRequestTick();PickTick();Tick();}catch{}
           /* E476: keys another program held are taken as soon as it lets go, so "not ready" heals by itself */
           if((!hotkey||!coverHotkey||!modeHotkey)&&DateTime.UtcNow>=nextHotkeyTry){nextHotkeyTry=DateTime.UtcNow.AddSeconds(2);bool was=hotkey&&coverHotkey&&modeHotkey;if(!hotkey)hotkey=RegisterHotKey(IntPtr.Zero,0x541,0x4001,0x54);if(!coverHotkey)coverHotkey=RegisterHotKey(IntPtr.Zero,0x542,0x4001,0x48);if(!modeHotkey)modeHotkey=RegisterHotKey(IntPtr.Zero,0x543,0x4001,0x4d);if(hotkey||coverHotkey||modeHotkey)Emit(new{type="hotkeyState",hotkey=hotkey,coverHotkey=coverHotkey,modeHotkey=modeHotkey});}
           try{Glass.Follow(Overlay,TranslationMode&&Target!=IntPtr.Zero&&IsShown&&Overlay!=IntPtr.Zero&&IsWindowVisible(Overlay)&&!IsIconic(Overlay)&&!IsIconic(Target));}catch{}Thread.Sleep(Dragging?8:Target==IntPtr.Zero?100:16);}}

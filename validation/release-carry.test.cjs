@@ -16,7 +16,7 @@ test('release package drops files deleted from the repository',{skip:process.pla
   fs.writeFileSync(path.join(dir,'web','old.js'),'1');fs.writeFileSync(path.join(dir,'web','keep.js'),'1');
   git('add','.');git('commit','-qm','a');git('rm','-q','web/old.js');git('commit','-qm','b');
   fs.writeFileSync(path.join(dir,'script.ps1'),'$Root=$PWD.Path\n'+fn+'\n(Get-DroppedPaths @(\'web/old.js\',\'web/keep.js\',\'native/Helper64.dll\')) -join \',\'\n');
-  const out=cp.execFileSync('powershell.exe',['-NoProfile','-ExecutionPolicy','Bypass','-File','script.ps1'],{cwd:dir,encoding:'utf8'}).trim();
+  const out=cp.execFileSync('powershell.exe',['-NoProfile','-ExecutionPolicy','Bypass','-File','script.ps1'],{cwd:dir,encoding:'utf8',windowsHide:true}).trim();
   assert.strictEqual(out,'web/old.js');
  }finally{fs.rmSync(dir,{recursive:true,force:true})}
 });

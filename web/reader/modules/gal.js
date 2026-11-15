@@ -574,6 +574,11 @@
    apply(); };
   bridge.restoreGalSettings = saved => { for (const key of Object.keys(defaults)) if (saved?.[key] !== undefined) preferences[key] = saved[key]; localStorage.setItem('tomoyo-gal-settings',
    JSON.stringify({...preferences,translationPrompt:undefined})); apply(); };
+  /* Alt+M (services/bind-hotkey.cjs): 「已绑定：<窗口标题>」 or why the window in front was not bound, as a short hint on the reader layer */
+  bridge.bindHotkeyResult = message => { bridge.galPickState?.(false); document.querySelector('.megulit-bind-hint')?.remove(); const text=String(message?.message||''); if(!text)return;
+   const tip=document.createElement('div'); tip.className='megulit-bind-hint'; tip.dataset.noI18n=''; tip.dataset.ok=String(message.ok===true); tip.setAttribute('role','status'); tip.textContent=text;
+   tip.style.cssText='position:fixed;left:50%;top:9%;transform:translateX(-50%);z-index:2147483000;max-width:min(560px,86vw);padding:10px 18px;border-radius:12px;background:rgba(18,12,14,.92);color:#f3e6da;font:500 14px/1.6 "Microsoft YaHei",sans-serif;box-shadow:0 12px 32px rgba(0,0,0,.45);pointer-events:none;transition:opacity .3s;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
+   document.body.append(tip); setTimeout(()=>{tip.style.opacity='0';setTimeout(()=>tip.remove(),350);},message.ok===true?2600:4500); };
   bridge.galStatus = message => {
     if(message?.type==='modeRequest'){if(window.__tomoyoMode?.requestToggle)window.__tomoyoMode.requestToggle();else send({type:'galToggleMode'});return;}
     if(message?.type==='regionApplied'){window.dispatchEvent(new CustomEvent('tome-region-applied',{detail:message}));return;}
@@ -626,8 +631,15 @@
     if (dialogFields && message.windows) {
       const select = dialogFields.game;
       select.replaceChildren(new Option('选择正在运行的游戏窗口', ''));
-      for (const item of message.windows) select.add(new Option(item.title + ' [' + item.processName + ']', item.hwnd));
+      for (const item of message.windows) { const option = new Option(item.title + ' [' + item.processName + ']', item.hwnd); option.dataset.title = item.title || ''; option.dataset.processName = item.processName || ''; select.add(option); }
     }
+    if (message.type === 'pickWindow' && typeof message.active === 'boolean') bridge.galPickState?.(message.active);
+    /* 绑定游戏窗口: which window is bound right now (title), or 未绑定 */
+    const boundLabel = document.querySelector('[data-gal-bound-window]');
+    if (boundLabel) { const lang = (window.__tomeI18n?.get?.()||'zh').slice(0,2), w = {zh:['当前：','未绑定'],en:['Bound: ','Not bound'],ja:['割り当て中：','未割り当て']}[lang] || ['当前：','未绑定'];
+      if (message.type === 'bound' && message.bound !== false && typeof message.gameTitle === 'string') bridge.galBoundTitle = message.gameTitle || '?';
+      else if (message.gameAttached === false || message.type === 'bound' && message.bound === false && message.gameAttached !== true) bridge.galBoundTitle = '';
+      boundLabel.textContent = bridge.galBoundTitle ? w[0] + bridge.galBoundTitle : w[1]; boundLabel.title = bridge.galBoundTitle || ''; }
   };
   const open = bridge.openSettings;
   bridge.openSettings = () => {
@@ -641,9 +653,9 @@
       <label><input type="checkbox" name="galFurigana">汉字上方自动注音（本地）</label>
       <label>日文字号<input type="number" name="galJapaneseSize" min="14" max="60"></label>
       <label>版式预设<select name="galPreset"><option value="custom">自定义位置</option><option value="bottom">底部对话框（ADV）</option><option value="full">全屏文本（NVL）</option><option value="top">画面上方字幕</option></select></label>
-      <label>游戏窗口<select name="galGame"><option value="">点击刷新选择窗口</option></select></label>
-      <button type="button" data-gal-refresh>刷新窗口</button><button type="button" data-gal-bind>绑定此窗口</button><button type="button" data-gal-unbind>解除绑定</button>
-      <small class="tomoyo-hotkey-hint" data-gal-bind-hint>内嵌没生效，或译文、对话框位置乱跑（部分紫社等作品自动识别不准）：展开「窗口绑定（高级）」，选中游戏窗口，点「绑定此窗口」手动绑定即可</small>
+      <div class="tome-window-bind" data-gal-window-bind><div class="tome-window-bind-row" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap"><button type="button" data-gal-pick>绑定游戏窗口</button><small data-gal-bound-window data-no-i18n>未绑定</small></div>
+       <small class="tomoyo-hotkey-hint" data-gal-bind-hint>先开游戏后开 MeguLit，或 MeguLit 重开后，用这里或 Alt+M 重新连接</small>
+       <div class="tome-window-bind-list"><label>游戏窗口<select name="galGame"><option value="">点击刷新选择窗口</option></select></label><button type="button" data-gal-refresh>刷新窗口</button><button type="button" data-gal-bind>绑定此窗口</button><button type="button" data-gal-unbind>解除绑定</button></div></div>
       <div class="tomoyo-cn-grid"><label>文本框左边距<input type="number" name="galX" min="0" max="95" step="0.1"></label><label>文本框上边距<input type="number" name="galY" min="0" max="95" step="0.1"></label><label>文字换行宽度<input type="number" name="galWidth" min="20" max="100" step="0.1"></label><input type="hidden" name="galHeight"><small class="tome-manual-region-hint">显示区域随实际文字增长，高度自动调整</small><small class="tome-island-layout-hint">按原文位置排布，文字可自然延伸到游戏窗口外</small></div>
       <button type="button" data-gal-drag>拖动文本框</button>
       <div class="tome-position-sync"><button type="button" data-gal-position-sync>同步位置</button><small data-position-state></small></div>
@@ -652,7 +664,7 @@
       <label class="tome-auto-style-switch" data-embed-translation><input type="checkbox" name="galEmbedTranslation">译文由游戏自己显示（写回游戏文本框）</label>
       <small class="tomoyo-hotkey-hint">开启后游戏文本框直接显示译文，位置和字体都由游戏自己处理；Alt+H 只开关 MeguLit 自己的显示，不影响游戏写回的译文</small>
       <small class="tomoyo-hotkey-hint" data-mask-hotkey><kbd>Alt+H</kbd> 随时一键关闭 / 恢复内嵌（连同全部 MeguLit 覆盖），用来对比游戏原文；开着「译文由游戏自己显示」时，游戏里的译文不受 Alt+H 影响，只由这个开关控制</small>
-      <div data-gal-hook-options><label>对话文本流<select name="galHookThread"><option value="">先绑定游戏并推进一句</option></select></label><button type="button" data-gal-hook-select>使用这条对话流</button><div class="tomoyo-hook-state" role="status"></div><small>选择前请核对内容是完整对话。仅读取的流可以显示台词，不能清空游戏原文；可清空的流仅在覆盖模式启用替换。Alt+H 隐藏覆盖或 Alt+M 返回普通界面会关闭替换，台词读取继续。</small></div>
+      <div data-gal-hook-options><label>对话文本流<select name="galHookThread"><option value="">先绑定游戏并推进一句</option></select></label><button type="button" data-gal-hook-select>使用这条对话流</button><div class="tomoyo-hook-state" role="status"></div><small>选择前请核对内容是完整对话。仅读取的流可以显示台词，不能清空游戏原文；可清空的流仅在覆盖模式启用替换。Alt+H 隐藏覆盖会关闭替换，台词读取继续。</small></div>
       <label data-gal-full-color>整块底板颜色<input type="color" name="galMaskColor"></label>
       <label><input name="galRelocateWaitMarker" type="checkbox">将原等待符移到 MeguLit 句末</label>
       <label><input name="galHideWaitMarker" type="checkbox">隐藏点击等待图标</label>
@@ -863,8 +875,16 @@
       preferences = current(); preferences.bindEnabled = true;
       committed = { ...preferences };
       localStorage.setItem('tomoyo-gal-settings', JSON.stringify({...preferences,translationPrompt:undefined}));
-      send({ type: 'galBind', hwnd: f('galGame').value, settings: preferences });
+      const picked = f('galGame').selectedOptions[0];
+      send({ type: 'galBind', hwnd: f('galGame').value, settings: preferences, title: picked?.dataset.title || '', processName: picked?.dataset.processName || '' });
     };
+    /* 绑定游戏窗口 (2026-11-15, user: 把之前的窗口绑定功能放到校准这边): click, then click the game window; the bridge takes the
+       next window brought to the front and binds it the same way as Alt+M (services/bind-hotkey.cjs). Clicking again cancels. */
+    const pickButton = group.querySelector('[data-gal-pick]'), pickWords = {zh:['绑定游戏窗口','请点一下游戏窗口…（再点这里取消）'],en:['Bind game window','Click the game window… (click here again to cancel)'],ja:['ゲームウィンドウを割り当て','ゲームのウィンドウをクリックしてください…（もう一度押すと取消）']};
+    const pickLabel = on => { const w = pickWords[(window.__tomeI18n?.get?.()||'zh').slice(0,2)] || pickWords.zh; pickButton.dataset.noI18n = ''; pickButton.textContent = w[on?1:0]; pickButton.classList.toggle('tome-picking', on); pickButton.setAttribute('aria-pressed', String(on)); };
+    bridge.galPickState = on => pickLabel(on === true);
+    pickButton.onclick = () => { const on = !pickButton.classList.contains('tome-picking'); pickLabel(on); send({ type: 'galPickWindow', active: on }); };
+    pickLabel(false);
     group.querySelector('[data-gal-unbind]').onclick = () => { preferences.bindEnabled = false; send({ type: 'galUnbind' }); save(); };
     // Drag the text box with the mouse: first click starts, dragging moves it live, second click keeps the position.
     const dragButton = group.querySelector('[data-gal-drag]'), dragWords = {zh:['拖动文本框','确定位置'],en:['Drag text box','Confirm position'],ja:['テキスト枠をドラッグ','位置を確定']};

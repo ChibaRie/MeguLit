@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 /* E458 使用教程: the steps shown in the start notice (page 2) and in the top bar 指南 panel.
-   Hotkeys follow web/reader/modules/settings.js (Alt+T menu, Alt+H overlay on/off). [[...]] becomes a <kbd>. */
+   Hotkeys follow web/reader/modules/settings.js (Alt+T menu, Alt+H overlay on/off, Alt+M bind the window in front). [[...]] becomes a <kbd>. */
 
 export const SUCCESS = {
   zh: { head: '怎样才算适配成功？', steps: ['开游戏，推进到有对话的地方', '按 [[Alt+T]] 打开菜单，在「校准」页做一次校准', '再推进几句，看到游戏原文被 MeguLit 完美替换，就成功了'], tail: '只看到菜单或悬浮字幕还不算，一定要先校准一次。' },
@@ -18,7 +18,7 @@ export const GUIDE = {
     { h: '玩完之后（10 分钟）', steps: ['「复习」页刷今天到期的卡；右上角「Anki 设置」打开翻面自动播放，听着复习更快', '「句子」页挑两三句点 ▶，跟着角色原声读一遍', '「读过的词」按出现次数排，排在前面又已经会的标「已掌握」，剩下的就是最值得学的'] },
     { h: '每周一次', steps: ['「语法」页学一两课：例句就是你读过的台词，下次在游戏里遇到会一眼认出', '「学习统计」看这周读了多少字、学了多少词', '回收站里有误删的词可以找回'] },
     { h: '按水平怎么用', level: true },
-    { h: '常用快捷键', keys: [['Alt+T', '开关菜单（校准、翻译、外观）'], ['Alt+H', '一键开关内嵌和全部 MeguLit 覆盖']] },
+    { h: '常用快捷键', keys: [['Alt+T', '开关菜单（校准、翻译、外观）'], ['Alt+H', '一键开关内嵌和全部 MeguLit 覆盖'], ['Alt+M', '把当前在前面的游戏窗口绑定给 MeguLit（自动没接上时用）']] },
     { h: '遇到问题', steps: ['去「关于」页点「一键上传问题反馈」，写一句原因，日志会一起发过来'] },
   ] },
   ja: { title: '使い方', sections: [
@@ -30,7 +30,7 @@ export const GUIDE = {
     { h: '遊んだあと（10 分）', steps: ['「復習」で今日のカードを。右上の「Anki 設定」で裏面の自動再生をオンにすると聞きながら速く回せる', '「文」ページで二、三文を ▶、キャラの声について読む', '「読んだ単語」は出てきた回数順。上位でもう知っているものを「習得済み」にすると、残りがいちばん覚える価値のある語'] },
     { h: '週に一度', steps: ['「文法」で一、二課：例文は読んだセリフなので、次にゲームで出たらすぐわかる', '「学習統計」で今週の文字数と覚えた単語を確認', '間違えて消した単語はゴミ箱から戻せます'] },
     { h: 'レベル別の使い方', level: true },
-    { h: 'よく使うショートカット', keys: [['Alt+T', 'メニューの開閉（校正・翻訳・外観）'], ['Alt+H', '埋め込みと MeguLit の表示をまとめてオン／オフ']] },
+    { h: 'よく使うショートカット', keys: [['Alt+T', 'メニューの開閉（校正・翻訳・外観）'], ['Alt+H', '埋め込みと MeguLit の表示をまとめてオン／オフ'], ['Alt+M', '前面のゲームウィンドウを MeguLit に割り当て（自動でつながらないとき）']] },
     { h: '困ったときは', steps: ['「について」ページの「不具合をまとめて送る」から、原因をひとこと。ログも一緒に届きます'] },
   ] },
   en: { title: 'How to use', sections: [
@@ -42,7 +42,7 @@ export const GUIDE = {
     { h: 'After playing (10 minutes)', steps: ['Do today\u2019s cards on Review; turn on auto-play in Anki settings (top right) to go faster by ear', 'On Sentences, play two or three lines with ▶ and read along with the character', 'Words read lists words by how often they appeared; mark the ones near the top you already know as mastered, and what is left is what is most worth learning'] },
     { h: 'Once a week', steps: ['One or two Grammar lessons: the examples are lines you have read, so you will spot them next time in the game', 'Statistics shows how much you read and learned this week', 'Words deleted by mistake can be restored from Trash'] },
     { h: 'By level', level: true },
-    { h: 'Shortcuts', keys: [['Alt+T', 'Open or close the menu (calibrate, translation, look)'], ['Alt+H', 'Turn embedding and every MeguLit overlay on or off']] },
+    { h: 'Shortcuts', keys: [['Alt+T', 'Open or close the menu (calibrate, translation, look)'], ['Alt+H', 'Turn embedding and every MeguLit overlay on or off'], ['Alt+M', 'Bind the game window in front to MeguLit (when it did not attach by itself)']] },
     { h: 'Something wrong?', steps: ['Open About and use Report a problem: one sentence is fine, the logs come along'] },
   ] },
 };
