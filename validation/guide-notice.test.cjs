@@ -27,7 +27,12 @@ test('every hotkey in the tutorial is a real reader hotkey', async () => {
   const g = await import(pathToFileURL(path.join(web, 'guide-content.js')).href);
   const reader = read('reader/modules/settings.js');
   const keys = new Set(JSON.stringify(g.GUIDE).match(/Alt\+[A-Z]/g));
-  for (const k of keys) assert.match(reader, new RegExp(`altKey && event\\.code === 'Key${k.slice(-1)}'`), k);
+  /* Alt+M (bind the window in front) is a global hotkey the native bridge registers, not a key the reader page handles */
+  const native = fs.readFileSync(path.join(web, '..', 'native', 'GalWindowBridge.cs'), 'utf8');
+  for (const k of keys) {
+    const registered = new RegExp(`RegisterHotKey\\(IntPtr\\.Zero,0x5[0-9a-f]{2},0x4001,0x${k.slice(-1).charCodeAt(0).toString(16)}\\)`, 'i').test(native);
+    if (!registered) assert.match(reader, new RegExp(`altKey && event\\.code === 'Key${k.slice(-1)}'`), k);
+  }
 });
 
 test('notice has two pages and the guide panel is reachable from the top bar', () => {

@@ -7,7 +7,7 @@ if(!s.includes('PreferredOverlay')){
  rep('static void FindOverlay(){','static IntPtr PreferredOverlay=IntPtr.Zero;\r\n    static void FindOverlay(){\r\n        if(PreferredOverlay!=IntPtr.Zero&&IsWindow(PreferredOverlay)){uint owner;GetWindowThreadProcessId(PreferredOverlay,out owner);if(owner==OverlayPid){Overlay=PreferredOverlay;return;}}');
  rep('if(args.Length!=1||!Int32.TryParse(args[0],out OverlayPid))return 2;','if((args.Length!=1&&args.Length!=2)||!Int32.TryParse(args[0],out OverlayPid))return 2;\r\n        if(args.Length==2){long handle;if(!Int64.TryParse(args[1],out handle))return 2;PreferredOverlay=new IntPtr(handle);uint owner;GetWindowThreadProcessId(PreferredOverlay,out owner);if(owner!=OverlayPid)return 2;}');
 }
-rep('message.wParam.ToUInt64()==0x543){RequestModeToggle();}', 'message.wParam.ToUInt64()==0x543){Emit(new{type="homeHotkey"});}');
+rep('message.wParam.ToUInt64()==0x543){RequestModeToggle();}', 'message.wParam.ToUInt64()==0x543){BindHotkey();}');
 rep('static DateTime LastZCheck=DateTime.MinValue;', 'static DateTime LastZCheck=DateTime.MinValue;static IntPtr LastHomeForeground;');
 rep('bool contextActive=gameOwned||fg==overlayRoot;', 'bool homeOwned=PreferredOverlay!=IntPtr.Zero&&fgPid==(uint)OverlayPid&&fg!=overlayRoot;bool contextActive=gameOwned||fg==overlayRoot||homeOwned;');
 rep('KeepAboveGame(gameRoot,contextActive);',`if(homeOwned&&LastHomeForeground!=fg)SetWindowPos(Overlay,fg,0,0,0,0,0x0001|0x0002|0x0010);

@@ -46,13 +46,13 @@ const manifest=[];for(const name of originals){const source=fs.readFileSync(path
   text=text.replace(pending,'.tome-typewriter-pending{opacity:0!important;pointer-events:none!important;transition:none!important}[data-tome-typing=true] .char-token,[data-tome-typing=true]>*{transition:opacity 70ms linear}@media (prefers-reduced-motion:reduce){[data-tome-typing=true] .char-token,[data-tome-typing=true]>*{transition:none}}');}
  if(name==='settings'){
   text=text.replace(/defaults\.lookupProfiles=\{[^\n]+;/,'defaults.lookupProfiles='+JSON.stringify(require('../core/lookup-models.cjs').presets)+';');
-  text=text.replace('Alt+M 切换普通界面／透明文本框','Alt+M 显示／隐藏 MeguLit 主页');
+  text=text.replace('Alt+M 切换普通界面／透明文本框','Alt+M 绑定当前游戏窗口');
   const shortcut=/^    if \(event\.altKey && event\.code === 'KeyM' && !event\.repeat\) \{[\s\S]*?^    \}\r?\n/m;
   if(!shortcut.test(text))throw Error('LEGACY_MODE_SHORTCUT_ANCHOR');
   text=text.replace(shortcut,'');
  }
- if(name==='menu-layout')text=text.replace('Alt+M 切换界面','Alt+M 开关主页');
- if(name==='polish')text=text.replace('<kbd>Alt+M</kbd>切换界面','<kbd>Alt+M</kbd>开关主页');
+ if(name==='menu-layout')text=text.replace('Alt+M 切换界面','Alt+M 绑定当前窗口');
+ if(name==='polish')text=text.replace('<kbd>Alt+M</kbd>切换界面','<kbd>Alt+M</kbd>绑定当前窗口');
  if(name==='background'){
   text=require('./adapt-reader-lookups.cjs').background(text);
   const hook=`\n b.hostRefreshAppearance=async()=>{\n  cfg={...defaults,...JSON.parse(localStorage.getItem(KEY)||'{}')};gcfg={...gameDefaults,...JSON.parse(localStorage.getItem(GAME_KEY)||'{}')};\n  const old=gcfg.panels||{},next={};for(const p of PANELS){next[p]={};for(const k of PANEL_KEYS){const v=Number(old[p]?.[k]??gcfg[k]??gameDefaults[k]);next[p][k]=Number.isFinite(v)?v:gameDefaults[k];}}gcfg.panels=next;await load();glassReport();\n };\n`;

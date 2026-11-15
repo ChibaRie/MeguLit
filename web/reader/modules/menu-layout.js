@@ -111,7 +111,7 @@
   if(!dialog||dialog.dataset.menuOrganized)return;
   const form=dialog.querySelector('form'),group=dialog.querySelector('.tomoyo-gal-fields');if(!form||!group)return;
   dialog.dataset.menuOrganized='true';
-  const header=document.createElement('header');header.className='tomoyo-menu-header';header.innerHTML='<h3>MeguLit</h3><small>Alt+M 开关主页 · Alt+T 开关菜单 · 拖动即时预览</small>';
+  const header=document.createElement('header');header.className='tomoyo-menu-header';header.innerHTML='<h3>MeguLit</h3><small>Alt+M 绑定当前窗口 · Alt+T 开关菜单 · 拖动即时预览</small>';
   const nav=document.createElement('nav');nav.className='tomoyo-menu-tabs';nav.setAttribute('role','tablist');
   const content=document.createElement('div');content.className='tomoyo-menu-content';
   const footer=form.querySelector('footer');

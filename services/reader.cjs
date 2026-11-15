@@ -12,8 +12,11 @@ const atomic=(file,value)=>{const tmp=file+'.'+process.pid+'.tmp';fs.writeFileSy
 class Reader{
  constructor(runtime){this.runtime=runtime;this.root=runtime.root;this.folder=runtime.folder;this.latest=0;this.pageScope='';this.lookup=0;this.gameId=null;this.stats=new(require('./reading-statistics.cjs').ReadingStatistics)(this.root);}
  prefs(){return cleanPreferences(readJSON(path.join(this.folder,'preferences.json')));}
+ uiLanguage(){try{return require('./store.cjs').publicPreferences(this.root)?.language||'zh';}catch{return 'zh';}}
  event(message){
-  if(message.type==='homeHotkey'){this.runtime.emit('home-toggle',null);return;}
+  /* Alt+M binds the window in front (services/bind-hotkey.cjs); it no longer opens or closes the home window */
+  if(message.type==='bindHotkey'){require('./bind-hotkey.cjs').request(this,message,e=>this.runtime.emit('reader-event',e),this.uiLanguage());return;}
+  if(this.hotkeyBind&&(message.type==='bound'||message.type==='error'))require('./bind-hotkey.cjs').follow(this,message,e=>this.runtime.emit('reader-event',e),this.uiLanguage());
   if(message.type==='readerPointer'){this.runtime.emit('reader-pointer-input',message);return;}
   if(message.type==='hookEmbedRequest'){this.embedTranslate(message.id,message.text);return;}
   if(message.type==='artText'){this.artText(message);return;}

@@ -574,6 +574,11 @@
    apply(); };
   bridge.restoreGalSettings = saved => { for (const key of Object.keys(defaults)) if (saved?.[key] !== undefined) preferences[key] = saved[key]; localStorage.setItem('tomoyo-gal-settings',
    JSON.stringify({...preferences,translationPrompt:undefined})); apply(); };
+  /* Alt+M (services/bind-hotkey.cjs): 「已绑定：<窗口标题>」 or why the window in front was not bound, as a short hint on the reader layer */
+  bridge.bindHotkeyResult = message => { document.querySelector('.megulit-bind-hint')?.remove(); const text=String(message?.message||''); if(!text)return;
+   const tip=document.createElement('div'); tip.className='megulit-bind-hint'; tip.dataset.noI18n=''; tip.dataset.ok=String(message.ok===true); tip.setAttribute('role','status'); tip.textContent=text;
+   tip.style.cssText='position:fixed;left:50%;top:9%;transform:translateX(-50%);z-index:2147483000;max-width:min(560px,86vw);padding:10px 18px;border-radius:12px;background:rgba(18,12,14,.92);color:#f3e6da;font:500 14px/1.6 "Microsoft YaHei",sans-serif;box-shadow:0 12px 32px rgba(0,0,0,.45);pointer-events:none;transition:opacity .3s;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
+   document.body.append(tip); setTimeout(()=>{tip.style.opacity='0';setTimeout(()=>tip.remove(),350);},message.ok===true?2600:4500); };
   bridge.galStatus = message => {
     if(message?.type==='modeRequest'){if(window.__tomoyoMode?.requestToggle)window.__tomoyoMode.requestToggle();else send({type:'galToggleMode'});return;}
     if(message?.type==='regionApplied'){window.dispatchEvent(new CustomEvent('tome-region-applied',{detail:message}));return;}
