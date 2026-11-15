@@ -31,13 +31,13 @@ function normalizeBase(value){
    answered, or when the EdgeOne host is down, it stays api.megulit.com. Same Worker and database behind both. */
 const CN_RELAY_BASE='https://cn-api.megulit.com';
 const DEFAULT_CANDIDATES=[DEFAULT_RELAY_BASE,CN_RELAY_BASE];
-let chosen=DEFAULT_RELAY_BASE,raceAt=0,racing=null;
+let chosen=DEFAULT_RELAY_BASE,raceAt=0,racing=null,raced=false;
 async function timeHealth(base,fetcher,timeout){const t=Date.now();const r=await fetcher(base+'/api/health',{cache:'no-store',signal:AbortSignal.timeout(timeout)});if(!r.ok)throw new Error('HTTP '+r.status);const j=await r.json().catch(()=>null);if(!j||j.ok!==true)throw new Error('BAD_HEALTH');return Date.now()-t;}
 async function raceDefault(options={}){
  const fetcher=options.fetch||fetch,timeout=options.timeout||5000,list=options.candidates||DEFAULT_CANDIDATES;
  const timed=await Promise.all(list.map(base=>timeHealth(base,fetcher,timeout).then(ms=>({base,ms}),()=>null)));
  const ok=timed.filter(Boolean).sort((a,b)=>a.ms-b.ms);
- if(ok.length)chosen=ok[0].base;raceAt=Date.now();return {chosen,results:timed};
+ if(ok.length){chosen=ok[0].base;raced=true;}raceAt=Date.now();return {chosen,results:timed};
 }
 function maybeRace(env){
  if(env!==process.env||process.env.NODE_TEST_CONTEXT||racing||Date.now()-raceAt<30*60*1000)return;
@@ -50,4 +50,12 @@ function relayBase(root,env=process.env){
  if(off)return '';maybeRace(env);return normalizeBase(chosen);
 }
 function endpoint(root,route,env=process.env){const base=relayBase(root,env);return base?base+route:'';}
-module.exports={DEFAULT_RELAY_BASE,CN_RELAY_BASE,raceDefault,relayBase,endpoint,normalizeBase,onlineFile,readJSON};
+/* 2026-11-15 one-click sends (logs, feedback) try both built-in relays: cn-api first (国内下载源 rule), unless a health
+   race has found api.megulit.com faster; an address from Settings or MEGULIT_RELAY_BASE is the only one used */
+function endpoints(root,route,env=process.env){
+ const base=relayBase(root,env);if(!base)return [];
+ if(!DEFAULT_CANDIDATES.includes(base))return [base+route];
+ const first=raced&&chosen===DEFAULT_RELAY_BASE?DEFAULT_RELAY_BASE:CN_RELAY_BASE;
+ return [first,...DEFAULT_CANDIDATES.filter(b=>b!==first)].map(b=>b+route);
+}
+module.exports={endpoints,DEFAULT_RELAY_BASE,CN_RELAY_BASE,raceDefault,relayBase,endpoint,normalizeBase,onlineFile,readJSON};

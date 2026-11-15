@@ -53,3 +53,8 @@ html:not(#fa1):not(#fa2):not(#fa3):not(#fa4):not(#fa5):not(#fa6):not(#fa7):not(#
 /* feedback dialog: every block on one left/right edge, focus ring drawn inside the box so it never widens it */
 html:not(#fa1):not(#fa2):not(#fa3):not(#fa4):not(#fa5):not(#fa6):not(#fa7):not(#fa8):not(#fa9):not(#fa10):not(#fa11):not(#fa12):not(#fa13):not(#fa14) body dialog.feedback-dialog :is(.feedback-text,.feedback-contact){display:block;box-sizing:border-box;width:100%;margin-left:0;margin-right:0}
 html:not(#fa1):not(#fa2):not(#fa3):not(#fa4):not(#fa5):not(#fa6):not(#fa7):not(#fa8):not(#fa9):not(#fa10):not(#fa11):not(#fa12):not(#fa13):not(#fa14) body dialog.feedback-dialog :is(.feedback-text,.feedback-contact):is(:focus,:focus-visible){outline:2px solid var(--g-gold,#d6a434)!important;outline-offset:-2px!important;box-shadow:none!important}
+
+/* 2026-11-15 (v1.4.10 user: a hidden 确认上传 showed under 检查完成 · 没有需要上传的内容 and did nothing) the plate rules above force
+   display:inline-flex!important on every primary button with 12-14 id-weights, which beat the global [hidden] rule; this
+   one outweighs them so a hidden button stays hidden everywhere */
+html:not(#hg1):not(#hg2):not(#hg3):not(#hg4):not(#hg5):not(#hg6):not(#hg7):not(#hg8):not(#hg9):not(#hg10):not(#hg11):not(#hg12):not(#hg13):not(#hg14):not(#hg15):not(#hg16) body [hidden]{display:none!important}
