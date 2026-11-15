@@ -24,6 +24,8 @@ function fromHistory(db,id,{limit=200}={}){
  const ja=lines.filter(t=>KANA.test(t)).length;return ja>=Math.max(3,lines.length*.3)?true:null;
 }
 function verdict(root,db,id,{executable}={}){
+ /* E592 a Chinese translation launcher reads the Japanese data beside it: the install is not Japanese as launched */
+ if(executable&&require('../core/translated-launcher.cjs').inspect(executable).translated)return {japanese:false,by:'translated-launcher'};
  const script=fromScript(root,id);if(script!==null)return {japanese:script,by:'script'};
  if(fromHistory(db,id))return {japanese:true,by:'history'};
  if(executable){try{const r=require('../core/japanese-restore.cjs').detect(path.dirname(executable));if(r.state==='already')return {japanese:true,by:'restore'};}catch{}}

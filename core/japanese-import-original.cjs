@@ -65,7 +65,9 @@ async function sourceRoot(gameDir,source){
  const disc=require('./disc-image.cjs');
  let base=s.isDirectory()?source:ARCHIVE.test(source)?await unpack(gameDir,source):disc.IMAGE.test(source)?await discUnpack(gameDir,source):/\.exe$/i.test(source)?path.dirname(source):'';
  if(!base)throw Error('IMPORT_SOURCE_TYPE');
- if(path.resolve(base).toLowerCase()===path.resolve(gameDir).toLowerCase())throw Error('IMPORT_SOURCE_SAME_FOLDER');
+ /* E595 the same folder is the Japanese release when a Chinese patch only lies over it (patch.xp3 beside data.xp3):
+    importing it means turning that patch off */
+ if(path.resolve(base).toLowerCase()===path.resolve(gameDir).toLowerCase()){const ov=require('./overlay-patch.cjs').detect(gameDir);if(ov.translated)return {root:null,base,image:'',staged:false,overlay:ov};throw Error('IMPORT_SOURCE_SAME_FOLDER');}
  let root=matchRoot(base,gameDir),image='';
  /* E339: an archive holding a disc image (bin/cue, iso, img): read the disc and look again inside its files */
  if(!root&&!separateLauncher(base)){image=findImage(base);if(image){base=await discUnpack(gameDir,image);root=matchRoot(base,gameDir);}}
@@ -113,6 +115,8 @@ function separatePlan(gameDir,source,info){
 async function plan(gameDir,source){
  gameDir=path.resolve(String(gameDir||''));if(readManifest(gameDir))throw Error('ALREADY_IMPORTED');
  const info=await sourceRoot(gameDir,source),{root,staged}=info;
+ if(info.overlay){
+  return {gameDir,root:gameDir,staged:false,replace:[],add:[],remove:info.overlay.overlays.map(o=>({file:o.file,size:o.size})),exe:'',overlay:true};}
  /* E409: Steam Saya + the 2003 Japanese script.pak: port the Japanese script into this build's script.npk instead */
  const saya=require('./saya-script-port.cjs').detect(gameDir,info.base);if(saya)return {gameDir,port:saya};
  /* E409 (user 2026-11-11): Steam Saya is never switched to the old saya.exe; only the script port is offered */

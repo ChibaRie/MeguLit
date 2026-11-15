@@ -26,6 +26,8 @@ function decide(gameDir,options={}){
  if(d.state==='applied')return {action:'applied',detected:d};
  if(d.state==='steam-guide'||d.state==='first-run')return {action:'wait',detected:d}; /* Steam must be closed / the game must write its config once */
  if(d.state!=='restorable'){const hidden=hiddenJapanese(gameDir);return hidden?{action:'unsupported',reason:hidden,detected:d}:{action:'none',detected:d};}
+ /* E595 a patch over the release is only turned off when the user asks (日文原版恢复 › 恢复日文) */
+ if(d.adapter==='overlay-patch')return {action:'unsupported',reason:'OVERLAY_PATCH_MANUAL',detected:d};
  if(d.adapter==='language-switch')return {action:'setting',detected:d};
  const r=redirectFor(gameDir,d);
  return r?{action:'redirect',provider:r.name,detected:d}:{action:'files',detected:d};
@@ -100,6 +102,8 @@ function status(root,id,gameDir,options={}){
  const s=read(root),g=s.games[String(id)]||{},base={enabled:s.enabled,gameOff:!!g.off,mode:g.mode||'',at:g.at||'',reason:g.reason||''};
  if(['auto','reverted','undone'].includes(g.state))return {...base,state:g.state};
  const p=decide(gameDir,options);
+ /* E592 a translation launcher next to the Japanese data: the same answer the restore tool gives */
+ if(['none','unsupported'].includes(p.action)&&options.executable){const tl=require('./translated-launcher.cjs').inspect(options.executable);if(tl.translated)return {...base,state:'translated',original:tl.original};}
  return {...base,state:p.action==='already'?'japanese':p.action==='none'?'no-japanese':p.action==='applied'?'manual':p.action==='unsupported'?'unsupported':'available',detail:p.reason||''};
 }
 module.exports={decide,run,selfCheck,launchResult,undo,status,setEnabled,setGameOff,takeNotices,registerRedirect,verifyFiles,read,_internal:{allowed,file}};

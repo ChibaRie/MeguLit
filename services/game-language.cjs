@@ -48,6 +48,8 @@ function inspect(db,id,root){
   const hint=languageHint(item.exe)||languageHint(item.label);
   if(hint&&!versions[hint]&&!(paired&&hint==='zh')&&isLauncher(item.exe)&&isFile(item.exe))versions[hint]=item.exe;
  }
+ /* E592 a translation launcher with a Chinese-only name next to the Japanese launcher (core/translated-launcher.cjs) */
+ {const tl=require('../core/translated-launcher.cjs').inspect(row.executable);if(tl.translated&&!filename&&!paired){current='zh';versions.zh=row.executable;if(tl.original&&!versions.ja)versions.ja=tl.original;}}
  if(current&&!versions[current]&&isLauncher(row.executable)&&isFile(row.executable))versions[current]=row.executable;
  if(versions.ja&&versions.zh&&key(versions.ja)===key(versions.zh)&&!swap.patchedExe)delete versions[current==='zh'?'ja':'zh'];
  if(swap.patchedExe)versions.zh=swap.patchedExe;
