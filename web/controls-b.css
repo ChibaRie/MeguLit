@@ -145,7 +145,7 @@ html:not(#mgc1):not(#mgc2):not(#mgc3):not(#mgc4):not(#mgc5):not(#mgc6):not(#mgc7
  &[aria-checked=true],&.on,&.active{background:var(--mgc-red)!important;border-color:var(--mgc-red)!important}}
 
 /* ---------- checkbox & radio (native inputs outside the title bar) ---------- */
-& body :is(.main,dialog,.dev-notice) input[type=checkbox]:not(.switch){
+& body :is(.main,dialog,.dev-notice) input[type=checkbox]:not(.switch):not(:has(+.review-switch)){
  appearance:none!important;-webkit-appearance:none!important;position:relative;flex:none;width:17px!important;height:17px!important;margin:0;
  border:1px solid color-mix(in srgb,var(--mgc-ink) 45%,transparent)!important;border-radius:1px!important;background:var(--mgc-well)!important;cursor:pointer;transition:all var(--mgc-t) var(--mgc-ease)!important;
  &::after{content:""!important;position:absolute!important;left:5px!important;top:1.5px!important;width:4px!important;height:9px!important;border:solid #fff!important;border-width:0 1.8px 1.8px 0!important;transform:rotate(45deg) scale(0)!important;transition:transform var(--mgc-t) var(--mgc-ease)!important}

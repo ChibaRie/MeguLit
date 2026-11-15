@@ -35,12 +35,12 @@ input[type=range]::-webkit-slider-thumb{appearance:none;-webkit-appearance:none;
 
 
 /* 勾选 */
-input[type=checkbox]:not(.switch){appearance:none;-webkit-appearance:none;width:17px!important;height:17px!important;min-width:17px;margin:0;border:0!important;border-radius:4px!important;
+input[type=checkbox]:not(.switch):not(:has(+.review-switch)){appearance:none;-webkit-appearance:none;width:17px!important;height:17px!important;min-width:17px;margin:0;border:0!important;border-radius:4px!important;
  box-shadow:inset 0 0 0 1.5px var(--e-grey)!important;background:transparent!important;display:inline-grid;place-items:center;cursor:pointer;transition:background-color .15s,box-shadow .15s}
-input[type=checkbox]:not(.switch)::after{content:""!important;width:11px!important;height:11px!important;border:0!important;background:var(--e-paper);transform:scale(0)!important;
+input[type=checkbox]:not(.switch):not(:has(+.review-switch))::after{content:""!important;width:11px!important;height:11px!important;border:0!important;background:var(--e-paper);transform:scale(0)!important;
  -webkit-mask:var(--e-check) center/contain no-repeat;mask:var(--e-check) center/contain no-repeat;transition:transform .18s cubic-bezier(.3,1.4,.5,1)}
-input[type=checkbox]:not(.switch):checked{background:var(--e-red)!important;box-shadow:none!important}
-input[type=checkbox]:not(.switch):checked::after{transform:scale(1)!important}
+input[type=checkbox]:not(.switch):not(:has(+.review-switch)):checked{background:var(--e-red)!important;box-shadow:none!important}
+input[type=checkbox]:not(.switch):not(:has(+.review-switch)):checked::after{transform:scale(1)!important}
 
 /* 对话框：浮在页面上的批注卡，左侧一道红色批注线 */
 @media (prefers-reduced-motion:reduce){input.switch,input.switch::before,input[type=range]::-webkit-slider-thumb,.grimoire-modal .opt::before{transition:none!important}}
