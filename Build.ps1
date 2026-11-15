@@ -64,7 +64,8 @@ $taskBuilt = Join-Path $taskRoot 'desktop\target\release\megulit.exe'
 if ($Check) {
  $taskTests = @(Get-ChildItem -LiteralPath (Join-Path $taskRoot 'validation') -Filter '*.test.cjs' -File -Recurse | ForEach-Object { $_.FullName })
  if (-not $taskTests.Count) { throw 'No tests found in validation/*.test.cjs; -Check must not pass with zero tests' }
- $taskTestOutput = & $taskNode --test @taskTests 2>&1
+ # Cap test parallelism: at full CPU concurrency the timing-sensitive tests (runtime-harvest, relay-race, topmost/altt window checks) flake under load, though each passes alone. 2 keeps the suite fast while not saturating the machine.
+ $taskTestOutput = & $taskNode --test --test-concurrency=2 @taskTests 2>&1
  $taskTestExit = $LASTEXITCODE
  $taskTestOutput | Set-Content -LiteralPath (Join-Path $taskRoot 'validation/automated-results.txt') -Encoding utf8
  $taskTestText = $taskTestOutput -join "`n"
