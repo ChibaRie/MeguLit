@@ -30,7 +30,9 @@ const ENGINE_REV={'nitroplus-n4':1};
    clip, 3/003002; the second piece arrived as its own line and a card cut the game sound after it, music and no voice).
    A clip recorded from the game's sound is never kept or played for a quiet key: the script knows better. Kept in
    quiet/<game>.bin (6 bytes of each key, sorted), only for games whose script names voices. QUIET_REV raised = scan again. */
-const QUIET_REV=1;
+/* 2026-11-15 (user: 游戏里明明有配音，例句却是 AI 合成) a piece of a voiced line plays the clip of the whole line: that is the
+   CV the game plays while the piece is on screen (QUIET_REV 2) */
+const QUIET_REV=2;
 const stale=g=>!g||g.v!==SCAN_VERSION||(g.rev||0)<(ENGINE_REV[g.engine]||0)||(g.voiced>0&&(g.q||0)<QUIET_REV);
 const cacheDir=root=>path.join(root,'data','voice-cache');
 function readJSON(file,fallback){try{return JSON.parse(fs.readFileSync(file,'utf8'));}catch{return fallback;}}
@@ -113,7 +115,9 @@ function verdict(root,text){const k=keyOf(text);if(!k)return 'unknown';const hit
 function seconds(b){if(!b||b.length<44||b.toString('latin1',0,4)!=='RIFF')return null;const rate=b.readUInt32LE(28);let o=12;while(o+8<=b.length){const id=b.toString('latin1',o,o+4),n=b.readUInt32LE(o+4);if(id==='data')return rate>0?Math.min(n,b.length-o-8)/rate:null;o+=8+n+(n&1);}return null;}
 /* A clip cut from the game's sound may stand for a line only when the script does not say otherwise and its length fits
    the text (Japanese speech runs about 4-12 characters a second; very slow lines and pauses get room). */
-function recordedFits(root,text,audio){if(typeof audio==='string')audio=Buffer.from(audio,'base64');if(verdict(root,text)==='quiet')return false;
+/* 2026-11-15 when the script names a clip for the line (or for the voiced line a piece belongs to), that clip is the voice:
+   a recording cut from the game sound does not stand in for it */
+function recordedFits(root,text,audio){if(typeof audio==='string')audio=Buffer.from(audio,'base64');const v=verdict(root,text);if(v==='quiet'||v==='script')return false;
  const sec=seconds(audio),n=norm(text).length;if(sec===null||!n)return sec!==null||!!kind(audio);return sec>=Math.min(0.6,n*0.05)&&sec<=2.5+n*0.45;}
 // Scan one game: every line whose script names a voice that the folder really holds. Returns counts per engine.
 function scan(root,dir,{engine,scenes}={}){const sc=require('./original-engines/scenes.cjs');
@@ -122,13 +126,14 @@ function scan(root,dir,{engine,scenes}={}){const sc=require('./original-engines/
  /* E461 a scan replaces what an earlier scan of this game gave (a reader fixed since may pair lines differently); clips
     kept while the game ran stay */
  for(const [k,v] of Object.entries(data.lines))if(v[0]===g&&v[1]!=='runtime')delete data.lines[k];let total=0,voiced=0,found=0;
- const said=new Set(),silent=new Set(),parts=new Set();
- for(const s of list){const v=s.voices||[];for(let i=0;i<(s.lines||[]).length;i++){total++;{const kl=keyOf(s.lines[i]);if(kl){if(v[i]){said.add(kl);for(const pk of pieceKeys(s.lines[i]))parts.add(pk);}else if(JAPANESE.test(s.lines[i]))silent.add(kl);}}if(!v[i])continue;voiced++;if(!cat.get(v[i])){if(!/^koe:/.test(v[i]))missing.add(v[i].slice(v[i].lastIndexOf('/')+1)); /* E461 a cold run looks files up by name */continue;}found++;const k=keyOf(s.lines[i]);if(!k)continue;/* 2026-11-15 the script's own clip replaces a clip cut from the game sound */if(!data.lines[k]||data.lines[k][1]==='runtime')data.lines[k]=[g,v[i]];
+ const said=new Set(),silent=new Set(),parts=new Set(),partRef=new Map();
+ for(const s of list){const v=s.voices||[];for(let i=0;i<(s.lines||[]).length;i++){total++;{const kl=keyOf(s.lines[i]);if(kl){if(v[i]){said.add(kl);for(const pk of pieceKeys(s.lines[i])){parts.add(pk);if(!partRef.has(pk)&&cat.get(v[i]))partRef.set(pk,v[i]);}}else if(JAPANESE.test(s.lines[i]))silent.add(kl);}}if(!v[i])continue;voiced++;if(!cat.get(v[i])){if(!/^koe:/.test(v[i]))missing.add(v[i].slice(v[i].lastIndexOf('/')+1)); /* E461 a cold run looks files up by name */continue;}found++;const k=keyOf(s.lines[i]);if(!k)continue;/* 2026-11-15 the script's own clip replaces a clip cut from the game sound */if(!data.lines[k]||data.lines[k][1]==='runtime')data.lines[k]=[g,v[i]];
   /* a speech spread over several script lines (an open 「 closed later) is shown as one: key the whole of it too */
   let whole=s.lines[i];for(let j=i+1;j<s.lines.length&&j<i+8&&!v[j]&&/^[「『]/.test(whole)&&!/[」』]$/.test(whole);j++)whole+=s.lines[j];if(whole!==s.lines[i]){const kw=keyOf(whole);if(kw&&!data.lines[kw])data.lines[kw]=[g,v[i]];}}}
  /* engines whose voices are numbered in a separate source (Siglus Scene.pck) give text and voice pairs directly */
  let extra=[];try{extra=sc.ENGINES[id]?.voiceLines?.(dir)||[];}catch{}
  for(const x of extra){voiced++;{const kx=keyOf(x.text);if(kx){said.add(kx);for(const pk of pieceKeys(x.text))parts.add(pk);}}if(!cat.get(x.ref)){missing.add(x.ref);continue;}found++;const k=keyOf(x.text);if(k&&!data.lines[k])data.lines[k]=x.estimated?[g,x.ref,null,'estimated']:[g,x.ref];}
+ for(const [pk,ref] of partRef)if(!said.has(pk)&&(!data.lines[pk]||data.lines[pk][1]==='runtime')){const old=data.lines[pk];if(old){try{fs.unlinkSync(path.join(cacheDir(root),'runtime',pk+(old[2]||'.wav')));}catch{}}data.lines[pk]=[g,ref,null,'piece'];}
  /* quiet keys of this game (only when its script names voices for a fair share of its lines) */
 {const keep=voiced>0&&voiced>=total*0.05,set=new Set();if(keep){for(const k of [...silent,...parts])if(!said.has(k))set.add(k);}
   writeQuiet(root,g,set);quietMemo=null;
