@@ -99,7 +99,7 @@ internal static class TopmostGuard {
        "layer". Checks the z-order after the guard, that a second pass changes nothing, that the hook delivers a
        minimise of the game and the layer is down within 100 ms, and that a closed game sends the layer to the bottom.
        Returns "" when everything holds, else what failed. */
-    static IntPtr Stand(string name){var h=CreateWindowEx(0x80|0x08000000,"STATIC","MeguLit topmost guard test "+name,0x80000000,-32000,-32000,64,64,IntPtr.Zero,IntPtr.Zero,IntPtr.Zero,IntPtr.Zero);if(h!=IntPtr.Zero)ShowWindow(h,4);return h;}
+    static IntPtr Stand(string name){var h=CreateWindowEx(0x80|0x08000000,"STATIC","MeguLit topmost guard test "+name,0x80000000,-32000,-32000,64,64,IntPtr.Zero,IntPtr.Zero,IntPtr.Zero,IntPtr.Zero);/* shown already at the bottom of the z-order, off screen, never activated: it cannot cover anything of the user */if(h!=IntPtr.Zero)SetWindowPos(h,new IntPtr(1),0,0,0,0,NoSizeMoveActivate|0x0040);return h;}
     /* nothing the user could see lies below: only hidden / minimised windows and the desktop shell (Progman, WorkerW) */
     static bool AtBottom(IntPtr h){var c=new System.Text.StringBuilder(64);int steps=0;
         for(IntPtr n=GetWindow(h,2);n!=IntPtr.Zero&&steps<4000;n=GetWindow(n,2),steps++){
