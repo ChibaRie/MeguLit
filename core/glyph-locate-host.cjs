@@ -50,7 +50,7 @@ class GlyphLocateHost {
   }
   /* boxes [x,y,w,h] (client px) per character of the line from the calibration; null without one. While the game types,
      characters without a record get the line's median size and stay out (null). */
-  layout(table) {
+  layout(table, typed) {
     if (!this.L || !this.calib || !table || typeof table.text !== 'string') return null;
     this.sync(); if (!this.calib) return null;
     const chars = [...table.text], have = new Set(), dots = [];
@@ -60,7 +60,10 @@ class GlyphLocateHost {
     const h = med('h'), a = med('a') || h, b = med('b');
     const full = { seq: table.seq, text: table.text, dots: [...dots, ...chars.map((ch, i) => have.has(i) ? null : { i, ch, h, b, a: /[\x20-\x7e｡-ﾟ]/.test(ch) ? a / 2 : a, x: 0, y: 0, s: 0, k: 'd' }).filter(Boolean)] };
     const out = this.L.layout(full, this.calib); if (!out) return null;
-    return out.rects.map((r, i) => have.has(i) ? [r.x, r.y, r.w, r.h] : null);
+    /* typed (core/overlay-placement.cjs): how many characters the game has drawn; a glyph-cache engine sends no record
+       for a character it drew before, so a missing record alone does not mean "not typed yet" */
+    const shown = Number.isInteger(typed) ? i => i < typed : i => have.has(i);
+    return out.rects.map((r, i) => shown(i) ? [r.x, r.y, r.w, r.h] : null);
   }
   stop() { clearTimeout(this.timer); this.marks(false); }
 }

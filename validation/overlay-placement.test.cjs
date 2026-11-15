@@ -73,4 +73,22 @@ assert.strictEqual(gd.mode(require('node:os').tmpdir()), '', 'no glyph mode with
   assert.strictEqual(u.shift().fallback, true, 'client size unknown: not placeable');
   assert.ok(!q.anchorBox, 'zero / stacked / lone boxes teach no anchor');
 }
+{ /* 2026-11-16 glyph cache (死に逝く君: 「間　側　法律　当　　ば…」): characters an earlier line drew have no record */
+  const out = [], q = new OverlayPlacement({ send: m => out.push(m) }); q.wanted = () => true;
+  q.configure({}, { bound: true, layout: { clientWidth: 1280, clientHeight: 720 } }); out.length = 0;
+  const text = 'の人間の側です。', rec = (i, x) => ({ i, ch: [...text][i], h: 26, a: 26, k: 'd', at: { x, y: 600, space: 'c' } });
+  /* の人 reused (no record), 間 drawn, の reused, 側 drawn; です。 not typed yet */
+  q.glyph({ seq: 40, text, dots: [rec(2, 152), rec(4, 204)] }); let o = out.shift();
+  assert.deepStrictEqual(o.rects.slice(0, 5), [[100, 600, 26, 26], [126, 600, 26, 26], [152, 600, 26, 26], [178, 600, 26, 26], [204, 600, 26, 26]], 'reused characters before a drawn one are placed');
+  assert.deepStrictEqual(o.rects.slice(5), [null, null, null], 'characters after the last record wait (typing)');
+  q.typing.done = true; q.glyph({ seq: 40, text, dots: [rec(2, 152), rec(4, 204)] }); o = out.shift();
+  assert.ok(o.rects.every(Boolean), 'complete line: every character placed, none left out');
+  assert.deepStrictEqual(o.rects[7], [282, 600, 26, 26]);
+  /* the same on an estimated line (no device position): reused characters are not holes */
+  const p2 = new OverlayPlacement({ send: m => out.push(m) }); p2.wanted = () => true; p2.configure({}, { bound: true, layout: { clientWidth: 1280, clientHeight: 720 } }); out.length = 0;
+  p2.anchor({ x: 100, y: 600, size: 26, width: 900, pitch: 40 });
+  p2.glyph({ seq: 41, text, dots: [2, 4].map(i => ({ i, ch: [...text][i], h: 26, a: 26, k: 'd' })) }); o = out.shift();
+  assert.deepStrictEqual(o.rects.map(Boolean), [true, true, true, true, true, false, false, false], 'estimate: typed up to the last record');
+  p2.stop(); q.stop();
+}
 console.log('PASS overlay placement');
