@@ -50,6 +50,20 @@ const html = `<!doctype html><html><head><meta charset="utf-8"><style>
     assert.deepStrictEqual(await page.evaluate(() => [document.body.classList.contains('megulit-placed'), document.body.classList.contains('megulit-place-fallback')]), [false, true]);
     assert.deepStrictEqual(await box('.sentence-window'), [100, 546, 804, 154], 'reader keeps its own box');
     assert.strictEqual(await page.evaluate(() => getComputedStyle(document.querySelector('.sentence-window')).backgroundColor), 'rgba(0, 0, 0, 0)', 'fallback: no plate');
+    /* positions that are not real: never at the surface's (monitor's) top-left, never outside the game client
+       (みにくいモジカの子: a centred line came with every rect 0 and the translation flew to the monitor's corner) */
+    await page.evaluate(() => { const b = window.__tomoyoChinese; b.galLayoutInfo = () => ({ clientX: 200, clientY: 100, clientWidth: 800, clientHeight: 500 });
+      b.textPlace({ text: '今日は晴れ', client: [1280, 720], rects: [[0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]] }); }); await frame();
+    assert.deepStrictEqual(await page.evaluate(() => [document.body.classList.contains('megulit-placed'), document.body.classList.contains('megulit-place-fallback')]), [false, true], 'zero rects: fallback, not placed');
+    assert.deepStrictEqual(await box('.sentence-window'), [100, 546, 804, 154], 'zero rects: reader keeps its own box');
+    await page.evaluate(() => window.__tomoyoChinese.textPlace({ text: '今日は晴れ', client: [1280, 720], rects: [null, [NaN, 5, 30, 32], [-900, 10, 30, 32], [5000, 10, 30, 32], [0, 0, 0, 0]] })); await frame();
+    assert.strictEqual(await page.evaluate(() => document.body.classList.contains('megulit-placed')), false, 'no real box: not placed');
+    await page.evaluate(() => window.__tomoyoChinese.textPlace({ text: '今日は晴れ', client: [1280, 720], rects: [[-20, 700, 40, 40], [20, 700, 40, 40], [60, 700, 40, 40], [1260, 700, 40, 40], [3000, 700, 40, 40]] })); await frame();
+    const inside = await page.evaluate(() => [...document.querySelectorAll('.sentence-text .char-token:not(.megulit-unplaced),.tomoyo-cn-row')].map(n => { const r = n.getBoundingClientRect(); return [r.left, r.top, r.right, r.bottom].map(Math.round); }));
+    assert.ok(inside.length >= 4, 'placed tokens and the translation row');
+    for (const [l, t, r, bt] of inside) assert.ok(l >= 200 && t >= 100 && r <= 1000 && bt <= 600, 'inside the game client: ' + [l, t, r, bt]);
+    assert.strictEqual(await page.evaluate(() => getComputedStyle([...document.querySelectorAll('.sentence-text .char-token')].pop()).display), 'none', 'a box outside the client is not drawn');
+    await page.evaluate(() => { delete window.__tomoyoChinese.galLayoutInfo; window.__tomoyoChinese.textPlace({ fallback: true, text: '今日は晴れ' }); }); await frame();
     /* name plate and a choice drawn on their boxes, click-through */
     await page.evaluate(() => window.__tomoyoChinese.textPlaceExtra({ client: [1280, 720], items: [{ id: 1, kind: 'n', text: '朋也', rects: [[80, 450, 28, 30], [108, 450, 28, 30]] }, { id: 2, kind: 'o', text: 'はい', rects: [[600, 200, 32, 34], [632, 200, 32, 34]] }] })); await frame();
     assert.deepStrictEqual(await box('.megulit-place-name span:nth-child(2)'), [108, 450, 28, 30], 'name plate on its boxes');

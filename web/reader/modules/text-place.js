@@ -50,7 +50,18 @@
     const info = b.galLayoutInfo?.(), dpr = devicePixelRatio || 1, cw = client?.[0] || innerWidth, ch = client?.[1] || innerHeight;
     const ox = info?.clientWidth ? (info.clientX || 0) / dpr : 0, oy = info?.clientHeight ? (info.clientY || 0) / dpr : 0;
     const k = info?.clientWidth ? info.clientWidth / cw / dpr : innerWidth / cw, ky = info?.clientHeight ? info.clientHeight / ch / dpr : innerHeight / ch;
-    return r => [ox + r[0] * k, oy + r[1] * ky, r[2] * k, r[3] * ky];
+    /* the game client on the reader surface: nothing is ever drawn outside it (a box with no size, not finite or
+       outside the client is no box; the rest is clamped in) */
+    const L = ox, T = oy, R = ox + cw * k, B = oy + ch * ky;
+    const map = r => {
+      if (!Array.isArray(r) || r.length < 4) return null;
+      let [x, y, w, h] = [ox + r[0] * k, oy + r[1] * ky, r[2] * k, r[3] * ky];
+      if (![x, y, w, h].every(Number.isFinite) || !(w > 0 && h > 0) || x >= R || y >= B || x + w <= L || y + h <= T) return null;
+      w = Math.min(w, R - L); h = Math.min(h, B - T);
+      return [Math.min(Math.max(x, L), R - w), Math.min(Math.max(y, T), B - h), w, h];
+    };
+    map.bounds = [L, T, R, B];
+    return map;
   }
   /* name plate (n) and choices (o) the game drew blank: drawn character by character on their boxes in the reader's own
      text style, click-through (a click on an option reaches the game's own blank button underneath) */
@@ -65,6 +76,7 @@
     layer.replaceChildren();
     for (const item of extras.items) {
       const chars = [...item.text].filter(c => !blank(c)), boxes = item.rects.map(map);
+      if (!boxes.length || !boxes.every(Boolean)) continue;
       const size = Math.max(6, median(boxes.map(r => r[2])) || median(boxes.map(r => r[3])));
       const group = document.createElement('div'); group.className = 'megulit-place-extra megulit-place-' + (item.kind === 'n' ? 'name' : 'choice');
       chars.forEach((c, i) => { const r = boxes[i]; if (!r) return; const span = document.createElement('span'); span.textContent = c;
@@ -97,6 +109,9 @@
     const boxes = shown.map((t, j) => { const r = placeRects[[...placeText.slice(0, at)].length + j]; return r && map(r); });
     const cjk = boxes.filter((r, j) => r && /[^\x00-\x7f｡-ﾟ]/.test(shown[j].textContent)).map(r => r[2]);
     const size = Math.max(6, median(cjk) || median(boxes.filter(Boolean).map(r => r[3])));
+    /* no real box for any of the reader's characters (all 0 / null / outside the game): the reader keeps its own place;
+       placing would leave the translation row at the surface's top-left corner */
+    if (!boxes.some(Boolean)) { release(true); return; }
     document.body.classList.remove('megulit-place-fallback');
     document.body.classList.add('megulit-placed');
     win.classList.add('megulit-place-window');
@@ -124,8 +139,13 @@
     if (row && all.length) {
       const x0 = Math.min(...all.map(r => r[0])), y0 = Math.min(...all.map(r => r[1])), x1 = Math.max(...all.map(r => r[0] + r[2])), y1 = Math.max(...all.map(r => r[1] + r[3]));
       const only = document.body.classList.contains('tomoyo-gal-zh-only');
-      set(row, 'left', x0 + 'px'); set(row, 'top', (only ? y0 : y1 + size * .25) + 'px');
-      set(row, 'width', Math.max(x1 - x0, Math.min(innerWidth - x0 - 8, size * 20)) + 'px');
+      const [L, T, R, B] = map.bounds, width = Math.max(1, Math.min(R - x0, Math.max(x1 - x0, Math.min(R - x0 - 8, size * 20))));
+      let top = only ? y0 : y1 + size * .25;
+      /* kept inside the game client: under the line when it fits, else above it */
+      const rh = row.offsetHeight || size * 1.6;
+      if (top + rh > B) top = only ? B - rh : Math.max(T, y0 - size * .25 - rh);
+      set(row, 'left', Math.min(Math.max(x0, L), Math.max(L, R - width)) + 'px'); set(row, 'top', Math.max(T, top) + 'px');
+      set(row, 'width', width + 'px');
       if (only) set(row, 'font-size', size + 'px'); else row.style.removeProperty('font-size');
     }
     const key = geom.join(';');

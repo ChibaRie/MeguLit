@@ -45,11 +45,7 @@ class OverlayPlacement {
       if (rects.length !== flat.length) return; // one rect per character is the protocol; anything else is not placeable
       const id = String(m.engine || 'path') + ':' + (Number(m.line) || 0);
       if (m.hidden !== true) { if (this.current?.id === id) this.clear(); return; }
-      const line = { id, engine: m.engine, text: flat.join(''), rects, client: this.client.slice() };
-      this.learn(rects);
-      const key = JSON.stringify(line);
-      if (key === this.lastKey) return; this.lastKey = key; this.current = line;
-      this.send({ type: 'textPlace', ...line });
+      this.emitLine({ id, engine: m.engine, text: flat.join(''), rects, client: this.client.slice() });
     }
   }
   /* ① MeguLitFont blank mode (record spec 3): the current line's table (hook-native state.hookGlyphDots) with a cell
@@ -63,7 +59,6 @@ class OverlayPlacement {
     const id = 'glyph:' + (Number(table.seq) || 0);
     if (last >= 0) {
       for (let i = 1; i < last; i++) if (!rects[i] && rects[i - 1]) { const p = rects[i - 1]; rects[i] = [p[0] + p[2], p[1], p[2], p[3]]; }
-      this.learn(rects);
       return this.emitLine({ id, engine: 'glyph', text: table.text, rects, client: this.client.slice() });
     }
     /* no device position at all (GetGlyphOutline engines: Siglus, AdvHD...): lay the line out from the anchor (the last
@@ -71,7 +66,7 @@ class OverlayPlacement {
        anchor's width; only characters the game has drawn so far (typing). Without an anchor: fallback. */
     /* glyph-dots' locating marks learned this game's text position (core/glyph-locate-host.cjs) */
     const located = this.locator?.(table);
-    if (Array.isArray(located) && located.length === chars.length && located.some(Boolean)) { this.learn(located); return this.emitLine({ id, engine: 'glyph', text: table.text, rects: located, client: this.client.slice(), located: true }); }
+    if (Array.isArray(located) && located.length === chars.length && located.some(Boolean)) return this.emitLine({ id, engine: 'glyph', text: table.text, rects: located, client: this.client.slice(), located: true });
     if (this.anchorBox) return this.emitLine({ id, engine: 'glyph', text: table.text, rects: this.estimate(chars, drawn, sizes), client: this.client.slice(), approx: true });
     this.emitLine({ id, engine: 'glyph', text: table.text, fallback: true, client: this.client.slice() });
   }
@@ -104,7 +99,8 @@ class OverlayPlacement {
     for (const t of Object.values(all || {}).sort((p, q) => p.id - q.id)) {
       if (!t || typeof t.text !== 'string' || !t.text || !(t.kind === 'n' || t.kind === 'o')) continue;
       const { rects } = this.rectsOf(t, [t.kind]);
-      if (rects.every(Boolean)) items.push({ id: t.id, kind: t.kind, text: t.text, rects });
+      const ok = rects.every(Boolean) && OverlayPlacement.sane(rects, this.client);
+      if (ok && ok.every(Boolean)) items.push({ id: t.id, kind: t.kind, text: t.text, rects: ok });
     }
     const key = JSON.stringify(items);
     if (key === this.extraKey) return; this.extraKey = key;
@@ -146,7 +142,31 @@ class OverlayPlacement {
     });
     return rects;
   }
+  /* every position leaves here checked: a box must have a size and touch the game client, and is clamped into it; a line
+     with no such box (all 0 / null, the client size unknown) or whose boxes all share one origin (a hook that reports
+     0,0 for every character, e.g. a centred line drawn without a text box) is not placeable and goes out as fallback,
+     never as boxes at the client's (or the monitor's) top-left corner. */
+  static sane(rects, client) {
+    const [cw, ch] = client || [0, 0];
+    if (!(cw > 0 && ch > 0) || !Array.isArray(rects)) return null;
+    const out = rects.map(r => {
+      if (!Array.isArray(r) || r.length < 4 || !r.every(Number.isFinite)) return null;
+      let [x, y, w, h] = r;
+      if (!(w > 0 && h > 0) || x >= cw || y >= ch || x + w <= 0 || y + h <= 0) return null;
+      w = Math.min(w, cw); h = Math.min(h, ch); x = Math.min(Math.max(x, 0), cw - w); y = Math.min(Math.max(y, 0), ch - h);
+      return [x, y, w, h];
+    });
+    const ok = out.filter(Boolean);
+    if (!ok.length) return null;
+    if (ok.length > 1 && ok.every(r => r[0] === ok[0][0] && r[1] === ok[0][1])) return null;
+    return out;
+  }
   emitLine(line) {
+    if (!line.fallback) {
+      const rects = OverlayPlacement.sane(line.rects, line.client);
+      line = rects ? { ...line, rects } : { id: line.id, engine: line.engine, text: line.text, fallback: true, client: line.client };
+      if (rects && !line.approx) this.learn(rects);
+    }
     const key = JSON.stringify(line);
     if (key === this.lastKey) return; this.lastKey = key; this.current = line;
     this.send({ type: 'textPlace', ...line });
