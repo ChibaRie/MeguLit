@@ -28,3 +28,17 @@ test('japanese-presence: a translation launcher is never "already Japanese"',()=
  const v=require('../services/japanese-presence.cjs').verdict(tmp('root'),{prepare:()=>({all:()=>[]})},'x',{executable:path.join(g,'汉化版.exe')});
  assert.deepEqual(v,{japanese:false,by:'translated-launcher'});
 });
+
+test('kit engine: archiveEntries opens one archive file under any name, scene entries only',()=>{
+ const kit=require('../services/original-engines/kit.cjs'),g=tmp('k'),f=path.join(g,'patch.arc');fs.writeFileSync(f,'x');
+ const eng=kit.engine({id:'t',hint:'script.arc',overlay:false,archives:{find:()=>null,list:file=>file===f?[{name:'media/script/a.nut',read:()=>Buffer.from('A')},{name:'media/bg/b.png',read:()=>Buffer.from('B')}]:null,entry:/\.nut$/},parse:()=>({lines:[],anchors:[]}),test:n=>/\.nut$/.test(n)});
+ const e=eng.archiveEntries(f);assert.deepEqual(e.map(x=>x.name),['a.nut']);assert.equal(e[0].read().toString(),'A');
+ assert.equal(eng.archiveEntries(path.join(g,'missing.arc')),null);
+});
+const MOJIKA='E:/GAL/[180727][Nitro+] みにくいモジカの子/みにくいモジカの子';
+test('real data: picking 丑小鸭与文字祸.exe reads the Chinese lines from patch.npk inside mojika_cn.mys',{skip:!fs.existsSync(path.join(MOJIKA,'mojika_cn.mys'))},()=>{
+ const ot=require('../services/original-text.cjs'),npk=require('../services/original-engines/npk.cjs').engine;
+ const base=npk.scenes(MOJIKA);const runtime={engine:'nitro-npk',file:MOJIKA,sha256:'x'};
+ const r=ot.buildPatch({runtime},path.join(MOJIKA,'丑小鸭与文字祸.exe'));
+ assert.equal(r.patched,base.filter(s=>npk.parse(s.read()).lines.length).length,'every scene with text is paired');assert.ok(r.script.lines.includes('看不见。'));
+});

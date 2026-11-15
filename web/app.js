@@ -627,7 +627,7 @@ const lsWords={zh:{eng:{kirikiri:'KiriKiri',unity:'Unity'},
  firstRun:()=>'日本語は入っていますが、設定ファイルがまだありません。一度ゲームをタイトル画面まで起動して終了してから切り替えてください',applied:n=>n.engine?'ゲームの言語を日本語に切り替えました':'日本語に戻してあります',open:'Steam のゲームページを開く',done:n=>n.mode==='steam'?'Steam の言語を日本語にしました。次に Steam を起動したとき有効になります':'日本語に切り替えました。次にゲームを起動したとき有効になります'}};
 const lsEng=(n,l)=>(lsWords[l]||lsWords.zh).eng[n.engine]||n.engine||'';
 const lsVal=n=>{const c=(n.changes||[])[0];return c?String(c.key)+' = '+String(c.from):'';};
-function japaneseRestore(){
+function japaneseRestore(only){
  const w={zh:{title:'日文原版恢复',search:'搜索游戏',nomatch:'没有匹配的游戏',sub:'游戏自带日文数据时，把显示的文字换回日文。会先备份，可以随时还原。请先关闭游戏',pick:'选择游戏',none:'游戏库里没有找到带日文数据的游戏',check:'检测中…',apply:'恢复日文',
   undo:'还原',close:'关闭',working:'处理中…',
   st:{'steam-guide':n=>(lsWords[locale]||lsWords.zh).steam(n),'first-run':n=>(lsWords[locale]||lsWords.zh).firstRun(n),restorable:n=>n.adapter==='language-switch'?(lsWords[locale]||lsWords.zh).restorable(n):n.adapter==='yuris-update'?'可以恢复：找到汉化补丁 '+n.files+' 个，会移到备份里，游戏改读自带的日文剧本':'可以恢复：'+n.files+' 个文件，'+n.cells.toLocaleString()+' 处文字',applied:n=>n?.adapter==='language-switch'?(lsWords[locale]||lsWords.zh).applied(n):'已经恢复为日文',
@@ -659,7 +659,7 @@ function japaneseRestore(){
    IMPORT_SOURCE_NO_SCRIPT:'シナリオファイル（nss.npa）がありません。完全な日本語版を選んでください',IMPORT_EXE_CONFLICT:'同じ名前の別の実行ファイルがあるため取り込みませんでした',IMPORT_FILE_TOO_LARGE:'ファイルが大きすぎるため取り込みませんでした',
    GAME_RUNNING:'ゲームが起動中です。先に閉じてください',NOTHING_TO_RESTORE:'戻す内容がありません',NOT_APPLIED:'まだ戻していません'}}};
  const t=w[locale]||w.zh;
- const d=modal(`<header class="jr-head"><span class="jr-eyebrow">${({zh:'工具',en:'Tool',ja:'ツール'})[locale]||'工具'}</span><h2>${t.title}</h2><p class="settings-help">${t.sub}</p></header><p class="tool-key-note">${({zh:'在 Steam 买的、只显示中文 / 英文的游戏（比如 Key 社的 Summer Pockets），一定要先运行这个工具，否则 MeguLit 读到的是中文或英文，用不了',en:'Games bought on Steam that only show Chinese or English (such as Key’s Summer Pockets) must go through this tool first, otherwise MeguLit only gets the translated text',ja:'Steam 版で中国語・英語しか表示されないゲーム（Key の Summer Pockets など）は、先にこのツールを実行してください。実行しないと翻訳文しか取得できません'})[locale]||''}</p><div data-jr-body><p class="muted">${t.check}</p></div><div class="dialog-actions"><button type="button" class="secondary jr-close" data-jr-close>${t.close}</button><button type="button" class="secondary" data-jr-undo hidden>${t.undo}</button><button type="button" class="primary" data-jr-import hidden>${t.import}</button><button type="button" class="secondary" data-jr-steam hidden>${(lsWords[locale]||lsWords.zh).open}</button><button type="button" class="primary" data-jr-apply hidden>${t.apply}</button></div>`);
+ const d=modal(`<header class="jr-head"><span class="jr-eyebrow">${({zh:'工具',en:'Tool',ja:'ツール'})[locale]||'工具'}</span><h2>${t.title}</h2>${only?`<p class="jr-game">${esc(only.title||'')}</p>`:`<p class="settings-help">${t.sub}</p>`}</header><p class="tool-key-note">${only?(({zh:'Steam 上只显示中文 / 英文的游戏，要先在这里恢复日文',en:'Steam games that only show Chinese or English need this first',ja:'Steam 版で中国語・英語しか出ないゲームは先にここで戻してください'})[locale]||''):(({zh:'在 Steam 买的、只显示中文 / 英文的游戏（比如 Key 社的 Summer Pockets），一定要先运行这个工具，否则 MeguLit 读到的是中文或英文，用不了',en:'Games bought on Steam that only show Chinese or English (such as Key’s Summer Pockets) must go through this tool first, otherwise MeguLit only gets the translated text',ja:'Steam 版で中国語・英語しか表示されないゲーム（Key の Summer Pockets など）は、先にこのツールを実行してください。実行しないと翻訳文しか取得できません'})[locale]||'')}</p><div data-jr-body><p class="muted">${t.check}</p></div><div class="dialog-actions"><button type="button" class="secondary jr-close" data-jr-close>${t.close}</button><button type="button" class="secondary" data-jr-undo hidden>${t.undo}</button><button type="button" class="primary" data-jr-import hidden>${t.import}</button><button type="button" class="secondary" data-jr-steam hidden>${(lsWords[locale]||lsWords.zh).open}</button><button type="button" class="primary" data-jr-apply hidden>${t.apply}</button></div>`);
  d.classList.add('jr-dialog'); /* E271 (user: the window behind the tool card needs the same care) */
  d.showModal();d.querySelector('[data-jr-close]').onclick=()=>d.close();
  let lastState='';const body=d.querySelector('[data-jr-body]'),applyBtn=d.querySelector('[data-jr-apply]'),undoBtn=d.querySelector('[data-jr-undo]'),importBtn=d.querySelector('[data-jr-import]'),steamBtn=d.querySelector('[data-jr-steam]');
@@ -763,6 +763,8 @@ function japaneseRestore(){
    };};
  undoBtn.onclick=()=>run('jp_restore_undo',undoBtn,t.undone);
 
+ /* detail page: this game only, no picker */
+ if(only){d.classList.add('jr-single');body.innerHTML=`<p data-jr-status class="settings-help" role="status"></p><div class="jr-import" data-jr-import-panel hidden></div>`;id=String(only.id);show();return;}
  api('jp_restore_list').then(list=>{if(!list.length){body.innerHTML=`<p class="muted">${t.none}</p>`;return;}
   // E238 picker: a small searchable library (covers, title filter) instead of a long select
   const games=list.map(g=>({...g,...(model.games.find(m=>m.id===g.id)||{})}));
@@ -1227,7 +1229,7 @@ async function renderRoute(){watchStage();
   try{
     if(route==='home')home();else if(route==='library')library();else if(route==='series')seriesUI.renderDetail(main,selectedSeriesId);else if(route==='game'){main.innerHTML=loading();
      await renderGamePage({main,id:selectedGameId,tab:(t=>(gameTab='',t))(gameTab),api,invoke,locale,text,esc,icon,cover,duration,datetime,relativeTime,number,definitions,isCurrent:()=>token===pageToken,
-     onBack:()=>navigate(gameOrigin),onLaunch:startGame,onEdit:editGame,onRemove:removeGame,onForum:game=>{setForumFilter({game:String(game?.title||''),engine:'',
+     onBack:()=>navigate(gameOrigin),onLaunch:startGame,onEdit:editGame,onJapaneseRestore:only=>japaneseRestore(only),onRemove:removeGame,onForum:game=>{setForumFilter({game:String(game?.title||''),engine:'',
      tag:'',mine:false});setLeaderboardView({tab:'forum'});navigate('leaderboard');},onLookup:word=>{pendingLookup=word;navigate('learning','dictionary');},onOriginalChanged:async()=>{model=await api('home');if(token===pageToken)renderRoute();
      },toast});}else if(route==='history')await history(token);else if(route==='learning')await learning(token);else if(route==='settings')await settings(token);
      else if(route==='leaderboard')await mountLeaderboard(main,{api,locale,esc,toast,isCurrent:()=>token===pageToken,lookup:word=>{pendingLookup=word;navigate('learning',

@@ -211,6 +211,13 @@ function buildPatch(runningState,source){
    const ownFiles=new Set(own),ownDirs=new Set(own.map(f=>path.dirname(f)));
    for(const [key,f] of found.files){if(!names.has(key)||!eng.test(f.name)||f.path&&(sameDir(path.dirname(f.path),runningDir)||ownFiles.has(path.resolve(f.path).toLowerCase())))continue;try{overlay.set(key,f.read());}catch{}}
    for(const dir of found.dirs){if(sameDir(dir,runningDir)||ownDirs.has(path.resolve(dir).toLowerCase()))continue;let items=[];try{items=eng.archives(dir);}catch{}for(const item of items){const key=item.name.toLowerCase();if(names.has(key)&&!overlay.has(key))try{overlay.set(key,item.read());}catch{}}}
+   /* E594 (user: picked 丑小鸭与文字祸.exe and was told nothing was found) the patch carries an archive of this engine under
+      its own name, here patch.npk inside the EVB package mojika_cn.mys: open any file with the script archive's extension
+      that is not the game's own; one packed in EVB is copied to a temp file first */
+   if(!overlay.size&&eng.archiveEntries&&eng.hint){const ext=path.extname(eng.hint).toLowerCase();
+    for(const f of found.files.values()){if(!ext||path.extname(f.name).toLowerCase()!==ext)continue;if(f.path&&ownFiles.has(path.resolve(f.path).toLowerCase()))continue;
+     let file=f.path,tmp='';try{if(!file){tmp=fs.mkdtempSync(path.join(require('node:os').tmpdir(),'megulit-patch-'));file=path.join(tmp,path.basename(f.name));fs.writeFileSync(file,f.read());}
+      for(const e of eng.archiveEntries(file)||[]){const key=e.name.toLowerCase();if(names.has(key)&&!overlay.has(key))try{overlay.set(key,e.read());}catch{}}}catch{}finally{if(tmp)fs.rmSync(tmp,{recursive:true,force:true});}}}
    if(!overlay.size)throw Error('PATCH_SCRIPT_NOT_FOUND');
    // File by file: same number of text lines and the same anchors (commands, labels, file names), else the running text.
    list=scenes.read(engine,runningDir,overlay).map((scene,i)=>{const own=base[i];if(!scene.patched||!own||own.name!==scene.name)return own||scene;

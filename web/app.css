@@ -143,3 +143,6 @@ input,textarea,select,[contenteditable]:not([contenteditable=false]){-webkit-use
 .jp-auto-notice + .jp-auto-notice{bottom:74px}
 .jr-auto{display:grid;gap:8px;margin-top:10px}
 .jr-auto button{justify-self:start}
+
+/* E593 restore dialog: button labels stay on one line, the row wraps instead; detail-page single-game mode */
+.jr-dialog .dialog-actions{flex-wrap:wrap}.jr-dialog .dialog-actions button{white-space:nowrap;flex:none}.jr-dialog .jr-game{color:var(--text);font-size:13px;font-weight:600;margin:-6px 0 2px;overflow-wrap:anywhere}.detail-actions{flex-wrap:wrap}.detail-actions button{white-space:nowrap}
