@@ -3,7 +3,7 @@
 const crypto=require('node:crypto');
 const {cleanV4}=require('../core/v4-config.cjs');
 class AnkiReviewer{
- constructor({config={},db,fetcher=fetch,speak=null,mediaDir=''}){this.config=cleanV4(config);this.db=db;this.fetch=fetcher;this.speak=speak;this.mediaDir=mediaDir;db.exec(`CREATE TABLE IF NOT EXISTS anki_actions(operation_id TEXT PRIMARY KEY,card_id INTEGER NOT NULL,ease INTEGER NOT NULL,status TEXT NOT NULL,result TEXT,created_at INTEGER NOT NULL);CREATE TABLE IF NOT EXISTS anki_review_events(operation_id TEXT PRIMARY KEY,card_id INTEGER NOT NULL,ease INTEGER NOT NULL,reviewed_at INTEGER NOT NULL);CREATE UNIQUE INDEX IF NOT EXISTS anki_one_pending_rating ON anki_actions(card_id) WHERE status='pending';`);}
+ constructor({config={},db,fetcher=fetch,speak=null,mediaDir='',voiceCheck=null}){this.config=cleanV4(config);this.db=db;this.fetch=fetcher;this.speak=speak;this.mediaDir=mediaDir;this.voiceCheck=voiceCheck;db.exec(`CREATE TABLE IF NOT EXISTS anki_actions(operation_id TEXT PRIMARY KEY,card_id INTEGER NOT NULL,ease INTEGER NOT NULL,status TEXT NOT NULL,result TEXT,created_at INTEGER NOT NULL);CREATE TABLE IF NOT EXISTS anki_review_events(operation_id TEXT PRIMARY KEY,card_id INTEGER NOT NULL,ease INTEGER NOT NULL,reviewed_at INTEGER NOT NULL);CREATE UNIQUE INDEX IF NOT EXISTS anki_one_pending_rating ON anki_actions(card_id) WHERE status='pending';`);}
  async call(action,params={}){
   let response;
   try{response=await this.fetch(this.config.ankiUrl,{method:'POST',redirect:'error',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,version:6,params}),signal:AbortSignal.timeout(10000)});}catch(error){const code=error.cause?.code||error.name;throw Error(code==='ECONNREFUSED'?'ANKI_OFFLINE':code==='TimeoutError'?'ANKI_TIMEOUT':'ANKI_UNAVAILABLE');}
@@ -84,9 +84,12 @@ class AnkiReviewer{
   /* (user 2026-11-12) a game-voice clip that is silent (music recorded under an unvoiced line, then separated) is
      replaced, once, by the synthesized sentence under the same media name, so the card plays the line again */
   if(this.speak)for(const [name,src] of media){if(!/^tomoyo_g_[a-f0-9]+\.wav$/.test(name))continue;try{
-   const buf=Buffer.from(src.slice(src.indexOf(',')+1),'base64');if(!require('../core/voice-trim.cjs').quiet(buf))continue;
+   const buf=Buffer.from(src.slice(src.indexOf(',')+1),'base64');
    const at=html.indexOf(name),before=at<0?'':html.slice(Math.max(0,at-4000),at),m=[...before.matchAll(/<span class="tm-jp">([\s\S]*?)<\/span><span class="tm-play">/g)].pop();
    const text=m?m[1].replace(/<rt>[\s\S]*?<\/rt>|<rp>[\s\S]*?<\/rp>/g,'').replace(/<[^>]+>/g,'').replace(/&nbsp;/g,' ').trim():'';if(!text||text.length>400)continue;
+   /* 2026-11-15 (user: 有的例句和原配音不一致) also a clip recorded under a line the script plays no voice for, or a piece of a
+      voiced line (voiceCheck: game-voice recordedFits), is replaced */
+   let wrong=false;try{wrong=!!this.voiceCheck&&!(await this.voiceCheck(text,buf));}catch{}if(!wrong&&!require('../core/voice-trim.cjs').quiet(buf))continue;
    const voice=await this.speak(text);if(!voice?.data)continue;await this.call('storeMediaFile',{filename:name,data:voice.data});require('../core/anki-media-cache.cjs').write(this.mediaDir,name,voice.data);media.set(name,'data:audio/wav;base64,'+voice.data);}catch{}}
   return html.replace(/<audio controls preload="none" src="(tomoyo_[a-f0-9_gs]+\.wav)"><\/audio>/gi,(all,name)=>media.has(name)?audio.player(media.get(name),name):all)
    .replace(/\[anki:play:([qa]):(\d+)\]/g,(_,side,index)=>{const name=play.get(side+':'+index),src=media.get(name);return src?audio.player(src,name):audio.replay();}).replace(/\[sound:([^\]\r\n]+)\]/g,(_,name)=>media.has(name)?audio.player(media.get(name),name):'').replace(/\b(src|href)\s*=\s*(["'])([^"']+)\2/gi,(all,key,quote,name)=>media.has(name)?key+'='+quote+media.get(name)+quote:all);

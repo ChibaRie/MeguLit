@@ -403,7 +403,9 @@ class Reader{
     let voice=null;try{voice=require('./game-voice.cjs').find(this.root,args.text);}catch{}
     const asAudio=v=>({data:v.data.toString('base64'),ext:require('./game-voice.cjs').kind(v.data).ext});
     if(voice?.source==='scan'){extra.sentenceAudio=asAudio(voice);extra.gameAudio=true;}
-    else if(media?.audio){extra.sentenceAudio=media.audio;extra.gameAudio=true;extra.recorded=true;}
+    /* 2026-11-15 (user: 有的例句和原配音不一致) a clip cut from the game sound only when the script does not say the line is
+       unvoiced (or a piece of a voiced line) and its length fits the text; else the card gets the synthesized sentence */
+    else if(media?.audio&&(()=>{try{return require('./game-voice.cjs').recordedFits(this.root,args.text,media.audio.data);}catch{return false;}})()){extra.sentenceAudio=media.audio;extra.gameAudio=true;extra.recorded=true;}
     else if(voice){extra.sentenceAudio=asAudio(voice);extra.gameAudio=true;}
     try{fs.appendFileSync(path.join(this.root,'logs','reader-host.log'),JSON.stringify({at:new Date().toISOString(),type:'ankiGameAudio',matched:!!media?.matched,recording:!!media?.recording,voiced:!!media?.audio,error:media?.error||''})+'\n');}catch{}
    }
