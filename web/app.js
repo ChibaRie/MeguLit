@@ -394,6 +394,8 @@ async function startGame(id,button){
   launchFailed(button,reason);
   const dialog=modal('<h2>'+title+'</h2><p>'+esc(reason)+'</p><div class="dialog-actions"><button class="secondary" data-launch-close>'+close+'</button></div>');
   dialog.querySelector('[data-launch-close]').onclick=()=>dialog.close();
+  /* E-DRM: name the wrapped program, its licence check and the launcher used or to choose */
+  if(code==='GAME_DRM_WRAPPED'||code==='GAME_DRM_LAUNCHER_FAILED')api('launch_hint',{id,locale}).then(h=>{const p=dialog.querySelector('p');if(p&&h?.text)p.textContent=h.text+(code==='GAME_DRM_LAUNCHER_FAILED'?(({zh:'（90 秒内没等到游戏窗口）',ja:'（90 秒以内にゲーム画面が出ませんでした）',en:' (no game window within 90 seconds)'})[locale]||''):'');}).catch(()=>{});
   /* 2026-11-12 the game imports DirectPlay and Windows has none: install it here (no restart), then launch again */
   if((code==='DIRECTPLAY_REQUIRED'||code==='WINDOWS_FEATURE_REQUIRED')&&dialog.open){const dp=code==='DIRECTPLAY_REQUIRED',words=({zh:[dp?'安装 DirectPlay':'安装所需组件',
    '正在安装…','没有装上（权限请求被取消，或安装失败）'],ja:[dp?'DirectPlay をインストール':'必要なコンポーネントをインストール','インストール中…','インストールできませんでした（許可が取り消されたか、失敗しました）'],en:[dp?'Install DirectPlay':'Install the component',

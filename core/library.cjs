@@ -55,7 +55,12 @@ function mainExe(dir,translatedDir=false){
   const base=n.replace(/\.exe$/i,'').toLowerCase(),sc=(ENGINE_EXE.test(n)?3:0)+(base===folder?2:0)+(variant.test(base)?0:1);
   if(sc>score||(sc===score&&s.size>size)){best=n;score=sc;size=s.size;}}
  if(!best)for(const n of listing(dir).names){if(!launcher.isLauncher(n)||SKIP_EXE.test(n)||SKIP_EXE_ANY.test(n)||isTranslated(n)||/^(python|pythonw|zsync|zsyncmake)\.exe$/i.test(n))continue;let st;try{st=fs.statSync(path.join(dir,n));}catch{continue;}if(st.isFile()&&st.size>=20000&&st.size>size){best=n;size=st.size;}}
- return best?path.join(dir,best):'';
+ if(!best)return '';
+ /* E-DRM: never the DRM wrapper (SdWrap *_srp.exe, or a starter that runs it) and, when a cracked engine program of about
+    the same size is there, not the protected one either (core/drm-wrap.cjs). The launcher that starts a protected program
+    is chosen at launch time. Only folders with SoftDenchi traces are read here, so the scan stays fast. */
+ if(listing(dir).names.some(n=>/\.exe\.emb$|_srp\.exe$/i.test(n))){try{const p=require('./drm-wrap.cjs').plan(path.join(dir,best),{allowTranslated:translatedDir});if(p&&p.executable)return p.executable;}catch{}}
+ return path.join(dir,best);
 }
 // The game folder can be the folder itself or one or two levels below it (Game\JP\game.exe, Steam's common\X\bin).
 function findGame(dir,depth=2){
@@ -271,7 +276,8 @@ class Library{
   let localeResult={};if(!running&&options.localeJapanese!==false&&recommended(g,exe)){localeResult=await this.locale.launch(exe);if(localeResult.needLocaleEmulator){try{await this.locale.ensure();localeResult=await this.locale.launch(exe);}catch{}if(localeResult.needLocaleEmulator)return localeResult;}}
   if(!running&&!localeResult.localeJapanese){const {spawn}=require('node:child_process');
    if(g.source==='steam'&&/^\d+$/.test(String(g.appid)))spawn('explorer.exe',['steam://rungameid/'+g.appid],{detached:true,stdio:'ignore'}).unref();
-   else spawn(exe,[],{cwd:path.dirname(exe),detached:true,stdio:'ignore'}).unref();}
+   else{/* E-DRM: a DRM-wrapped program is started through the launcher beside it (core/drm-wrap.cjs) */let start=exe;try{const p=require('./drm-wrap.cjs').plan(exe,{allowTranslated:isTranslated(path.dirname(exe)),source:g.source});if(p?.launchVia)start=p.launchVia;else if(p?.changed&&p.executable)start=p.executable;}catch{}
+    spawn(start,[],{cwd:path.dirname(start),detached:true,stdio:'ignore'}).unref();}}
   return {name,mediaId:g.mediaId||null,running,title:g.title,...localeResult};
  }
  // Called when the hook delivers real text from a bound game: that game's hook is confirmed.
