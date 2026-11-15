@@ -16,9 +16,9 @@ p.hook({ ...rec, hidden: false }); assert.deepStrictEqual(sent.shift(), { type: 
 p.configure({}, { bound: false }); assert.deepStrictEqual(sent.pop(), { type: 'textPlaceMode', on: false });
 /* glyph records (spec 3): client space, memory surface scaled to the client, cache gap filled, g / - not placeable */
 p.configure({}, { bound: true, layout: { clientWidth: 1280, clientHeight: 720 } }); sent.length = 0;
-p.glyph({ seq: 7, text: 'かきく', dots: [{ i: 0, ch: 'か', h: 30, a: 28, k: 'd', at: { x: 100, y: 500, space: 'c' } }, { i: 2, ch: 'く', h: 30, a: 28, k: 'd', at: { x: 112, y: 500, space: 'm640x360' } }] });
+p.glyph({ seq: 7, text: 'かきく', dots: [{ i: 0, ch: 'か', h: 30, a: 28, k: 'd', at: { x: 100, y: 500, space: 'c' } }, { i: 2, ch: 'く', h: 30, a: 28, k: 'd', at: { x: 112, y: 300, space: 'm640x360' } }] });
 let gm = sent.shift();
-assert.deepStrictEqual(gm.rects, [[100, 500, 28, 30], [128, 500, 28, 30], [224, 1000, 56, 60]]);
+assert.deepStrictEqual(gm.rects, [[100, 500, 28, 30], [128, 500, 28, 30], [224, 600, 56, 60]]);
 assert.strictEqual(gm.text, 'かきく');
 p.glyph({ seq: 8, text: 'さ', dots: [{ i: 0, ch: 'さ', h: 30, a: 28, k: 'd', at: { x: 1, y: 1, space: 'g' } }] });
 gm = sent.shift(); assert.strictEqual(gm.approx, true, 'no device position: laid out from the learned anchor');
@@ -55,4 +55,22 @@ delete process.env.MEGULIT_CAPTURE_COMPOSITOR;
 assert.strictEqual(new OverlayPlacement({}).wanted({ textRenderer: 'compositor' }), true);
 const gd = require('../core/glyph-dots.cjs');
 assert.strictEqual(gd.mode(require('node:os').tmpdir()), '', 'no glyph mode without the setting');
+/* positions that are not real never reach the reader as boxes (みにくいモジカの子: a centred line without a text box came
+   with every rect 0 → the translation was drawn at the monitor's top-left) */
+{
+  const out = [], q = new OverlayPlacement({ send: m => out.push(m) });
+  q.wanted = () => true; q.configure({}, { bound: true, clientWidth: 1280, clientHeight: 720 }); out.length = 0;
+  const z = { type: 'hookCharRects', engine: 'unity', line: 9, hidden: true, sw: 1280, sh: 720, viewport: [0, 0, 1280, 720], text: 'あのこが', rects: [[0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]] };
+  q.hook(z); let r = out.shift();
+  assert.strictEqual(r.fallback, true, 'all-zero rects: fallback, no boxes'); assert.strictEqual(r.rects, undefined);
+  q.hook({ ...z, line: 10, rects: [[0, 0, 30, 30], [0, 0, 30, 30], [0, 0, 30, 30], [0, 0, 30, 30]] }); r = out.shift();
+  assert.strictEqual(r.fallback, true, 'every character at one origin: fallback');
+  q.hook({ ...z, line: 11, rects: [[-50, 300, 30, 30], [1270, 300, 30, 30], [2000, 300, 30, 30], [600, 900, 30, 30]] }); r = out.shift();
+  assert.deepStrictEqual(r.rects, [null, [1250, 300, 30, 30], null, null], 'boxes clamped into the client, boxes outside it dropped');
+  for (const b of r.rects.filter(Boolean)) assert.ok(b[0] >= 0 && b[1] >= 0 && b[0] + b[2] <= 1280 && b[1] + b[3] <= 720);
+  const u = [], w = new OverlayPlacement({ send: m => u.push(m) }); w.wanted = () => true; w.configure({}, { bound: true }); u.length = 0;
+  w.hook({ ...z, rects: [[100, 500, 30, 30], [130, 500, 30, 30], [160, 500, 30, 30], [190, 500, 30, 30]] });
+  assert.strictEqual(u.shift().fallback, true, 'client size unknown: not placeable');
+  assert.ok(!q.anchorBox, 'zero / stacked / lone boxes teach no anchor');
+}
 console.log('PASS overlay placement');

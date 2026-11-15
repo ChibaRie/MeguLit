@@ -728,6 +728,14 @@ line blank, the reader overlay draws MeguLit's text at the sources' character bo
    advance by the records' median advance (half for ASCII/half-width), wrap at the width; only drawn characters show.
 5. Fallback: no anchor at all → `fallback` (above).
 
+Every line passes `OverlayPlacement.sane` before it is sent: a box needs a finite position and a size and must touch
+the game client (unknown client size = nothing placeable); it is clamped into the client. A line with no such box, or
+whose boxes all share one origin (a hook reporting 0,0 for every character: みにくいモジカの子, a centred line without
+a text box), goes out as `fallback`. Only sane, exact boxes teach the anchor. The reader checks again on its side
+(`mapper` bounds = the game client on the surface): no real box → fallback (own place); tokens, extras and the
+translation row are clamped into the client (the row goes above the line when it does not fit under it). Before this
+fix, all-zero rects placed the tokens at 0×0 in the corner and the translation row at the surface's (monitor's) top-left.
+
 ### Reader (web/reader/modules/text-place.js)
 Lays the hook reader's own `.sentence-text` (tokens, ruby bases, translation row) on the boxes. Tokens stay the reader's,
 so word card, drag-select and hit regions are unchanged: the reader window region holds only the words (and the
