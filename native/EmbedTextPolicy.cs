@@ -6,6 +6,7 @@
 // 短すぎます", "コマンドが不正です", "string too long"). Name/other streams are therefore never written to, and strings
 // that still carry script syntax, resource names or control codes are left to the engine unchanged.
 using System;
+using System.Text;
 using System.Text.RegularExpressions;
 
 internal static class EmbedTextPolicy {
@@ -164,6 +165,46 @@ internal static class EmbedTextPolicy {
         return lead + t + tail;
     }
 
+    /* 2026-11-15 (user: 沙耶の唄 showed 「『ネェネェ、今度ノす娃t擬。ｸl擬D雑年ハ…』」 and asked that garbage never reaches a game):
+       every string MeguLit hands back to a game passes this gate. A string the engine reads in a multi-byte code page
+       (hook types A/B/S, LunaHook "HS932#..." or the bridge's code page) must survive that code page both ways, else the
+       engine would draw '?' or the wrong characters; replacement characters, new control codes and runaway replies never go
+       in. A refused reply is not written (the game keeps its own line, MeguLit stays read-only for it). Generic: hook code
+       and text only, never a game name. */
+    static readonly Regex HookType = new Regex(@"^H([A-Z])[A-Z]*?(?:(\d{3,5})#)?");
+    public static int WriteCodepage(string code, int fallback) {
+        Match m = HookType.Match(code ?? "");
+        if (!m.Success) return 0;
+        char kind = m.Groups[1].Value[0];
+        if (kind != 'A' && kind != 'B' && kind != 'S') return 0; /* W/Q/U wide, V UTF-8, others: the engine takes UTF-16/UTF-8 */
+        int cp; if (m.Groups[2].Success && Int32.TryParse(m.Groups[2].Value, out cp) && cp > 0) return cp;
+        return fallback > 0 ? fallback : 932;
+    }
+    /* 2026-11-15 (沙耶の唄, user: 「这乱码是原文」): a hook that hands over the engine's own UTF-16 / UTF-8 string (LunaHook types W, Q, U,
+       V) cannot produce code-page mojibake: whatever it delivers is the text the game draws, noise included. */
+    public static bool EngineText(string code) { return System.Text.RegularExpressions.Regex.IsMatch(code ?? "", "^H[WQUV]"); }
+    public static bool RoundTrips(string text, int codepage) {
+        if (codepage <= 0 || codepage == 1200 || codepage == 65001 || String.IsNullOrEmpty(text)) return true;
+        try {
+            Encoding enc = Encoding.GetEncoding(codepage, EncoderFallback.ExceptionFallback, DecoderFallback.ExceptionFallback);
+            return enc.GetString(enc.GetBytes(text)) == text;
+        } catch { return false; }
+    }
+    static readonly Regex Controls = new Regex(@"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]");
+    public static string GuardWrite(string code, int fallbackCodepage, string original, string reply, out string reason) {
+        reason = "";
+        if (String.IsNullOrEmpty(reply) || reply == original) return reply ?? "";
+        string o = original ?? "";
+        if (reply.IndexOf('\uFFFD') >= 0) { reason = "replacement character"; return ""; }
+        foreach (Match c in Controls.Matches(reply)) if (o.IndexOf(c.Value, StringComparison.Ordinal) < 0) { reason = "new control code U+" + ((int)c.Value[0]).ToString("X4"); return ""; }
+        int cp = WriteCodepage(code, fallbackCodepage);
+        if (!RoundTrips(reply, cp)) { reason = "not representable in code page " + cp; return ""; }
+        if (reply.Length > Math.Max(o.Length * 4, o.Length + 64)) { reason = "reply " + reply.Length + " chars for " + o.Length; return ""; }
+        int on = o.Split('\n').Length, rn = reply.Split('\n').Length;
+        if (rn > on + 2) { reason = "reply has " + rn + " rows for " + on; return ""; }
+        return reply;
+    }
+
     /* E477 (player: embed replacement never hid the original of a newly added game). A stream learned unsafe was keyed by the
        process name alone, and many engines ship the same executable name (SiglusEngine, BGI, AdvHD, game, start...): an error
        in one game switched writeback off for every other game with that name. The key now carries the game's folder too, so
@@ -177,6 +218,43 @@ internal static class EmbedTextPolicy {
         return (process ?? "").ToLowerInvariant() + "|" + scope + name + "|" + role;
     }
 
+    /* 2026-11-15 (沙耶の唄: the game itself draws its monsters' speech as noise, 『二十Aﾅ像ナッテ初y(VQｳッテノハ…』). A line no one can
+       read is never hidden: MeguLit has nothing to draw in its place, so the game keeps drawing it. Same rules as
+       core/text-sanity.cjs garbledSource (controls:false) minus the Shift-JIS-read-as-GBK case, which the front end turns back
+       into Japanese and draws. */
+    static readonly Regex HalfKana = new Regex(@"[\uFF61-\uFF9F]");
+    static readonly Regex Kanji = new Regex(@"[\u4E00-\u9FFF]");
+    static readonly Regex Utf8AsLatin = new Regex(@"[\u00C2-\u00EF][\u0080-\u00BF\u201A\u0192\u201E\u2026\u2020\u2021\u02C6\u2030\u0160\u2039\u0152\u017D\u2018\u2019\u201C\u201D\u2022\u2013\u2014\u02DC\u2122\u0161\u203A\u0153\u017E\u0178]");
+    static readonly Regex GluedAscii = new Regex(@"(?<=[^\x00-\x7F\s])[\x21-\x7E]+(?=[^\x00-\x7F\s])");
+    static readonly Regex Kana = new Regex(@"[\u3041-\u309F\u30A1-\u30FA]");
+    /* half-width katakana glued to ASCII or kanji: noise; a half-width word (\uFF71\uFF8A\uFF8A) sits between kana and punctuation */
+    static readonly Regex HalfTouch = new Regex(@"[\uFF61-\uFF9F](?=[\x21-\x7E\u4E00-\u9FFF])|(?<=[\x21-\x7E\u4E00-\u9FFF])[\uFF61-\uFF9F]");
+    public static bool Unreadable(string text) {
+        string t = text ?? "";
+        if (t.Trim().Length == 0) return false;
+        int bad = 0; foreach (char c in t) if (c == '\uFFFD') bad++;
+        if (bad >= 2 || (bad > 0 && bad * 10 >= t.Length)) return true;
+        int half = HalfKana.Matches(t).Count, kanji = Kanji.Matches(t).Count;
+        if (half >= 3 && kanji >= 4) return true;
+        if (Utf8AsLatin.Matches(t).Count >= 2) return true;
+        return half >= 1 && kanji >= 2 && Kana.IsMatch(t) && GluedAscii.Matches(t).Count >= 2 && HalfTouch.Matches(t).Count >= 2;
+    }
+
+    public static bool GuardSelfTest() {
+        string why;
+        return WriteCodepage("HW8@61210:Saya_Steam.exe", 932) == 0 && WriteCodepage("HSXF4@CEB50:Saya_Steam.exe", 932) == 932 &&
+            WriteCodepage("HS936#-8@4A1B2:game.exe", 932) == 936 && WriteCodepage("HVXN0@3F10:x.exe", 932) == 0 && WriteCodepage("EmbedToMeCS2_DrawPreserve", 932) == 0 &&
+            RoundTrips("「またね」", 932) && !RoundTrips("这次暑假要不要去游泳", 932) && RoundTrips("这次暑假要不要去游泳", 936) &&
+            GuardWrite("HSXF4@CEB50:a.exe", 932, "『ネェネェ、今度ノ夏休ミハ』", "『对了对了，这次暑假』", out why) == "" && why.StartsWith("not representable") &&
+            GuardWrite("HW8@61210:a.exe", 932, "『ネェネェ、今度ノ夏休ミハ』", "『对了对了，这次暑假』", out why) == "『对了对了，这次暑假』" && why == "" &&
+            GuardWrite("HSXF4@CEB50:a.exe", 932, "「またね」", "　　　　　", out why) == "　　　　　" &&
+            GuardWrite("HW8@0:a.exe", 932, "「またね」", "「再�见」", out why) == "" &&
+            GuardWrite("HW8@0:a.exe", 932, "「またね」", "「再见」", out why) == "" && GuardWrite("HW8@0:a.exe", 932, "「またね」", "「再见」", out why) == "「再见」" &&
+            GuardWrite("HW8@0:a.exe", 932, "あ", new string('译', 200), out why) == "" &&
+            GuardWrite("HSXF4@0:a.exe", 932, "「またね」", "", out why) == "" &&
+            Unreadable("『二十Aﾅ像ナッテ初y(VQｳッテノハ、今日日ソウソウイ梗WfA繙ャナイカナ？』") && Unreadable("『ネェネェ、今度ノすﾀfｾｾf劔。ｩI撥D錐年ハ、ドッカ渙ｨtーとモ遊ベﾋ坥ｿ牴xLナイ？』") &&
+            !Unreadable("　ぶよぶよと蠢く肉塊が、暗く粘ついた声でそう言った。") && !Unreadable("全品50％OFFだって！PCのUSBメモリ") && !Unreadable("ｱﾊﾊ、そうだね。今日はAとBの日") && !Unreadable("「PS2版とPC版の違い？」");
+    }
     public static bool SelfTest() {
         const string mixed = "そう、雪だ。♪【$名前＿渚】【$名前＿渚】%A";
         return Role(true, 3) == 3 && Role(true, 1) == 1 && Role(false, 3) == 0 && Role(true, 0xe9a0f05) == 0 &&

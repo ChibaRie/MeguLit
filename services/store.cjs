@@ -60,6 +60,7 @@ const readJSON = (filename, fallback = {}) => { try { return JSON.parse(fs.readF
 const safeBasename = filename => path.win32.basename(String(filename || ''));
 const gameId = id => id == null ? null : 'game-' + id;
 
+const dedupeMark = new Map();
 function openStore(root) {
   const folder = path.join(root, 'data');
   fs.mkdirSync(folder, { recursive: true });
@@ -80,7 +81,13 @@ function openStore(root) {
   try{require('./wait-marker-migration.cjs').migrateWaitMarker(db,root);}catch(error){console.warn('wait marker migration',error.message);}
   try{require('./font-follow-migration.cjs').migrateFontFollow(db,root);}catch(error){console.warn('font follow migration',error.message);}
   reconcileRemovedGames(db);
-  try{require('./library-dedupe.cjs').dedupe(db,root);}catch(error){console.warn('library dedupe',error.message);}
+  /* 2026-11-15 the store is opened for every service request, and the duplicate scan reads every game row and its files:
+     a CPU profile of the host (沙耶の唄, in-place drawing) showed 25 of 48 s inside dedupe, single stalls up to 3.2 s, which
+     held every message behind it (the page's characters arrived in bursts). It runs on the first open of a process and
+     again only when the games table changed (rows added, removed or hidden). */
+  try{const g=db.prepare('SELECT COUNT(*) c,COALESCE(MAX(id),0) m,COALESCE(SUM(removed_at IS NOT NULL),0) r,COALESCE(SUM(hidden_at IS NOT NULL),0) h FROM games').get(),mark=[g.c,g.m,g.r,g.h].join('/');
+   if(dedupeMark.get(root)!==mark){require('./library-dedupe.cjs').dedupe(db,root);const d=db.prepare('SELECT COUNT(*) c,COALESCE(MAX(id),0) m,COALESCE(SUM(removed_at IS NOT NULL),0) r,COALESCE(SUM(hidden_at IS NOT NULL),0) h FROM games').get();dedupeMark.set(root,[d.c,d.m,d.r,d.h].join('/'));}
+  }catch(error){console.warn('library dedupe',error.message);}
   return db;
 }
 

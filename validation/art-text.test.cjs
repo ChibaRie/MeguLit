@@ -36,7 +36,7 @@ test('the art scan is wanted while no hook line is current and skips the current
 });
 test('GalNative sends the art scan state to the bridge only when it changes, off when not bound',()=>{
  const {GalNative}=require('../core/gal-native.cjs');const sent=[];const g=Object.create(GalNative.prototype);
- g.send=m=>sent.push(m);g.preferences={};g.state={bound:true};let st={on:true,dialog:'',speaker:'',band:false};g.hooks={artScanState:()=>st};
+ g.send=m=>sent.push(m);g.preferences={artText:true};g.state={bound:true};/* 2026-11-15: art text runs only when switched on */let st={on:true,dialog:'',speaker:'',band:false};g.hooks={artScanState:()=>st};
  g.artScan();g.artScan();assert.equal(sent.length,1);assert.equal(sent[0].type,'artScan');assert.equal(sent[0].on,true);
  g.state.bound=false;g.artScan();assert.equal(sent.length,2);assert.equal(sent[1].on,false);
  g.preferences={artText:false};g.state.bound=true;g.artScan();assert.equal(sent.length,2,'turned off: stays off');

@@ -746,6 +746,19 @@ Japanese's place at its size. Size = median CJK box width. Boxes are game-client
 `galLayoutInfo()` (client origin and size in the reader surface, physical px / devicePixelRatio). The reader text is
 found inside the record text (a record may start with a speaker or 「), so a leading name is skipped.
 
+### A line the game still draws itself (2026-11-15)
+- A ③/④ record with `hidden=0` (the source says the game draws this line, not hidden yet or never) makes the host send
+  `{"type":"textPlace","visible":true,text}` once per line. While the reader's current line is inside that text and not
+  placed, the reader shows **only the translation** (`body.megulit-place-game-drawn`: `.sentence-text` hidden, the
+  translation row visible): no Japanese or ruby a few px off the game's own glyphs (沙耶の唄 ghost). A placement of the
+  line clears it. A placement of another line (stale) no longer turns into the plateless fallback while the source says
+  the game draws the current one.
+- A line the hook cannot read (`garbledSource`, e.g. the game's own noise lines) is never delivered, never sent to the art
+  path, never hidden (HookBridge `EmbedTextPolicy.Unreadable`); the front end sends `hookLineUnreadable:true` and the reader
+  steps aside (`body.megulit-line-unreadable`, like the native LOG) until the next readable line, so the previous line's
+  ruby and translation never float over a page that no longer has it.
+- Tests: `validation/saya-garble.test.cjs` (fixtures are the real hook lines of the report; headless-Edge DOM part).
+
 ### Tests (offline, no game)
 - `validation/overlay-placement.test.cjs`: ③ rects, glyph spec 3 (client / memory surface / cache gap / g, -), anchor
   estimate with wrap and typing, fallback, hook-native keeps `at`.

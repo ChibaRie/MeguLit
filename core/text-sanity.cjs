@@ -44,12 +44,22 @@ class StreamCodepage{
 /* text no one should read or translate: replacement characters, control codes, Chinese read as Shift-JIS (kanji mixed
    with half-width katakana and boxes), Shift-JIS read as GBK, UTF-8 read as Latin-1. controls:false for hook text,
    where engines may still carry their own control markup. */
-function garbledSource(text,{controls=true}={}){
+function garbledSource(text,{controls=true,noise=true}={}){
  const t=String(text||'');const l=[...letters(t)];if(!l.length)return false;
  const bad=(t.match(controls?/[\ufffd\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/g:/\ufffd/g)||[]).length;if(bad>=2||(bad&&bad>=l.length*.1))return true;
  if((t.match(/[\uff61-\uff9f\u25a1]/g)||[]).length>=3&&(t.match(/[\u4e00-\u9fff]/g)||[]).length>=4)return true;
  if((t.match(/[\u00c2-\u00ef][\u0080-\u00bf\u201a\u0192\u201e\u2026\u2020\u2021\u02c6\u2030\u0160\u2039\u0152\u017d\u2018\u2019\u201c\u201d\u2022\u2013\u2014\u02dc\u2122\u0161\u203a\u0153\u017e\u0178]/g)||[]).length>=2)return true;
+ if(noise&&noiseLine(t))return true;
  return !!repairShiftJisAsGbk(t);}
+/* 2026-11-15 (沙耶の唄: the game draws its monsters' speech as noise, 『二十Aﾅ像ナッテ初y(VQｳッテノハ…』): Japanese with half-width
+   katakana glued to ASCII or kanji and ASCII runs wedged between wide characters. Same rule as EmbedTextPolicy.Unreadable
+   (native/EmbedTextPolicy.cs), which keeps such a line the game's own (never hidden). A half-width word (ｱﾊﾊ) or 「AとB」 is not noise. */
+function noiseLine(text){
+ const t=String(text||'');const half=(t.match(/[\uff61-\uff9f]/g)||[]).length;if(!half)return false;
+ if((t.match(/[\u4e00-\u9fff]/g)||[]).length<2||!/[\u3041-\u309f\u30a1-\u30fa]/.test(t))return false;
+ const glued=(t.match(/(?<=[^\x00-\x7f\s])[\x21-\x7e]+(?=[^\x00-\x7f\s])/g)||[]).length;
+ const touch=(t.match(/[\uff61-\uff9f](?=[\x21-\x7e\u4e00-\u9fff])|(?<=[\x21-\x7e\u4e00-\u9fff])[\uff61-\uff9f]/g)||[]).length;
+ return glued>=2&&touch>=2;}
 /* a reply about the text instead of a translation of it, in Chinese, Japanese or English */
 const META=[
  /乱码|亂碼|文字化け|mojibake|garbled|gibberish|encoding (error|issue)|编码(错误|问题)/i,
@@ -70,4 +80,4 @@ const SOURCE_TALKS=/翻訳|訳し|文字化け|化け|ＡＩ|AI|原文|テキス
 function metaReply(translation,source=''){
  const tr=String(translation||'').trim();if(!tr)return false;if(SOURCE_TALKS.test(String(source||'')))return false;
  return META.some(r=>r.test(tr));}
-module.exports={repairShiftJisAsGbk,StreamCodepage,garbledSource,metaReply};
+module.exports={repairShiftJisAsGbk,StreamCodepage,garbledSource,noiseLine,metaReply};

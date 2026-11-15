@@ -43,10 +43,12 @@ function event(message){if(!loaded){queued.push(message);return;}if(message.type
  if(message.type==='panelAppearance'){for(const[key,value]of Object.entries(message.values||{}))if(['tome-background','tome-menu-background'].includes(key))localStorage.setItem(key,value);b.hostRefreshAppearance?.().catch(error=>{status.textContent=String(error);});return;}
  if(message.type==='language'){window.__tomeI18n?.set?.(message.language);return;}
  if(message.type==='call'){deliver({replies:[message]});return;}
- const method={glassFrame:'glassFrame',gameStyleStatus:'gameStyleStatus',hookTextPos:'textPosition',textPlace:'textPlace',textPlaceMode:'textPlaceMode',textPlaceExtra:'textPlaceExtra',artText:'artText',enginePreferences:'enginePreferences',hookPage:'hookPage',waitMarkerFrame:'waitMarkerFrame',maskFrame:'galMaskFrame'}[message.type];
+ const method={glassFrame:'glassFrame',gameStyleStatus:'gameStyleStatus',hookTextPos:'textPosition',textPlace:'textPlace',textPlaceMode:'textPlaceMode',textPlaceExtra:'textPlaceExtra',textPlacePage:'textPlacePage',artText:'artText',enginePreferences:'enginePreferences',hookPage:'hookPage',waitMarkerFrame:'waitMarkerFrame',maskFrame:'galMaskFrame'}[message.type];
  if(method){b[method]?.(message);return;}
  if(message.type==='workTranslationPrompt'){b.workTranslationPrompt?.(message.key,message.prompt);return;}
  if(typeof message.hookNativeLog==='boolean'){document.body.classList.toggle('megulit-native-log',message.hookNativeLog);window.__tomoyoHitRegionsRefresh?.(true);}
+ /* 2026-11-15 the game shows a line MeguLit cannot read (core/hook-native.cjs): no stale furigana or translation over it */
+ if(typeof message.hookLineUnreadable==='boolean'||message.type==='gameClosed'){document.body.classList.toggle('megulit-line-unreadable',message.hookLineUnreadable===true);window.__tomoyoHitRegionsRefresh?.(true);}
  if(message.type==='dialogVisibility'){document.body.classList.toggle('megulit-dialog-hidden',message.visible===false);/* 2026-11-13 choices on screen while the game hid its text box: the reader shows them, not the old line */document.body.classList.toggle('megulit-choice-only',message.choiceOnly===true);return;}
  if(message.type==='fonts'){b.gameFonts?.(message.fonts);return;}
  if(message.type==='hotkey')b.toggleGalMenu?.();else b.galStatus?.(message);
