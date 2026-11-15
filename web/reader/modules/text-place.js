@@ -184,7 +184,10 @@
         const x0 = Math.min(...all.map(r => r[0])), y0 = Math.min(...all.map(r => r[1])), x1 = Math.max(...all.map(r => r[0] + r[2])), y1 = Math.max(...all.map(r => r[1] + r[3]));
         const only = body.classList.contains('tomoyo-gal-zh-only');
         set(row, 'left', x0 + 'px'); set(row, 'top', (only ? y0 : y1 + size * .25) + 'px');
-        set(row, 'width', Math.max(x1 - x0, Math.min(innerWidth - x0 - 8, size * 20)) + 'px');
+        /* as wide as the page from the start: the row was as wide as what had been typed so far (at least 20 characters),
+           so a longer translation was cut off at that edge until the Japanese caught up (2026-11-15, the last flicker) */
+        const pageRight = Math.max(...page.lines.flatMap(l => l.rects).map(map).map(r => r[0] + r[2]));
+        set(row, 'width', Math.max(pageRight - x0, x1 - x0, Math.min(innerWidth - x0 - 8, size * 34)) + 'px');
         set(row, 'font-size', (only ? size : Math.max(12, Math.round(size * .6))) + 'px');
       }
       const copy = sentence.cloneNode(true); copy.__megulitText = readerText; copy.__megulitAt = at; clones.set(cur.id, copy);
