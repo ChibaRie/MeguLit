@@ -34,10 +34,13 @@
     '#megulit-page-ahead{position:fixed;left:0;top:0;width:0;height:0;pointer-events:none}','#megulit-page-ahead>i{position:fixed;display:block;pointer-events:none;background:none}',
     /* every line of the page is a full-window .sentence-text: only its characters take the pointer, or the top one swallows the clicks meant for the lines under it */
     'body.megulit-placed .megulit-place-window .sentence-text{pointer-events:none!important}',
-    /* a dash is one thin stroke across its whole cell at mid height, as the game draws it (two half-width dashes join into
-       a line one cell long). Fonts draw it short, low or with a gap; the glyph is hidden and the stroke drawn. */
-    '.megulit-place-window .char-token.megulit-dash{color:transparent!important;-webkit-text-fill-color:transparent!important;text-shadow:none!important;-webkit-text-stroke:0!important;overflow:visible!important}',
-    '.megulit-place-window .char-token.megulit-dash::after{content:"";position:absolute;left:0;right:0;top:50%;height:var(--megulit-dash-w,1.5px);margin-top:calc(var(--megulit-dash-w,1.5px)/-2);background:var(--megulit-dash-color,#fff);pointer-events:none}',
+    /* Dashes (― — ─ and their kin; never the long-vowel mark ー, which is a letter and stays the font's). A game draws
+       「――」 as one unbroken line: its font's dash fills the cell. Reader fonts draw it short, low or with a gap, so the
+       glyph is hidden and a stroke is drawn across the token's whole box at mid height, 7 % of the size thick, a hair
+       past both edges so neighbours join. One rule for every path: the reader's own box, a flow page, in-place boxes.
+       (2026-11-15: three attempts lived only in in-place mode and the last one was thinner than the game's.) */
+    '.sentence-text .char-token.megulit-dash{position:relative;-webkit-text-fill-color:transparent!important;text-shadow:none!important;-webkit-text-stroke:0!important;overflow:visible!important}',
+    '.sentence-text .char-token.megulit-dash::after{content:"";position:absolute;left:-.03em;right:-.03em;top:50%;height:max(1px,.07em);margin-top:calc(max(1px,.07em) / -2);background:var(--megulit-dash-color,currentColor);pointer-events:none}',
     '#megulit-place-extras{position:fixed;inset:0;pointer-events:none;z-index:2147483000;background:none}',
     'body.megulit-placed .megulit-place-window .tomoyo-cn-row{position:absolute!important;margin:0!important;padding:0!important;background:none!important;border:0!important;box-shadow:none!important;pointer-events:auto}'
   ].join('\n');
@@ -113,6 +116,12 @@
     return drawn;
   }
   let reveal = { id: 0, n: 0, t: 0 };
+  /* tags a dash token (see the style rule); the stroke takes the colour the glyph was filled with */
+  function markDash(t) {
+    if (t.classList.contains('megulit-dash') || !DASH.test(t.textContent || '')) return;
+    const cs = getComputedStyle(t), fill = cs.webkitTextFillColor, color = fill && fill !== 'rgba(0, 0, 0, 0)' ? fill : cs.color;
+    t.style.setProperty('--megulit-dash-color', color); t.classList.add('megulit-dash');
+  }
   const DASH = /^[‒-―─━⸺⸻]+$/;
   /* put a sentence's character tokens on their boxes (boxes[j] for the j-th shown token; a missing box = not drawn yet) */
   function layout(sentence, boxes, geom) {
@@ -138,7 +147,7 @@
       set(t, 'left', (r[0] - o[0]) + 'px'); set(t, 'top', (r[1] - o[1]) + 'px'); set(t, 'width', r[2] + 'px'); set(t, 'height', r[3] + 'px');
       set(t, 'font-size', size + 'px'); set(t, 'line-height', r[3] + 'px');
       /* a dash is one unbroken stroke across its box in the game; fonts draw it short and raised */
-      if (DASH.test(t.textContent) && !t.classList.contains('megulit-dash')) { const c = getComputedStyle(t).color; t.style.setProperty('--megulit-dash-color', c); t.style.setProperty('--megulit-dash-w', Math.max(1, size * .05).toFixed(2) + 'px'); t.classList.add('megulit-dash'); }
+      markDash(t);
       geom?.push(r.map(Math.round).join(','));
     }
     return { place, size, shown };
@@ -307,5 +316,8 @@
   b.textPlaceStatus = () => ({ on, line: line ? { text: line.text, n: line.rects?.length || 0, fallback: !!line.fallback } : null, placed: document.body.classList.contains('megulit-placed'), geom: lastGeom.split(';').length });
   let busy = false;
   new MutationObserver(records => { if (on && (line || drawnByGame || page) && records.some(r => !(r.target.closest?.('.tomoyo-cn-dialog,#megulit-place-extras,#megulit-page-ahead,.megulit-old-line')) && !r.target.classList?.contains('megulit-old-line'))) { /* page mode: at once, before the next paint, so a line that just stopped being the reader's own never misses a frame */ if (page && !busy) { busy = true; try { apply(); } finally { busy = false; } } else schedule(); } }).observe(document.documentElement, { subtree: true, childList: true, characterData: true });
+  const markAll = root => { for (const t of (root.querySelectorAll ? root.querySelectorAll('.sentence-text .char-token:not(.megulit-dash)') : [])) markDash(t); };
+  new MutationObserver(records => { for (const r of records) for (const n of r.addedNodes) if (n.nodeType === 1) { if (n.matches?.('.char-token') && n.closest('.sentence-text')) markDash(n); else markAll(n); } }).observe(document.documentElement, { subtree: true, childList: true });
+  markAll(document);
   addEventListener('resize', schedule);
 })();
