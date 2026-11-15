@@ -502,7 +502,7 @@ public class GalWindowBridge {
         try{if(TextMask!=null)TextMask.Hide();}catch{}try{if(WaitMarker!=null)WaitMarker.Hide();}catch{}
         try{if(MaskLayer!=null)MaskLayer.Dispose();}catch{}try{Glass.Hide();}catch{}LayersMayFloat=false;
     }
-    static int TopmostGuardSelfTest(){string r=TopmostGuard.WindowSelfTest();Emit(new{type="topmost-guard-selftest",passed=r=="",failure=r});return r==""?0:12;}
+    static int TopmostGuardSelfTest(){string r=TopmostGuard.WindowSelfTest();Emit(new{type="topmost-guard-selftest",passed=r=="",failure=r,minimiseMs=TopmostGuard.LastMinimiseMs});return r==""?0:12;}
 
     static IntPtr NoActivateWindow;
     static void ReaderActivationPolicy(){
