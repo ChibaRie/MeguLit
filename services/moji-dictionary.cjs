@@ -138,7 +138,11 @@ async function lookupMoji(query,fetcher=fetch,options={}){
   const result=await parse('union-api',{functions:[{name:'search-all',params:{text:word,types:[102]}}]});
   for(const item of array(result.results?.['search-all']?.result?.word?.searchResult).slice(0,12)){
    const title=clean(item?.title,200),id=clean(item?.targetId||item?.objectId,40);if(!title||(id&&seen.has(id)))continue;
-   const [spelling,rest='']=title.split(/\s*\|\s*/),excerpt=clean(item.excerpt);
+   let [spelling,rest='']=title.split(/\s*\|\s*/);const excerpt=clean(item.excerpt);
+   /* 2026-11-15 an entry found by its reading comes back as 'なす | 茄子' (kana first): put the written form first, so the result list
+      shows 茄子 / 為す / ナス instead of five identical なす */
+   {const kana=/^[ぁ-ゟー]+$/,head=spelling.trim(),word=rest.replace(/[◎①-⑳⓪]+/g,'').trim(),mark=(rest.match(/[◎①-⑳⓪]+/)||[''])[0];
+    if(kana.test(head)&&word&&!kana.test(word)&&!/\s/.test(word)){spelling=word;rest=head+mark;}}
    const reading=rest.replace(/[◎①-⑳⓪]+/g,' ').trim();const accent=(rest.match(/[◎①-⑳⓪]+/)||[''])[0];
    results.push({id,spelling:spelling.trim(),pron:reading,accent,reading:[reading,accent].filter(Boolean).join('  '),source:'moji',...grammar(excerpt),definition:excerpt.replace(/^\s*[\[［【][^\]］】]{1,40}[\]］】]\s*/,'')});
    if(id)seen.add(id);
@@ -187,7 +191,11 @@ async function wordDetail(id,options={}){
  const [data,community]=await Promise.all([app('GET','/api/v1/word/detailInfo?wordId='+encodeURIComponent(wordId)),parse('comment-list',{targetId:wordId,targetType:102,page:1}).catch(()=>null)]);
  const word=array(data.word).length?data.word[0]:data.word;
  if(!word||data.code)throw Error('MOJI_UNAVAILABLE');
- return {...summary(word,data.details),excerpt:clean(word.excerpt),meanings:meanings(data.subdetails,data.examples),notes:notes(data.notes),comments:comments(community)};
+ /* 2026-11-15 (user: n几标、平常使用程度、用户笔记都给我加进去): the 词典 detail carries MOJi's JLPT tag and lookup count (viewedNum, shown as 常用度)
+    like the word card does; community notes stay in comments with the total so the panel can page them */
+ const viewed=Number(word.viewedNum),total=Number(community?.result?.count??community?.result?.total);
+ return {...summary(word,data.details),...jlpt(word.tags),views:Number.isFinite(viewed)&&viewed>=0?Math.round(viewed):null,excerpt:clean(word.excerpt),
+  meanings:meanings(data.subdetails,data.examples),notes:notes(data.notes),comments:comments(community),commentCount:Number.isFinite(total)&&total>=0?Math.round(total):null};
 }
 
 // MOJi word notes (detailInfo.notes). Content may be HTML or JSON rich text; reduce to plain paragraphs.
