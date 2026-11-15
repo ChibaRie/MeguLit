@@ -110,5 +110,16 @@ function scriptIdentifier(text){const t=String(text||'').trim();if(!t||/\s/.test
    whole quoted phrase in place, so four or more equal quoted units back to back are a frame dump, not a line */
 function repeatedFrames(text){const u=String(text||'').replace(/\s+/g,'').match(/[『「“（(][^『「“（()）”」』]{1,40}[』」”）)]/gu)||[];if(u.length<3)return false;let run=1;for(let i=1;i<u.length;i++){run=u[i]===u[i-1]?run+1:1;if(run>=4)return true;}return false;}
 function stuttered(text){if(repeatedFrames(text))return true;const c=[...String(text||'').replace(/\s+/g,'')];if(c.length<8)return false;let n=0;const kinds=new Set();for(let i=1;i<c.length;i++)if(c[i]===c[i-1]&&!/[ー…‥―・～—\-.。！？!?]/u.test(c[i])){n++;kinds.add(c[i]);}return kinds.size>=3&&n*4>=c.length;}
+/* 2026-11-15 (死に逝く君、館に芽吹く憎悪, KiriKiri tTVPNativeBaseBitmap::DrawText: 「公公園公園で公園での公園でのん」 was taken for a choice
+   and located as art text): a per-glyph draw stream that keeps the whole text drawn so far hands over every step glued together,
+   a run of growing prefixes of one string (each step may come twice, every character may be doubled). Three or more steps of
+   three or more lengths growing one character at a time are a typewriter dump, never a line: a stammer has its comma (「わ、わた、わたし」) and a line
+   said twice is two equal pieces. */
+function typedOut(text){let s=[...String(text||'').replace(/\s+/g,'')];if(s.length<6||s.length>400)return false;
+ const halved=s.length%2===0&&s.every((c,i)=>i%2===0||c===s[i-1])?s.filter((c,i)=>i%2===0):null;
+ const steps=t=>{const n=t.length;for(let L=Math.min(n-1,120);L>=2;L--){const F=t.slice(n-L),lens=[L];if(F[0]===F[1])continue;/* 「ああああ！」 is a voice, not steps */let end=n-L,ok=true;
+   while(end>0){let found=0;for(let l=Math.min(end,lens[lens.length-1]);l>=1;l--){let eq=true;for(let k=0;k<l;k++)if(t[end-l+k]!==F[k]){eq=false;break;}if(eq){found=l;break;}}if(!found){ok=false;break;}lens.push(found);end-=found;}
+   if(!ok||lens.length<3)continue;const d=[...new Set(lens)].sort((a,b)=>a-b);if(d.length>=3&&d.every((v,i)=>!i||v-d[i-1]===1))return true;}return false;};
+ return steps(s)||!!halved&&steps(halved);}
 function soundCaption(text){const t=String(text||'').trim();return /^[■□◆◇▼▽★☆※◎●○]/u.test(t)&&[...t].length<=30&&!/[、。「」『』！？!?\r\n]/u.test(t);}
-module.exports={chineseTrack,stuttered,soundCaption,scriptIdentifier,inlineCommands,halveLoose,borrowedCode,foreignLine,foreignRows,japaneseTrack,inlineAlternatives,tracks,semicolonTracks};
+module.exports={chineseTrack,stuttered,typedOut,soundCaption,scriptIdentifier,inlineCommands,halveLoose,borrowedCode,foreignLine,foreignRows,japaneseTrack,inlineAlternatives,tracks,semicolonTracks};
