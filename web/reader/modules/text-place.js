@@ -31,9 +31,7 @@
     /* layer 4 page model: older lines of the page (their own .sentence-text, placed like the current one) */
     'body.megulit-place-asleep .sentence-window.tomoyo-hook-reader{visibility:hidden!important}',
     'body:not(.megulit-placed) .megulit-old-line{display:none!important}',
-    /* page mode: a character shows as soon as the game has drawn its place (the game's own typing pace); the reader's typewriter on top of that made new characters come in uneven bursts */
-    'body.megulit-placed .megulit-place-window .sentence-text .char-token.tome-typewriter-pending:not(.megulit-unplaced){opacity:1!important;pointer-events:auto!important}',
-    'body.megulit-placed .megulit-place-window .megulit-ruby-base:has(> .tome-typewriter-pending:first-child)::before{opacity:1!important}',
+    '#megulit-page-ahead{position:fixed;left:0;top:0;width:0;height:0;pointer-events:none}','#megulit-page-ahead>i{position:fixed;display:block;pointer-events:none;background:none}',
     /* every line of the page is a full-window .sentence-text: only its characters take the pointer, or the top one swallows the clicks meant for the lines under it */
     'body.megulit-placed .megulit-place-window .sentence-text{pointer-events:none!important}',
     '.megulit-place-window .char-token.megulit-dash{color:transparent!important;-webkit-text-fill-color:transparent!important;text-shadow:none!important;-webkit-text-stroke:0!important}',
@@ -141,7 +139,7 @@
     const body = document.body, win = target(), sentence = win?.querySelector('.sentence-text:not(.megulit-old-line)');
     const asleep = on && page.awake === false, live = on && page.awake && page.armed && page.lines.length > 0;
     if (body.classList.contains('megulit-place-asleep') !== asleep) { body.classList.toggle('megulit-place-asleep', asleep); window.__tomoyoHitRegionsRefresh?.(true); }
-    if (!live || !sentence) { dropOld(null); clones.clear(); const p = page; page = null; release(); page = p; body.classList.remove('megulit-placed'); /* a page the layer does not hide (not armed, or no line has places yet): the game's own text is on screen, the reader's Japanese is never drawn at its own place over it; the translation stays */ const own = on && page.awake; if (body.classList.contains('megulit-place-game-drawn') !== own) { body.classList.toggle('megulit-place-game-drawn', own); window.__tomoyoHitRegionsRefresh?.(true); } return; }
+    if (!live || !sentence) { document.getElementById('megulit-page-ahead')?.replaceChildren(); dropOld(null); clones.clear(); const p = page; page = null; release(); page = p; body.classList.remove('megulit-placed'); /* a page the layer does not hide (not armed, or no line has places yet): the game's own text is on screen, the reader's Japanese is never drawn at its own place over it; the translation stays */ const own = on && page.awake; if (body.classList.contains('megulit-place-game-drawn') !== own) { body.classList.toggle('megulit-place-game-drawn', own); window.__tomoyoHitRegionsRefresh?.(true); } return; }
     const map = mapper(page.client), readerText = readerLine(), geom = [];
     let cur = null; if (readerText) for (let i = page.lines.length - 1; i >= 0; i--) if (page.lines[i].text.includes(readerText)) { cur = page.lines[i]; break; }
     body.classList.remove('megulit-place-fallback'); body.classList.add('megulit-placed'); win.classList.add('megulit-place-window');
@@ -167,6 +165,20 @@
         set(row, 'font-size', (only ? size : Math.max(12, Math.round(size * .6))) + 'px');
       }
       const copy = sentence.cloneNode(true); copy.__megulitText = readerText; copy.__megulitAt = at; clones.set(cur.id, copy);
+    }
+    /* The reader window paints only inside its regions, and a character's own region reached the window a frame or two
+       after the character: every new character came in cut off on its right. While the newest line is being typed the
+       rest of its row and the next row are regions ahead of time (painted, the pointer passes to the game). */
+    {
+      const all = page.lines.flatMap(l => l.rects).map(map), last = cur && cur.rects.length ? map(cur.rects[cur.rects.length - 1]) : null;
+      let ahead = document.getElementById('megulit-page-ahead'), boxes = [];
+      if (cur && last && all.length && cur.rects.length < [...cur.text].length) {
+        const x0 = Math.min(...all.map(r => r[0])), x1 = Math.max(Math.max(...all.map(r => r[0] + r[2])), x0 + last[3] * 20), h = last[3], pitch = h * 1.3;
+        boxes = [[last[0] + last[2], last[1] - h * .5, Math.max(0, x1 - last[0] - last[2]), h * 1.6], [x0, last[1] + pitch - h * .5, x1 - x0, h * 1.6]];
+      }
+      const key = boxes.map(r => r.map(Math.round).join(',')).join(';');
+      if (!ahead && boxes.length) { ahead = document.createElement('div'); ahead.id = 'megulit-page-ahead'; ahead.setAttribute('aria-hidden', 'true'); document.body.append(ahead); }
+      if (ahead && ahead.__megulitKey !== key) { ahead.__megulitKey = key; ahead.replaceChildren(...boxes.map(r => { const i = document.createElement('i'); i.style.cssText = 'left:' + r[0] + 'px;top:' + r[1] + 'px;width:' + r[2] + 'px;height:' + r[3] + 'px'; return i; })); window.__tomoyoHitRegionsRefresh?.(true); }
     }
     const keep = new Set();
     /* characters of a line that the reader's own text lacks (its source was shortened on the way: a repeated syllable
@@ -270,6 +282,6 @@
   b.textPlaceMode = m => { on = m?.on === true; if (!on) { line = null; drawnByGame = ''; if (page) { page = null; pageGone(); } } schedule(); };
   b.textPlaceStatus = () => ({ on, line: line ? { text: line.text, n: line.rects?.length || 0, fallback: !!line.fallback } : null, placed: document.body.classList.contains('megulit-placed'), geom: lastGeom.split(';').length });
   let busy = false;
-  new MutationObserver(records => { if (on && (line || drawnByGame || page) && records.some(r => !(r.target.closest?.('.tomoyo-cn-dialog,#megulit-place-extras,.megulit-old-line')) && !r.target.classList?.contains('megulit-old-line'))) { /* page mode: at once, before the next paint, so a line that just stopped being the reader's own never misses a frame */ if (page && !busy) { busy = true; try { apply(); } finally { busy = false; } } else schedule(); } }).observe(document.documentElement, { subtree: true, childList: true, characterData: true });
+  new MutationObserver(records => { if (on && (line || drawnByGame || page) && records.some(r => !(r.target.closest?.('.tomoyo-cn-dialog,#megulit-place-extras,#megulit-page-ahead,.megulit-old-line')) && !r.target.classList?.contains('megulit-old-line'))) { /* page mode: at once, before the next paint, so a line that just stopped being the reader's own never misses a frame */ if (page && !busy) { busy = true; try { apply(); } finally { busy = false; } } else schedule(); } }).observe(document.documentElement, { subtree: true, childList: true, characterData: true });
   addEventListener('resize', schedule);
 })();
