@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+import {hasUnsavedSettings} from './settings-autosave.js';
 /* Update notice (v1.1.0). On start MeguLit asks GitHub for the latest release; a newer one is downloaded right away
    with a real progress bar, and the card shows the version, what changed and how the package size moves. Restart now
    or later: a verified package waits in cache/update and is reused at the next start. */
 const M={
- zh:{title:v=>`MeguLit v${v} 来了`,current:v=>`当前 v${v}`,size:mb=>`安装包 ${mb}`,bigger:'比当前版本大',smaller:'比当前版本小',same:'和当前版本差不多大',notes:'更新内容',downloading:'正在下载',verifying:'正在校验…',ready:'下载完成，已校验',restart:'重启并更新',later:'稍后',retry:'重试',failed:'下载失败',keep:'只替换程序文件，游戏库、学习记录和设置都会保留',closing:'MeguLit 即将关闭，更新完会自动重新打开',latest:'已经是最新版',checking:'正在检查…',page:'在 GitHub 查看',hotSize:mb=>`更新包 ${mb}，只含改动的文件`,hotGo:'立即更新',hotKeep:'不用重启：替换改动的文件，界面会刷新一下',hotApplying:'正在更新…',hotReader:'游戏正在运行，先退出游戏再更新',hotLater:'文件已更新，下次打开 MeguLit 时生效'},
- ja:{title:v=>`MeguLit v${v} が出ました`,current:v=>`現在 v${v}`,size:mb=>`パッケージ ${mb}`,bigger:'今より大きい',smaller:'今より小さい',same:'今とほぼ同じサイズ',notes:'更新内容',downloading:'ダウンロード中',verifying:'検証中…',ready:'ダウンロード完了・検証済み',restart:'再起動して更新',later:'あとで',retry:'再試行',failed:'ダウンロードに失敗しました',keep:'プログラムだけを置き換えます。ライブラリ・学習記録・設定はそのままです',closing:'MeguLit を閉じて更新し、自動で開き直します',latest:'最新版です',checking:'確認中…',page:'GitHub で見る',hotSize:mb=>`更新パッケージ ${mb}（変更分のみ）`,hotGo:'今すぐ更新',hotKeep:'再起動は不要です。変更されたファイルだけを置き換え、画面が一度読み込み直されます',hotApplying:'更新中…',hotReader:'ゲームの実行中です。ゲームを終了してから更新してください',hotLater:'ファイルは更新済みです。次回の起動から反映されます'},
- en:{title:v=>`MeguLit v${v} is here`,current:v=>`Current v${v}`,size:mb=>`Package ${mb}`,bigger:'Larger than now',smaller:'Smaller than now',same:'About the same size as now',notes:'What’s new',downloading:'Downloading',verifying:'Verifying…',ready:'Downloaded and verified',restart:'Restart and update',later:'Later',retry:'Retry',failed:'Download failed',keep:'Only program files are replaced. Your library, study records and settings stay',closing:'MeguLit will close, update and reopen',latest:'You are up to date',checking:'Checking…',page:'View on GitHub',hotSize:mb=>`Update ${mb}, changed files only`,hotGo:'Update now',hotKeep:'No restart: only the changed files are replaced and the window reloads once',hotApplying:'Updating…',hotReader:'A game is running. Close it first, then update',hotLater:'Files updated. The new version starts next time you open MeguLit'}};
+ zh:{title:v=>`MeguLit v${v} 来了`,current:v=>`当前 v${v}`,size:mb=>`安装包 ${mb}`,bigger:'比当前版本大',smaller:'比当前版本小',same:'和当前版本差不多大',notes:'更新内容',downloading:'正在下载',verifying:'正在校验…',ready:'下载完成，已校验',restart:'重启并更新',later:'稍后',retry:'重试',failed:'下载失败',keep:'只替换程序文件，游戏库、学习记录和设置都会保留',closing:'MeguLit 即将关闭，更新完会自动重新打开',latest:'已经是最新版',checking:'正在检查…',page:'在 GitHub 查看',hotSize:mb=>`更新包 ${mb}，只含改动的文件`,hotGo:'立即更新',hotKeep:'不用重启：替换改动的文件，界面会刷新一下',hotApplying:'正在更新…',hotReader:'游戏正在运行，先退出游戏再更新',hotLater:'文件已更新，下次打开 MeguLit 时生效',hotDone:v=>`已更新到 v${v}`,hotDoneMore:'点开看更新内容',hotDoneClose:'关闭',hotDoneNone:'这次没有写更新说明'},
+ ja:{title:v=>`MeguLit v${v} が出ました`,current:v=>`現在 v${v}`,size:mb=>`パッケージ ${mb}`,bigger:'今より大きい',smaller:'今より小さい',same:'今とほぼ同じサイズ',notes:'更新内容',downloading:'ダウンロード中',verifying:'検証中…',ready:'ダウンロード完了・検証済み',restart:'再起動して更新',later:'あとで',retry:'再試行',failed:'ダウンロードに失敗しました',keep:'プログラムだけを置き換えます。ライブラリ・学習記録・設定はそのままです',closing:'MeguLit を閉じて更新し、自動で開き直します',latest:'最新版です',checking:'確認中…',page:'GitHub で見る',hotSize:mb=>`更新パッケージ ${mb}（変更分のみ）`,hotGo:'今すぐ更新',hotKeep:'再起動は不要です。変更されたファイルだけを置き換え、画面が一度読み込み直されます',hotApplying:'更新中…',hotReader:'ゲームの実行中です。ゲームを終了してから更新してください',hotLater:'ファイルは更新済みです。次回の起動から反映されます',hotDone:v=>`v${v} に更新しました`,hotDoneMore:'クリックで更新内容を表示',hotDoneClose:'閉じる',hotDoneNone:'今回の更新内容の説明はありません'},
+ en:{title:v=>`MeguLit v${v} is here`,current:v=>`Current v${v}`,size:mb=>`Package ${mb}`,bigger:'Larger than now',smaller:'Smaller than now',same:'About the same size as now',notes:'What’s new',downloading:'Downloading',verifying:'Verifying…',ready:'Downloaded and verified',restart:'Restart and update',later:'Later',retry:'Retry',failed:'Download failed',keep:'Only program files are replaced. Your library, study records and settings stay',closing:'MeguLit will close, update and reopen',latest:'You are up to date',checking:'Checking…',page:'View on GitHub',hotSize:mb=>`Update ${mb}, changed files only`,hotGo:'Update now',hotKeep:'No restart: only the changed files are replaced and the window reloads once',hotApplying:'Updating…',hotReader:'A game is running. Close it first, then update',hotLater:'Files updated. The new version starts next time you open MeguLit',hotDone:v=>`Updated to v${v}`,hotDoneMore:'Click to see what’s new',hotDoneClose:'Close',hotDoneNone:'No notes for this update'}};
 const mb=n=>(n/1048576).toFixed(n>=10485760?1:2)+' MB';
 /* Signed size change in MB, precise enough that a few KB does not read as 0.00 */
 const deltaMb=n=>{const v=n/1048576,a=Math.abs(v);return (v>=0?'+':'−')+(a<0.01?a.toFixed(3):a.toFixed(2))+' MB';};
@@ -34,7 +35,7 @@ function notesFor(body,locale){
 }
 
 let card=null,poll=0;
-export function updateLocale(){const l=document.documentElement.lang||'';return l.startsWith('ja')?'ja':l.startsWith('en')?'en':'zh';}
+export function updateLocale(){const l=typeof document!=='undefined'?document.documentElement?.lang||'':'';return l.startsWith('ja')?'ja':l.startsWith('en')?'en':'zh';}
 
 function render(info,{api,invoke,locale}){
  const t=M[locale]||M.zh;card?.remove();clearInterval(poll);
@@ -79,12 +80,78 @@ function render(info,{api,invoke,locale}){
  begin();
 }
 
-/* Called once at start (silent unless there is something new) and by About → Check for updates (reports either way). */
-export async function checkForUpdates({api,invoke,version,toast,manual=false}){
+/* Silent hot update (user 2026-11-15: 自动静默，要用户点的只包含热更新无法的内容). A release that fits as a small
+   package (services/update.cjs check → silent) is downloaded, verified and applied with no card; the page then reloads
+   and only a one-line note "已更新到 vX" shows in the corner, which opens the notes when clicked. The card stays for
+   updates that need the full package (exe, native helpers, HTML, or an install the small package does not fit).
+   Nothing is applied while the user is busy (busyReason); a running game waits until it is closed, because the
+   service restart would drop the hook and the embedded text. A failure is recorded by the service, which then offers
+   the full package with the card at the next check. */
+const DONE_KEY='megulit.hotUpdateDone',IDLE_MS=15000;
+let lastActivity=0,silentJob=null;
+if(typeof window!=='undefined'&&window.addEventListener)for(const type of ['keydown','pointerdown','wheel','input','compositionstart'])window.addEventListener(type,()=>{lastActivity=Date.now();},{capture:true,passive:true});
+/* why now is not a good moment ('' when it is): typing or clicking in the last 15 s, a focused text field, an open
+   dialog, a settings edit not saved yet, or a page that holds updates (window.__megulitHoldUpdates, a Set of flags) */
+export function busyReason({doc=typeof document!=='undefined'?document:null,now=Date.now(),last=lastActivity,unsaved=hasUnsavedSettings,holds=typeof window!=='undefined'?window.__megulitHoldUpdates:null}={}){
+ if(last&&now-last<IDLE_MS)return 'active';
+ const el=doc?.activeElement;
+ if(el&&(el.isContentEditable||/^(TEXTAREA|SELECT)$/.test(el.tagName||'')||el.tagName==='INPUT'&&!/^(button|submit|reset|checkbox|radio|range|color|file|image|hidden)$/i.test(el.type||'')))return 'typing';
+ if(doc?.querySelector?.('dialog[open],[aria-modal="true"],.upd-card'))return 'dialog';
+ if(unsaved?.())return 'unsaved';
+ if(holds&&[...holds].some(Boolean))return 'held';
+ return '';
+}
+/* a game is attached (the service restart would drop the hook) or the reader / Alt+T tools window is open */
+async function gameReason({api,invoke}){
+ try{const s=await api('reader_status');if(s?.game)return 'game';}catch{}
+ try{await invoke('hot_reload',{dryRun:true});}catch(e){return String(e?.message||e)==='READER_OPEN'?'reader':'refused:'+String(e?.message||e);}
+ return '';
+}
+const store=()=>{try{return window.localStorage;}catch{return null;}};
+export function silentHotUpdate(info,{api,invoke,sleep=ms=>new Promise(r=>setTimeout(r,ms)),busy=()=>busyReason(),game=()=>gameReason({api,invoke}),keep=store,idleWait=5000,gameWait=30000,pollWait=1000}){
+ if(silentJob)return silentJob;
+ const waitIdle=async()=>{while(busy())await sleep(idleWait);};
+ silentJob=(async()=>{
+  try{
+   let s=await api('update_start',{current:info.current});
+   while(s?.phase==='downloading'||s?.phase==='available'){await sleep(pollWait);s=await api('update_status');}
+   if(s?.phase!=='ready'||!s.hot)return {done:false,reason:s?.error||s?.phase||'not-ready'};
+   for(;;){await waitIdle();const why=await game();if(!why)break;
+    if(why.startsWith('refused:')){await api('update_hot_failed',{reason:'hot_reload '+why.slice(8)}).catch(()=>{});return {done:false,reason:why};}
+    await sleep(gameWait);}
+   await waitIdle();
+   try{await api('update_install');}catch(e){/* the service put the old files back and recorded why */return {done:false,reason:String(e?.message||e)};}
+   try{keep()?.setItem(DONE_KEY,JSON.stringify({version:info.latest,notes:String(info.notes||'').slice(0,60000),at:Date.now()}));}catch{}
+   try{await invoke('hot_reload',{dryRun:false});}catch(e){/* the files are written; MeguLit serves them from the next start */await api('update_hot_failed',{reason:'hot_reload '+String(e?.message||e)}).catch(()=>{});}
+   return {done:true};
+  }catch(e){return {done:false,reason:String(e?.message||e)};}
+  finally{silentJob=null;}
+ })();
+ return silentJob;
+}
+/* after the reload: "已更新到 vX" in the corner for a few seconds; a click opens the notes and keeps it open */
+export function showHotDone({locale=updateLocale(),keep=store,doc=typeof document!=='undefined'?document:null,hideAfter=6000}={}){
+ let done;try{const raw=keep()?.getItem(DONE_KEY);if(!raw)return null;keep()?.removeItem(DONE_KEY);done=JSON.parse(raw);}catch{return null;}
+ if(!done?.version||!doc?.body)return done||null;
+ const t=M[locale]||M.zh,notes=notesFor(done.notes,locale);
+ const note=doc.createElement('aside');note.className='upd-done';note.setAttribute('role','status');note.setAttribute('aria-live','polite');
+ note.innerHTML=`<button type="button" class="upd-done-line" aria-expanded="false" title="${esc(t.hotDoneMore)}"><i aria-hidden="true"></i><span>${esc(t.hotDone(done.version))}</span></button><button type="button" class="upd-done-x" aria-label="${esc(t.hotDoneClose)}">×</button><div class="upd-done-notes" hidden>${notes.length?notes.map(n=>n.head?`<h4>${esc(n.text)}</h4>`:`<p>${esc(n.text)}</p>`).join(''):`<p>${esc(t.hotDoneNone)}</p>`}</div>`;
+ doc.body.append(note);requestAnimationFrame(()=>note.classList.add('in'));
+ let timer=0;const close=()=>{clearTimeout(timer);note.classList.remove('in');setTimeout(()=>note.remove(),260);};
+ timer=setTimeout(close,hideAfter);
+ note.querySelector('.upd-done-x').addEventListener('click',close);
+ note.querySelector('.upd-done-line').addEventListener('click',e=>{clearTimeout(timer);const box=note.querySelector('.upd-done-notes'),open=box.hidden;box.hidden=!open;note.classList.toggle('open',open);e.currentTarget.setAttribute('aria-expanded',String(open));});
+ return done;
+}
+
+/* Called once at start (silent unless there is something new) and by About → Check for updates (reports either way).
+   A small package that fits is applied silently; only an update that needs the full package shows the card. */
+export async function checkForUpdates({api,invoke,version,toast,manual=false,show=render,silent=silentHotUpdate}){
  const locale=updateLocale(),t=M[locale]||M.zh;
  try{const info=await api('update_check',{current:version});
   if(!info.newer){if(manual)toast?.(t.latest);return info;}
-  render(info,{api,invoke,locale});return info;
+  if(info.silent){silent(info,{api,invoke});return info;}
+  show(info,{api,invoke,locale});return info;
  }catch(error){if(manual)toast?.(t.failed+' · '+String(error?.message||error));return null;}
 }
 export {notesFor};

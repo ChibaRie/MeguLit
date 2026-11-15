@@ -35,3 +35,18 @@
 .upd-later{height:36px;padding:0 14px;border-radius:9px;border:1px solid var(--u-line);color:var(--u-t2);font-size:13px;transition:color .2s,border-color .2s}
 .upd-later:hover{color:var(--u-t1);border-color:var(--u-gold)}
 @media (prefers-reduced-motion:reduce){.upd-card,.upd-bar i{transition:none}}
+/* Silent hot update done: one quiet line in the corner, fades after a few seconds; a click opens the notes. */
+.upd-done{--u-bg:rgba(30,19,18,.86);--u-line:color-mix(in srgb,var(--gold-accent,#edb56e) 18%,transparent);--u-t1:#f3e6da;--u-t2:#cdb8a8;--u-t3:#9a8577;--u-gold:var(--gold-accent,#edb56e);--u-rule:rgba(241,224,210,.1);
+ position:fixed;right:22px;bottom:22px;z-index:9000;max-width:min(360px,calc(100vw - 44px));display:grid;grid-template-columns:1fr auto;align-items:center;
+ border-radius:11px;background:var(--u-bg);border:1px solid var(--u-line);color:var(--u-t1);backdrop-filter:blur(18px) saturate(1.2);-webkit-backdrop-filter:blur(18px) saturate(1.2);
+ box-shadow:0 20px 40px -24px rgba(0,0,0,.85);opacity:0;transform:translateY(10px);transition:opacity .26s ease,transform .26s cubic-bezier(.2,.8,.2,1)}
+.upd-done.in{opacity:1;transform:none}
+:root[data-theme="light"] .upd-done{--u-bg:rgba(250,242,236,.94);--u-line:rgba(158,27,50,.18);--u-t1:#3a1f1c;--u-t2:#6b4f47;--u-t3:#97807a;--u-gold:#a8323f;--u-rule:rgba(58,31,28,.1)}
+.upd-done-line{display:flex;align-items:center;gap:9px;min-height:40px;padding:0 4px 0 14px;font-size:13px;color:var(--u-t1);text-align:left;cursor:pointer}
+.upd-done-line i{width:6px;height:6px;border-radius:50%;background:var(--u-gold);flex:none}
+.upd-done-x{width:32px;height:32px;margin-right:4px;border-radius:8px;color:var(--u-t3);font-size:16px;line-height:1;transition:color .2s,background .2s}
+.upd-done-x:hover{color:var(--u-t1);background:var(--u-rule)}
+.upd-done-notes{grid-column:1/-1;max-height:220px;overflow:auto;padding:8px 14px 12px;border-top:1px solid var(--u-rule)}
+.upd-done-notes h4{margin:8px 0 2px;font:500 13px var(--g-serif,serif);color:var(--u-t1)}
+.upd-done-notes p{margin:3px 0;font-size:12px;line-height:1.6;color:var(--u-t2)}
+@media (prefers-reduced-motion:reduce){.upd-done{transition:none}}
