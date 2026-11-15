@@ -188,10 +188,11 @@ struct GlyphLearner {
   unsigned liveN = 0, deadN = 0, bornN = 0; for (auto &p : ppos) { if (p.lastFrame + 2 >= frameNo) liveN++; else deadN++; if (p.bornFrame == frameNo && p.line == -1) bornN++; }
   if (!liveN) { if (!pageAsleep) { pageAsleep = true; pageDirty = true; if (log) log("PAGE asleep n=%u", (unsigned)ppos.size()); } }
   else { if (pageAsleep) { pageAsleep = false; pageDirty = true; if (log) log("PAGE awake live=%u dead=%u", liveN, deadN); }
-   /* a page turn takes most of the page away at once; a few places that stop being drawn (an effect, a glyph drawn late)
-      are only forgotten, the lines stay (2026-11-15: a page's first sentence stopped half way) */
-   if (deadN * 2 >= liveN + deadN) PageTurn(now);
-   else if (deadN) { std::vector<PPos> keep; for (auto &p : ppos) if (p.lastFrame + 2 >= frameNo) keep.push_back(p); ppos.swap(keep); pkey.clear(); for (size_t i = 0; i < ppos.size(); i++) pkey[PageKey(ppos[i].r.x0, ppos[i].r.y0)] = (int)i; pageDirty = true; } }
+   /* Places of the page that stop being drawn while others go on: the page was cleared. A new page is typed onto the
+      same places from the top, so its first characters take over old places while the old page's later ones are gone;
+      "most of the page gone" missed that (2026-11-15: after a <clear> the old line kept the top row and the new
+      sentence got the leftovers: wrong rows, overlapping text). */
+   if (deadN) PageTurn(now); }
   if (liveN) {
    PLine *L = plines.empty() ? nullptr : &plines.back();
    /* what was on the page long before the newest line's text came is the game's own (a page shown by loading a save) */

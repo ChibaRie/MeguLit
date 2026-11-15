@@ -34,10 +34,10 @@
     '#megulit-page-ahead{position:fixed;left:0;top:0;width:0;height:0;pointer-events:none}','#megulit-page-ahead>i{position:fixed;display:block;pointer-events:none;background:none}',
     /* every line of the page is a full-window .sentence-text: only its characters take the pointer, or the top one swallows the clicks meant for the lines under it */
     'body.megulit-placed .megulit-place-window .sentence-text{pointer-events:none!important}',
-    /* a dash is drawn from a font whose dash is one thin stroke across the whole cell (MS Gothic), squeezed to the game's
-       cell where that is narrower: neighbours join into one line. The reader's own font drew it short and raised; a
-       drawn bar looked like the kanji 一 (user, 2026-11-15). */
-    '.megulit-place-window .char-token.megulit-dash{font-family:"MS Gothic","MS Mincho","Yu Gothic",sans-serif!important;font-weight:400!important;font-synthesis:none!important;overflow:visible!important;transform-origin:center center}',
+    /* a dash is one thin stroke across its whole cell at mid height, as the game draws it (two half-width dashes join into
+       a line one cell long). Fonts draw it short, low or with a gap; the glyph is hidden and the stroke drawn. */
+    '.megulit-place-window .char-token.megulit-dash{color:transparent!important;-webkit-text-fill-color:transparent!important;text-shadow:none!important;-webkit-text-stroke:0!important;overflow:visible!important}',
+    '.megulit-place-window .char-token.megulit-dash::after{content:"";position:absolute;left:0;right:0;top:50%;height:var(--megulit-dash-w,1.5px);margin-top:calc(var(--megulit-dash-w,1.5px)/-2);background:var(--megulit-dash-color,#fff);pointer-events:none}',
     '#megulit-place-extras{position:fixed;inset:0;pointer-events:none;z-index:2147483000;background:none}',
     'body.megulit-placed .megulit-place-window .tomoyo-cn-row{position:absolute!important;margin:0!important;padding:0!important;background:none!important;border:0!important;box-shadow:none!important;pointer-events:auto}'
   ].join('\n');
@@ -126,7 +126,7 @@
       set(t, 'left', (r[0] - o[0]) + 'px'); set(t, 'top', (r[1] - o[1]) + 'px'); set(t, 'width', r[2] + 'px'); set(t, 'height', r[3] + 'px');
       set(t, 'font-size', size + 'px'); set(t, 'line-height', r[3] + 'px');
       /* a dash is one unbroken stroke across its box in the game; fonts draw it short and raised */
-      if (DASH.test(t.textContent)) { t.classList.add('megulit-dash'); set(t, 'transform', r[2] < size * .9 ? 'scaleX(' + Math.max(.3, r[2] / size).toFixed(3) + ')' : 'none'); }
+      if (DASH.test(t.textContent) && !t.classList.contains('megulit-dash')) { const c = getComputedStyle(t).color; t.style.setProperty('--megulit-dash-color', c); t.style.setProperty('--megulit-dash-w', Math.max(1, size * .05).toFixed(2) + 'px'); t.classList.add('megulit-dash'); }
       geom?.push(r.map(Math.round).join(','));
     }
     return { place, size, shown };
