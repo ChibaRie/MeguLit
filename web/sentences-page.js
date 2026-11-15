@@ -154,6 +154,7 @@ export async function mountSentences(target,{api,locale,esc,toast,errorMessage,e
      .from(heroIn.querySelectorAll('.sp-lede,.sp-meta'),{autoAlpha:0,y:10,duration:.45},'<.15'));
     shown.then(ok=>{if(alive&&ok)add(()=>gsap.fromTo(cg,{autoAlpha:0,y:-26,rotation:-7},{autoAlpha:1,y:0,rotation:0,duration:.75,ease:'back.out(1.4)'}));else gsap.set(cg,{autoAlpha:1});});});});}
  function bindHero(){heroIn.querySelectorAll('[data-sentence-play]').forEach(b=>b.addEventListener('click',()=>play(b)));
+  /* 2026-11-15 原声 or 朗读 on each play button */import('./sentence-voice.js').then(m=>m.labelVoices(api,[...heroIn.querySelectorAll('[data-sentence-play]')].map(b=>({button:b,id:Number(b.dataset.sentencePlay),text:byId.get(String(b.dataset.sentencePlay))?.text})))).catch(()=>{});
   heroIn.querySelectorAll('[data-sentence-delete]').forEach(b=>b.addEventListener('click',()=>{if(!b.classList.contains('armed')){b.classList.add('armed');b.querySelector('span').textContent=s.confirm;
    setTimeout(()=>{if(b.isConnected){b.classList.remove('armed');b.querySelector('span').textContent=s.remove;}},3200);return;}remove(b);}));
   heroIn.querySelectorAll('[data-lookup]').forEach(b=>b.addEventListener('click',()=>lookup(b.dataset.lookup)));
@@ -161,7 +162,7 @@ export async function mountSentences(target,{api,locale,esc,toast,errorMessage,e
  /* 2026-11-14: while the voice is being fetched (the speech engine may need a cold start) the button shows it is working
     instead of turning grey like a dead control; a second click is ignored until it finishes */
  async function play(b){const id=b.dataset.sentencePlay,item=byId.get(String(id));if(!item||b.getAttribute('aria-busy')==='true')return;b.setAttribute('aria-busy','true');b.classList.add('is-busy');
-  try{await (await import('./sentence-voice.js')).playSentence(api,item.text,b);}catch(error){toast(errorMessage(error));}finally{b.removeAttribute('aria-busy');b.classList.remove('is-busy');}}
+  try{await (await import('./sentence-voice.js')).playSentence(api,item.text,b,{id:item.id});}catch(error){toast(errorMessage(error));}finally{b.removeAttribute('aria-busy');b.classList.remove('is-busy');}}
  async function remove(b){b.disabled=true;try{await api('sentence_delete',{id:Number(b.dataset.sentenceDelete)});rerender();}catch(error){b.disabled=false;toast(errorMessage(error));}}
 
  /* ---------- strip: drag with inertia, shift-wheel, arrows ---------- */

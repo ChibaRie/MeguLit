@@ -21,6 +21,11 @@ function norm(text){let t=String(text||'').replace(/<[^>]*>/g,'').normalize('NFK
 const keyOf=text=>{const n=norm(text);return n.length>=1?sha1(n):null;};
 // E461 raised when readers pair voices differently: every game is scanned again on its next start
 const SCAN_VERSION=2;
+/* 2026-11-15 saved-line voice (user: a CV line of 沙耶の唄 played an AI voice): an engine reader that learned to pair
+   voices after its games were scanned raises its revision here; only those games are scanned again (on their next
+   start, or when one of their saved lines is played). Hits of an older revision stay valid. */
+const ENGINE_REV={'nitroplus-n4':1};
+const stale=g=>!g||g.v!==SCAN_VERSION||(g.rev||0)<(ENGINE_REV[g.engine]||0);
 const cacheDir=root=>path.join(root,'data','voice-cache');
 function readJSON(file,fallback){try{return JSON.parse(fs.readFileSync(file,'utf8'));}catch{return fallback;}}
 function writeJSON(file,value){fs.mkdirSync(path.dirname(file),{recursive:true});fs.writeFileSync(file+'.tmp',JSON.stringify(value));fs.renameSync(file+'.tmp',file);}
@@ -89,13 +94,13 @@ function scan(root,dir,{engine,scenes}={}){const sc=require('./original-engines/
  /* E461 a scan replaces what an earlier scan of this game gave (a reader fixed since may pair lines differently); clips
     kept while the game ran stay */
  for(const [k,v] of Object.entries(data.lines))if(v[0]===g&&v[1]!=='runtime')delete data.lines[k];let total=0,voiced=0,found=0;
- for(const s of list){const v=s.voices||[];for(let i=0;i<(s.lines||[]).length;i++){total++;if(!v[i])continue;voiced++;if(!cat.get(v[i])){if(!/^koe:/.test(v[i]))missing.add(v[i].slice(v[i].lastIndexOf('/')+1)); /* E461 a cold run looks files up by name */continue;}found++;const k=keyOf(s.lines[i]);if(!k)continue;if(!data.lines[k])data.lines[k]=[g,v[i]];
+ for(const s of list){const v=s.voices||[];for(let i=0;i<(s.lines||[]).length;i++){total++;if(!v[i])continue;voiced++;if(!cat.get(v[i])){if(!/^koe:/.test(v[i]))missing.add(v[i].slice(v[i].lastIndexOf('/')+1)); /* E461 a cold run looks files up by name */continue;}found++;const k=keyOf(s.lines[i]);if(!k)continue;/* 2026-11-15 the script's own clip replaces a clip cut from the game sound */if(!data.lines[k]||data.lines[k][1]==='runtime')data.lines[k]=[g,v[i]];
   /* a speech spread over several script lines (an open 「 closed later) is shown as one: key the whole of it too */
   let whole=s.lines[i];for(let j=i+1;j<s.lines.length&&j<i+8&&!v[j]&&/^[「『]/.test(whole)&&!/[」』]$/.test(whole);j++)whole+=s.lines[j];if(whole!==s.lines[i]){const kw=keyOf(whole);if(kw&&!data.lines[kw])data.lines[kw]=[g,v[i]];}}}
  /* engines whose voices are numbered in a separate source (Siglus Scene.pck) give text and voice pairs directly */
  let extra=[];try{extra=sc.ENGINES[id]?.voiceLines?.(dir)||[];}catch{}
  for(const x of extra){voiced++;if(!cat.get(x.ref)){missing.add(x.ref);continue;}found++;const k=keyOf(x.text);if(k&&!data.lines[k])data.lines[k]=x.estimated?[g,x.ref,null,'estimated']:[g,x.ref];}
- data.games[g]={...data.games[g],v:SCAN_VERSION,dir:path.resolve(dir),engine:id,scanned:Date.now(),lines:total,voiced,found,missing:missing.size};save(root);return {engine:id,lines:total,voiced,found,missing:[...missing]};}
+ data.games[g]={...data.games[g],v:SCAN_VERSION,rev:ENGINE_REV[id]||0,dir:path.resolve(dir),engine:id,scanned:Date.now(),lines:total,voiced,found,missing:missing.size};save(root);return {engine:id,lines:total,voiced,found,missing:[...missing]};}
 // A game folder as the player picks it: the game may sit one or two folders down (an unpacked release).
 function gameDir(dir,depth=2){const sc=require('./original-engines/scenes.cjs');let id=null;try{id=sc.detect(dir);}catch{}if(id)return {dir,engine:id};if(depth<=0)return null;
  let list=[];try{list=fs.readdirSync(dir,{withFileTypes:true}).filter(e=>e.isDirectory()&&!/^(?:savedata|save|\.megulit)/i.test(e.name));}catch{}
@@ -113,22 +118,35 @@ function refresh(root,game){const k=gameKey(game.dir);if(refreshing.has(k)||!fs.
 function find(root,text){const k=keyOf(text);if(!k)return null;const hit=lines(root).lines[k];if(!hit)return null;const [g,ref,ext]=hit;
  if(ref!=='runtime'){const game=lines(root).games[g];if(game&&game.v!==SCAN_VERSION){try{refresh(root,game);}catch{}return null;}}
  if(ref==='runtime'){try{const data=fs.readFileSync(path.join(cacheDir(root),'runtime',k+(ext||'.wav')));const t=kind(data);return t?{data,mime:t.mime,source:'runtime'}:null;}catch{return null;}}
- const dir=path.join(cacheDir(root),g);for(const e of ['.ogg','.wav','.mp3','.m4a']){try{const data=fs.readFileSync(path.join(dir,sha1(ref)+e));return {data,mime:kind(data).mime,source:'scan',...(hit[3]==='estimated'?{estimated:true}:{})};}catch{}}
+ return clip(root,g,ref,hit[3]==='estimated');}
+/* 2026-11-15 one scanned clip by its game key and script reference (a saved line keeps these): from the cache, else read
+   out of the game's archive and cached */
+function clip(root,g,ref,estimated=false){const more=estimated?{estimated:true}:{};
+ const dir=path.join(cacheDir(root),g);for(const e of ['.ogg','.wav','.mp3','.m4a']){try{const data=fs.readFileSync(path.join(dir,sha1(ref)+e));const t=kind(data);if(t)return {data,mime:t.mime,source:'scan',...more};}catch{}}
  const game=lines(root).games[g];if(!game)return null;let data;try{data=catalogFor(game.dir).get(ref)?.();}catch{}const t=kind(data);if(!t)return null;
- try{fs.mkdirSync(dir,{recursive:true});fs.writeFileSync(path.join(dir,sha1(ref)+t.ext),data);}catch{}return {data,mime:t.mime,source:'scan',...(hit[3]==='estimated'?{estimated:true}:{})};}
+ try{fs.mkdirSync(dir,{recursive:true});fs.writeFileSync(path.join(dir,sha1(ref)+t.ext),data);}catch{}return {data,mime:t.mime,source:'scan',...more};}
+// The index entry for a line: {key, game, ref, ext, estimated} or null (no clip read).
+function entry(root,text){const k=keyOf(text);if(!k)return null;const hit=lines(root).lines[k];if(!hit)return null;return {key:k,game:hit[0],ref:hit[1],ext:hit[2]||null,estimated:hit[3]==='estimated'};}
+// The kept runtime clip file of a line key (game-voice remember), or null.
+const runtimeFile=(root,key,ext)=>path.join(cacheDir(root),'runtime',key+(ext||'.wav'));
+// The index entry of the game an executable starts (scanLater's from key, or the folder itself), or null.
+function gameFor(root,executable){if(!executable)return null;const start=path.dirname(String(executable)),k=gameKey(start);const games=lines(root).games;return games[k]||Object.values(games).find(g=>g.from===k)||null;}
+// Scan the game of an executable now (worker thread) unless its index is current; resolves when done.
+function ensureScanned(root,executable){const g=gameFor(root,executable);if(g&&!stale(g))return Promise.resolve(false);const start=path.dirname(String(executable||''));if(!start||!fs.existsSync(start))return Promise.resolve(false);
+ return new Promise(resolve=>scanInWorker(root,start,({g:found})=>{if(found){const e=lines(root).games[gameKey(found.dir)];if(e&&!e.from){e.from=gameKey(start);save(root);}}resolve(!!found);},true));}
 // Scan a game when it starts (its folder from the executable), once a week at most, off the start-up path.
 const running=new Set();
 /* Voices the scan could not open go to a cold run (voice-cold.cjs) when the setting allows it; the game is scanned again
    once that run ends, so the clips it read count. */
 // One scan at a time in a worker thread (game-voice-worker.cjs); the line index is reloaded when it is done.
 const scanQueue=[];let scanBusy=false;
-function scanInWorker(root,start,done){scanQueue.push({root,start,done});pump();}
+function scanInWorker(root,start,done,hold=false){scanQueue.push({root,start,done,hold});pump();}
 function pump(){if(scanBusy||!scanQueue.length)return;const job=scanQueue.shift();scanBusy=true;let w;
  const finish=msg=>{scanBusy=false;memo=null;if(msg?.g)catalogs.delete(gameKey(msg.g.dir));try{job.done(msg||{});}catch{}pump();};
  try{w=new (require('node:worker_threads').Worker)(path.join(__dirname,'game-voice-worker.cjs'),{workerData:{root:job.root,start:job.start}});}catch{return finish(null);}
- w.once('message',finish);w.once('error',()=>finish(null));w.unref?.();}
-function scanLater(root,executable,delay=8000,{cold=false}={}){if(!executable)return;const start=path.dirname(String(executable)),k=gameKey(start);if(running.has(k))return;const seen=Object.values(lines(root).games).find(g=>g.from===k);if(seen&&seen.v===SCAN_VERSION&&Date.now()-seen.scanned<7*864e5)return;running.add(k);
+ w.once('message',finish);w.once('error',()=>finish(null));/* a scan someone awaits (ensureScanned) keeps the process alive */if(!job.hold)w.unref?.();}
+function scanLater(root,executable,delay=8000,{cold=false}={}){if(!executable)return;const start=path.dirname(String(executable)),k=gameKey(start);if(running.has(k))return;const seen=Object.values(lines(root).games).find(g=>g.from===k);if(seen&&!stale(seen)&&Date.now()-seen.scanned<7*864e5)return;running.add(k);
  const t=setTimeout(()=>scanInWorker(root,start,({g,r})=>{running.delete(k);if(!g||!r)return;const e=lines(root).games[gameKey(g.dir)];if(e){e.from=k;save(root);}
    if(cold&&r.missing?.length){const vc=require('./voice-cold.cjs');const off=vc.onDone(job=>{if(job.game.dir===g.dir){off();scanInWorker(root,g.dir,()=>{});}});vc.consider(root,{executable:String(executable),dir:g.dir,engine:g.engine},r.missing);}}),delay);t.unref?.();}
 const has=(root,text)=>{const k=keyOf(text);return !!(k&&lines(root).lines[k]);};
-module.exports={flush,hashedPaths,scanLater,norm,keyOf,kind,catalog,arcList,ovkList,scan,gameDir,remember,find,has,gameKey,_reset(){memo=null;catalogs.clear();}};
+module.exports={flush,hashedPaths,scanLater,norm,keyOf,kind,catalog,arcList,ovkList,scan,gameDir,remember,find,has,gameKey,clip,entry,runtimeFile,gameFor,ensureScanned,stale,ENGINE_REV,_reset(){memo=null;catalogs.clear();}};

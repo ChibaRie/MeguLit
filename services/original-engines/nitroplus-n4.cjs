@@ -19,15 +19,18 @@ function scenesOf(file){const arc=archive(file);if(!arc)return [];
 const scriptFile=dir=>{const f=path.join(dir,'script.npk');return fs.existsSync(f)?f:'';};
 
 function parse(buf){
- const text=buf.toString('utf8').replace(BOM,''),lines=[],anchors=[],ruby=[];
+ const text=buf.toString('utf8').replace(BOM,''),lines=[],anchors=[],ruby=[],voices=[];
  for(const raw of text.split(/\r\n|\r|\n/)){const sig=signature(raw);if(!sig)continue;
   if(sig.startsWith('T:')){anchors.push(sig.slice(2));continue;}
   if(!sig.startsWith('X:'))continue;
   const rest=raw.replace(BOM,'').slice(raw.replace(BOM,'').match(LEAD)[0].length),pairs=[];
   const line=rest.replace(/<R\s+TEXT="([^"]*)">([^<]*)<\/R>/gi,(_,reading,base)=>{pairs.push([base,reading]);return base;}).replace(/<[^>]*>/g,'').replace(/^[\s　]+|[\s　]+$/g,'');
   if(sig.startsWith('X:voice='))anchors.push(sig.slice(2));
-  lines.push(line);ruby.push(pairs.length?pairs:null);}
- return {lines,anchors,ruby};}
+  /* 2026-11-15 saved-line voice: <voice NAME="青海" SRC="3\000104"> plays media/voice/3/000104.ogg of voice.npk */
+  const vs=/<voice\b[^>]*\bSRC="([^"]+)"/i.exec(raw);
+  lines.push(line);ruby.push(pairs.length?pairs:null);voices.push(vs?require('./voice-ref.cjs').clean(vs[1]):null);}
+ const v=require('./voice-ref.cjs').keep(voices);
+ return v?{lines,anchors,ruby,voices:v}:{lines,anchors,ruby};}
 
 module.exports={
  id:'nitroplus-n4',hint:'script.npk',

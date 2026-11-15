@@ -27,7 +27,7 @@ function save(db,{gameId,text,translation,source}={},now=Date.now()){
 /* root given: the sentence's scene picture (sentence-scenes.cjs) goes too once no other sentence uses it */
 function remove(db,{id,gameId,text}={},{root}={}){
  const drop=n=>{const row=root?db.prepare('SELECT game_id,original FROM saved_sentences WHERE id=?').get(n):null,deleted=db.prepare('DELETE FROM saved_sentences WHERE id=?').run(n).changes>0;
-  if(deleted&&row){const scenes=require('./sentence-scenes.cjs'),scene=scenes.sceneOf(row.original);if(scene)scenes.release(db,root,row.game_id,scene);}return deleted;};
+  if(deleted&&row){const scenes=require('./sentence-scenes.cjs'),scene=scenes.sceneOf(row.original);if(scene)scenes.release(db,root,row.game_id,scene);require('./saved-line-voice.cjs').release(root,row.original);}return deleted;};
  if(id!==undefined&&id!==null&&id!==''){const n=Number(id);if(!Number.isSafeInteger(n))throw Error('INVALID_SENTENCE');return {deleted:drop(n),saved:false};}
  const found=find(db,gameId?String(gameId):null,text);if(!found)return {deleted:false,saved:false};
  drop(found.id);return {deleted:true,saved:false,id:found.id};

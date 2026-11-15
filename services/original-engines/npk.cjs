@@ -12,6 +12,8 @@ const KEYS={
  'Minikui Mojika no Ko':{exe:['mojika.exe'],key:'aa4560f783f78a90205dc14e5409670409bc004639175ad9c0b3d297da2f3868'},
  'Sonicomi':{exe:['sonicomi.exe'],key:'65abb4a8cde0c810bb4a26723754c3a7e43de9ea7f5bb843501d05abcf08d9c1'},
  'Tokyo Necro':{exe:[],key:'962c5f3a789c8437b71212a115d6ca9f9ae3fd210ff6af70a8a8f8bbfe5e8af5'},
+ /* 2026-11-15 saved-line voice: the Steam Saya (N4) voice.npk, same key as core/nitroplus-npk.cjs KEYS.saya */
+ 'The Song of Saya':{exe:['saya_steam.exe'],key:'763a14338b0dac040accfc13851cfacbb20b000b01f868486b460f8c34d42a96'},
 };
 function decrypt(key,iv,data){const d=crypto.createDecipheriv('aes-256-cbc',key,iv);d.setAutoPadding(false);return Buffer.concat([d.update(data),d.final()]);}
 const head=file=>kit.head(file,0x20);
