@@ -21,7 +21,12 @@ function serve(){const server=http.createServer((req,res)=>{const rel=decodeURIC
 const OPEN=`(async()=>{const w=ms=>new Promise(r=>setTimeout(r,ms));const b=window.__tomoyoChinese;
  if(document.querySelector('.tomoyo-cn-dialog[open]')){b.toggleGalMenu();await w(700);}
  setTimeout(()=>dispatchEvent(new CustomEvent('tome-region-applied',{detail:{surfaceWidth:innerWidth*devicePixelRatio,surfaceHeight:innerHeight*devicePixelRatio}})),0);
- b.toggleGalMenu();await w(1300);const d=document.querySelector('.tomoyo-cn-dialog[open]'),r=d.getBoundingClientRect();return [r.left,r.top,r.right,r.bottom].map(Math.round);})()`;
+ b.toggleGalMenu();await w(300);
+ /* wait until the panel has finished opening (CI runners are slow: a fixed wait read the box mid-animation, so the press missed the corner) */
+ let box='',same=0;for(let i=0;i<100&&same<3;i++){const d=document.querySelector('.tomoyo-cn-dialog[open]');const r=d&&d.getBoundingClientRect(),k=r?[r.left,r.top,r.right,r.bottom].map(Math.round).join():'';
+  const moving=d&&d.getAnimations({subtree:true}).some(a=>a.playState==='running'&&a.effect?.getTiming?.().iterations!==Infinity);same=k&&k===box&&!moving?same+1:0;box=k;await w(100);}
+ const d=document.querySelector('.tomoyo-cn-dialog[open]'),r=d.getBoundingClientRect();return [r.left,r.top,r.right,r.bottom].map(Math.round);})()`;
+const AT=(x,y)=>`(()=>{const n=document.elementFromPoint(${x},${y});return n&&n.classList.contains('tomoyo-menu-resize')?n.dataset.edge:(n?n.tagName+'.'+n.className:'')})()`;
 const STATE=`(()=>{const d=document.querySelector('.tomoyo-cn-dialog[open]'),q=n=>{const r=n.getBoundingClientRect();return [r.left,r.top,r.right,r.bottom].map(Math.round);},c=d.querySelector('.tomoyo-menu-content');
  const hits=window.__sent.filter(m=>m.type==='galHitRegions'),glass=window.__sent.filter(m=>m.type==='galGlass'&&m.rects.length);
  return {panel:q(d),footer:q(d.querySelector('form>footer')),content:q(c),scroll:[c.scrollHeight,c.clientHeight,getComputedStyle(c).overflowY],region:hits.at(-1)?.regions,glass:glass.at(-1)?.rects[0],vw:innerWidth,vh:innerHeight,
@@ -38,7 +43,7 @@ test('Alt+T edge resize: whole-layer region and glass during the drag, footer pi
   const mouse=(type,x,y)=>cdp.send('Input.dispatchMouseEvent',{type,x,y,button:'left',buttons:type==='mouseReleased'?0:1,clickCount:1,pointerType:'mouse'});
   const start=await cdp.evaluate(OPEN);
   /* the south-west corner: grows left and down, so the right edge must stay put */
-  let x=start[0]+8,y=start[3]-8;await cdp.send('Input.dispatchMouseEvent',{type:'mouseMoved',x,y});await mouse('mousePressed',x,y);
+  let x=start[0]+8,y=start[3]-8;assert.equal(await cdp.evaluate(AT(x,y)),'sw','the press lands on the south-west handle');await cdp.send('Input.dispatchMouseEvent',{type:'mouseMoved',x,y});await mouse('mousePressed',x,y);
   const during=[];
   for(let i=1;i<=24;i++){await mouse('mouseMoved',x-i*25,y+i*8);await sleep(20);if(i%4===0)during.push(await cdp.evaluate(STATE));}
   for(let i=1;i<=40;i++){await mouse('mouseMoved',x-600+i*40,y+192-i*30);await sleep(20);if(i%5===0)during.push(await cdp.evaluate(STATE));}
@@ -57,7 +62,7 @@ test('Alt+T edge resize: whole-layer region and glass during the drag, footer pi
   assert.deepEqual(after.region,[{x:after.panel[0],y:after.panel[1],width:after.panel[2]-after.panel[0],height:after.panel[3]-after.panel[1],menu:true}],'release: region is the panel again');
   assert.equal(after.footer[3],after.panel[3]-1);
   /* grow again by the west edge (the panel sits against the right of the layer), release, close and reopen: same box */
-  x=after.panel[0]+3;y=Math.round((after.panel[1]+after.panel[3])/2);await cdp.send('Input.dispatchMouseEvent',{type:'mouseMoved',x,y});await mouse('mousePressed',x,y);
+  x=after.panel[0]+3;y=Math.round((after.panel[1]+after.panel[3])/2);assert.equal(await cdp.evaluate(AT(x,y)),'w','the press lands on the west handle');await cdp.send('Input.dispatchMouseEvent',{type:'mouseMoved',x,y});await mouse('mousePressed',x,y);
   for(let i=1;i<=10;i++){await mouse('mouseMoved',x-i*20,y);await sleep(20);}await mouse('mouseReleased',x-200,y);await sleep(400);
   const grown=await cdp.evaluate(STATE);assert.equal(grown.panel[2]-grown.panel[0],640,'west edge grew the panel by 200 px');assert.equal(grown.panel[2],after.panel[2],'right edge kept');
   const reopened=await cdp.evaluate(OPEN);assert.deepEqual(reopened,grown.panel,'size and position kept after reopening');
