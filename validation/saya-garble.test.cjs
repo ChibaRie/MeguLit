@@ -80,7 +80,7 @@ test('a line the game still draws itself: the placement host says so, a placed l
 
 test('HookBridge: nothing unreadable is hidden, every write goes through the code-page guard', () => {
   const b = read('native/HookBridge.cs'), p = read('native/EmbedTextPolicy.cs');
-  assert.match(b, /static void GlyphLine\(string text\)\{FlushFit\(\);\/\*[^*]*\*\/[^\n]*?if\(EmbedTextPolicy\.Unreadable\(text\)&&SelectedReadableRun<2&&!EmbedTextPolicy\.EngineText\(selCode\)\)\{[^}]*GlyphOff\(\);return;\}GpuLine\(text\);/);
+  assert.match(b, /static void GlyphLine\(string text\)\{FlushFit\(\);if\(SkipHeld\)\{GlyphOff\(\);return;\}\/\*[^*]*\*\/[^\n]*?if\(EmbedTextPolicy\.Unreadable\(text\)&&SelectedReadableRun<2&&!EmbedTextPolicy\.EngineText\(selCode\)\)\{[^}]*GlyphOff\(\);return;\}GpuLine\(text\);/);
   assert.match(b, /string reply=hide\?\(p\.hidden\?\?""\):EmbedTextPolicy\.Writeback\(p\.text,trans\);reply=SafeReply\(p\.code,p\.text,reply,"embed-translate"\);/);
   assert.match(b, /replacement=SafeReply\(candidate\.code,text,replacement,candidate\.name\);\r?\n   Luna_EmbedCallback\(tp,text,replacement==text\?"":replacement\);/);
   assert.match(b, /if\(replacement\.Length>0&&EmbedTextPolicy\.Unreadable\(text\)&&SelectedReadableRun<2\)\{replacement="";/);
