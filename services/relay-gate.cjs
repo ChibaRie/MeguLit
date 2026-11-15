@@ -38,8 +38,12 @@ function createGate(fetcher,options={}){
  async function gated(input,init={}){
   const url=typeof input==='string'?input:input?.url||String(input);
   if(!isRelay(url))return fetcher(input,init);
-  const t=now();if(t<blockedUntil)return limited(Math.ceil((blockedUntil-t)/1000));
-  if(t<failUntil)throw Object.assign(new TypeError('fetch failed'),{cause:{code:'MEGULIT_BACKOFF'}});
+  /* 2026-11-15 (v1.4.10 user could not send logs) a one-click report (一键上传问题反馈: logs + reason) always goes out:
+     a 429 or backoff from the background adaptation-contribution chunks used to make it fail at once with a local
+     RATE_LIMITED; the relay still rate-limits it itself */
+  const method0=String(init.method||'GET').toUpperCase(),userSend=method0==='POST'&&/^\/api\/(diagnostics|feedback)$/.test(new URL(url).pathname);
+  const t=now();if(!userSend&&t<blockedUntil)return limited(Math.ceil((blockedUntil-t)/1000));
+  if(!userSend&&t<failUntil)throw Object.assign(new TypeError('fetch failed'),{cause:{code:'MEGULIT_BACKOFF'}});
   const method=String(init.method||'GET').toUpperCase(),path=new URL(url).pathname,ttl=method==='GET'?ttlFor(path):0;
   const key=ttl?url+'\n'+headerOf(init,'authorization'):'';
   if(key){const hit=cache.get(key);if(hit&&hit.until>t)return replay(hit);if(inflight.has(key))return replay(await inflight.get(key));}

@@ -13,21 +13,21 @@
      stepLabel(step,locale)               the words for a probe step, for any row that shows one
    Uses the diagnostics dialog styles (web/diagnostics.css), plus a few rules of its own injected once. */
 const T={
- zh:{button:'本地检查',kicker:'适配检查',title:'检查游戏库的适配情况',hint:'在本机逐个读取每个游戏的封包和剧本，只统计能否读出、读出多少行、配对率。游戏文本不会离开这台电脑',scanning:'正在检查',of:'/',stop:'先停下（下次接着检查）',close:'关闭',
+ zh:{button:'本地检查',kicker:'适配检查',title:'检查游戏库的适配情况',hint:'在本机逐个读取每个游戏的封包和剧本，只统计能否读出、读出多少行、配对率。游戏文本不会离开这台电脑',scanning:'正在检查',of:'/',stop:'先停下（下次接着检查）',close:'关闭',finish:'完成',
   done:'检查完成',allGood:'所有游戏都能正常读取，没有需要上传的内容',found:n=>`有 ${n} 个游戏没能完美读取。下面是要上传的全部内容：只有结构和统计，所有日文、中文等文字都已在本机换成占位符并逐字校验过`,
   autoSending:'正在后台自动上传脱敏结构…',autoNote:'读不出的游戏会在后台自动上传脱敏结构（不含文本）；服务器已有的游戏不再上传。可在 设置 → 游戏库 关闭',sentRecord:'已上传的内容（记录）',
   outcome:{sent:'已上传',duplicate:'服务器已有，未重复上传',known:'服务器已有，未重复上传',nothing:'没有可上传的内容',failed:'上传失败，稍后自动重试',offline:'连不上服务器，稍后自动重试',skipped:'已上传过',busy:'后台正在上传，稍后再看',off:'自动上传已关闭'},
   preparing:'正在本机生成脱敏结构…',upload:'确认上传',uploading:'上传中…',uploaded:'已上传，感谢！适配好后会自动推送给你，不用更新软件',failed:'上传失败，可以稍后再试',manual:'上传通道暂时不可用，可以稍后再试',
   followUp:'以后作者需要时，自动补传这些游戏的脱敏结构（只含结构与统计，可随时在设置里关掉）',openIssue:'查看反馈',sentTotal:'实际发送',limit:l=>`上限 ${l}`,raw:'原始',parts:c=>`分 ${c} 段上传`,rawHint:'脱敏后再压缩：发送的是压缩后的大小，原始大小只作参考',limits:'每个游戏最多 8 个样本，每个压缩后不超过 2 MB；剧本整份（16 MB 内），封包整份或头尾各 8 MB；本机每个游戏最多读 64 MB、80 秒',dropped:'未通过校验，不上传',keys:n=>`${n} 组解密参数候选`,result:'读取统计',sample:'脱敏结构样本',cancelled:'已停下，下次打开会接着检查',
   steps:{ok:'正常','unknown-pack':'未知封包格式','decrypt-failed':'解密失败','parse-failed':'剧本解析失败','low-pairing':'配对率低','not-japanese':'不是日文剧本','no-script':'没找到剧本',timeout:'读取超时',cancelled:'已停下'},error:'检查没能开始'},
- ja:{button:'ローカル検査',kicker:'対応チェック',title:'ライブラリの対応状況を検査',hint:'このPCで各ゲームのアーカイブとスクリプトを読み、読めるか・行数・対応率だけを数えます。ゲームの文章はこのPCから出ません',scanning:'検査中',of:'/',stop:'いったん止める（次回続きから）',close:'閉じる',
+ ja:{button:'ローカル検査',kicker:'対応チェック',title:'ライブラリの対応状況を検査',hint:'このPCで各ゲームのアーカイブとスクリプトを読み、読めるか・行数・対応率だけを数えます。ゲームの文章はこのPCから出ません',scanning:'検査中',of:'/',stop:'いったん止める（次回続きから）',close:'閉じる',finish:'完了',
   done:'検査完了',allGood:'すべてのゲームを正常に読めました。アップロードするものはありません',found:n=>`${n} 本のゲームを完全には読めませんでした。アップロードされるのは以下がすべてです：構造と統計のみ。日本語・中国語などの文字はこのPCでプレースホルダーに置き換え、一文字ずつ確認済みです`,
   autoSending:'匿名化した構造をバックグラウンドで送信中…',autoNote:'読めないゲームの匿名化した構造（文章なし）はバックグラウンドで自動送信します。サーバーにあるゲームは送りません。設定 → ライブラリでオフにできます',sentRecord:'送信した内容（記録）',
   outcome:{sent:'送信しました',duplicate:'サーバーにあるため送信しません',known:'サーバーにあるため送信しません',nothing:'送るものはありません',failed:'送信失敗。後で自動的に再試行します',offline:'サーバーに接続できません。後で自動的に再試行します',skipped:'送信済み',busy:'バックグラウンドで送信中です',off:'自動送信はオフです'},
   preparing:'このPCで匿名化した構造を作成中…',upload:'確認してアップロード',uploading:'アップロード中…',uploaded:'アップロードしました。対応できたら自動で届きます（アプリの更新は不要）',failed:'アップロードに失敗しました。後でもう一度お試しください',manual:'アップロード先に接続できません。後でもう一度お試しください',
   followUp:'作者が必要とした時、これらのゲームの匿名化した構造を自動で追加送信する（構造と統計のみ。設定でいつでもオフにできます）',openIssue:'報告を見る',sentTotal:'実際の送信量',limit:l=>`上限 ${l}`,raw:'元のサイズ',parts:c=>`${c} 回に分けて送信`,rawHint:'匿名化してから圧縮します。送信されるのは圧縮後のサイズで、元のサイズは参考です',limits:'1 ゲームにつきサンプル最大 8 個、各圧縮後 2 MB まで。スクリプトは丸ごと（16 MB まで）、アーカイブは丸ごとか先頭と末尾 8 MB ずつ。このPCでは 1 ゲームにつき最大 64 MB・80 秒だけ読みます',dropped:'確認に通らなかったため送信しません',keys:n=>`復号パラメータ候補 ${n} 件`,result:'読み取り統計',sample:'匿名化した構造サンプル',cancelled:'止めました。次回開くと続きから検査します',
   steps:{ok:'正常','unknown-pack':'未知のアーカイブ形式','decrypt-failed':'復号失敗','parse-failed':'スクリプト解析失敗','low-pairing':'対応率が低い','not-japanese':'日本語スクリプトではない','no-script':'スクリプトなし',timeout:'タイムアウト',cancelled:'停止'},error:'検査を開始できませんでした'},
- en:{button:'Local check',kicker:'Adaptation check',title:'Check how well each game reads',hint:'Reads every game\'s archives and scripts on this PC and only counts whether they read, how many lines and how well they pair. No game text leaves this PC',scanning:'Checking',of:'/',stop:'Stop for now (resume next time)',close:'Close',
+ en:{button:'Local check',kicker:'Adaptation check',title:'Check how well each game reads',hint:'Reads every game\'s archives and scripts on this PC and only counts whether they read, how many lines and how well they pair. No game text leaves this PC',scanning:'Checking',of:'/',stop:'Stop for now (resume next time)',close:'Close',finish:'Done',
   done:'Check finished',allGood:'Every game reads fine; there is nothing to upload',found:n=>`${n} game(s) did not read perfectly. This is everything that would be uploaded: structure and counts only. Every Japanese, Chinese or other character was replaced on this PC and checked one by one`,
   autoSending:'Uploading the desensitized structure in the background…',autoNote:'Games that do not read are uploaded in the background as desensitized structure (no text); games the server already has are not sent again. Turn it off in Settings → Library',sentRecord:'What was sent (record)',
   outcome:{sent:'Uploaded',duplicate:'The server has it already; not sent again',known:'The server has it already; not sent again',nothing:'Nothing to upload',failed:'Upload failed; retried later automatically',offline:'Server not reachable; retried later automatically',skipped:'Uploaded before',busy:'Uploading in the background',off:'Automatic upload is off'},
@@ -67,23 +67,26 @@ export async function openProbeUpload({api,locale,esc,toast,ids=null,reason='man
 <div class="dialog-actions"><button class="text-button" data-close>${esc(t.close)}</button><button class="secondary" data-stop>${esc(t.stop)}</button><button class="primary" data-upload hidden>${esc(t.upload)}</button></div>`;
  document.body.append(dialog);let timer=null;dialog.addEventListener('close',()=>{clearInterval(timer);dialog.remove();},{once:true});dialog.showModal();
  const bar=dialog.querySelector('.probe-bar i'),now=dialog.querySelector('.probe-now'),out=dialog.querySelector('.probe-out'),status=dialog.querySelector('.diag-status'),stop=dialog.querySelector('[data-stop]'),send=dialog.querySelector('[data-upload]');
- dialog.querySelector('[data-close]').onclick=()=>dialog.close();
- stop.onclick=async()=>{clearInterval(timer);try{await p.cancel();}catch{}now.textContent=t.cancelled;stop.hidden=true;};
- try{await p.start({ids,reason,force:!!ids});}catch{now.textContent=t.error;stop.hidden=true;return;}
+ const closer=dialog.querySelector('[data-close]');closer.onclick=()=>dialog.close();
+ /* 2026-11-15 (v1.4.10 user: 检查完成 · 没有需要上传的内容, yet a red 确认上传 that did nothing) once nothing is left
+    to send, the one button is a primary 完成 that closes the dialog */
+ const finish=()=>{if(!dialog.isConnected)return;stop.hidden=true;send.hidden=true;send.onclick=null;closer.className='primary';closer.textContent=t.finish;closer.focus();};
+ stop.onclick=async()=>{clearInterval(timer);try{await p.cancel();}catch{}now.textContent=t.cancelled;finish();};
+ try{await p.start({ids,reason,force:!!ids});}catch{now.textContent=t.error;finish();return;}
  const tick=async()=>{let s;try{s=await p.status();}catch{return;}if(!dialog.isConnected)return;
   const pct=s.total?Math.round(s.done/s.total*100):100;bar.style.width=pct+'%';
   if(s.state==='running'){now.textContent=`${t.scanning} ${s.done}${t.of}${s.total}${s.current?.title?' · '+s.current.title:''}`;return;}
   clearInterval(timer);stop.hidden=true;bar.style.width='100%';
-  if(s.state==='cancelled'){now.textContent=t.cancelled;done({state:'cancelled'});return;}
+  if(s.state==='cancelled'){now.textContent=t.cancelled;finish();done({state:'cancelled'});return;}
   done({state:'checked',problems:(s.problems||[]).length});
   const problems=(s.problems||[]).filter(x=>!ids||ids.includes(x.id));
-  if(!problems.length){now.textContent=t.done+' · '+t.allGood;showRecord();return;}
+  if(!problems.length){now.textContent=t.done+' · '+t.allGood;finish();showRecord();return;}
   let auto=null;try{auto=await p.autoStatus();}catch{}if(!dialog.isConnected)return;
   if(auto?.enabled){now.textContent=t.autoSending;let r;try{r=await p.autoRun(problems.map(x=>x.id));}catch{r={state:'failed',results:{}};}if(!dialog.isConnected)return;
    const res=r?.results||{},lines=problems.map(x=>`<p class="probe-game"><b>${esc(x.title||x.id)}</b><span>${esc(stepLabel(x.step,locale))}</span><span>${esc(t.outcome[res[x.id]||r?.state]||'')}</span></p>`).join('');
-   now.textContent=t.done;out.innerHTML=lines+`<p class="probe-now">${esc(t.autoNote)}</p>`;if(Object.values(res).includes('sent'))done({state:'uploaded'});showRecord();return;}
+   now.textContent=t.done;out.innerHTML=lines+`<p class="probe-now">${esc(t.autoNote)}</p>`;finish();if(Object.values(res).includes('sent'))done({state:'uploaded'});showRecord();return;}
   now.textContent=t.preparing;let prep;try{prep=await p.prepare(problems.map(x=>x.id));}catch{prep={error:'PREPARE'};}if(!dialog.isConnected)return;
-  if(!prep?.hash){now.textContent=prep?.empty?t.done+' · '+t.allGood:t.failed;return;}
+  if(!prep?.hash){now.textContent=prep?.empty?t.done+' · '+t.allGood:t.failed;finish();return;}
   now.textContent=t.found(prep.games);showManifest(prep);};
  const items=prep=>prep.manifest.map(g=>`<p class="probe-game"><b>${esc(g.title||g.key)}</b><span>${esc(stepLabel(g.step,locale))}</span></p><ul class="diag-entries">${g.items.map(i=>
    i.kind==='result'?`<li><code>${esc(t.result)}</code><span></span><em>${size(i.bytes)}</em></li>`:i.kind==='keys'?`<li><code>${esc(t.keys(i.count))}</code><span>${esc(i.algos.join(', '))}</span><em></em></li>`:
@@ -98,7 +101,7 @@ export async function openProbeUpload({api,locale,esc,toast,ids=null,reason='man
   out.insertAdjacentHTML('afterbegin',`<p class="probe-now">${esc(t.autoNote)}</p>`);
   send.hidden=false;send.onclick=async()=>{send.disabled=true;send.textContent=t.uploading;status.textContent='';let r;try{r=await p.upload(prep.hash,dialog.querySelector('[data-follow]')?.checked);}catch{r={state:'failed'};}
    if(!dialog.isConnected)return;send.textContent=t.upload;
-   if(r.state==='uploaded'){done({state:'uploaded'});status.dataset.state='ok';status.textContent=t.uploaded;send.hidden=true;toast?.(t.uploaded);
+   if(r.state==='uploaded'){done({state:'uploaded'});status.dataset.state='ok';status.textContent=t.uploaded;finish();toast?.(t.uploaded);
     if(r.issueUrl){const b=document.createElement('button');b.type='button';b.className='text-button diag-link';b.textContent=t.openIssue;b.onclick=()=>api('open_source',{url:r.issueUrl}).catch(()=>{});status.append(' ',b);}return;}
    send.disabled=false;status.dataset.state=r.state==='not-configured'?'manual':'bad';status.textContent=r.state==='not-configured'?t.manual:t.failed;};};
  timer=setInterval(tick,900);tick();
