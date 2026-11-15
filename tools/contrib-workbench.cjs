@@ -27,7 +27,7 @@ const RELAYS=process.env.MEGULIT_RELAY?[process.env.MEGULIT_RELAY.replace(/\/+$/
 const WORK=process.env.MEGULIT_CONTRIB_WORK||'H:\\MeguLit-Work\\contrib';
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,HEX64=/^[a-f0-9]{64}$/;
 function workDir(){if(/^c:/i.test(path.resolve(WORK))&&!process.env.MEGULIT_CONTRIB_ALLOW_C)throw Error('work folder is on C: — set MEGULIT_CONTRIB_WORK to H:\\… (or MEGULIT_CONTRIB_ALLOW_C=1)');fs.mkdirSync(WORK,{recursive:true});return WORK;}
-function auth(){const t=process.env.MEGULIT_ADMIN_TOKEN||process.env.MEGULIT_ADAPTER_ADMIN_TOKEN;if(!t)throw Error('set MEGULIT_ADMIN_TOKEN (or MEGULIT_ADAPTER_ADMIN_TOKEN): the relay secret ADAPTER_ADMIN_TOKEN');return {authorization:'Bearer '+t,'user-agent':'megulit-workbench'};}
+function auth(){const t=require('./admin-token.cjs').adminToken();if(!t)throw Error('set MEGULIT_ADMIN_TOKEN (or MEGULIT_ADAPTER_ADMIN_TOKEN): the relay secret ADAPTER_ADMIN_TOKEN');return {authorization:'Bearer '+t,'user-agent':'megulit-workbench'};}
 /* one request; a relay that cannot be reached at all (no HTTP answer) hands over to the next one, an HTTP error does not */
 async function call(route,{method='GET',body,fetcher=globalThis.fetch,relay}={}){
  const relays=relay?[relay]:RELAYS;let last;
