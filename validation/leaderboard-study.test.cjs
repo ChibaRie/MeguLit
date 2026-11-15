@@ -87,7 +87,7 @@ test('page: 学习练习 tab instead of 假名练习, no order codes, hover card
  view.setView({tab:'board',period:'week',metric:'study',game:''});
  const entries=[{rank:1,name:'めぐみん',value:160,me:true,detail:{kana:7,grammar:30,anki:120,practice:3,studySeconds:5400}},{rank:2,name:'Kazuma',value:40,detail:{kana:40}}];
  const html=view.leaderboardHTML({configured:true,joined:true,name:'めぐみん',board:{state:'ok',entries,total:2},local:{stats:{week:{study:160}}}},'zh',esc);
- assert.ok(html.includes('data-lb-metric="study"')&&html.includes('学习练习'));
+ assert.ok(html.includes('data-lb-metric="study"')&&html.includes('学习')&&!html.includes('学习练习'),'tab reads 学习');
  assert.ok(!html.includes('data-lb-metric="kana"'),'no separate kana tab');
  assert.ok(!/No\.\d/.test(html),'no No.01 order code');
  assert.equal((html.match(/data-lb-detail>/g)||[]).length,2);
