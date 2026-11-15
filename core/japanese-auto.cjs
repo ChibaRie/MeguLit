@@ -100,6 +100,8 @@ function status(root,id,gameDir,options={}){
  const s=read(root),g=s.games[String(id)]||{},base={enabled:s.enabled,gameOff:!!g.off,mode:g.mode||'',at:g.at||'',reason:g.reason||''};
  if(['auto','reverted','undone'].includes(g.state))return {...base,state:g.state};
  const p=decide(gameDir,options);
+ /* E592 a translation launcher next to the Japanese data: the same answer the restore tool gives */
+ if(['none','unsupported'].includes(p.action)&&options.executable){const tl=require('./translated-launcher.cjs').inspect(options.executable);if(tl.translated)return {...base,state:'translated',original:tl.original};}
  return {...base,state:p.action==='already'?'japanese':p.action==='none'?'no-japanese':p.action==='applied'?'manual':p.action==='unsupported'?'unsupported':'available',detail:p.reason||''};
 }
 module.exports={decide,run,selfCheck,launchResult,undo,status,setEnabled,setGameOff,takeNotices,registerRedirect,verifyFiles,read,_internal:{allowed,file}};
