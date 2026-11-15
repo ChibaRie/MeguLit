@@ -4,53 +4,74 @@
    the game turned its Shift-JIS text into UTF-16 with the system code page (GBK), so the hook got 「墦偔偱堷偒…」 for
    「遠くで引き…」. The reader drew it, it went to the translator, which answered 「这句话看起来是乱码…请提供完整的游戏台词原文」,
    and that answer was drawn as the line's translation. Every engine and every translator goes through here: a
-   Shift-JIS-as-GBK line is turned back into the Japanese it was (per hook stream, locked once clear), other garbage is never
+   line read with the wrong code page is turned back into the Japanese it was (per hook stream, locked once clear), other garbage is never
    drawn or sent, and a translator's meta reply (asks for the original, says it is garbled, cannot translate) is never shown. */
 const KANA=/[\u3041-\u309f\u30a1-\u30fa\u30fc]/g;
-let gbk=null;
-/* GBK encoder built once from the platform decoder (char -> two bytes); single bytes stay ASCII */
-function gbkTable(){
- if(gbk)return gbk;gbk=new Map();let dec;try{dec=new TextDecoder('gbk',{fatal:true});}catch{return gbk;}
- for(let a=0x81;a<=0xfe;a++)for(let b=0x40;b<=0xfe;b++){if(b===0x7f)continue;let c;try{c=dec.decode(Uint8Array.of(a,b));}catch{continue;}if(c.length===1&&!gbk.has(c))gbk.set(c,[a,b]);}
- return gbk;}
 const kanaCount=t=>(String(t).match(KANA)||[]).length;
 const letters=t=>String(t).replace(/[\s\p{P}\p{S}0-9\uff10-\uff19]/gu,'');
-/* Shift-JIS bytes decoded as GBK: no kana, CJK only, and the same bytes read as Shift-JIS are mostly kana Japanese.
-   Real Chinese never comes back with hiragana (GB2312 bytes are all >= 0xA1, Shift-JIS hiragana needs lead 0x82).
-   relaxed (a stream already locked as Shift-JIS-as-GBK): any clean read-back counts, also kanji-only lines and 「……」. */
-function repairShiftJisAsGbk(text,{relaxed=false}={}){
- const t=String(text||'');if(!t.trim()||t.length>4000||kanaCount(t)||!/[\u3000-\u303f\u4e00-\u9fff\uff01-\uff60]/.test(t))return null;if(!relaxed&&t.length<2)return null;
- const map=gbkTable();if(!map.size)return null;const bytes=[];
- for(const ch of t){const c=ch.codePointAt(0);if(c<0x80){bytes.push(c);continue;}const pair=map.get(ch);if(!pair)return null;bytes.push(pair[0],pair[1]);}
- let out;try{out=new TextDecoder('shift_jis',{fatal:true}).decode(Uint8Array.from(bytes));}catch{return null;}
- if(/[\uff61-\uff9f\ufffd]/.test(out)||out===t)return null;
- if(relaxed)return out;
- const l=letters(out),k=kanaCount(out);if(!l.length||k<2||k/l.length<.25)return null;
+/* Encoders built once per code page from the platform decoder (char -> its bytes). Windows hands undefined bytes of
+   windows-1252 through as U+0080-U+009F, the WHATWG decoder does the same, so that one is lossless. */
+const tables=new Map();
+function table(codec){
+ if(tables.has(codec))return tables.get(codec);const map=new Map();tables.set(codec,map);let dec;try{dec=new TextDecoder(codec,{fatal:true});}catch{return map;}
+ for(let a=0x80;a<=0xff;a++){try{const c=dec.decode(Uint8Array.of(a));if(c.length===1&&!map.has(c))map.set(c,[a]);}catch{}}
+ if(codec!=='windows-1252')for(let a=0x81;a<=0xfe;a++)for(let b=0x40;b<=0xfe;b++){if(b===0x7f)continue;let c;try{c=dec.decode(Uint8Array.of(a,b));}catch{continue;}if(c&&[...c].length===1&&!map.has(c))map.set(c,[a,b]);}
+ return map;}
+/* How the text was really stored, and the code page the game (or the system) wrongly read it with. Shift-JIS on a Chinese,
+   Traditional Chinese, Korean or Western system, and UTF-8 read the same ways. Code pages that drop the bytes they do not
+   know (Big5, Korean, GBK for UTF-8) can only give back lines that happened to survive whole. */
+const PAIRS=[['gbk','shift_jis'],['big5','shift_jis'],['euc-kr','shift_jis'],['windows-1252','shift_jis'],['windows-1252','utf-8'],['gbk','utf-8'],['big5','utf-8'],['euc-kr','utf-8'],['shift_jis','utf-8']];
+const pairName=(wrong,right)=>right+' read as '+wrong;
+function readBack(t,wrong,right){
+ const map=table(wrong);if(!map.size)return null;const bytes=[];
+ for(const ch of t){const c=ch.codePointAt(0);if(c<0x80){bytes.push(c);continue;}const b=map.get(ch);if(!b)return null;bytes.push(...b);}
+ let out;try{out=new TextDecoder(right,{fatal:true}).decode(Uint8Array.from(bytes));}catch{return null;}
+ if(out===t||/[\uff61-\uff9f\ufffd\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/.test(out))return null;
  return out;}
-/* Per hook stream: two lines that only make sense as Shift-JIS read as GBK lock the stream, after which every line of it
-   is read back; two lines with real kana mark the stream as fine and it is never read back loosely. */
+const japanese=(out,before)=>{const l=letters(out),k=kanaCount(out);return l.length>0&&k>=2&&k>kanaCount(before)&&k/l.length>=.25;};
+/* the Japanese line a mojibake line was, with the code pages that made it ({text,pair}), or null. Real Chinese, Korean or
+   Western text never comes back as kana Japanese (their bytes never form Shift-JIS kana or valid UTF-8 kana).
+   pair given (a stream already locked to it): any clean read-back counts, also kanji-only lines and 「……」. */
+function repairMojibake(text,{pair=''}={}){
+ const t=String(text||'');if(!t.trim()||t.length>4000||!/[^\x00-\x7f]/.test(t))return null;
+ if(pair){const p=PAIRS.find(([w,r])=>pairName(w,r)===pair);if(!p||kanaCount(t)>=2)return null;const out=readBack(t,p[0],p[1]);return out?{text:out,pair}:null;}
+ if(t.length<2||kanaCount(t)>=2)return null;
+ for(const [wrong,right] of PAIRS){if(wrong==='shift_jis'&&!/[縺繧繝]/.test(t))continue;if(wrong==='windows-1252'&&/[^\x00-\u024f\u02c6\u02dc\u2000-\u20ff\u2122]/.test(t))continue;
+  const out=readBack(t,wrong,right);if(out&&japanese(out,t))return {text:out,pair:pairName(wrong,right)};}
+ return null;}
+/* builds the encoders off the hot path, one code page per timer tick, so the first garbled line does not wait ~0.3 s */
+function warmUp(){let i=0;const codecs=[...new Set(PAIRS.map(p=>p[0]))];const step=()=>{if(i>=codecs.length)return;table(codecs[i++]);const h=setTimeout(step,50);h.unref?.();};const h=setTimeout(step,2000);h.unref?.();}
+function repairShiftJisAsGbk(text,{relaxed=false}={}){const r=relaxed?repairMojibake(text,{pair:pairName('gbk','shift_jis')}):repairMojibake(text);return r&&r.pair===pairName('gbk','shift_jis')?r.text:null;}
+/* Per hook stream: two lines that read back the same way lock the stream to that pair, after which every line of it is
+   read back that way, and a line that cannot be (its bytes were lost) is unreadable; two lines with real kana mark the
+   stream as fine and it is never read back loosely. */
 class StreamCodepage{
  constructor(){this.streams=new Map();}
  fix(stream,text){
-  const key=String(stream||''),t=String(text||'');if(!t.trim())return {text:t,repaired:false,locked:false};
-  let s=this.streams.get(key);if(!s){if(this.streams.size>200)this.streams.delete(this.streams.keys().next().value);s={native:0,repaired:0,mode:''};this.streams.set(key,s);}
-  if(kanaCount(t)>=2){if(++s.native>=2&&!s.mode)s.mode='native';return {text:t,repaired:false,locked:false};}
-  const strict=repairShiftJisAsGbk(t);
-  if(strict){let locked=false;if(++s.repaired>=2&&!s.mode){s.mode='sjis-as-gbk';locked=true;}return {text:strict,repaired:true,locked};}
-  if(s.mode==='sjis-as-gbk'){const loose=repairShiftJisAsGbk(t,{relaxed:true});if(loose)return {text:loose,repaired:true,locked:false};}
-  return {text:t,repaired:false,locked:false};}
+  const key=String(stream||''),t=String(text||''),none={text:t,repaired:false,locked:false,unreadable:false};if(!t.trim())return none;
+  let s=this.streams.get(key);if(!s){if(this.streams.size>200)this.streams.delete(this.streams.keys().next().value);s={native:0,counts:{},mode:''};this.streams.set(key,s);}
+  if(kanaCount(t)>=2){if(++s.native>=2&&!s.mode)s.mode='native';return none;}
+  if(s.mode&&s.mode!=='native'){const r=repairMojibake(t,{pair:s.mode})||repairMojibake(t);if(r)return {...none,text:r.text,repaired:true,pair:r.pair};
+   return {...none,unreadable:/[^\x00-\x7f]/.test(t)};}
+  const r=repairMojibake(t);if(!r)return none;
+  let locked=false;if((s.counts[r.pair]=(s.counts[r.pair]||0)+1)>=2&&!s.mode){s.mode=r.pair;locked=true;}
+  return {...none,text:r.text,repaired:true,locked,pair:r.pair};}
  mode(stream){return this.streams.get(String(stream||''))?.mode||'';}
 }
 /* text no one should read or translate: replacement characters, control codes, Chinese read as Shift-JIS (kanji mixed
-   with half-width katakana and boxes), Shift-JIS read as GBK, UTF-8 read as Latin-1. controls:false for hook text,
+   with half-width katakana and boxes), Japanese read with the wrong code page, UTF-8 read as Latin-1. controls:false for hook text,
    where engines may still carry their own control markup. */
 function garbledSource(text,{controls=true,noise=true}={}){
- const t=String(text||'');const l=[...letters(t)];if(!l.length)return false;
- const bad=(t.match(controls?/[\ufffd\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/g:/\ufffd/g)||[]).length;if(bad>=2||(bad&&bad>=l.length*.1))return true;
+ const t=String(text||'');const l=[...letters(t)];
+ const bad=(t.match(controls?/[\ufffd\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/g:/\ufffd/g)||[]).length;if(bad>=2||(bad&&bad>=l.length*.1))return true;if(!l.length)return false;
+ /* Shift-JIS read as Big5 lands in the private use area (user-defined code points); a game's own gaiji are only a few */
+ const pua=(t.match(/[-]/g)||[]).length;if(pua>=3&&pua>=l.length*.3)return true;
+ /* UTF-8 kana (E3 81-83 ..) read as GBK starts 銇 銈 銉, read as Shift-JIS 縺 繧 繝: rare characters in real text */
+ const kanaLeads=(t.match(/[銇銈銉縺繧繝]/g)||[]).length;if(kanaLeads>=3&&kanaLeads>=l.length*.15)return true;
  if((t.match(/[\uff61-\uff9f\u25a1]/g)||[]).length>=3&&(t.match(/[\u4e00-\u9fff]/g)||[]).length>=4)return true;
  if((t.match(/[\u00c2-\u00ef][\u0080-\u00bf\u201a\u0192\u201e\u2026\u2020\u2021\u02c6\u2030\u0160\u2039\u0152\u017d\u2018\u2019\u201c\u201d\u2022\u2013\u2014\u02dc\u2122\u0161\u203a\u0153\u017e\u0178]/g)||[]).length>=2)return true;
  if(noise&&noiseLine(t))return true;
- return !!repairShiftJisAsGbk(t);}
+ return !!repairMojibake(t);}
 /* 2026-11-15 (沙耶の唄: the game draws its monsters' speech as noise, 『二十Aﾅ像ナッテ初y(VQｳッテノハ…』): Japanese with half-width
    katakana glued to ASCII or kanji and ASCII runs wedged between wide characters. Same rule as EmbedTextPolicy.Unreadable
    (native/EmbedTextPolicy.cs), which keeps such a line the game's own (never hidden). A half-width word (ｱﾊﾊ) or 「AとB」 is not noise. */
@@ -80,4 +101,4 @@ const SOURCE_TALKS=/翻訳|訳し|文字化け|化け|ＡＩ|AI|原文|テキス
 function metaReply(translation,source=''){
  const tr=String(translation||'').trim();if(!tr)return false;if(SOURCE_TALKS.test(String(source||'')))return false;
  return META.some(r=>r.test(tr));}
-module.exports={repairShiftJisAsGbk,StreamCodepage,garbledSource,noiseLine,metaReply};
+module.exports={warmUp,repairMojibake,repairShiftJisAsGbk,StreamCodepage,garbledSource,noiseLine,metaReply};
