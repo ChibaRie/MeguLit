@@ -11,8 +11,8 @@ test('the hand strip shows at most 10 games, once, and never slides', () => {
   assert.ok(!src.includes('centerRail'));
   assert.ok(!src.includes('[0,1,2].map(c=>list.map'));
 });
-test('picking a card dissolves the upper block with opacity only', () => {
-  assert.ok(src.includes('function fadeEls'));
+test('picking a card hands the upper block over with ghosts (no blank frame), GSAP, transform and opacity', () => {
+  assert.ok(src.includes('function startHandoff')&&src.includes('function endHandoff')&&src.includes('function handoffIn'));
   assert.ok(src.includes("mode==='fade'"));
   assert.ok(/\.tv-rail-in\{[^}]*transform:none!important/.test(css));
   assert.ok(/\.tv-chip\.on\{transform:translateY\(-10px\)/.test(css));

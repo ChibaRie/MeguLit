@@ -103,10 +103,27 @@ const PILE_IN=620;
 /* (user 2026-11-12: "no code transition for the background lines") the columns change like ink: the old ones lift and
    fade one after another from the right, then the new ones rise into place with a soft stagger; only opacity and
    transform animate (Web Animations, on the compositor), the text is written once per change */
-/* 2026-11-15 dissolve: the upper block (title, who/line, columns, figures) fades out, the new text is written while it is invisible, then it fades in; opacity only, nothing moves */
-function fadeEls(root,to,ms){const els=[...root.querySelectorAll('.tv-title,.tv-who,.tv-line,.tv-script,.tv-figs')];return Promise.all(els.map(el=>{el.getAnimations().filter(a=>a._dis).forEach(a=>a.cancel());
- if(!to){const a=el.animate([{opacity:getComputedStyle(el).opacity},{opacity:0}],{duration:ms,easing:'ease-out',fill:'forwards'});a._dis=1;return a.finished.catch(()=>null);}
- const base=getComputedStyle(el).opacity,a=el.animate([{opacity:0},{opacity:base}],{duration:ms,easing:'ease-in'});a._dis=1;return a.finished.catch(()=>null);}));}
+/* 2026-11-15 (user: 把左边的过渡做好点) hand-off, never a blank frame: the old title / last-played line / columns are copied into ghosts that sit on top and lift away
+   (up, blurred, faded, letter by letter for the title) while the new ones rise in underneath with a 20-30ms stagger; transform + opacity only (GSAP); a new pick
+   ends the running hand-off first (kills the timelines, drops the ghosts, clears the inline styles) so nothing piles up or leaves a trace */
+const HO_SEL=['.tv-title','.tv-who','.tv-line','.tv-script'];
+function endHandoff(lv){const h=lv.ho;lv.ho=null;if(!h)return;h.tls.forEach(t=>t.kill());h.ghosts.forEach(n=>n.remove());const g=window.gsap;if(g&&lv.root.isConnected)g.set([...lv.root.querySelectorAll('.tv-title .tv-ch,.tv-title .tv-meta,.tv-who,.tv-line,.tv-script p')],{clearProps:'transform,opacity,filter,willChange'});}
+function startHandoff(root,lv){const g=window.gsap;endHandoff(lv);if(!g)return false;const h=lv.ho={ghosts:[],tls:[],rm:calm()};
+ for(const sel of HO_SEL){const el=root.querySelector(sel);if(!el||!el.parentElement)continue;const c=el.cloneNode(true);c.classList.add('tv-ghost');c.removeAttribute('id');c.querySelectorAll('[id]').forEach(n=>n.removeAttribute('id'));c.setAttribute('aria-hidden','true');
+  Object.assign(c.style,{position:'absolute',left:el.offsetLeft+'px',top:el.offsetTop+'px',width:el.offsetWidth+'px',height:el.offsetHeight+'px',right:'auto',bottom:'auto',margin:'0',pointerEvents:'none',zIndex:'6'});el.after(c);h.ghosts.push(c);}
+ const rm=h.rm,tl=g.timeline({onComplete:()=>h.ghosts.forEach(n=>n.remove())});h.tls.push(tl);
+ const mv=(y)=>rm?{}:{y,filter:'blur(5px)'},T=rm?.18:.32;
+ h.ghosts.forEach((c,k)=>{const sel=HO_SEL[HO_SEL.findIndex(s=>c.matches(s))];
+  if(sel==='.tv-title'){const ch=c.querySelectorAll('.tv-ch');if(ch.length)tl.to(ch,{...mv(-16),opacity:0,duration:T,ease:'power2.in',stagger:rm?0:{amount:.12}},0);tl.to(c.querySelector('.tv-meta')||[],{...(rm?{}:{y:-8}),opacity:0,duration:T*.9,ease:'power2.in'},0);}
+  else if(sel==='.tv-script'){const ps=c.querySelectorAll('p');tl.to(ps.length?ps:c,{...(rm?{}:{y:-14}),opacity:0,duration:T,ease:'power2.in',stagger:rm?0:.04},.12);}
+  else tl.to(c,{...(rm?{}:{y:-10}),opacity:0,duration:T,ease:'power2.in'},.06);});
+ return true;}
+/* the new texts rise in: title letter by letter (about 0.6 s in all), then the who/line row and the columns, each about 60ms behind */
+function handoffIn(root,lv,part){const g=window.gsap,h=lv.ho;if(!g||!h)return;const rm=h.rm,tl=g.timeline({defaults:{ease:'expo.out'}});h.tls.push(tl);
+ if(part==='title'){const ch=root.querySelectorAll('.tv-title:not(.tv-ghost) .tv-ch'),meta=root.querySelector('.tv-title:not(.tv-ghost) .tv-meta');
+  if(ch.length)tl.fromTo(ch,rm?{opacity:0}:{y:'105%',opacity:0},{...(rm?{}:{y:0}),opacity:1,duration:rm?.2:.5,stagger:rm?0:{amount:.1}},.08);if(meta)tl.fromTo(meta,rm?{opacity:0}:{y:8,opacity:0},{...(rm?{}:{y:0}),opacity:1,duration:rm?.2:.45},.16);}
+ else if(part==='rows'){const row=[...root.querySelectorAll('.tv-who:not(.tv-ghost),.tv-line:not(.tv-ghost)')];if(row.length)tl.fromTo(row,rm?{opacity:0}:{y:10,opacity:0},{...(rm?{}:{y:0}),opacity:1,duration:rm?.2:.45,stagger:rm?0:.06},.14);}
+ else{const ps=root.querySelectorAll('.tv-script:not(.tv-ghost) p');if(ps.length)tl.fromTo(ps,rm?{opacity:0}:{y:18,opacity:0},{...(rm?{}:{y:0}),opacity:1,duration:rm?.2:.5,stagger:rm?0:.05},.2);}}
 function swapScript(script,lines,onPick,soft){if(!script)return;const esc2=t=>String(t).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]);
  (script._anims||[]).forEach(x=>{try{x.cancel();}catch{}});script._anims=[];
  lines=lines.slice(0,8);const next=lines.map(t=>/^[「『（("]/.test(t)?t:'「'+t+'」'),olds=[...script.querySelectorAll('p')];
@@ -177,9 +194,9 @@ function deal(cover,background,animate,mode='draw'){const flip=cover.querySelect
  backFace=flip.querySelector('.tv-back'),pile=cover.closest('.tv-home')?.querySelector(':scope>.tv-pile');cover.querySelectorAll('.tv-old,.tv-sheen').forEach(n=>n.remove());
  cover.closest('.tv-home')?.querySelectorAll(':scope>.tv-outgoing>.tv-old').forEach(n=>n.remove());[flip,face,artEl,backFace,...(pile?[pile,...pile.children]:[])].forEach(el=>el.getAnimations().forEach(x=>x.cancel()));
  if(!animate||matchMedia('(prefers-reduced-motion:reduce)').matches||!artEl.style.background){artEl.style.background=background;return 0;}
- if(mode==='fade'){busy(cover,820);const fresh=document.createElement('div');fresh.className='tv-old';fresh.style.background=background;face.insertBefore(fresh,
-  face.querySelector('.tv-foil'));const a=fresh.animate([{opacity:0,filter:'blur(10px) saturate(.6)',transform:'scale(1.04)'},{opacity:1,filter:'blur(0) saturate(1)',
-  transform:'none'}],{duration:760,easing:'cubic-bezier(.22,1,.36,1)',fill:'forwards'});a.finished.then(()=>{artEl.style.background=background;fresh.remove();},
+ if(mode==='fade'){busy(cover,620);const fresh=document.createElement('div');fresh.className='tv-old';fresh.style.background=background;face.insertBefore(fresh,
+  face.querySelector('.tv-foil'));const a=fresh.animate([{clipPath:'inset(0 0 100% 0)',transform:'scale(1.06)'},{clipPath:'inset(0 0 0% 0)',
+  transform:'none'}],{duration:560,easing:'cubic-bezier(.16,1,.3,1)',fill:'forwards'});a.finished.then(()=>{artEl.style.background=background;fresh.remove();},
   ()=>fresh.remove());return 260;}
  const outDir=rnd(0,Math.PI*2),outDur=rnd(360,460);
  /* a field card that goes back into the hand (cover.dataset.stow, set by the draw) flies there itself; only a card that is not in the hand is thrown off */
@@ -323,17 +340,17 @@ export function renderHomeTV(main,ctx){
  $('[data-act="detail"]')?.addEventListener('click',()=>shown&&onDetail(shown.id));
  /* 2026-11-13 (user: "左下角显示小字作品名 … 把之前删掉的那个动效…拿回来 放左下角最下面 点缀一下") the bottom bar is back as a quiet accent: the game name in
     small type rises in letter by letter, then one of its lines types itself out */
- const type=s=>{clearInterval(live.typer);let n=0;const line=$('.tv-line');if(!line)return;setExample(line,'');line.textContent='';line.classList.toggle('typing',!!s);if(!s)return;
-  if(matchMedia('(prefers-reduced-motion:reduce)').matches){line.textContent=quoted(s);line.classList.remove('typing');setExample(line,s);return;}
+ const type=(s,instant)=>{clearInterval(live.typer);let n=0;const line=$('.tv-line');if(!line)return;setExample(line,'');line.textContent='';line.classList.toggle('typing',!!s);if(!s)return;
+  if(instant||matchMedia('(prefers-reduced-motion:reduce)').matches){line.textContent=quoted(s);line.classList.remove('typing');setExample(line,s);return;}
   live.typer=setInterval(()=>{n++;line.textContent=n>=s.length?quoted(s):(/^[「『（("]/.test(s)?'':'「')+s.slice(0,n);if(n>=s.length){clearInterval(live.typer);line.classList.remove('typing');setExample(line,s);}},55);};
  const nameIn=g=>{const who=$('.tv-who');if(!who)return;who.textContent=g.lastPlayedAt?`${w.last} · ${relativeTime(g.lastPlayedAt)}`:'';who.title=g.title;};
  const max=Math.max(1,...model.games.map(g=>g.characters||0));
- async function paint(i,flash=true,mode='draw'){const soft=flash&&mode==='fade'&&!matchMedia('(prefers-reduced-motion:reduce)').matches;
+ async function paint(i,flash=true,mode='draw'){const soft=flash&&mode==='fade';
   const g=typeof i==='object'?i:list[i];if(!root.isConnected){if(live?.root===root)stopHomeTV();return;}if(!g||!live||live.root!==root)return;shown=g;cur=list.indexOf(g);
    const mine=++token;
   const started=performance.now(),reveal=deal($('.tv-cover'),art(g,['#3b2a26','#3b2a26','#1a1110']),flash,mode);
   const [p,d]=await Promise.all([palette(g),detail(api,g.id,locale)]);if(mine!==token||!live||live.root!==root)return;
-  const wait=flash&&!soft?Math.max(0,reveal-(performance.now()-started)):0;if(soft){await fadeEls(root,0,170);if(mine!==token||!live||live.root!==root)return;}if(wait){await new Promise(r=>setTimeout(r,wait));if(mine!==token||!live||live.root!==root)return;
+  const wait=flash&&!soft?Math.max(0,reveal-(performance.now()-started)):0;const ho=soft&&startHandoff(root,live);if(wait){await new Promise(r=>setTimeout(r,wait));if(mine!==token||!live||live.root!==root)return;
    }
   glowTo(ctx.onGame,g);root.style.setProperty('--tv-a',p[0]);root.style.setProperty('--tv-b',p[1]);root.style.setProperty('--tv-c',p[2]);
   const k=(g.title.length*37+pool.indexOf(g)*13)%60,picked=homeLinesFor(d),sentences=picked.lines,words=(d.words||[]).filter(x=>x.spelling).slice(0,10),sessions=d.sessions||[];
@@ -344,21 +361,21 @@ export function renderHomeTV(main,ctx){
   ring.innerHTML=`<svg viewBox="0 0 100 100"><defs><linearGradient id="tvgrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff6e4"/><stop offset=".45" stop-color="var(--g-gold)"/><stop offset="1" stop-color="var(--tv-a)"/></linearGradient><filter id="tvglow" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="1.4"/></filter></defs>${Array.from({length:N},(_,t)=>{const a=t/N*2*Math.PI-Math.PI/2,big=t%5===0,r1=big?38.6:39.4,r2=40.4;return `<line class="etch${big?' big':''}${t<Math.round(pct*N)?' on':''}" style="--d:${t*18}ms" x1="${(50+r1*Math.cos(a)).toFixed(2)}" y1="${(50+r1*Math.sin(a)).toFixed(2)}" x2="${(50+r2*Math.cos(a)).toFixed(2)}" y2="${(50+r2*Math.sin(a)).toFixed(2)}"/>`;}).join('')}<circle class="track" cx="50" cy="50" r="44"/><g transform="rotate(-90 50 50)"><circle class="glow" cx="50" cy="50" r="44" stroke-dasharray="${C}" stroke-dashoffset="${C}" filter="url(#tvglow)"/><circle class="prog" cx="50" cy="50" r="44" stroke-dasharray="${C}" stroke-dashoffset="${C}"/></g><circle class="head" cx="50" cy="8.4" r=".9" style="transform-origin:50px 50px;transform:rotate(0deg)"/></svg>`;
    requestAnimationFrame(()=>requestAnimationFrame(()=>{const off=C*(1-pct);ring.querySelectorAll('.prog,.glow').forEach(c=>c.style.strokeDashoffset=off);const h=ring.querySelector('.head');
    if(h)h.style.transform=`rotate(${pct*360}deg)`;}));
-  swapScript($('.tv-script'),sentences.slice(0,8),type,soft);shownLines=sentences.slice(0,8);$('.tv-lines-edit').classList.toggle('custom',picked.custom);
+  swapScript($('.tv-script'),sentences.slice(0,8),type,soft);if(ho)handoffIn(root,live,'script');shownLines=sentences.slice(0,8);$('.tv-lines-edit').classList.toggle('custom',picked.custom);
   const now=Date.now(),span=40*864e5,big=Math.max(1,...sessions.map(s=>s.active_seconds||0))*.6;$('.tv-tl').innerHTML=sessions.filter(s=>now-s.started_at*1000<span).map(s=>{
    const y=10+((now-s.started_at*1000)/span)*70,long=(s.active_seconds||0)>=big;return `<b class="${long?'big':''}" style="top:${y}%"></b>`+(long?`<span style="top:${y}%">${new Date(s.started_at*1000).toLocaleDateString(undefined,{month:'numeric',day:'numeric'})} · ${Math.round((s.active_seconds||0)/60)}${w.min}</span>`:'');
    }).join('');
   $('.tv-slices').innerHTML=Array.from({length:5},(_,j)=>`<i style="background:${art(g,p)};background-size:500% 100%;background-position:${j*25}% 0;transform:translateZ(${j%2?40:-20}px) translateY(${(j-2)*12}px)"></i>`).join('');
 
   const no=String(Math.max(1,pool.indexOf(g)+1)).padStart(2,'0');
-  const t=$('.tv-title');if(!soft)t.classList.remove('in');const outP=flash&&!soft?titleOut(root,live):Promise.resolve();setTimeout(async()=>{await outP;if(mine!==token||!live||live.root!==root)return;const [mainTitle,subTitle]=splitTitle(g.title);$('.tv-h1').innerHTML=titleHTML(mainTitle);
+  const t=$('.tv-title');if(!soft)t.classList.remove('in');const outP=flash&&!ho?titleOut(root,live):Promise.resolve();setTimeout(async()=>{await outP;if(mine!==token||!live||live.root!==root)return;const [mainTitle,subTitle]=splitTitle(g.title);$('.tv-h1').innerHTML=titleHTML(mainTitle);
    $('.tv-h1').title=g.title;$('.tv-meta').innerHTML=(subTitle?`<span class="tv-sub" lang="ja">${esc(subTitle)}</span>`:''); void t.offsetWidth;fitTitle($('.tv-h1'));
-   fitLeft(root);nameIn(g);type(randomLine(d,sentences));t.classList.add('in');if(flash&&!soft)titleIn(root,live);/* measure again once the new title has settled, so a block hidden mid-change comes back */setTimeout(()=>{
+   fitLeft(root);nameIn(g);type(randomLine(d,sentences),!!ho);t.classList.add('in');if(ho){if(live.ho===ho){handoffIn(root,live,'title');handoffIn(root,live,'rows');}}else if(flash)titleIn(root,live);/* measure again once the new title has settled, so a block hidden mid-change comes back */setTimeout(()=>{
    if(live&&live.root===root)fitLeft(root);},900);},flash&&!soft?Math.max(0,reveal-(performance.now()-started)):0);
   tweenFig($('[data-fig="time"]'),g.readingSeconds||0,v=>mins(v));tweenFig($('[data-fig="chars"]'),g.characters||0,v=>number(Math.round(v)));tweenFig($('[data-fig="words"]'),
    g.learnedWords||0,v=>number(Math.round(v)));
   
-  rail();if(soft)setTimeout(()=>{if(mine===token)fadeEls(root,1,200);},40);
+  rail();
  }
  /* 2026-11-14 (user: "右边下面不是卡牌，是正常选的那种") the games are picked from the cover strip again (thumbnails, the current one wider with its timer bar); the card hand is gone */
  /* 2026-11-15 (user: 当前卡要在牌的正中间，两边都有牌) the strip is the library three times in a row and the current card is the one in the middle copy, so cards stand on both sides of it whichever game is current; the track element stays, so the strip slides from where it was */
