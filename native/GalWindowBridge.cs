@@ -308,7 +308,7 @@ public class GalWindowBridge {
         }
         WindowGoneAt=DateTime.MinValue;
         ForgetGame();Target=IntPtr.Zero;ModeRequestAt=DateTime.MinValue;ModeFallbackAt=DateTime.UtcNow;
-        Restore();InterfaceMode(false,false);if(WaitMarker!=null)WaitMarker.Hide();if(HookVerifier!=null)HookVerifier.Cancel();
+        DropLayers();Restore();InterfaceMode(false,false);if(WaitMarker!=null)WaitMarker.Hide();if(HookVerifier!=null)HookVerifier.Cancel();
         Emit(new{type="gameClosed",interfaceMode="normal",bound=false,gameAttached=false,gameProcessId=0,gameStarted="",gameHwnd=""});
         return true;
     }
@@ -477,6 +477,33 @@ public class GalWindowBridge {
     static bool ReaderOwnsPointer(){Point screen,origin=new Point();if(Overlay==IntPtr.Zero||!IsShown||!GetCursorPos(out screen)||!ClientToScreen(Overlay,ref origin))return false;
         int x=screen.X-origin.X,y=screen.Y-origin.Y;return HitRegions.Exists(h=>!h.Pass&&x>=h.Bounds.Left&&x<h.Bounds.Right&&y>=h.Bounds.Top&&y<h.Bounds.Bottom);}
     static ReaderPointerGate PointerGate;
+    /* 2026-11-15 (user: 「不要让幽灵窗口抢我桌面置顶」): set by the foreground hook and every tick; the glass host and the
+       reading layer float above the game only while this holds (native/TopmostGuard.cs) */
+    static volatile bool LayersMayFloat;
+    /* Foreground / minimise event (TopmostGuard hook, runs in this thread's PeekMessage): the same decision as the tick,
+       at once. Another program in front, the game minimised or gone: the layer leaves the topmost band directly above the
+       game (under the program now in front), the glass host hides; minimised or gone also hides the layer and its masks. */
+    static void GuardLayers(uint ev){
+        if(Overlay==IntPtr.Zero||!TranslationMode||Target==IntPtr.Zero)return;
+        IntPtr fgWindow=GetForegroundWindow(),fg=GetAncestor(fgWindow,3),gameRoot=GetAncestor(Target,3),overlayRoot=GetAncestor(Overlay,3);
+        bool alive=IsWindow(Target),iconic=alive&&IsIconic(Target);
+        uint fgPid=0,gamePid=0;GetWindowThreadProcessId(fgWindow,out fgPid);if(alive)GetWindowThreadProcessId(Target,out gamePid);
+        bool gameFront=alive&&(fg==gameRoot||fgPid!=0&&(fgPid==gamePid||ImeHost(ProcessName(fgPid))));
+        bool ownFront=fg==overlayRoot||MenuOpen&&MenuRegionReady&&fgPid!=0&&fgPid==(uint)OverlayPid;
+        bool ok=TopmostGuard.MayFloat(alive,iconic,gameFront,ownFront);
+        LayersMayFloat=ok;if(ok)return;
+        bool moved=TopmostGuard.Sink(Overlay,alive&&!iconic?GetAncestor(Target,2):IntPtr.Zero);
+        try{Glass.Hide();}catch{}
+        if(!alive||iconic){if(IsShown){ShowWindow(Overlay,0);IsShown=false;}DropLayers();}
+        if(moved)Emit(new{type="coverDebug",text="前台换成了别的程序/游戏最小化：阅读层退出置顶，放在游戏正上方、其他程序下面 (event "+ev.ToString("x")+")"});
+    }
+    /* game gone or minimised: no MeguLit mask / marker / glass window stays on the desktop (they are created again on use) */
+    static void DropLayers(){
+        try{if(TextMask!=null)TextMask.Hide();}catch{}try{if(WaitMarker!=null)WaitMarker.Hide();}catch{}
+        try{if(MaskLayer!=null)MaskLayer.Dispose();}catch{}try{Glass.Hide();}catch{}LayersMayFloat=false;
+    }
+    static int TopmostGuardSelfTest(){string r=TopmostGuard.WindowSelfTest();Emit(new{type="topmost-guard-selftest",passed=r=="",failure=r});return r==""?0:12;}
+
     static IntPtr NoActivateWindow;
     static void ReaderActivationPolicy(){
         IntPtr window=Overlay;
@@ -537,7 +564,8 @@ public class GalWindowBridge {
         uint hostGamePid=0;if(Target!=IntPtr.Zero)GetWindowThreadProcessId(Target,out hostGamePid);
         bool hostContext=hostForegroundPid==(uint)OverlayPid||hostForegroundPid==hostGamePid||ImeHost(ProcessName(hostForegroundPid));
         bool menuPinned=TranslationMode&&Target!=IntPtr.Zero&&MenuOpen&&MenuRegionReady&&hostContext;
-        if(!foregroundGame&&!menuPinned&&(GetWindowLong(Overlay,-20)&8)!=0)SetWindowPos(Overlay,new IntPtr(-2),0,0,0,0,0x0001|0x0002|0x0010);
+        LayersMayFloat=foregroundGame||menuPinned;
+        if(!foregroundGame&&!menuPinned&&(GetWindowLong(Overlay,-20)&8)!=0){if(Target!=IntPtr.Zero&&IsWindow(Target))TopmostGuard.Sink(Overlay,GetAncestor(Target,2));else SetWindowPos(Overlay,new IntPtr(-2),0,0,0,0,0x0001|0x0002|0x0010);}
         if(IsIconic(Overlay)){MenuFocusPending=false;if(MaskLayer!=null)MaskLayer.Hide();if(TextMask!=null)TextMask.Hide();if(WaitMarker!=null)WaitMarker.Hide();return;}
         if(Dragging)DragTick();
         // Keep the current surface during the first menu construction instead of hiding and immediately showing it again.
@@ -570,7 +598,7 @@ public class GalWindowBridge {
             FocusMenuOnce();
         }
         if(Target==IntPtr.Zero){if(TextMask!=null)TextMask.Hide();if(WaitMarker!=null)WaitMarker.Hide();return;}
-        if(!IsWindow(Target)){Target=IntPtr.Zero;Restore();Emit(new{type="bound",bound=false,message="游戏窗口已关闭，等待再次启动"});return;}
+        if(!IsWindow(Target)){Target=IntPtr.Zero;DropLayers();Restore();Emit(new{type="bound",bound=false,message="游戏窗口已关闭，等待再次启动"});return;}
         IntPtr fg=GetAncestor(GetForegroundWindow(),3),gameRoot=GetAncestor(Target,3),overlayRoot=GetAncestor(Overlay,3);
         Rect probeRect;if(VisualDetection&&GetClientRect(Target,out probeRect)){bool? presence=Dialog.Tick(Target,probeRect.Right,probeRect.Bottom);if(presence.HasValue)Emit(new{type="dialogEvidence",visible=presence.Value});}
         // The game's own popups (IME candidate list, dialogs) belong to its process but not to its window tree: the IME
@@ -580,7 +608,7 @@ public class GalWindowBridge {
         if(!contextActive)MenuFocusPending=false;
         // Another application in front: never topmost, also with the menu open (it stays visible, just above the game;
         // KeepAboveGame keeps it there). Topmost over everything after Alt+Tab was wrong (user, 2026-11-03).
-        if(!contextActive&&(GetWindowLong(Overlay,-20)&8)!=0)SetWindowPos(Overlay,new IntPtr(-2),0,0,0,0,0x0001|0x0002|0x0010);
+        if(!contextActive&&(GetWindowLong(Overlay,-20)&8)!=0)TopmostGuard.Sink(Overlay,GetAncestor(Target,2));
         if(!visible){if(IsShown){HideReason("menu="+MenuOpen+"/"+MenuRegionReady+" cover="+CoverEnabled+" dialog="+DialogVisible+" iconic="+IsIconic(Target)+" fg="+(fg==gameRoot?"game":fg==overlayRoot?"overlay":"other"));ShowWindow(Overlay,0);}IsShown=false;if(TextMask!=null)TextMask.Hide();
             // Hidden only because no dialogue was detected: keep looking for the wait marker, so its return brings the layer back.
             Rect probeClient;Point probeOrigin=new Point();
@@ -631,6 +659,7 @@ public class GalWindowBridge {
         Console.InputEncoding=new UTF8Encoding(false);Console.OutputEncoding=new UTF8Encoding(false);
         /* Its glass and mask layers sit over the game: a stalled moment must never turn them into blue-captioned ghosts. */
         NoGhostWindows();
+        if(args.Length>0&&args[0]=="--topmost-guard-self-test")return TopmostGuardSelfTest();
         if(args.Length>0&&args[0]=="--host-frame-self-test"){
             int original=0x16cf0000,hosted=HostedStyle(original);
             if((hosted&0x00c40000)!=0||(hosted&unchecked((int)0x80000000))==0||HostedStyle(hosted)!=hosted)return 8;
@@ -692,6 +721,7 @@ if(args.Length==2&&args[0]=="--art-scan-file"){Console.OutputEncoding=Encoding.U
         WaitMarker=new GameWaitMarker(Emit);
         try{SetProcessDpiAwarenessContext(new IntPtr(-4));}catch{}
         PointerGate=new ReaderPointerGate(Emit);
+        TopmostGuard.Install((ev,h)=>GuardLayers(ev));
         bool hotkey=RegisterHotKey(IntPtr.Zero,0x541,0x4001,0x54),coverHotkey=RegisterHotKey(IntPtr.Zero,0x542,0x4001,0x48),modeHotkey=RegisterHotKey(IntPtr.Zero,0x543,0x4001,0x4d);
         /* E476: a helper left running by another MeguLit folder (an older download) holds Alt+T: end it and take the keys */
         /* E540: side-by-side test copies (MEGULIT_SIDE_BY_SIDE=1, E530) share the PC with other MeguLit folders on purpose;
@@ -704,7 +734,7 @@ if(args.Length==2&&args[0]=="--art-scan-file"){Console.OutputEncoding=Encoding.U
         try{while(Running){Dictionary<string,object> command;while(Commands.TryDequeue(out command)){try{Command(command);}catch(Exception error){Emit(new{type="error",message=error.Message});}}Msg message;while(PeekMessage(out message,IntPtr.Zero,0,0,1)){if(message.message==0x0312&&message.wParam.ToUInt64()==0x543){BindHotkey();}else if(message.message==0x0312&&message.wParam.ToUInt64()==0x542){ToggleCover();}else if(message.message==0x0312){Emit(new{type="hotkey"});}else{TranslateMessage(ref message);DispatchMessage(ref message);}}try{ModeRequestTick();PickTick();Tick();}catch{}
           /* E476: keys another program held are taken as soon as it lets go, so "not ready" heals by itself */
           if((!hotkey||!coverHotkey||!modeHotkey)&&DateTime.UtcNow>=nextHotkeyTry){nextHotkeyTry=DateTime.UtcNow.AddSeconds(2);bool was=hotkey&&coverHotkey&&modeHotkey;if(!hotkey)hotkey=RegisterHotKey(IntPtr.Zero,0x541,0x4001,0x54);if(!coverHotkey)coverHotkey=RegisterHotKey(IntPtr.Zero,0x542,0x4001,0x48);if(!modeHotkey)modeHotkey=RegisterHotKey(IntPtr.Zero,0x543,0x4001,0x4d);if(hotkey||coverHotkey||modeHotkey)Emit(new{type="hotkeyState",hotkey=hotkey,coverHotkey=coverHotkey,modeHotkey=modeHotkey});}
-          try{Glass.Follow(Overlay,TranslationMode&&Target!=IntPtr.Zero&&IsShown&&Overlay!=IntPtr.Zero&&IsWindowVisible(Overlay)&&!IsIconic(Overlay)&&!IsIconic(Target));}catch{}Thread.Sleep(Dragging?8:Target==IntPtr.Zero?100:16);}}
-        finally{RevealGame(Target);ForgetGame();if(HookVerifier!=null)HookVerifier.Dispose();Restore();TextMask.Dispose();WaitMarker.Dispose();MaskLayer.Dispose();Glass.Dispose();if(hotkey)UnregisterHotKey(IntPtr.Zero,0x541);if(coverHotkey)UnregisterHotKey(IntPtr.Zero,0x542);if(modeHotkey)UnregisterHotKey(IntPtr.Zero,0x543);}return 0;
+          try{Glass.Follow(Overlay,TranslationMode&&Target!=IntPtr.Zero&&LayersMayFloat&&IsShown&&Overlay!=IntPtr.Zero&&IsWindowVisible(Overlay)&&!IsIconic(Overlay)&&!IsIconic(Target));}catch{}Thread.Sleep(Dragging?8:Target==IntPtr.Zero?100:16);}}
+        finally{RevealGame(Target);TopmostGuard.Uninstall();ForgetGame();if(HookVerifier!=null)HookVerifier.Dispose();Restore();TextMask.Dispose();WaitMarker.Dispose();MaskLayer.Dispose();Glass.Dispose();if(hotkey)UnregisterHotKey(IntPtr.Zero,0x541);if(coverHotkey)UnregisterHotKey(IntPtr.Zero,0x542);if(modeHotkey)UnregisterHotKey(IntPtr.Zero,0x543);}return 0;
     }
 }

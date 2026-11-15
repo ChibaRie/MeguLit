@@ -537,11 +537,18 @@ private:
     if (auto s2 = swap.try_as<IDXGISwapChain2>()) s2->SetMaximumFrameLatency(1);
     ShowWindow(hwnd, SW_SHOWNOACTIVATE);
     FollowGame();
+    /* 2026-11-15 (user: 「不要让幽灵窗口抢我桌面置顶」): a foreground switch or a minimise is followed at once (the hook runs
+       in this thread's next PeekMessage, which MsgWaitForMultipleObjects wakes for), not on the next 50 ms tick */
+    Follower() = this;
+    SetWinEventHook(EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND, nullptr, OnForeground, 0, 0, WINEVENT_OUTOFCONTEXT);
+    SetWinEventHook(EVENT_SYSTEM_MINIMIZESTART, EVENT_SYSTEM_MINIMIZEEND, nullptr, OnForeground, 0, 0, WINEVENT_OUTOFCONTEXT);
     return true;
   }
 
   // Keep the window over the game client (overlay) or the game's monitor (scale), right above the game in z-order,
   // hidden while the game is minimised.
+  static Compositor *&Follower() { static Compositor *c = nullptr; return c; }
+  static void CALLBACK OnForeground(HWINEVENTHOOK, DWORD, HWND, LONG obj, LONG, DWORD, DWORD) { if (obj == OBJID_WINDOW && Follower()) Follower()->FollowGame(); }
   void FollowGame() {
     if (!hwnd) return;
     if (IsIconic(opt.game)) { if (IsWindowVisible(hwnd)) ShowWindow(hwnd, SW_HIDE); ReleaseCursor(); return; }
@@ -551,9 +558,15 @@ private:
     const bool fg = GetForegroundWindow() == opt.game;
     if (opt.scale && fg) { if (!(GetWindowLongPtrW(hwnd, GWL_EXSTYLE) & WS_EX_TOPMOST)) SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE); }
     else {
-      if (GetWindowLongPtrW(hwnd, GWL_EXSTYLE) & WS_EX_TOPMOST) SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+      /* directly above the game: after the nearest NORMAL window above it (a topmost one there would take this window
+         into the topmost band); none = the game tops the normal band, so HWND_TOP of that band is right above it */
       HWND above = GetWindow(opt.game, GW_HWNDPREV);
-      if (above != hwnd) SetWindowPos(hwnd, above ? above : HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+      for (int steps = 0; above && steps < 2000 && (above == hwnd || (GetWindowLongPtrW(above, GWL_EXSTYLE) & WS_EX_TOPMOST)); steps++) above = GetWindow(above, GW_HWNDPREV);
+      /* one call: inserted after a normal window it leaves the topmost band without a frame above the program in front
+         (HWND_NOTOPMOST first would put it on top of every normal window, the user's browser included) */
+      const bool topmost = (GetWindowLongPtrW(hwnd, GWL_EXSTYLE) & WS_EX_TOPMOST) != 0;
+      if (above && (topmost || GetWindow(above, GW_HWNDNEXT) != hwnd)) SetWindowPos(hwnd, above, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
+      else if (!above) SetWindowPos(hwnd, topmost ? HWND_NOTOPMOST : HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
     }
     if (opt.scale) UpdateCursor(fg);
   }
