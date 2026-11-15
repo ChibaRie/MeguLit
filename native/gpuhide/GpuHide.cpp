@@ -194,6 +194,7 @@ static std::vector<int> Decide(Dev &v, std::vector<Quad> &q) {
  if (!v.tex0 || ti.w == 0) return drop;
  if (v.rtIsBack && ti.rt) { Learner.Composite(v.tex0, q); return drop; }
  TraceDraw(v.tex0, ti.w, ti.h, v.rtIsBack ? NULL : v.rtTex, v.rtW, v.rtH, q);
+ Learner.texRt = ti.rt;
  return Learner.Draw(v.tex0, ti.w, ti.h, v.rtIsBack ? NULL : v.rtTex, v.rtW, v.rtH, v.bbW, v.bbH, q, GetTickCount());
 }
 // The device's own getters at every draw: state the game set before the DLL arrived (a declaration set once at start,

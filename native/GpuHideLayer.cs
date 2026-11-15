@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-3.0-or-later
+﻿// SPDX-License-Identifier: GPL-3.0-or-later
 // Hide layer 4, the "fake GPU" (native/gpuhide, docs/hide-layers.md, owner 2026-11-14: MeguLit draws all game text).
 // MeguLitGpu<bit>.dll is loaded into the bound game next to MeguLitFont<bit>.dll. It hooks the game's Direct3D 9 draws and
 // GDI blits, learns which textured quads / blits are the glyphs of the dialogue line and where the text area is, and
@@ -27,7 +27,7 @@ public static partial class HookBridge {
  // The same streams the glyph hide (E667) serves: the selected stream without write-back, with replacement on or probing.
  static bool GpuWanted(){lock(Gate){Candidate c;bool blank=GlyphMode=="blank";return Enabled&&(ReplacementEnabled||ProbeWanted||blank)&&Selected!=""&&Candidates.TryGetValue(Selected,out c)&&(c.gdiProbe||RememberedHide(c)||blank&&GdiProbeable(c)||GlyphMode=="dot"&&GlyphAll);}} /* 2026-11-15 (沙耶の唄 with in-place drawing on: nothing was hidden): 文字显示 in place sends glyph mode blank, which means the line must vanish;
     a game whose glyphs the font layer cannot blank (rasterised once and reused) is hidden here instead, also without replacement or probe. */ /* text-arch: in ①'s dot mode (compositor) the GDI probe is never switched on, the stream is still the dialogue */
- static int GpuWantLog=-1;
+ static int GpuWantLog=-1;static string GpuPageLog="";
  static void GpuLine(string text){bool w=GpuWanted();if((w?1:0)!=GpuWantLog){GpuWantLog=w?1:0;string why;lock(Gate){Candidate c;Candidates.TryGetValue(Selected??"",out c);why="enabled="+Enabled+" replace="+ReplacementEnabled+" probe="+ProbeWanted+" mode="+GlyphMode+" gdiProbe="+(c!=null&&c.gdiProbe)+" embed="+(c!=null&&c.embed)+" probeable="+(c!=null&&GdiProbeable(c));}Diagnostic("gpu hide wanted="+w+" ("+why+")");}if(w){string s;lock(Gate){s=Selected;}GpuArm(s,text);}else GpuDisarm();}
  /* 2026-11-15 (user: 保存了设置的游戏从开游戏开始就绑定，第一句就替换): the glyph height and target size a run learned are kept per game
     (cache/gpu-hide/<exe hash>.txt) and handed to the DLL at connect, so the next run hides from its first line. */
@@ -35,6 +35,8 @@ public static partial class HookBridge {
  static void GpuCalibrationSave(string v){try{string f=GpuCalibrationFile();if(f!=""&&!(File.Exists(f)&&File.ReadAllText(f).Trim()==v)){File.WriteAllText(f,v);Diagnostic("gpu hide calibration saved "+v);}}catch{}}
  static string GpuCalibrationLoad(){try{string f=GpuCalibrationFile();if(f==""||!File.Exists(f))return "";string v=File.ReadAllText(f).Trim();return System.Text.RegularExpressions.Regex.IsMatch(v,@"^[0-9.]{1,6} \d{2,5} \d{2,5}$")?v:"";}catch{return "";}}
  static void GpuReport(string s){
+  /* page model (GlyphQuads.h): the whole page, every line with its places; core/overlay-placement.cjs page() */
+  if(s.StartsWith("ToMe_PAGE ",StringComparison.Ordinal)){Emit(new{type="hookGpuPage",line=s});if(GpuPageLog!=s.Substring(0,Math.Min(s.Length,150))){GpuPageLog=s.Substring(0,Math.Min(s.Length,150));Diagnostic("gpu page "+GpuPageLog.Replace("	"," | "));}return;}
   if(s.StartsWith("ToMe_CHARS ",StringComparison.Ordinal)){Emit(new{type="hookChars",line=s});Diagnostic("gpu chars "+(s.Length>90?s.Substring(0,90):s));return;}
   // glyph trace (GlyphTrace.h): where the GetGlyphOutline glyphs of the line were drawn; core/gpu-glyph-pos.cjs reads it
   if(s.StartsWith("ToMe_GLYPHPOS ",StringComparison.Ordinal)){Emit(new{type="hookGlyphPos",line=s});return;}

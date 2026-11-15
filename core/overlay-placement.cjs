@@ -152,12 +152,40 @@ class OverlayPlacement {
     });
     return rects;
   }
+  /* Layer 4 page model (native/gpuhide/GlyphQuads.h, ToMe_PAGE): engines that redraw the whole page keep their own layout;
+     the layer leaves the glyphs out and reports every line of the page with the places of its characters, in reading
+     order (a line still being typed has fewer places than characters). The reader draws the whole page on them: older
+     lines keep their Japanese and ruby, the newest one carries the translation. awake false = no page on screen (text
+     window hidden, title): everything is cleared. */
+  page(m) {
+    if (!this.on || !m) return;
+    const [cw, ch] = this.client, kx = m.sw > 0 && cw ? cw / m.sw : 1, ky = m.sh > 0 && ch ? ch / m.sh : kx;
+    const lines = m.awake && m.armed ? m.lines.map(l => ({ id: l.id, text: l.text, rects: l.rects.slice(0, [...l.text].length).map(r => [Math.round(r[0] * kx), Math.round(r[1] * ky), Math.round(r[2] * kx), Math.round(r[3] * ky)]) })) : [];
+    const out = { type: 'textPlacePage', awake: m.awake, armed: m.armed, own: m.own, ownRects: m.ownRects, lines, client: this.client.slice() };
+    const key = JSON.stringify(out);
+    if (key === this.pageKey) return; this.pageKey = key; this.paged = true;
+    for (const l of lines) this.learn(l.rects);
+    this.send(out);
+  }
   emitLine(line) {
     const key = JSON.stringify(line);
     if (key === this.lastKey) return; this.lastKey = key; this.current = line;
     this.send({ type: 'textPlace', ...line });
   }
-  stop() { this.clear(); if (this.extraKey && this.extraKey !== '[]') this.send({ type: 'textPlaceExtra', items: [] }); this.extraKey = ''; this.on = false; }
+  stop() { this.clear(); if (this.paged) { this.paged = false; this.pageKey = ''; this.send({ type: 'textPlacePage', awake: false, armed: false, lines: [] }); } if (this.extraKey && this.extraKey !== '[]') this.send({ type: 'textPlaceExtra', items: [] }); this.extraKey = ''; this.on = false; }
 }
 
-module.exports = { OverlayPlacement };
+/* "ToMe_PAGE sw=1280 sh=960 awake=1 armed=1 gh=41 own=0" then, per line, TAB id TAB n TAB x,y,w,h;... TAB text */
+function parsePage(raw) {
+  const parts = String(raw || '').split('	'), head = /^ToMe_PAGE sw=(\d+) sh=(\d+) awake=([01]) armed=([01]) gh=(\d+) own=(\d+) ownr=([-\d,;]*)$/.exec(parts[0]);
+  if (!head || (parts.length - 1) % 4) return null;
+  const blank = c => c <= ' ' || c === '　' || c === '​' || c === '﻿', lines = [];
+  for (let i = 1; i < parts.length; i += 4) {
+    const rects = parts[i + 2] ? parts[i + 2].split(';').slice(0, 2048).map(q => q.split(',').map(Number)) : [];
+    if (rects.some(q => q.length !== 4 || q.some(n => !Number.isFinite(n)))) return null;
+    lines.push({ id: Number(parts[i]), n: Number(parts[i + 1]), rects, text: [...parts[i + 3]].filter(c => !blank(c)).join('').slice(0, 4000) });
+  }
+  return { type: 'hookGpuPage', sw: +head[1], sh: +head[2], awake: head[3] === '1', armed: head[4] === '1', glyphHeight: +head[5], own: +head[6], ownRects: head[7], lines };
+}
+
+module.exports = { OverlayPlacement, parsePage };

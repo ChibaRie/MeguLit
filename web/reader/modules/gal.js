@@ -191,7 +191,8 @@
   (document.head || document.documentElement).appendChild(style);
   function sourceText(sentence) { return Array.from(sentence?.querySelectorAll('.char-token') || [], node => node.textContent).join(''); }
   function clearRuby(scope=document) {
-    for(const base of scope.querySelectorAll('.megulit-ruby-base'))base.replaceWith(...base.childNodes);
+    /* the page's older lines (text-place.js, .megulit-old-line) keep their ruby: they are copies of finished lines */
+    for(const base of scope.querySelectorAll('.megulit-ruby-base'))if(!base.closest('.megulit-old-line'))base.replaceWith(...base.childNodes);
   }
   function rubyTargets() {
     const page=[...document.querySelectorAll('.tome-island-page .sentence-text')];

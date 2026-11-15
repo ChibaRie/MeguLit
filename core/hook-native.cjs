@@ -124,6 +124,7 @@ class HookNative{
    if(m.type==='hookEngineLine'&&PAGE_ENGINES.has(m.engine)){this.pageLine(m);return;}
    /* Text architecture ③ (core/text-paths.cjs): a char-rect record from an engine path; hidden only once the game side confirmed it */
    if(m.type==='hookChars'){this.charRects(m.line);return;}
+   if(m.type==='hookGpuPage'){const page=require('./overlay-placement.cjs').parsePage(m.line);if(page){this.emit(page);/* the page on screen is the engine's own word on whether its text is shown (a wait marker leaving must not hide the reader's page; no page = text window gone, title) */if(page.armed&&(page.lines.some(l=>l.rects.length)||!page.awake)){/* only the reader's layer follows it: engineDialog stays untouched, or the first line of a page, handed over while the old page fades out, was taken for art text (2026-11-15: every page lost its first line) */this.emit({type:'hookDialog',visible:page.awake,engine:'gpupage'});}}return;}
    if(m.type==='hookTextPos'&&m.engine==='pal_sprite_v1'){this.palPosition(m);return;}
    /* 2026-11-12 the engine's own text window state (KiriKiri ToMe_DIALOG): a line arriving while it is hidden is art text */
    if(m.type==='hookDialog'&&typeof m.visible==='boolean'){this.engineDialog=m.visible;this.engineDialogAt=this.now();}

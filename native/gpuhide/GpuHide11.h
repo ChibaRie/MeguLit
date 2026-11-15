@@ -23,7 +23,9 @@ static bool Float2(const unsigned char *p, DXGI_FORMAT f, float &x, float &y) {
  switch (f) { case DXGI_FORMAT_R32G32_FLOAT: case DXGI_FORMAT_R32G32B32_FLOAT: case DXGI_FORMAT_R32G32B32A32_FLOAT: x = ((const float *)p)[0]; y = ((const float *)p)[1]; return std::isfinite(x) && std::isfinite(y); default: return false; }
 }
 static TexInfo Tex11(void *res) {
- TexInfo i = { 0, 0, D3DFMT_UNKNOWN, false }; if (!res) return i; auto it = Textures.find(res); if (it != Textures.end()) return it->second;
+ /* asked every time, never cached by pointer: a game that makes a new glyph sheet per sentence gets the freed texture's
+    address again, and the old size / render-target flag made the page's glyphs come and go (2026-11-15) */
+ TexInfo i = { 0, 0, D3DFMT_UNKNOWN, false }; if (!res) return i;
  ID3D11Resource *r = (ID3D11Resource *)res; D3D11_RESOURCE_DIMENSION dim; r->GetType(&dim);
  if (dim == D3D11_RESOURCE_DIMENSION_TEXTURE2D) { D3D11_TEXTURE2D_DESC d; ((ID3D11Texture2D *)r)->GetDesc(&d); i.w = d.Width; i.h = d.Height; i.rt = (d.BindFlags & D3D11_BIND_RENDER_TARGET) && (d.BindFlags & D3D11_BIND_SHADER_RESOURCE); }
  return i;
@@ -50,6 +52,7 @@ static std::vector<int> Decide11(std::vector<Quad> &q, const char *kind, UINT co
  if (back && ti.rt) { Learner.Composite(Ctx.tex0, q); return drop; }
  if (!back && Ctx.rt) Textures[Ctx.rt] = rt;
  TraceDraw(Ctx.tex0, ti.w, ti.h, back ? NULL : Ctx.rt, rt.w, rt.h, q);
+ Learner.texRt = ti.rt;
  return Learner.Draw(Ctx.tex0, ti.w, ti.h, back ? NULL : Ctx.rt, rt.w, rt.h, BackW11, BackH11, q, GetTickCount());
 }
 
@@ -60,7 +63,7 @@ static void Snapshot(ID3D11DeviceContext *c) {
  ID3D11Buffer *ib = NULL; c->IAGetIndexBuffer(&ib, &x.ibFmt, &x.ibOff); if (ib) { x.ib = ib; ib->Release(); }
  c->IAGetPrimitiveTopology(&x.topo);
  ID3D11ShaderResourceView *srv = NULL; c->PSGetShaderResources(0, 1, &srv);
- if (srv) { void *res = NULL; { Guard g; auto it = SrvRes.find(srv); if (it != SrvRes.end()) res = it->second; } if (!res) { ID3D11Resource *r = NULL; srv->GetResource(&r); if (r) { res = r; TexInfo ti = Tex11(r); r->Release(); Guard g; SrvRes[srv] = res; Textures[res] = ti; if (SrvRes.size() > 8192) SrvRes.clear(); } } x.tex0 = res; srv->Release(); }
+ if (srv) { void *res = NULL; ID3D11Resource *r = NULL; srv->GetResource(&r); /* never cached by view pointer: freed views' addresses are reused */ if (r) { res = r; TexInfo ti = Tex11(r); r->Release(); Guard g; Textures[res] = ti; if (Textures.size() > 8192) Textures.clear(); } x.tex0 = res; srv->Release(); }
  ID3D11RenderTargetView *rtv = NULL; c->OMGetRenderTargets(1, &rtv, NULL); if (rtv) { ID3D11Resource *r = NULL; rtv->GetResource(&r); if (r) { x.rt = r; TexInfo ti = Tex11(r); r->Release(); Guard g; Textures[x.rt] = ti; } rtv->Release(); }
  UINT n = 1; c->RSGetViewports(&n, &x.vp); if (!n) { x.vp.Width = (float)BackW11; x.vp.Height = (float)BackH11; }
  Guard g; Ctx = x;
