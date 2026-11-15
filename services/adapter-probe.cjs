@@ -82,6 +82,8 @@ function probeOne(live,{dir,executable},perGameMs){
 function inWorker(message,timeout=120000){return new Promise(resolve=>{let child;try{child=spawnWorker();}catch{return resolve(null);}const id=Math.random().toString(36).slice(2);
  const end=v=>{clearTimeout(t);try{child.kill();}catch{}resolve(v);};const t=setTimeout(()=>end(null),timeout);
  child.on('message',m=>{if(m?.type==='result'&&m.id===id)end(m.result);});child.once('exit',()=>end(null));try{child.send({...message,id});}catch{end(null);}});}
+/* 2026-11-15 the closed-beta full probe (probe-full.cjs collect) of one game, written to out */
+const fullInWorker=(game,result,job)=>inWorker({type:'full',job:{dir:path.dirname(game.executable),executable:game.executable,result,...job}},300000);
 const sampleInWorker=(game,result)=>inWorker({type:'sample',dir:path.dirname(game.executable),executable:game.executable,result});
 function cancel(root){const key=path.resolve(root),live=runs.get(key);if(live){live.cancelled=true;clearTimeout(live.timer);try{live.child?.kill();}catch{}runs.delete(key);}
  const s=load(root);if(s.run&&s.run.state==='running'){s.run.state='cancelled';s.run.updatedAt=Date.now();save(root,s);}return {...status(root),state:'cancelled'};}
@@ -92,4 +94,4 @@ function resumeLater(root,openDb,{delay=180000}={}){if(process.env.NODE_TEST_CON
 function problems(root){return Object.entries(results(root)).filter(([,r])=>r.step&&r.step!=='ok'&&r.step!=='no-script').map(([id,r])=>({id,title:r.title||'',step:r.step,detail:r.detail||''}));}
 /* one row for the 适配总览 dialog: {step,detail,lines,pairing,at} or null */
 function brief(root,id){const r=results(root)[String(id)];if(!r)return null;return {step:r.step,detail:r.detail||'',engine:r.detected||null,lines:r.lines||0,japaneseLines:r.japaneseLines||0,pairing:r.pairing?.rate??null,at:r.at||null};}
-module.exports={inWorker,sampleInWorker,start,resume,cancel,status,results,problems,brief,resumeLater,load,fileOf,LOW_PAIRING,finish,pairingOf,libraryGames};
+module.exports={inWorker,sampleInWorker,fullInWorker,start,resume,cancel,status,results,problems,brief,resumeLater,load,fileOf,LOW_PAIRING,finish,pairingOf,libraryGames};

@@ -257,3 +257,32 @@ node tools/contrib-workbench.cjs text <id>          剧本转成 UTF-8 放到 te
 node tools/contrib-workbench.cjs done <id>          适配完成：relay 删包，本地副本一起删（--keep 保留本地）
 node tools/contrib-workbench.cjs clean <id>|--all   删本地副本（--all：relay 已不再保存的全部删掉）
 ```
+
+### Full probe upload — closed beta (2026-11-15)
+
+Alongside the desensitized probe, a problem game's **full** script text + exe now goes up so the maintainer can reproduce
+it and write a pack / hot-update on their own PC. Default on, no dialog, no switch (closed beta: everyone consented). A
+consent gate is still owed before any public release.
+
+- Client: `services/probe-full.cjs` `collect()` (runs in the probe worker, `adapter-probe.cjs fullInWorker`) pulls out,
+  for a game not read well: the script entries only — a reader's decoded scenes, raw script entries of XP3 / NPK2 / PFS
+  archives (encrypted ones as stored; the exe holds the filter), loose script files, and the 1 MiB head + tail of an
+  archive no reader could list. Never images, voices, movies or fonts (by extension **and** magic). The game exe, other
+  exes (a Chinese-patch exe) and the DLLs beside them are cut to a slim PE: section offsets kept, a big `.rsrc` and the
+  overlay zeroed, so a disassembler opens it at the same addresses. Plus each PE's version resource, and every file's
+  size + sha256 (archives over 1 GiB: size + first/last 4 MiB, marked `partial`). Each item is gzipped on its own; items
+  go in priority order (exe, scenes, entries, loose, other exes/DLLs) until `PACKED_MAX` (48 MiB). Target 3–20 MB/game.
+  Output `data/adapter-probe/full/<sha256>.mlfp`; `probe-auto.cjs fullOne` uploads it once per game identity and deletes
+  it locally once the relay has it. `sweep()` drops local leftovers after 7 days.
+- Relay: `relay/src/probe-full.js`, `POST /api/probe/full/start|complete`, `PUT /api/probe/full/part` — chunked
+  (5 MiB parts) into **R2 as a multipart upload**, resumable (`start` returns the parts already stored; a dropped
+  connection re-sends only the missing ones). One file per game identity; a game the relay already holds (or the
+  maintainer marked done within 14 days) is answered `duplicate` and nothing is sent. Storage cap 8 GiB (`FULL_STORAGE`
+  past it). Cron `cleanupProbeFull` drops ready files after 30 days, stale uploads after 3, tombstones after 14.
+  Migration `0018_probe_full.sql` (`probe_full`, `probe_full_parts`). Upload goes to the same relay host as the other
+  probes (raced `api.megulit.com` / EdgeOne `cn-api.megulit.com`), reachable from the mainland.
+- Maintainer workbench: `node tools/probe-workbench.cjs list | get <id> | unpack <file> | done <id> | delete <id>`
+  (needs `MEGULIT_ADAPTER_ADMIN_TOKEN`). `get` downloads to `MEGULIT_PROBE_WORK` (default `H:\MeguLit-Work\probe-full`,
+  off C:/E:) and unpacks: `scripts/<reader>/…`, `archives/<archive>/<entry>`, `loose/…`, `index/<archive>#head|#tail`,
+  `bin/<exe|dll>` (slim PEs), `manifest.json`, `versions.json`. `done` deletes it on the relay and stops apps resending;
+  `delete` removes it and lets the game be sent again.
