@@ -137,6 +137,8 @@ function detect(gameDir,options={}){
     there is nothing to restore, not "already Japanese". */
  if(siglus&&!siglus.japaneseTables)return {state:'none',adapter:'siglus-dbs',reason:'NO_JAPANESE_TEXT'};
  if(siglus)return {state:'already',adapter:'siglus-dbs'};
+ /* E595 a Chinese patch over the Japanese release in this folder: not "already Japanese" (core/overlay-patch.cjs) */
+ {const ov=require('./overlay-patch.cjs').detect(gameDir);if(ov.translated)return {state:'restorable',adapter:'overlay-patch',files:ov.overlays.length,overlays:ov.overlays.map(o=>o.file),evidence:ov.evidence,cells:0,pending:ov.overlays.length,manifest:null};}
  {const ls=langSwitch().detect(gameDir,options);if(ls.state!=='none')return ls;}
  /* E591 Artemis multi-language: an added archive picks the Japanese text (core/artemis-language.cjs) */
  {const ar=artemis().detect(gameDir);if(ar.state!=='none')return ar;}

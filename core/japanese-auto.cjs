@@ -26,6 +26,8 @@ function decide(gameDir,options={}){
  if(d.state==='applied')return {action:'applied',detected:d};
  if(d.state==='steam-guide'||d.state==='first-run')return {action:'wait',detected:d}; /* Steam must be closed / the game must write its config once */
  if(d.state!=='restorable'){const hidden=hiddenJapanese(gameDir);return hidden?{action:'unsupported',reason:hidden,detected:d}:{action:'none',detected:d};}
+ /* E595 a patch over the release is only turned off when the user asks (日文原版恢复 › 恢复日文) */
+ if(d.adapter==='overlay-patch')return {action:'unsupported',reason:'OVERLAY_PATCH_MANUAL',detected:d};
  if(d.adapter==='language-switch')return {action:'setting',detected:d};
  const r=redirectFor(gameDir,d);
  return r?{action:'redirect',provider:r.name,detected:d}:{action:'files',detected:d};

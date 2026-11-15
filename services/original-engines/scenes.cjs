@@ -54,17 +54,30 @@ function parseKs(buf){
 function xp3Scenes(file,test){let t;try{t=xp3.list(file);}catch{return [];}if(!t)return [];
  // An entry flagged "protected" can still be stored as plain text (女王蜂の王房): try the first one and keep the
  // flagged ones when it reads as a script (UTF-16 BOM, or no control bytes at the start).
- const plain=e=>{try{const d=xp3.read(file,e);if(d[0]===0xff&&d[1]===0xfe)return true;for(let i=0;i<Math.min(d.length,512);i++)if(d[i]<9||(d[i]>13&&d[i]<32&&d[i]!==27))return false;return d.length>0;}catch{return false;}};
+ const plain=e=>{try{const d=xp3.read(file,e);if(d[0]===0xff&&d[1]===0xfe)return true;for(let i=0;i<Math.min(d.length,512);i++)if(d[i]<9||(d[i]>13&&d[i]<32&&d[i]!==27))return false;
+  /* E595 an encrypted script can avoid control bytes too (死に逝く君、館に芽吹く憎悪 read as 989 lines of noise): a KAG
+     script has line breaks and ASCII markup ([tag], @cmd, *label, ;comment) */
+  const head=d.subarray(0,2048);let ascii=0,nl=0;for(const b of head){if(b===10)nl++;if(b>=32&&b<127)ascii++;}return d.length>0&&nl>0&&ascii>=head.length*.15;}catch{return false;}};
  const flagged=t.files.filter(e=>e.encrypted&&test(e.name)),open=flagged.length>0&&plain(flagged[0]);
  // E449 a cx archive of a title GARbro knows is decrypted with that title's filter (cx-filter.cjs).
  const cx=flagged.length&&!open?require('./cx-filter.cjs').forArchive(file):null;
- return t.files.filter(e=>(!e.encrypted||open||cx)&&test(e.name)).map(e=>({name:path.basename(e.name.replace(/\\/g,'/')),read:()=>xp3.read(file,e,open?null:cx)}));}
+ return t.files.filter(e=>(!e.encrypted||open||cx)&&test(e.name)).map(e=>({name:path.basename(e.name.replace(/\\/g,'/')),read:()=>e.encrypted?xp3.read(file,e,open?null:cx):unscramble(xp3.read(file,e))}));}
+/* E595 a translation's patch.xp3 can XOR its scripts (死に逝く君 汉化硬盘版: UTF-16 text whose BOM reads 2B 2A): undone when
+   the BOM gives a two-byte key under which the whole file reads as UTF-16 text. A file that does not, or is plainly not
+   text, is dropped instead of being read as lines of noise. */
+function unscramble(d){if(d.length<4)return d;if(d[0]===0xff&&d[1]===0xfe||d[0]===0xef&&d[1]===0xbb)return d;const k0=d[0]^0xff,k1=d[1]^0xfe;
+ /* the key repeats every two bytes (one byte when both match); kept only when the result reads as UTF-16 text */
+ if(k0||k1){const o=Buffer.from(d);for(let i=0;i<o.length;i++)o[i]^=i&1?k1:k0;let ok=0,n=0;for(let i=2;i+1<o.length;i+=2){n++;const c=o.readUInt16LE(i);if(c===10||c===13||c===9||c>=32&&c<127||c>=0x3000&&c<0xa000||c>=0xff00&&c<0xfff0)ok++;}if(n&&ok>=n*.98)return o;return Buffer.alloc(0);}
+ const head=d.subarray(0,2048);let ascii=0;for(const b of head)if(b>=32&&b<127||b===10||b===13||b===9)ascii++;return ascii>=head.length*.15?d:Buffer.alloc(0);}
 // E449 KAG scenarios kept as .txt under a scenario folder (赤ずきんと迷いの森: scenario/<route>/r04_23.txt); "!" files are lists.
 const KS=n=>/\.ks$/i.test(n)||/(?:^|[\\/])scenario[\\/](?:[^\\/]+[\\/])*[^!\\/][^\\/]*\.txt$/i.test(n);
 const kirikiri={
  id:'kirikiri',hint:'*.ks（或 patch.xp3）',
  // Later archives override earlier ones, as the engine loads them (data < patch < patch2 ...).
  scenes(dir){const out=new Map();
+  /* E595 KiriKiri Z keeps the story in encrypted .scn scene files (read by kirikiri-cx); its .ks are system scripts only,
+     which read as noise when the cipher is not known exactly (死に逝く君、館に芽吹く憎悪) */
+  if(cxArchives(dir).some(f=>{try{const l=xp3.list(f);return l?.files.some(e=>e.encrypted&&/\.scn$/i.test(e.name));}catch{return false;}}))return [];
   for(const a of ksArchives(dir))for(const s of xp3Scenes(a,KS))out.set(s.name.toLowerCase(),s);
   for(const file of walk(dir,2,KS))out.set(path.basename(file).toLowerCase(),{name:path.basename(file),read:()=>fs.readFileSync(file)});
   return [...out.values()].sort((a,b)=>a.name.localeCompare(b.name));},
@@ -245,7 +258,8 @@ function cxDocs(file){
  try{const st=fs.statSync(out),hit=cxMemo.get(out);if(hit&&hit.at===st.mtimeMs)return hit.docs;const docs=JSON.parse(fs.readFileSync(out,'utf8')).docs||[];cxMemo.set(out,{at:st.mtimeMs,docs});return docs;}catch{}
  if(!cxBuilds.has(out)){
   // Only archives that look like cx KiriKiri (encrypted entries) are worth a worker; one worker at a time.
-  let list;try{list=xp3.list(file);}catch{list=null;}if(!list||!list.files.some(e=>e.encrypted))return [];
+  /* E595 a translation's patch.xp3 keeps its scene files unencrypted (each byte XOR-ed, which the worker undoes) */
+  let list;try{list=xp3.list(file);}catch{list=null;}if(!list||!list.files.some(e=>e.encrypted||/\.scn$/i.test(e.name)))return [];
   cxBuilds.set(out,null);cxStarted.set(out,Date.now());cxQueue.push({file,out});cxNext();
  }
  return null;
@@ -262,11 +276,14 @@ function cxNext(){
 const PAIRS={'「':'」','『':'』','（':'）','(':')'};
 function unquoteSlot(t,ja){if(t.length<2||!/^"[\s\S]*"$/.test(t)||/^"/.test(ja))return t;const inner=t.slice(1,-1).replace(/""/g,'"'),open=ja.charAt(0),close=PAIRS[open];
  if(!close||!ja.trimEnd().endsWith(close)||inner.startsWith(open))return inner;return open+inner+close;}
+/* the Japanese slot of most lines has no kana but Han: a Chinese translation's own scene files */
+function chineseDocs(docs){let han=0,kana=0;for(const d of docs)for(const sc of d.scenes||[])for(const r of sc.rows.slice(0,40)){const t=r[0]||'';if(/[ぁ-ゖァ-ヺ]/.test(t))kana++;else if(/[一-鿿]/.test(t))han++;}return han>=20&&han>kana*3;}
 const kirikiriCx={
  id:'kirikiri-cx',hint:'scn.xp3 / data.xp3',
  // One copy per scene file: patch archives override the rest, as the engine loads them (patch < patch2 < ...).
  scenes(dir){const byName=new Map();
-  for(const file of cxArchives(dir)){const docs=cxDocs(file);if(!docs)continue;const r=rank(path.basename(file));
+  /* E595 an archive whose Japanese slot holds Chinese is a translation laid over the release: a patch, not the original */
+  for(const file of cxArchives(dir)){const docs=cxDocs(file);if(!docs||chineseDocs(docs))continue;const r=rank(path.basename(file));
    for(const d of docs){const key=(d.name||d.entry).toLowerCase(),seen=byName.get(key);if(!seen||r>seen.r)byName.set(key,{r,name:d.name||d.entry,d});}}
   return [...byName.values()].map(x=>({name:x.name,read:()=>Buffer.from(JSON.stringify(x.d))})).sort((a,b)=>a.name.localeCompare(b.name));},
  archives:()=>[],
@@ -279,7 +296,11 @@ const kirikiriCx={
   const v=voiceRef.keep(voices);return v?{lines,anchors:[],zh,ruby,voices:v}:{lines,anchors:[],zh,ruby};},
  test:()=>false,
  // The release's own Simplified (else Traditional) Chinese slot is the translation of each Japanese line.
- patchLines(base){let any=false;const list=base.map(scene=>{const zh=scene.zh||[];if(!zh.some(Boolean))return scene;any=true;return {...scene,patched:true,lines:scene.lines.map((t,k)=>zh[k]||t)};});return any?list:null;},
+ patchLines(base,found){let any=false;const list=base.map(scene=>{const zh=scene.zh||[];if(!zh.some(Boolean))return scene;any=true;return {...scene,patched:true,lines:scene.lines.map((t,k)=>zh[k]||t)};});if(any)return list;
+  /* E595 else a translation archive beside the release (patch.xp3 of a 汉化硬盘版): its scenes by name, line for line */
+  const over=new Map();for(const dir of found?.dirs||[])for(const file of cxArchives(dir)){const docs=cxDocs(file);if(!docs||!chineseDocs(docs))continue;for(const d of docs)over.set((d.name||d.entry).toLowerCase(),d.scenes.flatMap(x=>x.rows.map(r=>r[0]||'')));}
+  if(!over.size)return null;
+  const out=base.map(scene=>{const zh=over.get(String(scene.name).toLowerCase());if(!zh||zh.length!==scene.lines.length)return scene;any=true;return {...scene,patched:true,lines:zh.map((t,k)=>t||scene.lines[k])};});return any?out:null;},
 };
 
 // ---- KiriKiri Z with strong archive encryption (E293: サノバウィッチ): scene files the game decrypts itself ------------
