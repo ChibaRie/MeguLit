@@ -269,7 +269,8 @@ html:not(#u):not(#v):not(#w):not(#x) body .main{--dcw:clamp(200px,13.5vw,248px);
 html:not(#u):not(#v):not(#w):not(#x) body .game-detail-hero{grid-template-columns:var(--dcw) minmax(0,1fr)!important;height:calc(var(--dcw)*4/3)!important;align-items:stretch!important}
 html:not(#u):not(#v):not(#w):not(#x) body .game-detail-hero .detail-cover{width:var(--dcw)!important;height:100%!important;aspect-ratio:3/4!important;align-self:start!important}
 html:not(#u):not(#v):not(#w):not(#x) body .game-detail-hero .detail-cover .tv-face{height:100%!important;aspect-ratio:3/4}
-html:not(#u):not(#v):not(#w):not(#x) body .game-detail-hero .detail-cover .cover,html:not(#u):not(#v):not(#w):not(#x) body .game-detail-hero .detail-cover img{width:100%!important;height:100%!important;object-fit:cover!important;object-position:50% 18%!important}
+/* 2026-11-15 (user: the detail card stops moving once it shows its back) the CG on the card back pans with a Web Animation on object-position; an !important object-position here beat that animation and froze it, so the back art is left out */
+html:not(#u):not(#v):not(#w):not(#x) body .game-detail-hero .detail-cover .cover,html:not(#u):not(#v):not(#w):not(#x) body .game-detail-hero .detail-cover img:not(.dtv-back-art img){width:100%!important;height:100%!important;object-fit:cover!important;object-position:50% 18%!important}
 html:not(#u):not(#v):not(#w):not(#x) body .game-detail-hero .detail-title{height:100%!important;min-height:0}
 html:not(#u):not(#v):not(#w):not(#x) body .game-detail-hero .detail-title>h1{font-size:var(--dfit,var(--dh1))!important;line-height:1.08!important;height:calc(2.16*var(--dh1))!important;margin:0!important;overflow:visible;align-self:start;word-break:break-word}
 html:not(#u):not(#v):not(#w):not(#x) body .game-detail-hero .detail-title>.detail-actions{margin-top:14px!important}
