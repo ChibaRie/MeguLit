@@ -19,7 +19,7 @@ test('E454 the cut never runs past what the line could take to say',()=>{
 test('E454 the reader prefers the scanned voice file over the game recording, and a card carries the AI note',()=>{
  const fs=require('node:fs'),path=require('node:path');
  const reader=fs.readFileSync(path.join(__dirname,'..','services','reader.cjs'),'utf8');
- assert.match(reader,/if\(voice\?\.source==='scan'\)\{extra\.sentenceAudio=asAudio\(voice\);extra\.gameAudio=true;\}\s*else if\(media\?\.audio\)/);
+ assert.match(reader,/if\(voice\?\.source==='scan'\)\{extra\.sentenceAudio=asAudio\(voice\);extra\.gameAudio=true;\}\s*(?:\/\*[\s\S]*?\*\/\s*)?else if\(media\?\.audio&&/);
  assert.match(reader,/aiNote:args\.aiNote/);
  const anki=fs.readFileSync(path.join(__dirname,'..','core','anki.cjs'),'utf8');assert.match(anki,/AI 归纳义项/);
  const native=fs.readFileSync(path.join(__dirname,'..','core','gal-native.cjs'),'utf8');assert.match(native,/voice-trim\.cjs'\)\.trimWav/);});

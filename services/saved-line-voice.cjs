@@ -37,17 +37,18 @@ async function attach({root,db:open,reader},id,text){
      two minutes, so this comes before any scan) */
   if(!voice&&reader?.gal&&typeof reader.gal.gameMedia==='function'&&(!row.game_id||String(reader.gameId||'')===String(row.game_id))){
    const m=await reader.gal.gameMedia(text,Date.now(),false).catch(()=>null);
-   if(m?.matched&&m.audio?.data)heard=Buffer.from(m.audio.data,'base64');}
+   if(m?.matched&&m.audio?.data){const b=Buffer.from(m.audio.data,'base64');if(gv().recordedFits(root,text,b))heard=b;}}
   /* an index that is out of date for this game's engine: scan it, then look again; the script's clip wins */
   if(!voice&&exe&&await gv().ensureScanned(root,exe).catch(()=>false))voice=fromIndex(root,n,text);
   if(!voice&&heard){const file=keepFile(root,n,heard);if(file)voice={kind:'file',file,from:'capture'};}
   voice=voice||{kind:'none',at:Date.now()};
   const db=openDb();try{write(db,n,voice);}finally{db.close();}return voice;
  }catch{return null;}}
-// The bytes of a voice record, or null.
-function read(root,voice){if(!voice)return null;
+// The bytes of a voice record, or null. A recorded clip (capture/runtime) of a line the script says is quiet, or one
+// whose length does not fit the text, is not played (text given).
+function read(root,voice,text){if(!voice)return null;
  if(voice.kind==='scan'&&voice.g&&voice.ref){const c=gv().clip(root,String(voice.g),String(voice.ref),!!voice.estimated);return c?{...c,source:'game',origin:'scan'}:null;}
- if(voice.kind==='file'&&FILE.test(String(voice.file||''))){try{const data=fs.readFileSync(path.join(DIR(root),voice.file));const t=gv().kind(data);return t?{data,mime:t.mime,source:'game',origin:voice.from||'file'}:null;}catch{return null;}}
+ if(voice.kind==='file'&&FILE.test(String(voice.file||''))){try{const data=fs.readFileSync(path.join(DIR(root),voice.file));const t=gv().kind(data);if(t&&text&&!gv().recordedFits(root,text,data))return null;return t?{data,mime:t.mime,source:'game',origin:voice.from||'file'}:null;}catch{return null;}}
  return null;}
 /* The game voice for a sentence: a saved line (id) by its kept record, then the line index by text; a saved line whose
    game index is stale is scanned first. A found voice is written back into the saved row (older saved lines). */
@@ -55,15 +56,18 @@ async function play(root,{id,text,db:open}={}){
  const openDb=open||(()=>require('./store.cjs').openStore(root));const n=id===undefined||id===null||id===''?NaN:Number(id);
  let row=null,exe='';if(Number.isSafeInteger(n)){const db=openDb();try{row=db.prepare('SELECT id,game_id,text,original FROM saved_sentences WHERE id=?').get(n)||null;exe=row?exeOf(db,row.game_id):'';}finally{db.close();}}
  text=String(text||row?.text||'').trim();
- if(row){const kept=read(root,voiceOf(row.original));if(kept)return kept;}
+ if(row){const rec=voiceOf(row.original),kept=read(root,rec,text);if(kept)return kept;
+  /* 2026-11-15 a kept recorded clip that does not fit this line: removed, the record cleared (looked up again below) */
+  if(rec?.kind==='file'){release(root,row.original);const db=openDb();try{write(db,row.id,{kind:'none',at:Date.now(),dropped:rec.from||'file'});}finally{db.close();}}}
  const found=()=>{const v=gv().find(root,text);return v?{...v,source:'game',origin:v.source}:null;};
  let v=text?found():null;
  if(!v&&row&&exe&&await gv().ensureScanned(root,exe).catch(()=>false))v=found();
  if(v&&row){try{const rec=fromIndex(root,row.id,text);if(rec){const db=openDb();try{write(db,row.id,rec);}finally{db.close();}}}catch{}}
  return v;}
-/* Which texts have a game voice (button labels, no audio read): saved rows by their record, any text by the index. */
+/* Which texts have a game voice (button labels, no audio read): saved rows by their record, any text by the index; a
+   recorded clip of a quiet line does not count. */
 function has(root,items,{db:open}={}){const list=Array.isArray(items)?items.slice(0,500):[];const ids=list.map(x=>Number(x?.id)).filter(Number.isSafeInteger);let kept=new Map();
- if(ids.length){const db=(open||(()=>require('./store.cjs').openStore(root)))();try{for(const r of db.prepare('SELECT id,original FROM saved_sentences WHERE id IN ('+ids.map(()=>'?').join(',')+')').all(...ids)){const v=voiceOf(r.original);kept.set(Number(r.id),!!v&&v.kind!=='none');}}finally{db.close();}}
+ if(ids.length){const db=(open||(()=>require('./store.cjs').openStore(root)))();try{for(const r of db.prepare('SELECT id,original FROM saved_sentences WHERE id IN ('+ids.map(()=>'?').join(',')+')').all(...ids)){const v=voiceOf(r.original),text=list.find(x=>Number(x?.id)===Number(r.id))?.text;kept.set(Number(r.id),!!v&&v.kind!=='none'&&!(v.kind==='file'&&text&&gv().verdict(root,String(text))==='quiet'));}}finally{db.close();}}
  return list.map(x=>kept.get(Number(x?.id))||(!!x?.text&&gv().has(root,String(x.text))));}
 // A removed saved line takes its kept clip with it.
 function release(root,original){const v=voiceOf(original);if(v?.kind==='file'&&FILE.test(String(v.file||'')))try{fs.unlinkSync(path.join(DIR(root),v.file));}catch{}}
