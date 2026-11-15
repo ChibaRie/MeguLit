@@ -35,6 +35,14 @@ const reasons={
  PATCH_INSPECTION_FAILED:['无法检查补丁，请确认游戏文件夹可以读取','Could not inspect the patch. Check access to the game folder','パッチを確認できません。フォルダーへのアクセスを確認してください'],
  PATCH_SWAP_CONFLICT:['发现已有备份或重名文件，请检查游戏文件夹','A backup or conflicting file exists. Check the game folder','バックアップか同名のファイルが残っています。ゲームフォルダーを確認してください']
 };
+/* E600 (user: 优化一下这里的排版) the game page shows a short line; the full reason stays in its title */
+const short={
+ JAPANESE_EXECUTABLE_REQUIRED:['没找到日文原版启动程序，可能是纯汉化包。','No Japanese program found; this may be a Chinese-only package.','日本語版の実行ファイルが見つかりません。中国語のみのパッケージかもしれません。'],
+ CHINESE_PATCH_ACTIVE:['游戏文件夹里还装着汉化补丁。','A Chinese patch is still installed in the game folder.','ゲームフォルダーに中国語パッチが残っています。']
+};
+/* the issues the game page's 日文原版恢复 dialog solves */
+export const launchRestorable=error=>['JAPANESE_EXECUTABLE_REQUIRED','CHINESE_PATCH_ACTIVE'].includes(typeof error==='string'?error:error?.message);
+export const launchShort=(error,locale)=>{const code=typeof error==='string'?error:error?.message,full=launchReason(error,locale);const s=short[code]?.[locale==='zh'?0:locale==='ja'?2:1];if(s)return s;const first=full.split(/(?<=[。.!！])s*/)[0]||full;return first;};
 export const launchCopy=locale=>labels[locale]||labels.en;
 export const launchReason=(error,locale)=>reasons[typeof error==='string'?error:error?.message]?.[locale==='zh'?0:locale==='ja'?2:1]||'';
 
