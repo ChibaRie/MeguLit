@@ -207,7 +207,7 @@ struct GlyphLearner {
    if (bornN >= 12 && bornN > room + extra - (extra < bornN ? extra : bornN)) for (auto &p : ppos) if (p.bornFrame == frameNo && p.line == -1) p.opt = false;
    /* places left over for 0.6 s after the newest line came, on a page whose lines have blanks: the engine draws a glyph for
       a blank (indentation, a blank row between sentences); from now on each blank takes a place of its own */
-   if (!pageBlankQuads && extra && blanks && L && oldest > 600 && now - L->at > 600) { pageBlankQuads = true; pageDirty = true; if (log) log("PAGE blanks have glyphs"); }
+   if (!pageBlankQuads && extra && blanks && L && oldest > 600 && now - L->at > 600) { pageBlankQuads = true; pageDirty = true; if (log) log("PAGE blanks have glyphs"); if (emit) { char m[96]; snprintf(m, sizeof m, "ToMe_GPUHIDE blanks gh=%.1f rt=%ux%u", pageH, pageRtW, pageRtH); emit(m); } }
    for (auto &p : ppos) if (p.line == -1 && now - p.firstAt > 2500) { p.line = -2; pageDirty = true; }
    if (!pageOn) for (auto &l : plines) if (l.claimed) { pageOn = true; break; }
   }

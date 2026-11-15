@@ -549,7 +549,7 @@ static void Command(const std::string &line) {
  Log("CTL %s", line.c_str());
  if (line.compare(0, 5, "LINE ") == 0) { int n = MultiByteToWideChar(CP_UTF8, 0, line.c_str() + 5, -1, NULL, 0); std::wstring w(n > 0 ? n - 1 : 0, 0); if (n > 1) MultiByteToWideChar(CP_UTF8, 0, line.c_str() + 5, -1, &w[0], n); Guard g; Learner.Line(w, GetTickCount()); Trace.Line(Learner.seq, GetTickCount()); }
  else if (line == "OFF") { Guard g; Learner.Off(); Trace.Off(); }
- else if (line.compare(0, 7, "PRESET ") == 0) { float gh = 0; unsigned w = 0, h = 0; if (sscanf_s(line.c_str() + 7, "%f %u %u", &gh, &w, &h) == 3) { Guard g; Learner.Preset(gh, w, h); } }
+ else if (line.compare(0, 7, "PRESET ") == 0) { float gh = 0; unsigned w = 0, h = 0; if (sscanf_s(line.c_str() + 7, "%f %u %u", &gh, &w, &h) == 3) { Guard g; Learner.Preset(gh, w, h); if (line.size() > 2 && line.compare(line.size() - 2, 2, " b") == 0) Learner.pageBlankQuads = true; } }
  else if (line == "MODE read") { Guard g; Learner.readOnly = true; } else if (line == "MODE hide") { Guard g; Learner.readOnly = false; }
 }
 static DWORD WINAPI Control(void *) {

@@ -168,19 +168,17 @@
       const copy = sentence.cloneNode(true); copy.__megulitText = readerText; copy.__megulitAt = at; clones.set(cur.id, copy);
     }
     const keep = new Set();
-    /* characters of the current line that the reader's own text lacks (its source was shortened on the way: a repeated
-       syllable dropped, a name cut off): the game does not draw them either, so they are drawn plain on their places */
-    if (cur) {
-      const all = [...cur.text], at = [...cur.text.slice(0, cur.text.indexOf(readerText))].length, n = [...readerText].length;
-      const idx = all.map((c, i) => i).filter(i => (i < at || i >= at + n) && cur.rects[i]);
-      const key = cur.id + ':' + idx.join(',');
-      let rest = win.querySelector(':scope>.megulit-line-rest');
-      if (!idx.length) rest?.remove();
-      else {
-        if (!rest || rest.__megulitKey !== key) { rest?.remove(); rest = plain(idx.map(i => all[i]).join('')); rest.classList.add('megulit-old-line', 'megulit-line-rest'); rest.__megulitKey = key; win.append(rest); }
-        keep.add(rest); layout(rest, idx.map(i => map(cur.rects[i])), geom);
-      }
-    } else win.querySelector(':scope>.megulit-line-rest')?.remove();
+    /* characters of a line that the reader's own text lacks (its source was shortened on the way: a repeated syllable
+       dropped, a name cut off): the game does not draw them either, so they are drawn plain on their places; the line
+       keeps them when it is no longer the reader's own */
+    const rest = (l, at, n) => {
+      const all = [...l.text], idx = all.map((c, i) => i).filter(i => (i < at || i >= at + n) && l.rects[i]), key = l.id + ':' + idx.join(',');
+      let node = [...win.querySelectorAll(':scope>.megulit-line-rest')].find(x => x.__megulitLine === l.id);
+      if (!idx.length) { node?.remove(); return; }
+      if (!node || node.__megulitKey !== key) { node?.remove(); node = plain(idx.map(i => all[i]).join('')); node.classList.add('megulit-old-line', 'megulit-line-rest'); node.__megulitKey = key; node.__megulitLine = l.id; win.append(node); }
+      keep.add(node); layout(node, idx.map(i => map(l.rects[i])), geom);
+    };
+    if (cur) rest(cur, [...cur.text.slice(0, cur.text.indexOf(readerText))].length, [...readerText].length);
     const ids = new Set(page.lines.map(l => l.id));
     for (const id of [...clones.keys()]) if (!ids.has(id)) clones.delete(id);
     for (const l of page.lines) {
@@ -198,6 +196,7 @@
       }
       keep.add(node);
       layout(node, l.rects.slice(node.__megulitAt, node.__megulitAt + [...node.__megulitText].length).map(map), geom);
+      rest(l, node.__megulitAt, [...node.__megulitText].length);
     }
     dropOld(win, keep);
     const key = geom.join(';');
