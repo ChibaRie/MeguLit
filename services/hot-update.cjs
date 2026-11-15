@@ -33,8 +33,8 @@ function extract(zip,dest,run=spawnSync){
  if(!r||r.status!==0)throw Error('HOT_EXTRACT_FAILED');
 }
 /* Writes the files of a verified hot package; returns its manifest. Nothing is written unless every file checks out. */
-function apply(root,zip,{run}={}){
- const stage=path.join(root,'cache','update','hot-stage');extract(zip,stage,run);
+function apply(root,zip,options={}){
+ const stage=path.join(root,'cache','update','hot-stage');extract(zip,stage,options.run);
  try{
   const src=path.join(stage,'MeguLit');let manifest;
   try{manifest=JSON.parse(fs.readFileSync(path.join(src,'hot.json'),'utf8'));}catch{throw Error('HOT_MANIFEST_MISSING');}
@@ -44,10 +44,21 @@ function apply(root,zip,{run}={}){
   fs.rmSync(back,{recursive:true,force:true});
   for(const f of data){const to=path.join(root,...f.path.split('/'));if(fs.existsSync(to)){const keep=path.join(back,...f.path.split('/'));fs.mkdirSync(path.dirname(keep),{recursive:true});fs.copyFileSync(to,keep);}}
   /* each file goes to a temporary name first, then replaces the old one in one step */
-  for(const f of data){const to=path.join(root,...f.path.split('/')),tmp=to+'.hot-new';fs.mkdirSync(path.dirname(to),{recursive:true});fs.writeFileSync(tmp,f.bytes);fs.renameSync(tmp,to);}
-  fs.mkdirSync(path.join(root,'data'),{recursive:true});
-  fs.writeFileSync(path.join(root,'data','hot-update.json'),JSON.stringify({version:String(manifest.version||''),from:String(manifest.from||''),exe:exeStamp(root),files:data.length,at:new Date().toISOString()}));
+  /* silent hot update (user 2026-11-15: 自动静默): a write that fails half way puts every file already written back
+     (or removes it when it is new), so a failed update never leaves a mix of two versions behind */
+  const written=[];
+  try{
+   for(const f of data){const to=path.join(root,...f.path.split('/')),tmp=to+'.hot-new';fs.mkdirSync(path.dirname(to),{recursive:true});fs.writeFileSync(tmp,f.bytes);(options.beforeRename||(()=>{}))(f.path);fs.renameSync(tmp,to);written.push(f.path);}
+   fs.mkdirSync(path.join(root,'data'),{recursive:true});
+   fs.writeFileSync(path.join(root,'data','hot-update.json'),JSON.stringify({version:String(manifest.version||''),from:String(manifest.from||''),exe:exeStamp(root),files:data.length,at:new Date().toISOString()}));
+  }catch(error){
+   for(const f of data){const to=path.join(root,...f.path.split('/'));try{fs.rmSync(to+'.hot-new',{force:true});}catch{}}
+   restore(root,back,written);
+   throw Error('HOT_WRITE_FAILED');
+  }
   return manifest;
  }finally{fs.rmSync(stage,{recursive:true,force:true});}
 }
-module.exports={asset,fits,apply,exeStamp,safe,NAME};
+/* puts the kept copies back; a file that did not exist before the update is removed */
+function restore(root,back,paths){for(const p of paths){const to=path.join(root,...p.split('/')),keep=path.join(back,...p.split('/'));try{if(fs.existsSync(keep))fs.copyFileSync(keep,to);else fs.rmSync(to,{force:true});}catch{}}}
+module.exports={asset,fits,apply,exeStamp,safe,restore,NAME};

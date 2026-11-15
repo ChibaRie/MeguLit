@@ -500,6 +500,7 @@ async function dispatch(request,runtime=null) {
       case 'update_start':{const u=require('./update.cjs');u.start(root,String(request.current||''));return u.status();}
       case 'update_status':return require('./update.cjs').status();
       case 'update_install':return await require('./update.cjs').install(root);
+      case 'update_hot_failed':return require('./update.cjs').hotFail(root,String(request.reason||''));
       case 'kana_progress':return require('./kana.cjs').read(root);
       case 'kana_progress_save':return require('./kana.cjs').save(root,request.data);
       case 'learning_goal':return require('./learning-goal.cjs').get(root);

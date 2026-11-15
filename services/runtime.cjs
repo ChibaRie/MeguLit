@@ -35,7 +35,8 @@ class Runtime {
  }
  /* Antivirus quarantine shows up as missing native files: name it instead of a generic timeout */readerMissing(){const fs=require('node:fs');return ['GalWindowBridge.exe','HookBridge.exe','HookInjector32.exe','HookInjector64.exe'].filter(n=>!fs.existsSync(path.join(this.root,'native',n)));}
  readerStatus(){const status=this.readerStatusRaw();if(status.ready||status.error&&!/READER_NATIVE_EXITED/.test(status.error)||status.phase!=='not-started'&&!status.error)return status;const missing=this.readerMissing();return missing.length?{...status,error:'READER_NATIVE_MISSING: '+missing.join(', ')}:status;}
- readerStatusRaw(){const native=this.reader?.gal,alive=native?.process?.exitCode===null,hotkey=native?.state?.hotkey;return {ready:!!this.readerReady&&alive&&hotkey===true,hotkey,error:this.readerError||(this.readerReady&&alive&&hotkey===false?'READER_HOTKEY_IN_USE':''),phase:this.readerPhase||'not-started'};}
+ readerStatusRaw(){const native=this.reader?.gal,alive=native?.process?.exitCode===null,hotkey=native?.state?.hotkey;/* game: a game is attached right now (silent hot updates wait until it closes, update-notice.js) */const pid=this.reader?.gamePid;let game=false;if(pid){try{process.kill(pid,0);game=true;}catch(e){game=e?.code==='EPERM';}}
+  return {ready:!!this.readerReady&&alive&&hotkey===true,hotkey,game,error:this.readerError||(this.readerReady&&alive&&hotkey===false?'READER_HOTKEY_IN_USE':''),phase:this.readerPhase||'not-started'};}
  async call(request){
   if(this.stopped)throw Error('RUNTIME_STOPPED');const config=this.config();
   switch(request.action){

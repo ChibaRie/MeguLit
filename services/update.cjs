@@ -85,6 +85,13 @@ function isHotfix(root,rel,current){/* a lettered app (1.2.8a) under a numeric t
  const mine=readInstalled(root);if(!mine||mine.version!==rel.version){writeInstalled(root,{version:rel.version,digest:rel.digest});return false;}
  return !!mine.digest&&mine.digest!==rel.digest;
 }
+/* Silent hot updates (user 2026-11-15: 自动静默，要用户点的只包含热更新无法的内容): a small package that fits is
+   downloaded, verified and applied by the page without a card. When it fails, the files are put back
+   (hot-update.cjs), the reason goes to logs/update.log and data/update-hot-failed.json, and from then on that version
+   is offered as the full package with the usual card, so a broken small package is never tried again in a loop. */
+function hotFailedFile(root){return root?path.join(root,'data','update-hot-failed.json'):'';}
+function hotFailed(root,version){if(!root)return '';try{const r=JSON.parse(fs.readFileSync(hotFailedFile(root),'utf8'));return r&&r.version===String(version)?String(r.reason||'HOT_FAILED'):'';}catch{return '';}}
+function markHotFailed(root,version,reason){if(!root)return;updateLog(root,'hot update failed '+version+' '+reason+'; the full package is offered next time');try{fs.mkdirSync(path.dirname(hotFailedFile(root)),{recursive:true});fs.writeFileSync(hotFailedFile(root),JSON.stringify({version:String(version),reason:String(reason),at:new Date().toISOString()}));}catch{}}
 // Updates made by an older version left MeguLit.rollback-update.exe next to MeguLit.exe; it moves into the rollback
 // folder so the MeguLit folder holds a single program to start (user, 2026-11-09).
 function tidyRollback(root){if(!root)return false;const old=path.join(root,'MeguLit.rollback-update.exe');try{if(!fs.existsSync(old))return false;const dir=path.join(root,'migration','update-rollback');fs.mkdirSync(dir,{recursive:true});const dest=path.join(dir,'MeguLit.exe');if(!fs.existsSync(dest))fs.renameSync(old,dest);else fs.rmSync(old,{force:true});return true;}catch{return false;}}
@@ -97,11 +104,12 @@ function refreshIcons(root,current,run=(file,args)=>{const c=require('node:child
 async function check(current,fetcher=fetch,root=''){current=String(current||'').trim().replace(/^v/,'');tidyRollback(root);refreshIcons(root,current);try{require('./uninstall.cjs').registerSoon(root,current);}catch{}
  const rel=await latest(fetcher),hotfix=isHotfix(root,rel,current),isNewer=newer(rel.version,current)||hotfix;
  /* a small package of only the changed files, when this install is exactly the one it was made from (hot-update.cjs) */
- const hot=isNewer&&root&&require('./hot-update.cjs').fits(rel.hot,current,readInstalled(root))?rel.hot:null;
+ const failed=isNewer?hotFailed(root,rel.version):'';
+ const hot=isNewer&&root&&!failed&&require('./hot-update.cjs').fits(rel.hot,current,readInstalled(root))?rel.hot:null;
  found=isNewer?{...rel,hotfix,useHot:!!hot}:null;
  const previous=isNewer&&!hot?await installedSize(current,fetcher):0;
  if(isNewer&&!['downloading','ready'].includes(state.phase))state={phase:'available',version:rel.version,total:hot?hot.size:rel.size,received:0,hot:!!hot};
- return {current,latest:rel.version,newer:isNewer,hotfix,hot:!!hot,hotSize:hot?hot.size:0,size:rel.size,previousSize:previous,delta:previous?rel.size-previous:null,notes:rel.notes,page:rel.page,published:rel.published,phase:state.phase};
+ return {current,latest:rel.version,newer:isNewer,hotfix,hot:!!hot,silent:!!hot,hotFailed:failed,hotSize:hot?hot.size:0,size:rel.size,previousSize:previous,delta:previous?rel.size-previous:null,notes:rel.notes,page:rel.page,published:rel.published,phase:state.phase};
 }
 
 /* Writes zip + script; resolves when the package is verified and ready to install.
@@ -165,7 +173,7 @@ function start(root,current,fetcher=fetch){current=String(current||'').trim().re
    fs.writeFileSync(ps1,'﻿'+script(),'utf8');
    state={phase:'ready',version:rel.version,total:data.length,received:data.length,sha256:hash,zip,ps1};
    return status();
-  }catch(error){if(found)found.useHot=false;/* a failed hot download falls back to the full package on retry */state={...state,phase:'error',error:/^[A-Z_]+$/.test(error.message)?error.message:'UPDATE_DOWNLOAD_FAILED'};job=null;throw Error(state.error);}
+  }catch(error){const code=/^[A-Z_]+$/.test(error.message)?error.message:'UPDATE_DOWNLOAD_FAILED';if(found?.useHot){markHotFailed(root,found.version,'download '+code);found.useHot=false;}/* a failed hot download falls back to the full package on retry */state={...state,phase:'error',error:/^[A-Z_]+$/.test(error.message)?error.message:'UPDATE_DOWNLOAD_FAILED'};job=null;throw Error(state.error);}
  })();
  job.catch(()=>{});
  return job;
@@ -188,12 +196,14 @@ function launchScript(root,{run=spawn}={}){
   child.on('exit',code=>{clearTimeout(timer);resolve(code===0);});
  });
 }
-async function install(root,options){
+/* the page could not finish a silent hot update (hot_reload refused or failed after the files were written) */
+function hotFail(root,reason){const version=state.version||found?.version||'';if(!version)return {recorded:false};markHotFailed(root,version,String(reason||'HOT_FAILED').slice(0,200));if(found)found.useHot=false;return {recorded:true,version};}
+async function install(root,options={}){
  if(state.phase!=='ready'||!state.zip||!fs.existsSync(state.zip))throw Error('UPDATE_NOT_READY');
  if(state.hot){
   /* written in place while MeguLit runs; the page then calls hot_reload. A failure leaves the old files and offers the full package. */
-  try{require('./hot-update.cjs').apply(root,state.zip,options);}catch(error){updateLog(root,'hot update failed '+error.message);if(found)found.useHot=false;job=null;state={...state,phase:'error',hot:false,error:/^[A-Z_]+$/.test(error.message)?error.message:'HOT_APPLY_FAILED'};throw Error(state.error);}
-  writeInstalled(root,{version:state.version,digest:state.sha256||''});updateLog(root,'hot update applied '+state.version);
+  try{require('./hot-update.cjs').apply(root,state.zip,options);}catch(error){markHotFailed(root,state.version,'apply '+error.message);if(found)found.useHot=false;job=null;state={...state,phase:'error',hot:false,error:/^[A-Z_]+$/.test(error.message)?error.message:'HOT_APPLY_FAILED'};throw Error(state.error);}
+  writeInstalled(root,{version:state.version,digest:state.sha256||''});updateLog(root,'hot update applied '+state.version);try{fs.rmSync(hotFailedFile(root),{force:true});}catch{}
   try{fs.rmSync(state.zip,{force:true});}catch{}
   state={...state,phase:'installed'};job=null;return {...status(),hot:true};
  }
@@ -255,4 +265,4 @@ try{
 }catch{ Log ('rollback check failed: '+$_) }
 `;}
 function reset(){state={phase:'idle'};job=null;found=null;}
-module.exports={refreshIcons,tidyRollback,sources,check,start,status,install,apply,newer,latest,installedSize,reset,launchScript};
+module.exports={hotFail,hotFailed,refreshIcons,tidyRollback,sources,check,start,status,install,apply,newer,latest,installedSize,reset,launchScript};

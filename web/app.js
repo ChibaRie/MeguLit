@@ -29,7 +29,7 @@ import {aboutHTML,aboutLabel,mountAbout,VERSION} from './about.js';
 import {dailyLabel,mountDaily} from './daily-view.js';
 import {mountDevNotice,openGuide,openFeedback} from './feedback-ui.js';
 import {openAdaptationOverview,overviewLabel} from './adaptation-overview.js';
-import {checkForUpdates} from './update-notice.js';
+import {checkForUpdates,showHotDone} from './update-notice.js';
 import {leaderboardLabel,mountLeaderboard,setView as setLeaderboardView} from './leaderboard-view.js';
 import {setForumFilter} from './forum-view.js';
 import {maybeFirstRun} from './first-run.js';
@@ -1293,7 +1293,7 @@ async function start(){
     {const notice=()=>{if(document.documentElement.classList.contains('app-boot-pre'))return setTimeout(notice,400);setTimeout(()=>{if(route==='home'&&!document.querySelector('dialog[open]'))mountDevNotice({
      api,locale,esc,toast,version:VERSION});},1800);};notice();}
     /* v1.1.0: look for a new release once per start; silent unless there is one */
-    if(!window.__megulitUpdateChecked){window.__megulitUpdateChecked=true;setTimeout(()=>checkForUpdates({api,invoke,version:VERSION,toast}),4000);}
+    if(!window.__megulitUpdateChecked){window.__megulitUpdateChecked=true;/* a silent hot update just reloaded this page: one line in the corner */setTimeout(()=>{try{showHotDone();}catch{}},900);setTimeout(()=>checkForUpdates({api,invoke,version:VERSION,toast}),4000);}
     const callback=window.__TAURI_INTERNALS__?.transformCallback(response=>{playHomeMotion(response.payload);if(response.payload==='hidden'&&pendingHomeGame){const id=pendingHomeGame;
      pendingHomeGame='';api('focus_game',{id}).catch(error=>toast(errorMessage(error)));}});if(callback)await invoke('plugin:event|listen',{event:'overlay-home',
      target:{kind:'Any'},handler:callback});const healthCallback=window.__TAURI_INTERNALS__?.transformCallback(response=>{const state=response.payload;if(state.ready)readerNotice('');

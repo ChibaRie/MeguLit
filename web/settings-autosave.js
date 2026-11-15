@@ -1,6 +1,10 @@
 // Serialize writes, retain the latest edit, and flush before a settings page is left.
+/* every open autosave reports whether an edit is not written yet; a silent hot update waits for it (update-notice.js) */
+const unsaved=new Set();
+export function hasUnsavedSettings(){for(const dirty of unsaved)if(dirty())return true;return false;}
 export function createAutosave({save,onState=()=>{},delay=450}){
  let timer=null,pending=null,latest=null,last='',running=false,closed=false;
+ const dirty=()=>!closed&&!!(timer||pending||latest);unsaved.add(dirty);
  async function drain(){
   if(pending)return pending;
   if(!latest)return;
@@ -10,7 +14,7 @@ export function createAutosave({save,onState=()=>{},delay=450}){
  return {
   update(value,{immediate=false}={}){if(closed)return;const key=JSON.stringify(value);if(!running&&key===last)return;latest={key,value};clearTimeout(timer);if(immediate)return drain();timer=setTimeout(()=>{timer=null;drain().catch(()=>{});},delay);},
   flush(){clearTimeout(timer);timer=null;return drain();},
-  stop(){closed=true;clearTimeout(timer);},
+  stop(){closed=true;clearTimeout(timer);unsaved.delete(dirty);},
  };
 }
 let active=null;
