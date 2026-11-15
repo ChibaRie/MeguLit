@@ -75,6 +75,9 @@
      send({type:'galMaskError',id:frame.id}); };
     image.src = 'data:image/png;base64,'+frame.png;
   };
+  /* The game's client area in CSS px of this page (null until the bridge has placed a game): the lookup card caps its
+     height at half the game window, not half the desktop-wide layer (2026-11-15). */
+  bridge.gameArea = () => { const l = layoutInfo, dpr = Math.max(.5, Number(window.devicePixelRatio)||1); if (![l?.clientX,l?.clientY,l?.clientWidth,l?.clientHeight].every(Number.isFinite) || l.clientWidth < 50 || l.clientHeight < 50) return null; return {left:l.clientX/dpr, top:l.clientY/dpr, width:l.clientWidth/dpr, height:l.clientHeight/dpr}; };
   bridge.galLayout = layout => {
     if (![layout?.readerX,layout?.readerY,layout?.readerWidth,layout?.readerHeight].every(Number.isFinite)) return;
     if(maskGeometry&&[layout.maskX,layout.maskY].every(Number.isFinite))maskGeometry={...maskGeometry,x:layout.maskX,y:layout.maskY};

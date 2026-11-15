@@ -109,6 +109,50 @@ ${R} body{
  & .tomoyo-selection-card footer button:is(.active,.on,.is-on,[aria-pressed=true]){background:var(--mgc-red)!important;border-color:var(--mgc-red)!important;color:#fff!important}
 }
 @keyframes megulit-anki-sweep{from{transform:translateX(-100%)}to{transform:translateX(250%)}}
+/* Alt+T sections without boxes (2026-11-15, user: 内部就不要按部分来加玻璃底框了 看的很烦 / anki这种就挺好): like the 学习 →
+   Anki section, every section's heading, notes and controls sit directly on the panel, sections are set apart by a faint
+   line and some room, and the status block inside 原文隐藏 (game connected, N characters, picture to confirm) is plain
+   rows. Controls keep their own borders; the red 危险区 and the 记录 look preview keep theirs on purpose. */
+${R}:not(#mgq1):not(#mgq2) body .tomoyo-cn-dialog .tomoyo-menu-content :is(.tome-mask-card,.tomoyo-v4-immersion,.tome-gamefont,.tome-game-style-sync,.tome-calibration-imports,.tomoyo-dictionary-card,.tome-voice-pack,.tome-bg-panels,.tome-credit){
+ border:0!important;border-top:1px solid var(--line,rgba(243,239,232,.1))!important;border-radius:0!important;background:transparent!important;box-shadow:none!important;backdrop-filter:none!important;
+ padding:18px 0 4px!important;margin:18px 0 0!important}
+${R}:not(#mgq1):not(#mgq2) body .tomoyo-cn-dialog .tomoyo-menu-content :is(.tome-mask-card,.tomoyo-v4-immersion,.tome-gamefont,.tome-game-style-sync,.tome-calibration-imports,.tomoyo-dictionary-card,.tome-voice-pack,.tome-bg-panels,.tome-credit):is(:first-child,:first-of-type:not(:has(~*:first-child))){margin-top:6px!important}
+${R}:not(#mgq1):not(#mgq2) body .tomoyo-cn-dialog .tomoyo-menu-content :is(.tome-hook-main,.tome-hook-summary,.tome-hook-proof,.tomoyo-hook-state){
+ border:0!important;border-radius:0!important;background:transparent!important;box-shadow:none!important;padding-inline:0!important;padding-block:2px!important;margin-inline:0!important}
+${R}:not(#mgq1):not(#mgq2) body .tomoyo-cn-dialog .tomoyo-menu-content :is(.tome-hook-summary,.tome-hook-proof,.tomoyo-hook-state){margin-top:10px!important}
+${R}:not(#mgq1):not(#mgq2) body .tomoyo-cn-dialog .tomoyo-menu-content :is(.tome-mask-card,.tomoyo-v4-immersion,.tome-gamefont,.tome-game-style-sync,.tome-calibration-imports,.tomoyo-dictionary-card,.tome-voice-pack,.tome-bg-panels,.tome-credit)>:is(h4,h5,legend,summary):first-child{margin-top:0!important;padding-inline:0!important}
+${R}:not(#mgq1):not(#mgq2) body .tomoyo-cn-dialog .tomoyo-menu-content :is(.tome-bg-panels,.tome-voice-pack) details>:is(summary,:not(summary)){padding-inline:0!important}
+/* 点读卡 (2026-11-15, user: 字太大, 滚动条隐藏): one step smaller everywhere, on the Alt+T menu's type scale; headword at
+   60% of the former 40 px; tighter rows; (one id-selector more than reader-panels.js, whose 40 px headword had nine); no scrollbar (wheel and touchpad still scroll); a fade at the bottom while more
+   content is below; a narrow card turns the AI and save buttons into icons. */
+${R}:not(#mgq1):not(#mgq2) body .tomoyo-selection-card{font-size:13px!important;line-height:1.6!important;scrollbar-width:none!important}
+${R}:not(#mgq1):not(#mgq2) body .tomoyo-selection-card::-webkit-scrollbar{display:none!important;width:0!important;height:0!important}
+${R}:not(#mgq1):not(#mgq2) body .tomoyo-selection-card::after{content:""!important;position:sticky!important;display:block!important;bottom:0!important;height:28px!important;margin-top:-28px!important;pointer-events:none!important;
+ background:linear-gradient(to bottom,transparent,rgba(10,9,10,.92))!important;border-radius:0 0 13px 13px!important;opacity:0!important;transition:opacity .15s!important}
+${R}:not(#mgq1):not(#mgq2) body .tomoyo-selection-card[data-more]::after{opacity:1!important}
+${R}:not(#mgq1):not(#mgq2) body .tomoyo-selection-card>header{padding:8px 10px 8px 12px!important;gap:6px!important}
+${R}:not(#mgq1):not(#mgq2) body .tomoyo-selection-card .tomoyo-card-bar{display:flex!important;flex-wrap:nowrap!important;align-items:center!important;gap:6px!important;min-width:0!important}
+${R}:not(#mgq1):not(#mgq2) body .tomoyo-selection-card :is(.mg-ai-btn,.tomoyo-save-sentence-button,.tomoyo-anki-button){height:26px!important;min-height:26px!important;font-size:12px!important;gap:4px!important;white-space:nowrap!important;flex:none!important}
+${R}:not(#mgq1):not(#mgq2) body .tomoyo-selection-card :is(.mg-ai-btn,.tomoyo-save-sentence-button){padding:0 8px!important}
+${R}:not(#mgq1):not(#mgq2) body .tomoyo-selection-card .tomoyo-anki-button{padding:0 14px 0 9px!important}
+${R}:not(#mgq1):not(#mgq2) body .tomoyo-selection-card :is(.mg-ai-btn,.tomoyo-anki-button) svg{width:13px!important;height:13px!important}
+${R}:not(#mgq1):not(#mgq2) body .tomoyo-selection-card>header>button:not(.tomoyo-anki-button){width:26px!important;height:26px!important;min-height:26px!important;padding:0!important;font-size:14px!important;flex:none!important}
+${R}:not(#mgq1):not(#mgq2) body .tomoyo-selection-card.tome-card-compact .mg-ai-btn>span{display:none!important}
+${R}:not(#mgq1):not(#mgq2) body .tomoyo-selection-card.tome-card-compact .mg-ai-btn{width:28px!important;padding:0!important}
+${R}:not(#mgq1):not(#mgq2) body .tomoyo-selection-card.tome-card-compact .tomoyo-save-sentence-button{font-size:0!important;width:28px!important;padding:0!important}
+${R}:not(#mgq1):not(#mgq2) body .tomoyo-selection-card.tome-card-compact .tomoyo-save-sentence-button::before{content:"☆";font-size:14px}
+${R}:not(#mgq1):not(#mgq2) body .tomoyo-selection-card .tomoyo-selection-body{padding:12px 14px 14px!important}
+${R}:not(#mgq1):not(#mgq2) body .tomoyo-selection-card .tomoyo-word-heading{gap:10px!important}
+${R}:not(#mgq1):not(#mgq2) body .tomoyo-selection-card .tomoyo-word-heading strong{font-size:24px!important;line-height:1.15!important}
+${R}:not(#mgq1):not(#mgq2) body .tomoyo-selection-card .tomoyo-word-part .tomoyo-word-heading strong{font-size:16px!important}
+${R}:not(#mgq1):not(#mgq2) body .tomoyo-selection-card .tomoyo-speak-button{width:26px!important;height:26px!important;min-height:26px!important;padding:0!important}
+${R}:not(#mgq1):not(#mgq2) body .tomoyo-selection-card .tomoyo-speak-button svg{width:13px!important;height:13px!important}
+${R}:not(#mgq1):not(#mgq2) body .tomoyo-selection-card :is(.tomoyo-word-pos,.tomoyo-word-form,.tomoyo-word-form small,.tomoyo-word-facts>span){font-size:11px!important;line-height:1.5!important}
+${R}:not(#mgq1):not(#mgq2) body .tomoyo-selection-card .tomoyo-word-reading{margin-top:4px!important;font-size:12.5px!important}
+${R}:not(#mgq1):not(#mgq2) body .tomoyo-selection-card .tomoyo-sense{padding:4px 0!important;line-height:1.55!important;font-size:13px!important}
+${R}:not(#mgq1):not(#mgq2) body .tomoyo-selection-card .tomoyo-sense *{font-size:inherit!important}
+${R}:not(#mgq1):not(#mgq2) body .tomoyo-selection-card :is(.tomoyo-senses summary,.tomoyo-muted,footer,.tomoyo-card-meta){font-size:11.5px!important}
+${R}:not(#mgq1):not(#mgq2) body .tomoyo-selection-card .tomoyo-word-part{padding-top:10px!important;margin-top:10px!important}
 @media (prefers-reduced-motion:reduce){${R} body :is(.tomoyo-cn-dialog,.tomoyo-selection-card,.tome-backlog) *{transition:none!important}${R} body .tomoyo-selection-card .tomoyo-anki-button[data-state=busy]::before{animation:none!important;width:100%!important;opacity:.5}}
 `;
  const style=document.createElement('style');style.id='megulit-controls-b';style.textContent=css;document.head.appendChild(style);

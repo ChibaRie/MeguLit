@@ -349,8 +349,11 @@
   // does not change every frame of the animation (user, 2026-11-03: glass covered the unfold and flashed).
   const rects=list.map(p=>{const r=p.getBoundingClientRect(),v=gcfg.panels[p.matches('.tomoyo-cn-dialog')?'menu':p.matches('.tome-backlog')?'log':'card'],fw=Math.max(r.width,
    p.offsetWidth||0)+96,fh=Math.max(r.height,p.offsetHeight||0)+96,cx=(r.left+r.right)/2,cy=(r.top+r.bottom)/2,op=Math.max(0,Math.min(1,parseFloat(getComputedStyle(p).opacity)));
-   return {x:Math.round(r.left*scale),y:Math.round(r.top*scale),width:Math.round(r.width*scale),height:Math.round(r.height*scale),fx:Math.round((cx-fw/2)*scale),
-   fy:Math.round((cy-fh/2)*scale),fw:Math.round(fw*scale),fh:Math.round(fh*scale),alpha:Math.round((Number.isFinite(op)?op:1)*100),radius:Math.round((parseFloat(getComputedStyle(p).borderTopLeftRadius)||0)*scale),
+   /* 2026-11-15 (user video): while the menu is dragged or resized the read covers the whole layer, so the picture never
+      ends inside a panel that grew or moved faster than the next read (blank band at the new edge). */
+   const live=p.matches('.tomoyo-menu-resizing,.tome-menu-dragging');
+   return {x:Math.round(r.left*scale),y:Math.round(r.top*scale),width:Math.round(r.width*scale),height:Math.round(r.height*scale),fx:live?0:Math.round((cx-fw/2)*scale),
+   fy:live?0:Math.round((cy-fh/2)*scale),fw:Math.round((live?innerWidth:fw)*scale),fh:Math.round((live?innerHeight:fh)*scale),alpha:Math.round((Number.isFinite(op)?op:1)*100),radius:Math.round((parseFloat(getComputedStyle(p).borderTopLeftRadius)||0)*scale),
    blur:Math.round((Number(v.glassBlur)||0)*scale),dim:Number(v.glassDim)||0,saturate:Number.isFinite(Number(v.glassSaturate))?Number(v.glassSaturate):100};}).filter(r=>r.width>2&&r.height>2).slice(0,
    16);
   const radius=rects[0]?.radius||0,key=JSON.stringify(rects);
