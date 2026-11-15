@@ -34,7 +34,8 @@ foreach ($taskNb in (Get-Content -LiteralPath (Join-Path $taskRoot 'native/nativ
   if ($taskNb.selftestNeeds -eq 'python' -and -not (Get-Command python.exe -ErrorAction SilentlyContinue)) { Write-Warning "native $($taskNb.name): no python on PATH, $taskSt skipped"; continue }
   if ((Invoke-TaskCmd (Join-Path $taskRoot $taskSt)) -ne 0) { throw "Native self-test failed: $($taskNb.name) ($taskSt)" } }
 }
-& $taskNode (Join-Path $taskRoot 'tools/native-stale.cjs'); if ($LASTEXITCODE -ne 0) { throw 'A shipped native binary is older than its sources (tools/native-stale.cjs)' }
+$taskStaleArgs = @(); if ($env:GITHUB_ACTIONS -eq 'true') { $taskStaleArgs = @('--ci') }  # CI has no LunaHook tree: entries with "ci": false may be missing
+& $taskNode (Join-Path $taskRoot 'tools/native-stale.cjs') @taskStaleArgs; if ($LASTEXITCODE -ne 0) { throw 'A shipped native binary is older than its sources (tools/native-stale.cjs)' }
 & (Join-Path $taskRoot 'native/Build-GameStyleProbe.ps1')
 & (Join-Path $taskRoot 'native/Build-StartupIsland.ps1') -OutputPath (Join-Path $taskRoot 'native/StartupIsland.exe')
 & $taskCsc /nologo /target:exe /optimize+ ("/out:" + (Join-Path $taskRoot 'native\GameProcess.exe')) (Join-Path $taskRoot 'native\GameProcess.cs')
