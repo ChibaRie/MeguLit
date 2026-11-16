@@ -36,3 +36,8 @@ test('NPA scenes and parse',()=>{
  const d=tmp();fs.writeFileSync(path.join(d,'nss.npa'),build(FILES,'Muramasa'));
  const sc=engine.engine.scenes(d);assert.deepStrictEqual(sc.map(s=>s.name),['a.nss']);
  const r=engine.engine.parse(sc[0].read());assert.deepStrictEqual(r.lines,['A','「漢字です」','地の文です。']);assert.deepStrictEqual(r.ruby[1],[['漢字','かんじ']]);});
+test('NPK2 opens with any known GARbro key (another title / build)',()=>{
+ const npk=require('../core/nitroplus-npk.cjs'),key=Buffer.from(require('../services/original-engines/nitro-schemes.json').npk2['Minikui Mojika no Ko'],'hex');
+ const buf=npk.createNpk({'media/script/nps/a.nps':Buffer.from('hello')},{key});
+ assert.throws(()=>npk.readNpk(buf));
+ const arc=npk.readNpkAny(buf);assert.ok(npk.npkData(arc,arc.entries[0]).equals(Buffer.from('hello')));});
