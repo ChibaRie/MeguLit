@@ -24,7 +24,9 @@ function lst(file){const b=kit.readAt(file,0,Math.min(kit.size(file),8<<20));if(
   if(out.every(e=>e.name))return out;}
  return null;}
 const pack=lstFile=>lstFile.replace(/\.lst$/i,'');
-function list(lstFile){const l=lst(lstFile),data=pack(lstFile),size=kit.size(data);if(!l||size<0)return null;const snx=l.filter(e=>e.type===1&&e.offset+e.size<=size);
+function list(lstFile){const l=lst(lstFile),data=pack(lstFile),size=kit.size(data);if(!l||size<0)return null;let snx=l.filter(e=>e.type===1&&e.offset+e.size<=size);
+ /* #274 a build whose .lst carries other type codes: accept any entry whose first bytes are an SNX header (names with no extension, not wav/png/ogg/bmp) */
+ if(!snx.length)snx=l.filter(e=>e.size>=20&&e.offset+e.size<=size&&e.size<(64<<20)&&!/\.(?:wav|ogg|png|bmp|jpg|mpg)$/i.test(e.name)).filter(e=>{try{return !!plain(kit.readAt(pack(lstFile),e.offset,e.size));}catch{return false;}});
  return snx.length?snx.map(e=>({...e,name:e.name+'.snx'})):null;}
 const read=(lstFile,e)=>kit.readAt(pack(lstFile),e.offset,e.size);
 /* the SNX decrypted (key found from the header), or null */
