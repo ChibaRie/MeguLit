@@ -24,11 +24,19 @@ function rubyOf(s){
   if(/[ぁ-ヿ]/.test(reading))out.push([base,reading]);i=j;}
  return out;
 }
+/* A text entry is [name, display name, [[speaker, text, …] per language], [voices], …] in the multilingual Steam releases,
+   and [name, [[speaker, text, length, plain, plain]], [voices] or null, …] in single-language KiriKiri Z scenes (死に逝く騎士、
+   異世界に響く断末魔, マガルミナ, ましろ色シンフォニー SANA EDITION ...: every voiced line read as "" and every unvoiced one was
+   dropped). The language slots are the first of t[2], t[1] holding [speaker, text] arrays; the voices the first array of
+   objects with a voice after them. */
+const isSlots=a=>Array.isArray(a)&&a.some(s=>Array.isArray(s)&&typeof s[1]==='string');
+function slotsOf(t){if(isSlots(t[2]))return t[2];if(isSlots(t[1]))return t[1];return typeof t[2]==='string'?t[2]:null;}
+function voiceOf(t){for(const k of [3,2]){const v=t[k];if(Array.isArray(v)){const hit=v.find(x=>x&&typeof x.voice==='string');if(hit)return hit.voice;}}return null;}
 function textsOf(doc){
  const scenes=[];
  for(const scene of Array.isArray(doc.root?.scenes)?doc.root.scenes:[]){
   const rows=[],ruby=[],voices=[];
-  for(const t of Array.isArray(scene?.texts)?scene.texts:[]){if(!Array.isArray(t))continue;const slots=t[2],vo=Array.isArray(t[3])?t[3].find(v=>v&&typeof v.voice==='string')?.voice:null;
+  for(const t of Array.isArray(scene?.texts)?scene.texts:[]){if(!Array.isArray(t))continue;const slots=slotsOf(t),vo=voiceOf(t);
    if(Array.isArray(slots)){rows.push(slots.map(s=>Array.isArray(s)?clean(s[1]):''));voices.push(vo||null);ruby.push(rubyOf(Array.isArray(slots[0])?slots[0][1]:''));}
    else if(typeof slots==='string'){rows.push([clean(slots)]);voices.push(vo||null);ruby.push(rubyOf(slots));}}
   if(rows.length)scenes.push({label:typeof scene.label==='string'?scene.label:'',rows,ruby,...(voices.some(Boolean)?{voices}:{})});

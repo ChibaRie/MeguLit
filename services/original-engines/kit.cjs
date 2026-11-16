@@ -47,7 +47,15 @@ const decoder=bufs=>new TextDecoder(codepage(Buffer.concat(bufs.filter(b=>b&&b.s
 /* E577 the same choice over many strings (BGI, WOLF, YU-RIS, System4 AIN …: one code page per script) */
 const codepageOf=(bufs,{min=0,max=4000}={})=>codepage(Buffer.concat(bufs.filter(b=>b&&b.length>min).slice(0,max)));
 /* a text script: BOM, then strict UTF-8, then Shift-JIS or GBK (KiriKiri, Tyrano, NScripter, Artemis, Ren'Py sources) */
+/* KiriKiri's own scrambled text (header FE FE <mode> FF FE): mode 0 XORs each UTF-16 unit >= 0x20 with ((c&0xFE)<<8)^1, mode 1
+   swaps the odd and even bits, mode 2 is zlib after the header; null when the bytes do not decode */
+function krkrScrambled(buf){if(!(buf[0]===0xfe&&buf[1]===0xfe&&buf[2]<=2))return null;const mode=buf[2];
+ if(mode===2){const zlib=require('node:zlib');for(let i=5;i<Math.min(buf.length,64);i++)if(buf[i]===0x78){try{const o=zlib.inflateSync(buf.subarray(i));return (o[0]===0xff&&o[1]===0xfe?o.subarray(2):o).toString('utf16le');}catch{}}return null;}
+ const n=(buf.length-5)>>1,out=Buffer.alloc(n*2);
+ for(let i=0;i<n;i++){let c=buf.readUInt16LE(5+i*2);if(c>=0x20)c=mode===0?(c^(((c&0xfe)<<8)^1)):(((c&0xaaaa)>>1)|((c&0x5555)<<1));out.writeUInt16LE(c&0xffff,i*2);}
+ return out.toString('utf16le');}
 function decodeText(buf){
+ const scr=krkrScrambled(buf);if(scr!==null)return scr;
  if(buf[0]===0xff&&buf[1]===0xfe)return buf.toString('utf16le',2);
  if(buf[0]===0xfe&&buf[1]===0xff){const b=Buffer.from(buf.subarray(2));b.swap16();return b.toString('utf16le');}
  if(buf[0]===0xef&&buf[1]===0xbb&&buf[2]===0xbf)return buf.toString('utf8',3);
@@ -283,7 +291,7 @@ function engine(def){const A=def.archives;
  const archiveEntries=file=>{if(!A)return null;let l;try{l=A.list(file);}catch{return null;}if(!l)return null;return l.filter(e=>!A.entry||A.entry.test(e.name)).map(e=>{const n=A.keepPath?e.name:path.posix.basename(String(e.name).replace(/\\/g,'/'));return {name:n,read:typeof e.read==='function'?e.read:()=>A.read?A.read(file,e):entryRead(file,e)};});};
  return {id:def.id,hint:def.hint,scenes,archiveEntries,archives:def.overlay===false?()=>[]:scenes,sources:dir=>[...arcFiles(dir),...looseFiles(dir)],parse:buf=>{try{return def.parse(Buffer.isBuffer(buf)?buf:Buffer.from(buf));}catch{return {lines:[],anchors:[]};}},test:def.test||(n=>!!def.loose&&def.loose.name.test(n)),...(def.extra||{})};}
 
-module.exports={SJIS,cname,asarList,zipList,zipRead,peInfo,readAt,size,head,tail,names,isFile,walk,files,KANA,KANA_G,hasKana,codepage,codepageOf,decodeText,decoder,cstr,trimBoth,ascii,decodeRuns,encodeSjis,
+module.exports={SJIS,cname,asarList,zipList,zipRead,peInfo,readAt,size,head,tail,names,isFile,walk,files,KANA,KANA_G,hasKana,codepage,codepageOf,decodeText,krkrScrambled,decoder,cstr,trimBoth,ascii,decodeRuns,encodeSjis,
  xor,xorDword,rol,ror,not,msvcRand,xorStream,nibbleSwap,rolBytes,rorBytes,records,lzss,lzDistance,SIGLUS_TOKEN,inflate,inflateRaw,zstd,unpackAny,huffman,table,entryRead,peResource,rdInt,stringTable,pointerTable,opcodeWalk,lineGrammar,engine,
  sjisWeights,gbkWeights,textScore,xorKeyByColumns};
 
