@@ -38,7 +38,7 @@ test('CMVS: a CPZ in data/pack alone (no cmvs32.exe) identifies the engine; unkn
  const game=fs.mkdtempSync(path.join(os.tmpdir(),'cmvs-det-'));const h=Buffer.alloc(0x48);h.write('CPZ6','latin1');
  F.writeTree(game,{'data/pack/script.cpz':h});
  assert.equal(require('../services/original-engines/registry.cjs').engineOf(game)?.name,'CMVS (Purple Software)');
- assert.equal(cmvs.engine.unsupported(game),'CMVS_CPZ7');
+ assert.equal(cmvs.engine.unsupported(game),'CMVS_CPZ6_KEY');
 });
 
 test('CMVS: an English release keeps its ASCII dialogue as lines, resource ids and control codes stay anchors',()=>{

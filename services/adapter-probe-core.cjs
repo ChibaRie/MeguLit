@@ -42,6 +42,7 @@ function inventory(dir,{depth=2,limit=6000}={}){
   for(const e of list){if(inv.files>=limit)return;const full=path.join(d,e.name);
    mark(e.name);if(e.isDirectory()){if(level<depth&&!SKIP_DIR.test(e.name))walk(full,level+1);continue;}if(!e.isFile())continue;
    let size=0;try{size=fs.statSync(full).size;}catch{}inv.files++;inv.bytes+=size;const ext=(path.extname(e.name).toLowerCase()||'(none)').slice(0,12);inv.ext[ext]=(inv.ext[ext]||0)+1;
+   if(fp.DOCUMENT.test(e.name))continue;
    if(SCRIPTISH.test(e.name))inv.scripts++;
    if((ARCHIVE.test(e.name)&&size>=4096||!NOT_ARCHIVE.test(e.name)&&size>=512&&level<=1)&&inv.archives.length<48){const h=head(full);inv.archives.push({name:maskString(path.relative(dir,full).replace(/\\/g,'/')).slice(0,120),size,magic:magicHex(h),format:format(h)||fp.archiveInfo(e.name,magicHex(h)).format,_path:full});}}};
  walk(dir,0);inv.archives.sort((a,b)=>b.size-a.size);return inv;}
@@ -111,7 +112,7 @@ function classify({engines,inventory:inv,unsupported,preparing,title}){
  if(preparing==='capture')return {step:'decrypt-failed',detail:'encrypted-archive',detected:null};
  const opened=engines.find(e=>e.scenes>0);if(opened)return {step:'parse-failed',detail:opened.id,detected:null};
  const errored=engines.find(e=>e.error&&e.error!=='BUDGET');if(errored)return {step:'parse-failed',detail:errored.id+':'+errored.error,detected:null};
- const unknown=inv.archives.filter(a=>!fp.MEDIA.has(a.format)&&!fp.archiveInfo(a.name,a.magic).resource);
+ const unknown=inv.archives.filter(a=>!fp.DOCUMENT.test(a.name)&&!fp.MEDIA.has(a.format)&&!fp.archiveInfo(a.name,a.magic).resource);
  const scenePck=unknown.find(a=>/(^|\/)scene\.pck$/i.test(a.name));if(scenePck)return {step:'unknown-pack',detail:'siglus-scene-pck',detected:null};
  /* an engine MeguLit can name but has no reader for: say which, not a bare unknown-pack */
  const known=fp.fingerprint(inv);if(known&&(unknown.length||(inv.markers||[]).length))return {step:'unsupported-engine',detail:known.engine,detected:null};if(unknown.length)return {step:'unknown-pack',detail:unknown[0].format||'magic:'+unknown[0].magic.slice(0,8),detected:null};
@@ -126,6 +127,8 @@ function probeGame({dir,executable,title},{budgetMs=60000}={}){
  try{require('./original-engines/scenes.cjs').cxPrepareSync(dir,{deadline:t+budgetMs/2});}catch{}
  try{const scenes=require('./original-engines/scenes.cjs');unsupported=scenes.unsupportedReason(dir);preparing=scenes.preparing(dir)?.kind||null;}catch{}
  const engines=[...nativeEngines(dir,executable),...runEngines(dir,{deadline})];
+ /* the engine that named the unsupported code is a reader that tried: list it (issue showed 'engines tried: -' next to cmvs:CMVS_CPZ7) */
+ if(unsupported?.engine&&!engines.some(e=>e.id===unsupported.engine))engines.push({id:String(unsupported.engine),scenes:-1,parsed:0,lines:0,japaneseLines:0,dialogueLines:0,chineseLines:0,sizes:[],error:String(unsupported.code||'').slice(0,60),ms:0});
  if(!engines.some(e=>e.lines>0))try{const z=require('./original-engines/scenes.cjs').cxChineseOnly(dir);if(z)engines.push({id:'kirikiri-cx',scenes:1,parsed:1,lines:z.lines,japaneseLines:0,dialogueLines:z.lines,chineseLines:z.lines,error:'zh-patch-only',ms:0});}catch{}
  const c=classify({engines,inventory:inv,unsupported,preparing,title});const best=engines.find(e=>e.id===c.detected);
  return {schema:'megulit.probe-result',version:1,reader:reader(),ms:Date.now()-t,fingerprint:fingerprint?{key:fingerprint.key,exe:maskString(fingerprint.exe),size:fingerprint.size}:null,

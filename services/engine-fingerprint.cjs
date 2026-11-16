@@ -43,6 +43,9 @@ const NAME_ENGINES=[
 ];
 /* markers seen while walking the folder (names only) */
 const MARKERS=[[/^unityplayer\.dll$/i,'unity'],[/^gameassembly\.dll$/i,'unity'],[/_Data$/,'unity-data-dir'],[/^(siglusengine|siglus)[^/]*\.exe$/i,'siglus'],[/^nw\.dll$|^package\.nw$/i,'nwjs']];
+/* documents shipped beside a game (manuals, readmes): never a script, never an archive */
+/* plain .txt stays a possible script (NekoSDK, plaintext engines) unless its name says manual/readme */
+const DOCUMENT=/\.(docx?|xlsx?|pptx?|odt|rtf|pdf|html?|mht|md|chm|url)$|(^|\/)([^/]*(readme|manual|license|licence|copying|changelog|eula|説明|マニュアル|使用|说明|說明|必读|必讀)[^/]*)$/i;
 const MEDIA=new Set(['ogg','png','riff','zip','aar','afa','alk','qnt','fsb5']);
 
 function archiveInfo(name,magic){const n=String(name||''),hex=String(magic||'').toLowerCase();let format='',engine=null,resource=false;
@@ -66,4 +69,4 @@ function tidy(archives){const seen=new Map(),out=[];
   const k=row.engine+'|'+row.format+'|'+(row.magic||'')+'|'+row.resource;if(row.engine&&row.format&&seen.has(k)){seen.get(k).count=(seen.get(k).count||1)+1;continue;}seen.set(k,row);out.push(row);}
  return out.sort((a,b)=>(a.resource-b.resource)||(b.size-a.size));}
 
-module.exports={fingerprint,archiveInfo,markerOf,tidy,MAGIC_ENGINES,MEDIA};
+module.exports={DOCUMENT,fingerprint,archiveInfo,markerOf,tidy,MAGIC_ENGINES,MEDIA};

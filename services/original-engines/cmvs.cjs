@@ -175,11 +175,16 @@ const SUBS=['','data/pack','pack'],PS_SUBS=['','script','patch','FileHook','data
 /* a CPZ5-7 archive in the usual pack folders (Steam / retail keep them in data/pack, not beside the exe): enough to name the engine */
 const packed=dir=>kit.files(dir,{name:/\.cpz$/i,subs:['data/pack','pack'],max:4}).some(f=>/^CPZ[567]/.test(kit.head(f,4).toString('latin1')));
 /* a CPZ the reader cannot open and no readable script anywhere (loose .ps3 in data/code count) */
-const cpz7=dir=>{const all=kit.files(dir,{name:/\.cpz$/i,subs:SUBS});return all.some(f=>/^CPZ[567]$/.test(kit.head(f,4).toString('latin1'))&&!open(f))&&!all.some(f=>list(f)?.some(e=>PS.test(e.name)))&&!kit.files(dir,{name:PS,subs:PS_SUBS,max:1}).length;};
+/* → the version (5/6/7) of the first CPZ that does not open, or 0 */
+const cpzFail=dir=>{const all=kit.files(dir,{name:/\.cpz$/i,subs:SUBS});if(all.some(f=>list(f)?.some(e=>PS.test(e.name)))||kit.files(dir,{name:PS,subs:PS_SUBS,max:1}).length)return 0;
+ for(const f of all){const m=/^CPZ([567])$/.exec(kit.head(f,4).toString('latin1'));if(m&&!open(f))return +m[1];}return 0;};
+const cpz7=dir=>cpzFail(dir)>0;
+/* CPZ7 keeps its old code; a CPZ5/6 whose index checks out but no known md5 variant decodes is a scheme (key) problem */
+const failCode=dir=>{const v=cpzFail(dir);return !v?'':v===7?'CMVS_CPZ7':'CMVS_CPZ'+v+'_KEY';};
 const engine=kit.engine({id:'cmvs',hint:'*.cpz（*.ps3）',
  archives:{name:/\.cpz$/i,magic:'CPZ',subs:SUBS,list:f=>{const l=list(f);return l&&l.some(e=>PS.test(e.name))?l:null;},read,entry:PS},
  loose:{name:PS,subs:PS_SUBS},parse,
- extra:{unsupported:dir=>cpz7(dir)?'CMVS_CPZ7':'',REASONS:{CMVS_CPZ7:'这部 CMVS 作品的 CPZ7 归档解不开（start.ps3 里没找到它的注册参数，或者常数和已知作品不同），暂时读不了剧本'},
+ extra:{unsupported:failCode,REASONS:{CMVS_CPZ5_KEY:'这部 CMVS 作品的 CPZ5 归档用了未知的密钥常数，暂时读不了剧本',CMVS_CPZ6_KEY:'这部 CMVS 作品的 CPZ6 归档用了未知的密钥常数，暂时读不了剧本',CMVS_CPZ7:'这部 CMVS 作品的 CPZ7 归档解不开（start.ps3 里没找到它的注册参数，或者常数和已知作品不同），暂时读不了剧本'},
   originalLines:dir=>originalLines(dir)}});
 /* An official Chinese release keeps the Japanese scripts in data/pack and lays plain Chinese ones over them in
    FileHook\ (its loader reads those first), so the running script is Chinese and the archives hold its original. Both
