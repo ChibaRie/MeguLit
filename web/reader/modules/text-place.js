@@ -11,6 +11,7 @@
   const b = window.__tomoyoChinese;
   if (!b || !document.body) { document.addEventListener('DOMContentLoaded', install, { once: true }); return; }
   if (b.textPlace) return;
+  let unmatched = null; const UNMATCHED_MS = 400;
   let on = false, line = null, frame = 0, lastGeom = '', boxBottom = 0, boxKey = '', drawnByGame = '', page = null; const clones = new Map();
   const style = document.createElement('style');
   style.textContent = [
@@ -188,6 +189,11 @@
     if (!live || !sentence) { document.getElementById('megulit-page-ahead')?.replaceChildren(); dropOld(null); clones.clear(); const p = page; page = null; release(); page = p; body.classList.remove('megulit-placed'); /* a page the layer does not hide (not armed, or no line has places yet): the game's own text is on screen, the reader's Japanese is never drawn at its own place over it; the translation stays */ const own = on && page.awake; if (body.classList.contains('megulit-place-game-drawn') !== own) { body.classList.toggle('megulit-place-game-drawn', own); window.__tomoyoHitRegionsRefresh?.(true); } return; }
     const map = mapper(page.client), readerText = readerLine(), geom = [];
     let cur = null; if (readerText) for (let i = page.lines.length - 1; i >= 0; i--) if (page.lines[i].text.includes(readerText)) { cur = page.lines[i]; break; }
+    /* 2026-11-16 (QQ group, ライムライト・レモネードジャム: ruby and translation only, no Japanese): an armed page means the game's
+       own text is hidden by MeguLit, so the reader's Japanese can never be "drawn by the game". A line not found on the page
+       for longer than its places take to arrive goes back to the reader's own box (every engine): never hidden twice. */
+    if (cur || !readerText) unmatched = null; else if (unmatched?.text !== readerText) { unmatched = { text: readerText, at: performance.now() }; setTimeout(schedule, UNMATCHED_MS + 20); }
+    if (!cur && readerText && page.armed && performance.now() - unmatched.at >= UNMATCHED_MS) { document.getElementById('megulit-page-ahead')?.replaceChildren(); dropOld(null); clones.clear(); const p = page; page = null; release(true); page = p; body.classList.remove('megulit-placed'); if (body.classList.contains('megulit-place-game-drawn')) { body.classList.remove('megulit-place-game-drawn'); window.__tomoyoHitRegionsRefresh?.(true); } return; }
     body.classList.remove('megulit-place-fallback'); body.classList.add('megulit-placed'); win.classList.add('megulit-place-window');
     for (const w of document.querySelectorAll('.megulit-place-window')) if (w !== win) w.classList.remove('megulit-place-window');
     /* the reader's line is not on the page (its places are not claimed yet, or the game shows another page): its Japanese is not drawn anywhere else */
