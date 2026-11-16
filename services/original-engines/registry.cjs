@@ -39,6 +39,7 @@ const ENGINES=[
  {name:'Stuff Script (Propeller)',hook:null,test:f=>f.probe(/\.mpk$/i,p=>{const l=require('./stuff.cjs').list(p);return !!l&&l.some(e=>/\.msc$/i.test(e.name));})||f.sub('msc',/\.msc$/i)},
  {name:'MAGES',hook:true,test:f=>f.has(/.mpk$/i)||f.sub('languagebarrier',/./)},
  /* Spike Chunsoft SDL2 ports (Steam ダンガンロンパ 1・2): AGAR .wad archives */
+ {name:'Spike Chunsoft (DRV3)',hook:null,test:f=>f.has(/^dangan3win\.exe$/i)},/* E700 CRI CPK + SPC / STX */
  {name:'Spike Chunsoft (WAD)',hook:null,test:f=>f.magic(/\.wad$/i,'AGAR')},
  {name:'Light.vn',hook:true,test:f=>f.has(/\.vndat$/i)},
  {name:'minori (PAZ)',hook:true,test:f=>f.has(/^(scr|sys)\.paz$/i)},
@@ -204,7 +205,7 @@ const READERS={"BGI / Ethornell":["bgi"],
  "Entis / Cotopha":["entis"],
  "NScripter":["nscripter"],
  "MAGES":["mages"],
- "Spike Chunsoft (WAD)":["spike-wad"],
+ "Spike Chunsoft (WAD)":["spike-wad"],"Spike Chunsoft (DRV3)":["drv3"],"CRIware (CPK / AFS)":["cpk"],
  "minori (PAZ)":["paz"],
  "Nitroplus (NPK)":["nitroplus-n4","nitro-npk"],
  "Nitroplus (NPA)":["nitro-pak","nitro-npa"],
@@ -239,10 +240,10 @@ const READERS={"BGI / Ethornell":["bgi"],
  "Wolf RPG":["wolf"],
  "RPG Maker MV/MZ":["rpgmaker"],
  "RPG Maker VX/XP":["rgss"],
- "Unity (Utage)":["unity-text"],
+ "Unity (Utage)":["unity-text","unity-assets"],
  "Unity (Naninovel)":["naninovel"],
- "Unity (Yarn Spinner)":["unity-text"],
- "Unity (Adventure Creator)":["unity-text"],
+ "Unity (Yarn Spinner)":["unity-text","unity-assets"],
+ "Unity (Adventure Creator)":["unity-text","unity-assets"],
  "Visual Novel Maker":["vnmaker"],
  "Twine / SugarCube":["twine"],
  "WebGAL":["webgal"],
@@ -265,10 +266,10 @@ const READERS={"BGI / Ethornell":["bgi"],
  "DDSystem":["ddsystem"],
  "SystemAoi":["aoi"],
  "KID Engine":["kid"],
- "Unity (Game Creator)":["unity-text"],
+ "Unity (Game Creator)":["unity-text","unity-assets"],
  "GameMaker":["gamemaker"],"SRPG Studio":["srpg"],"Adventure Game Studio":["ags"],"Macromedia Director":["director"],"Hot Soup Processor":["hsp"],
  "Clickteam Fusion":["clickteam"],"MonoGame / XNA":["xna"],"RPG Paper Maker":["rpgpaper"],"libGDX":["java"],"Java":["java"],"OHRRPGCE":["ohrrpgce"],
- "RE Engine (Capcom)":["re-pak"],"Unity":["unity-text","naninovel","higurashi","capcom-msg","vgprompter","pwaat"]};
+ "RE Engine (Capcom)":["re-pak"],"Unity":["unity-text","naninovel","higurashi","capcom-msg","vgprompter","pwaat","unity-assets"]};
 for(const p of require('./plaintext.cjs').RAW.profiles)READERS[p.engine]=p.detectOnly?[]:['plaintext'];
 for(const e of ENGINES)e.readers=READERS[e.name]||[];
 

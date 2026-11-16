@@ -178,6 +178,10 @@ function slgParse(buf){const b=Buffer.isBuffer(buf)?buf:Buffer.from(buf);const d
 
 const SLG_SD=/\.sd$/i;
 const ENGINES={
+ /* E700 CRI CPK (ゆのはな and other CRIWARE titles): files read through cri-cpk.cjs, then the generic kana-run scan */
+ cpk:scanEngine({id:'cpk',hint:'*.cpk（CRI CPK）',name:/\.cpk$/i,magic:'CPK ',subs:['','data','data/win','Data','pack'],list:f=>require('./cri-cpk.cjs').list(f),read:(f,e)=>require('./cri-cpk.cjs').read(f,e)}),
+ /* E700 Enigma Virtual Box container under any extension (APOLLOCRISIS: einsteinAP.cpk starts "EVB "): its virtual files, generic scan */
+ evbox:scanEngine({id:'evbox',hint:'*.cpk / *.exe（Enigma Virtual Box）',name:/\.(cpk|dat|bin|pak|exe)$/i,magic:'EVB ',list:f=>{const t=require('./evb.cjs').list(f);return t?t.files.map(e=>({...e,name:e.path.join('/'),size:e.original})):null;},read:(f,e)=>require('./evb.cjs').read(f,e)}),
  ism:scanEngine({id:'ism',hint:'*.isa',name:/\.isa$/i,magic:'ISM ',list:ismList}),
  glib2:scanEngine({id:'glib2',hint:'*.g2 / *.stx',name:/\.(g2|stx)$/i,list:g2List,read:g2Read}),
  cyberworks:scanEngine({id:'cyberworks',hint:'Arc0x.dat',name:/\.(dat|app)$/i,find:cwFind,list:cwList,read:cwRead}),
