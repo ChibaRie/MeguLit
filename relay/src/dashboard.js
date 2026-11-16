@@ -110,7 +110,7 @@ tbody tr:hover td{background:#121212}
 @media(max-width:520px){.hide-s{display:none}}
 
 /* log */
-.log{font-size:12px;max-height:9.5em;overflow:hidden}
+.log{font-size:12px;max-height:22em;overflow:hidden}
 .log div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .lv{display:inline-block;width:3.2ch}.lv.i{color:var(--ok)}.lv.e{color:var(--red)}
 .ms{color:var(--dim)}
@@ -216,17 +216,22 @@ tbody tr:hover td{background:#121212}
       <div id="most"><div class="empty">-- loading</div></div>
     </section>
 
-    <section class="pane c4">
+    <section class="pane c3">
       <span class="ti">┤ <b>adapters</b> ├</span><span class="tr">packs · reports · uploads</span>
       <div id="adp"><div class="empty">-- loading</div></div>
     </section>
 
-    <section class="pane c4">
-      <span class="ti">┤ <b>recent</b> ├</span><span class="tr">ls -lt full_dumps/</span>
-      <div id="recent"><div class="empty">-- no uploads yet</div></div>
+    <section class="pane c3">
+      <span class="ti">┤ <b>now playing</b> ├</span><span class="tr">board · last 7d</span>
+      <div id="playing"><div class="empty">-- loading</div></div>
     </section>
 
-    <section class="pane c4">
+    <section class="pane c3">
+      <span class="ti">┤ <b>storage</b> ├</span><span class="tr">r2 · uploads in flight</span>
+      <div id="stor"><div class="empty">-- loading</div></div>
+    </section>
+
+    <section class="pane c3">
       <span class="ti">┤ <b>relay.log</b> ├</span><span class="tr" id="latT">latency</span>
       <div class="lat" id="lat"></div>
       <div class="log" id="log"></div>
@@ -340,21 +345,29 @@ function renderExt(x){if(!x)return;barQ=[];
   sub("uploads")+kvs([["diagnostics",hv(K(dg.total))+p7(dg.n7d)+' <span class="d">'+mb(dg.mb||0)+'</span>'],["diag issues",hv(K(dg.issues))],["probe bundles",hv(K(bd.total))+p7(bd.n7d)+' <span class="d">'+mb(bd.mb||0)+'</span>']]);
  flushBars();
  $("extAt").textContent="ext "+ago(x.at);}
-function renderFullMore(j){var f=j.full||{},x=j.ext||{},el=$("fMore");if(!el)return;barQ=[];
- var html=kvs([["size range",hv(mb(f.minMB||0))+'<span class="d"> \u2192 </span>'+hv(mb(f.maxMB||0))],["reporters",hv(K(f.reporters))],
-  ["uploads 24h",hv(K(f.d1))+' <span class="d">'+K(f.d7)+' in 7d \u00b7 '+K(f.games)+' total</span>'],
+function renderFullMore(j){var f=j.full||{},el=$("fMore");if(!el)return;
+ el.innerHTML=kvs([["size range",hv(mb(f.minMB||0))+'<span class="d"> → </span>'+hv(mb(f.maxMB||0))],["reporters",hv(K(f.reporters))],
+  ["uploads 24h",hv(K(f.d1))+' <span class="d">'+K(f.d7)+' in 7d · '+K(f.games)+' total</span>'],
   ["expiring 7d",(f.expiring?'<span class="r">'+f.expiring+'</span>':hv(0))+' <span class="d">kept 30d</span>'],
   ["oldest ready",f.oldestAt?hv(ago(f.oldestAt).replace(" ago",""))+'<span class="d"> waiting</span>':hv("--")],
   ["vndb matched",hv(K(f.vndb))+'<span class="d"> / '+K(f.games)+'</span>']]);
- var fl=f.inflight||[];
- if(fl.length){html+=sub("in flight");fl.forEach(function(u,i){barQ.push(["fi"+i,u.pct,100]);
-  html+='<div class="m m4"><span class="k" title="'+esc(u.title)+'">'+esc(u.title)+'</span><span class="bar" id="fi'+i+'"></span><span class="v">'+u.pct+'%</span><span class="pc">'+u.got+'/'+u.parts+'</span></div>'+
-   '<div class="sub" style="margin:-2px 0 4px">'+mb(u.mb)+' \u00b7 last part '+ago(u.at)+'</div>';});}
- if((f.apps||[]).length)html+=sub("by app version")+bars(f.apps,"app","fa");
+ renderStorage(j);}
+function renderStorage(j){var f=j.full||{},x=j.ext||{},el=$("stor");if(!el)return;barQ=[];var html="";
  var bdm=(x.bundles||{}).mb||0,dgm=(x.diagnostics||{}).mb||0,cum=(x.contrib||[]).reduce(function(a,c){return a+(c.mb||0);},0),tot=(f.storedMB||0)+bdm+dgm+cum;
- html+=sub("r2 bucket \u00b7 free tier 10 GB")+'<div class="m"><span class="k">used</span><span class="bar" id="fr2"></span><span class="v">'+(tot/10240*100).toFixed(1)+'%</span></div>'+
-  kvs([["full dumps",hv(mb(f.storedMB||0))],["contrib",hv(mb(cum))],["probe bundles",hv(mb(bdm))],["diagnostics",hv(mb(dgm))],["total",hv(mb(tot))+'<span class="d"> / 10.00 GB</span>']]);
- el.innerHTML=html;barQ.push(["fr2",tot,10240]);flushBars();}
+ html+='<div class="m"><span class="k">r2 used</span><span class="bar" id="fr2"></span><span class="v">'+(tot/10240*100).toFixed(1)+'%</span></div>'+
+  kvs([["full dumps",hv(mb(f.storedMB||0))],["contrib",hv(mb(cum))],["probe bundles",hv(mb(bdm))],["diagnostics",hv(mb(dgm))],["total",hv(mb(tot))+'<span class="d"> / 10 GB free</span>']]);
+ barQ.push(["fr2",tot,10240]);
+ var fl=f.inflight||[];html+=sub("in flight");
+ if(fl.length)fl.forEach(function(u,i){barQ.push(["fi"+i,u.pct,100]);
+  html+='<div class="m m4"><span class="k" title="'+esc(u.title)+'">'+esc(u.title)+'</span><span class="bar" id="fi'+i+'"></span><span class="v">'+u.pct+'%</span><span class="pc">'+u.got+'/'+u.parts+'</span></div>'+
+   '<div class="sub" style="margin:-2px 0 4px">'+mb(u.mb)+' · last part '+ago(u.at)+'</div>';});
+ else html+='<div class="empty">-- idle</div>';
+ if((f.apps||[]).length)html+=sub("dumps by app version")+bars(f.apps,"app","fa");
+ el.innerHTML=html;flushBars();}
+function renderPlaying(list){var w=$("playing");
+ if(!list||!list.length){w.innerHTML='<div class="empty">-- nobody on the board read this week</div>';return;}
+ w.innerHTML='<table><thead><tr><th>seen</th><th>title</th><th class="rt">ppl</th><th class="rt">chars</th></tr></thead><tbody>'+list.map(function(g){
+  return '<tr><td class="s">'+ago(g.at).replace(" ago","")+'</td><td class="t">'+esc(g.title)+'</td><td class="z rt">'+g.readers+'</td><td class="v rt">'+K(g.characters)+'</td></tr>';}).join("")+'</tbody></table>';}
 function stateTag(s){return '<span class="st '+esc(s)+'">'+esc(s||"-")+'</span>';}
 function renderTop(list){var w=$("top");
  if(!list||!list.length){w.innerHTML='<div class="empty">-- no rows</div>';return;}
@@ -365,7 +378,7 @@ function renderRecent(list){var w=$("recent");
  w.innerHTML='<table><tbody>'+list.map(function(g){return '<tr><td class="s">'+ago(g.at)+'</td><td>'+stateTag(g.state)+'</td><td class="z rt">'+mb(g.mb)+'</td><td class="t">'+esc(g.title)+'</td></tr>';}).join("")+'</tbody></table>';}
 
 var logs=[];
-function log(level,msg){logs.unshift('<div><span class="d">'+new Date().toTimeString().slice(0,8)+'</span> <span class="lv '+(level==="ERR"?"e":"i")+'">'+level+'</span> '+msg+'</div>');logs=logs.slice(0,6);$("log").innerHTML=logs.join("");}
+function log(level,msg){logs.unshift('<div><span class="d">'+new Date().toTimeString().slice(0,8)+'</span> <span class="lv '+(level==="ERR"?"e":"i")+'">'+level+'</span> '+msg+'</div>');logs=logs.slice(0,14);$("log").innerHTML=logs.join("");}
 function kick(){if(reduce)return;var n=$("name");n.classList.remove("kick");void n.offsetWidth;n.classList.add("kick");}
 
 /* both relay nodes are hit every poll; the first good answer is shown, each node's latency is kept */
@@ -395,7 +408,7 @@ function render(j){spark();
  meter($("bR2"),f.storedMB||0,f.limitMB||8192);$("vR2").textContent=((f.storedMB||0)/(f.limitMB||8192)*100).toFixed(1)+"%";
  $("fMB").innerHTML=mb(f.storedMB||0)+' <span class="d">/ '+mb(f.limitMB||8192)+'</span>';
  $("fAvg").textContent=f.ready?mb((f.storedMB||0)/f.ready):"--";$("fLast").textContent=ago(f.lastAt);
- renderSteps(j.steps,j);renderTop(j.top);renderRecent(j.recent);renderExt(j.ext);renderFullMore(j);}
+ renderSteps(j.steps,j);renderTop(j.top);renderPlaying(j.playing);renderExt(j.ext);renderFullMore(j);}
 function nodesLine(){$("node").innerHTML=NODES.map(function(n){var v=lat[n[0]];return n[0]+" "+(v==null?"--":v<0?'<span class="r">down</span>':v+"ms");}).join(" · ");
  var ok=NODES.filter(function(n){return lat[n[0]]>0;}).map(function(n){return lat[n[0]];});$("latT").textContent=ok.length?"latency "+Math.min.apply(null,ok)+"ms":"latency";}
 function tick(){var p=poll();p.first.then(apply).catch(function(){$("mode").textContent="DOWN";$("mode").className="md err";$("code").textContent="timeout";log("ERR","GET /api/probe/stats failed on every node · retry in "+PERIOD+"s");});p.all.then(nodesLine);}
