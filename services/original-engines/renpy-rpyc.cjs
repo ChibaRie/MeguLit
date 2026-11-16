@@ -30,7 +30,7 @@ function unpickle(b){const st=[],memo=new Map();let p=0;
   case 0x29:st.push(tuple([]));break;case 0x5d:st.push([]);break;case 0x7d:st.push(new Map());break;case 0x8f:st.push(new Set());break;
   case 0x4e:st.push(null);break;case 0x88:st.push(true);break;case 0x89:st.push(false);break;
   case 0x4a:st.push(b.readInt32LE(p));p+=4;break;case 0x4b:st.push(b[p++]);break;case 0x4d:st.push(b.readUInt16LE(p));p+=2;break;
-  case 0x8a:{const n=b[p++];let v=0n;for(let i=n-1;i>=0;i--)v=(v<<8n)|BigInt(b[p+i]);if(n&&b[p+n-1]&0x80)v-=1n<<BigInt(8*n);st.push(Number(v));p+=n;break;}
+  case 0x8a:{const n=b[p++];let v=0n;for(let i=n-1;i>=0;i--)v=(v<<8n)|BigInt(b[p+i]);if(n&&b[p+n-1]&0x80)v-=1n<<BigInt(8*n);st.push(v>=-9007199254740991n&&v<=9007199254740991n?Number(v):v);/* #247 big XOR keys stay exact */p+=n;break;}
   case 0x8b:{const n=u32();p+=n;st.push(0);break;}/* LONG4: never a text field */
   case 0x47:st.push(b.readDoubleBE(p));p+=8;break;
   case 0x49:{const s=line();st.push(s==='01'?true:s==='00'?false:Number(s));break;}case 0x4c:st.push(Number(line().replace(/L$/,'')));break;
@@ -70,16 +70,71 @@ function unpickle(b){const st=[],memo=new Map();let p=0;
  throw Error('PICKLE_NO_STOP');}
 
 /* ---- rpa ------------------------------------------------------------------------------------------------------- */
-function rpaHeader(file){const fd=fs.openSync(file,'r');try{const h=Buffer.alloc(80);fs.readSync(fd,h,0,80,0);const first=h.toString('latin1').split('\n')[0];
- let m=/^RPA-3\.[0-9] ([0-9a-f]+)(?: [0-9a-f]+)*? ([0-9a-f]+)\s*$/i.exec(first);if(m)return {offset:parseInt(m[1],16),key:parseInt(m[2],16)>>>0};
- m=/^RPA-2\.0 ([0-9a-f]+)/i.exec(first);if(m)return {offset:parseInt(m[1],16),key:0};return null;}finally{fs.closeSync(fd);}}
+/* #247 variant headers, as unrpa (GPL, Lattyware/unrpa versions/*.py) knows them, and a generic fallback for any
+   other "<TAG> <hex> <hex>" first line:
+     RPA-3.x / RPA-4.0         offset = 1st hex field, key = last hex field
+     ALT-1.0 <key> <offset>    key ^ 0xDABE8DF0
+     ZiX-12A / ZiX-12B <obf>   offset hex digits reordered; the key is derived from the verificationcode string of the
+       game's renpy/loader (every printable run of loader.py/.pyo is tried, the one the index validates with is kept);
+       12B also XORs the first N bytes of every file with magic words ^ key (N from the loader, checked on an .rpyc)
+   Unknown tags: every hex field as the index offset (else the zlib stream found from the end), every field / 0 as key,
+   and as a last resort the key recovered from the data start (some file starts right after the header). A key is kept
+   only when every entry of the index lands inside the data. */
+const ZIX_MAGIC=[3621826839565189698n,8167163782024462963n,5643161164948769306n,4940859562182903807n,2672489546482320731n,8917212212349173728n,7093854916990953299n];
+const zixOffset=v=>{const s=String(v);return s.length>=8?parseInt(s[7]+s[6]+s.slice(0,3)+s[5]+s[4]+s[3],16):NaN;};
+/* python: int(round((int(digits)+102464652121606009) ** (1/3)) / 23 * 109) */
+const zixKey=code=>{const d=String(code).replace(/\D/g,'');if(!d||d.length>40)return null;const a=Number(BigInt(d)+102464652121606009n);const r=Math.round(Math.pow(a,1/3));return BigInt(Math.trunc(r/23*109));};
+const big=v=>typeof v==='bigint'?v:BigInt(Math.trunc(Number(v)||0));
+function rpaHeader(file){const fd=fs.openSync(file,'r');try{const h=Buffer.alloc(128);const n=fs.readSync(fd,h,0,128,0);const nl=h.indexOf(10);const first=h.toString('latin1',0,nl<0?n:nl).trim();
+ const parts=first.split(/\s+/),tag=parts[0]||'',hex=parts.slice(1).filter(x=>/^[0-9a-f]+$/i.test(x));const end=nl<0?0:nl+1;
+ if(/^RPA-[34]\.\d$/i.test(tag)&&hex.length>=2)return {tag,offset:parseInt(hex[0],16),key:BigInt('0x'+hex[hex.length-1]),end};
+ if(/^RPA-2\.0$/i.test(tag)&&hex.length)return {tag,offset:parseInt(hex[0],16),key:0n,end};
+ if(/^ALT-1\.0$/i.test(tag)&&hex.length>=2)return {tag,offset:parseInt(hex[1],16),key:BigInt('0x'+hex[0])^0xDABE8DF0n,end};
+ if(/^ZiX-12[AB]$/.test(tag)&&parts.length>=2)return {tag,offset:zixOffset(parts[parts.length-1]),key:null,end,zix:tag.slice(-1)};
+ /* unknown variant: printable tag then hex fields */
+ if(nl>0&&/^[\x21-\x7e]{3,16}$/.test(tag)&&hex.length)return {tag,offset:null,key:null,end,fields:hex};
+ return null;}finally{fs.closeSync(fd);}}
+const loaderFiles=file=>{const out=[];for(const d of [path.dirname(file),path.dirname(path.dirname(file))])for(const sub of ['renpy','.'])for(const n of ['loader.py','loader.pyo','loader.pyc']){try{out.push(fs.readFileSync(path.join(d,sub,n)));}catch{}}return out;};
+/* the strings a ZiX game's loader carries: the verificationcode literal of loader.py, else every printable run with digits */
+function zixCodes(file){const out=new Set();
+ for(const b of loaderFiles(file)){const t=b.toString('latin1');const m=/verificationcode\s*=\s*_string\.sha1\(\s*['"](.*?)['"]\s*\)/.exec(t);if(m)out.add(m[1]);
+  for(const r of t.matchAll(/[\x20-\x7e]{3,120}/g))if(/\d{3}/.test(r[0]))out.add(r[0]);}
+ return [...out];}
+function zixAmounts(file){const out=new Set();
+ for(const b of loaderFiles(file)){const t=b.toString('latin1');for(const m of t.matchAll(/rv\.read\((\d+)\)/g))out.add(+m[1]);
+  for(let i=0;i+5<=b.length;i++)if(b[i]===0x69){const v=b.readInt32LE(i+1);if(v>=8&&v<=1<<20)out.add(v);}}
+ return [...out].sort((x,y)=>x-y);}
+function inflateIndex(fd,size,offset){if(!(offset>0&&offset<size))return null;const raw=Buffer.alloc(size-offset);fs.readSync(fd,raw,0,raw.length,offset);
+ try{const idx=unpickle(zlib.inflateSync(raw));return idx instanceof Map&&idx.size?idx:null;}catch{return null;}}
+/* the index from the end of the file when no header field points at it: the last zlib stream that holds a pickle */
+function findIndex(fd,size){const n=Math.min(size,8<<20),b=Buffer.alloc(n);fs.readSync(fd,b,0,n,size-n);
+ for(let i=n-2;i>=0;i--)if(b[i]===0x78&&(b[i+1]===0x9c||b[i+1]===0xda||b[i+1]===0x01||b[i+1]===0x5e)){const idx=inflateIndex(fd,size,size-n+i);if(idx)return {idx,offset:size-n+i};}
+ return null;}
+const firstPart=parts=>Array.isArray(parts)?parts[0]:null;
+function decodeIndex(idx,key,limit){const out=new Map();
+ for(const [name,parts] of idx){const t=firstPart(parts);if(!t)continue;const off=Number(big(t[0])^key),len=Number(big(t[1])^key);
+  if(!(off>=0&&len>=0&&off+len<=limit))return null;const prefix=t[2];
+  out.set(String(name).replace(/\\/g,'/'),{offset:off,length:len,prefix:Buffer.isBuffer(prefix)?prefix:Buffer.from(String(prefix||''),'latin1')});}
+ return out.size?out:null;}
+function zixRun(s,key){const d=Buffer.from(s),k=BigInt.asUintN(64,key);for(let i=0,w=0;i+8<=d.length;i+=8,w++)d.writeBigUInt64LE(d.readBigUInt64LE(i)^ZIX_MAGIC[w%7]^k,i);return d;}
 function rpaIndex(file){const h=rpaHeader(file);if(!h)return null;const fd=fs.openSync(file,'r');
- try{const size=fs.fstatSync(fd).size,raw=Buffer.alloc(size-h.offset);fs.readSync(fd,raw,0,raw.length,h.offset);
-  const idx=unpickle(zlib.inflateSync(raw)),out=new Map();if(!(idx instanceof Map))return null;
-  for(const [name,parts] of idx){const t=Array.isArray(parts)&&parts[0];if(!t)continue;const prefix=t[2];
-   out.set(String(name).replace(/\\/g,'/'),{offset:(t[0]^h.key)>>>0,length:(t[1]^h.key)>>>0,prefix:Buffer.isBuffer(prefix)?prefix:Buffer.from(String(prefix||''),'latin1')});}
+ try{const size=fs.fstatSync(fd).size;let offset=h.offset,idx=null;
+  if(h.fields){for(const f of h.fields){const o=parseInt(f,16);idx=inflateIndex(fd,size,o);if(idx){offset=o;break;}}}
+  else idx=inflateIndex(fd,size,offset);
+  if(!idx){const f=findIndex(fd,size);if(!f)return null;idx=f.idx;offset=f.offset;}
+  const keys=[];if(h.key!=null)keys.push(h.key);
+  if(h.zix)for(const c of zixCodes(file)){const k=zixKey(c);if(k!=null)keys.push(k);}
+  for(const f of h.fields||[])keys.push(BigInt('0x'+f),BigInt('0x'+f)^0xDABE8DF0n);keys.push(0n);
+  for(const start of new Set([34,51,64,h.end].filter(x=>x>0)))for(const [,parts] of idx){const t=firstPart(parts);if(t)keys.push(big(t[0])^BigInt(start));}
+  let out=null,key=0n;for(const k of keys){out=decodeIndex(idx,k,offset);if(out){key=k;break;}}
+  if(!out)return null;
+  if(h.zix==='B'){const one=[...out.entries()].find(([n,e])=>/\.rpyc$/i.test(n)&&e.length>64)?.[1];let amount=0;
+   if(one){const sample=Buffer.concat([one.prefix,kit.readAt(file,one.offset,Math.min(one.length,1<<20))]);
+    for(const a of zixAmounts(file)){const n=Math.min(a,sample.length);if(zixRun(sample.subarray(0,n),key).toString('latin1',0,10)==='RENPY RPC2'){amount=a;break;}}}
+   for(const e of out.values())e.zix={key,amount};}
   return out;}finally{fs.closeSync(fd);}}
-const rpaRead=(file,e)=>Buffer.concat([e.prefix,kit.readAt(file,e.offset,Math.max(0,e.length-e.prefix.length))]);
+const rpaRead=(file,e)=>{const raw=Buffer.concat([e.prefix,kit.readAt(file,e.offset,Math.max(0,e.length-e.prefix.length))]);
+ if(!e.zix||!e.zix.amount)return raw;const n=Math.min(e.zix.amount,raw.length);return Buffer.concat([zixRun(raw.subarray(0,n),e.zix.key),raw.subarray(n)]);};
 
 /* ---- rpyc ------------------------------------------------------------------------------------------------------ */
 const isRpyc=buf=>buf.length>10&&(buf.toString('latin1',0,10)==='RENPY RPC2'||buf[0]===0x78);
@@ -129,4 +184,4 @@ function scripts(gameDir,{tl=false}={}){const out=new Map();const inTl=rel=>/(^|
   for(const [name,e] of idx){if(!/\.rpyc$/i.test(name)||inTl(name)!==tl)continue;out.set(name.replace(/c$/i,'').toLowerCase(),{rel:name,read:()=>rpaRead(a,e),source:a});}}
  for(const f of walkFiles(gameDir,4,n=>/\.rpyc$/i.test(n))){const rel=path.relative(gameDir,f).replace(/\\/g,'/');if(inTl(rel)!==tl)continue;out.set(rel.replace(/c$/i,'').toLowerCase(),{rel,read:()=>fs.readFileSync(f),source:f});}
  return out;}
-module.exports={data,unpickle,rpaHeader,rpaIndex,rpaRead,isRpyc,statements,walk,parse,translations,scripts,PyObj};
+module.exports={data,unpickle,rpaHeader,rpaIndex,rpaRead,zixKey,zixOffset,zixRun,isRpyc,statements,walk,parse,translations,scripts,PyObj};
