@@ -160,18 +160,25 @@ function pushed(d){const count=d.readUInt32LE(0x10),code=0x30,codeLen=d.readUInt
  for(let p=code;p+12<=text;p++){if(d[p]!==1||!d.subarray(p,p+4).equals(PUSH)||!d.subarray(p+8,p+12).equals(PUSH_END))continue;out.push(kit.cstr(d,text+d.readUInt32LE(p+4),text+textLen)||Buffer.alloc(0));p+=11;}
  return out;}
 const clean=t=>kit.trimBoth(t.replace(/\\n/g,'\n'));
+/* an English (or other Latin-script) release keeps its dialogue as plain ASCII pushes: a string with letters and a space, sentence punctuation or a
+   Capitalised word is text; resource ids, control codes (\wc) and lower-case identifiers stay anchors */
+const prose=t=>/[A-Za-z]/.test(t)&&(/\s/.test(t)||/[,.!?"'\u2026]/.test(t)||/^[A-Z][a-z]+$/.test(t));
 /* every push as {kind, t}: 'line' (text the game shows), 'anchor' (a file name or command) or '' (empty) */
 function texts(buf){const d=unpackPs2(buf);if(!d)return [];const list=pushed(d),dec=kit.decoder(list.filter(s=>s.length));
- return list.map(s=>{const t=!s.length?'':s.some(c=>c>=0x80)?clean(dec.decode(s)):s.toString('latin1');return {kind:!t?'':kit.ascii(t)||RESOURCE.test(t)?'anchor':'line',t};});}
+ return list.map(s=>{const t=!s.length?'':s.some(c=>c>=0x80)?clean(dec.decode(s)):s.toString('latin1');if(!t)return {kind:'',t};
+  if(RESOURCE.test(t)||(kit.ascii(t)&&!prose(t)))return {kind:'anchor',t};return {kind:'line',t:kit.ascii(t)?clean(t):t};});}
 function parse(buf){const lines=[],anchors=[];for(const x of texts(buf)){if(x.kind==='line')lines.push(x.t);else if(x.kind==='anchor')anchors.push(x.t);}return {lines,anchors};}
 
 const PS=/\.ps[23]$/i;
 /* CMVS games keep their archives in data/pack (青い鳥, アマツツミ) */
-const SUBS=['','data/pack','pack'];
-const cpz7=dir=>kit.files(dir,{name:/\.cpz$/i,magic:'CPZ7',subs:SUBS}).length>0&&!kit.files(dir,{name:/\.cpz$/i,subs:SUBS}).some(f=>list(f)?.some(e=>PS.test(e.name)));
+const SUBS=['','data/pack','pack'],PS_SUBS=['','script','patch','FileHook','data/code','data/update','data'];
+/* a CPZ5-7 archive in the usual pack folders (Steam / retail keep them in data/pack, not beside the exe): enough to name the engine */
+const packed=dir=>kit.files(dir,{name:/\.cpz$/i,subs:['data/pack','pack'],max:4}).some(f=>/^CPZ[567]/.test(kit.head(f,4).toString('latin1')));
+/* a CPZ the reader cannot open and no readable script anywhere (loose .ps3 in data/code count) */
+const cpz7=dir=>{const all=kit.files(dir,{name:/\.cpz$/i,subs:SUBS});return all.some(f=>/^CPZ[567]$/.test(kit.head(f,4).toString('latin1'))&&!open(f))&&!all.some(f=>list(f)?.some(e=>PS.test(e.name)))&&!kit.files(dir,{name:PS,subs:PS_SUBS,max:1}).length;};
 const engine=kit.engine({id:'cmvs',hint:'*.cpz（*.ps3）',
  archives:{name:/\.cpz$/i,magic:'CPZ',subs:SUBS,list:f=>{const l=list(f);return l&&l.some(e=>PS.test(e.name))?l:null;},read,entry:PS},
- loose:{name:PS,subs:['','script','patch','FileHook']},parse,
+ loose:{name:PS,subs:PS_SUBS},parse,
  extra:{unsupported:dir=>cpz7(dir)?'CMVS_CPZ7':'',REASONS:{CMVS_CPZ7:'这部 CMVS 作品的 CPZ7 归档解不开（start.ps3 里没找到它的注册参数，或者常数和已知作品不同），暂时读不了剧本'},
   originalLines:dir=>originalLines(dir)}});
 /* An official Chinese release keeps the Japanese scripts in data/pack and lays plain Chinese ones over them in
@@ -182,4 +189,4 @@ function originalLines(dir){const arch=new Map();
  for(const f of kit.files(dir,{name:/\.cpz$/i,magic:'CPZ',subs:SUBS}))for(const e of engine.archiveEntries(f)||[])arch.set(e.name.toLowerCase(),e);
  return engine.scenes(dir).flatMap(s=>{let own=[];try{own=texts(s.read());}catch{}const a=arch.get(s.name.toLowerCase());let ja=null;try{ja=a&&texts(a.read());}catch{}
   return own.flatMap((x,i)=>x.kind!=='line'?[]:[ja&&ja.length===own.length&&ja[i].kind==='line'?ja[i].t:'']);});}
-module.exports={engine,parse,texts,originalLines,header,open,list,read,unpackPs2,pushed,md5Words,table,stage1,dirCipher,entryCipher,scheme,DEFAULT,DEFAULT7,indexKey,startValues,rotl,rotr};
+module.exports={engine,packed,parse,texts,originalLines,header,open,list,read,unpackPs2,pushed,md5Words,table,stage1,dirCipher,entryCipher,scheme,DEFAULT,DEFAULT7,indexKey,startValues,rotl,rotr};

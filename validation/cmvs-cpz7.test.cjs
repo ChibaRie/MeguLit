@@ -19,14 +19,14 @@ test('CMVS: CPZ5 archive in data/pack is listed',()=>{
  assert.deepEqual(cmvs.engine.scenes(game).map(s=>s.name),['a01.ps3']);
 });
 
-test('CMVS: schemes list carries the Aoi7 CPZ7 variant',()=>{
- const sc=cmvs.DEFAULT;assert.equal(sc.alts.length,1);assert.equal(sc.alts[0].name,'Aoi7');
- assert.equal(sc.alts[0].factor,0x1A74F195);assert.equal(sc.alts[0].indexAddend,0x784C5062);assert.equal(sc.alts[0].entryTail,0xAE);
+test('CMVS: the CPZ7 scheme carries the cmvs32 3.80 constants (Aoi Tori)',()=>{
+ const sc=cmvs.DEFAULT7;
+ assert.equal(sc.factor,0x1A74F195);assert.equal(sc.indexAddend,0x784C5062);assert.equal(sc.entryTail,0xAE);assert.equal(sc.entrySub,0x5C39E87B);
 });
 
 const STEAM='E:/steam/steamapps/common/Aoi Tori',real=fs.existsSync(path.join(STEAM,'data/pack/voice2.cpz'));
 test('CMVS CPZ7: Aoi Tori voice2.cpz index and entries decrypt',{skip:!real},()=>{
- const f=path.join(STEAM,'data/pack/voice2.cpz'),a=cmvs.open(f);assert.ok(a);assert.equal(a.h.version,7);assert.equal(a.sc.name,'Aoi7');assert.ok(a.entries.length>100);
+ const f=path.join(STEAM,'data/pack/voice2.cpz'),a=cmvs.open(f);assert.ok(a);assert.equal(a.h.version,7);assert.equal(a.variant,'Aoi');assert.ok(a.entries.length>100);
  assert.equal(cmvs.read(f,a.entries[0]).toString('latin1',0,4),'OggS');
 });
 test('CMVS CPZ7: Aoi Tori scripts read as text',{skip:!real},()=>{
