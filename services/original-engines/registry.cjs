@@ -39,7 +39,7 @@ const ENGINES=[
  {name:'Stuff Script (Propeller)',hook:null,test:f=>f.probe(/\.mpk$/i,p=>{const l=require('./stuff.cjs').list(p);return !!l&&l.some(e=>/\.msc$/i.test(e.name));})||f.sub('msc',/\.msc$/i)},
  {name:'MAGES',hook:true,test:f=>f.has(/.mpk$/i)||f.sub('languagebarrier',/./)},
  /* Spike Chunsoft SDL2 ports (Steam ダンガンロンパ 1・2): AGAR .wad archives */
- {name:'Spike Chunsoft (DRV3)',hook:null,test:f=>f.has(/^dangan3win.exe$/i)},/* E700 CRI CPK + SPC / STX */
+ {name:'Spike Chunsoft (DRV3)',hook:null,test:f=>f.has(/^dangan3win\.exe$/i)},/* E700 CRI CPK + SPC / STX */
  {name:'Spike Chunsoft (WAD)',hook:null,test:f=>f.magic(/\.wad$/i,'AGAR')},
  {name:'Light.vn',hook:true,test:f=>f.has(/\.vndat$/i)},
  {name:'minori (PAZ)',hook:true,test:f=>f.has(/^(scr|sys)\.paz$/i)},
