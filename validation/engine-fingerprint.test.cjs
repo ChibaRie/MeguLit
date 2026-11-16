@@ -25,3 +25,13 @@ test('inventory magic is the raw header, no 3f masking',()=>{
  fs.writeFileSync(path.join(dir,'Game_Data','resources.assets'),Buffer.alloc(8192));fs.writeFileSync(path.join(dir,'UnityPlayer.dll'),Buffer.alloc(16));
  const i=core.inventory(dir);const a=i.archives.find(x=>x.name==='game.rio');assert.equal(a.magic,'59a1b25e6fc3233e');assert.ok(i.markers.includes('unity'));
  fs.rmSync(dir,{recursive:true,force:true});});
+test('documents beside the game are neither scripts nor archives (issue 297)',()=>{
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'megulit-fp-'));fs.writeFileSync(path.join(dir,'説明書.docx'),Buffer.concat([Buffer.from('504b0304','hex'),Buffer.alloc(8192)]));
+ fs.writeFileSync(path.join(dir,'readme.txt'),'x'.repeat(600));fs.writeFileSync(path.join(dir,'manual.html'),'x'.repeat(600));
+ const i=core.inventory(dir);assert.equal(i.archives.length,0);assert.equal(i.scripts,0);
+ assert.equal(core.classify({engines:[],inventory:i}).step,'no-script');fs.rmSync(dir,{recursive:true,force:true});});
+test('CPZ6 that does not open reports its own version as a key problem',()=>{
+ const cmvs=require('../services/original-engines/cmvs.cjs');const dir=fs.mkdtempSync(path.join(os.tmpdir(),'megulit-fp-'));fs.mkdirSync(path.join(dir,'data','pack'),{recursive:true});
+ fs.writeFileSync(path.join(dir,'data','pack','event.cpz'),Buffer.concat([Buffer.from('CPZ6'),Buffer.alloc(0x200,0x11)]));
+ const code=cmvs.engine.unsupported(dir);assert.equal(code,'CMVS_CPZ6_KEY');
+ assert.equal(core.classify({engines:[],inventory:{archives:[],scripts:0},unsupported:{engine:'cmvs',code}}).step,'decrypt-failed');fs.rmSync(dir,{recursive:true,force:true});});
