@@ -27,12 +27,29 @@
  const cardWidth=()=>Math.round(Math.min(innerWidth-24,Math.max(360,Math.min(440,.21*Math.max(screen.width||0,innerWidth)))));
  const cardCap=()=>{const area=b.gameArea?.();return Math.max(160,Math.round((area?area.height:innerHeight)/2));};
  const sentenceRect=()=>{const node=anchor&&typeof anchor.closest==='function'?anchor:anchor?.startContainer?.parentElement||null;const block=node?.closest?.('.sentence-text,.tome-page-lines>div,.tomoyo-cn-output,.sentence-window');
-  if(!block)return null;const list=[...block.getClientRects()].filter(r=>r.width&&r.height);return list.length?{top:Math.min(...list.map(r=>r.top)),bottom:Math.max(...list.map(r=>r.bottom))}:null;};
+  if(!block)return null;
+  /* 2026-11-16 (user: 我点读窗口呢？, The Song of Saya): in overlay placement the sentence block is a full-window box (0,0,1920,1079) with the
+     glyphs placed inside it, so the "whole sentence" swallowed the window and the card went above the top edge. The sentence is the
+     union of its glyphs; the block's own box counts only when it is not page-sized. */
+  let list=[...block.querySelectorAll('.char-token')].flatMap(t=>[...t.getClientRects()]).filter(r=>r.width&&r.height);
+  if(!list.length)list=[...block.getClientRects()].filter(r=>r.width&&r.height&&r.height<innerHeight*.6);
+  return list.length?{top:Math.min(...list.map(r=>r.top)),bottom:Math.max(...list.map(r=>r.bottom))}:null;};
+ /* the part of the reader window on the monitor's work area (window coordinates): the reader window can be larger than the monitor
+    or hang over its edge (game window partly off screen, overlay spanning monitors, taskbar), and a card clamped to the window alone
+    then lands off screen. Falls back to the window when the screen numbers are missing or nonsense. */
+ function view(){const w={left:0,top:0,right:innerWidth,bottom:innerHeight};try{const sx=Number(window.screenX)||0,sy=Number(window.screenY)||0,al=Number(screen.availLeft),at=Number(screen.availTop),
+  aw=Number(screen.availWidth),ah=Number(screen.availHeight);if(![al,at,aw,ah].every(Number.isFinite)||aw<200||ah<200)return w;const v={left:Math.max(0,al-sx),top:Math.max(0,at-sy),
+  right:Math.min(innerWidth,al+aw-sx),bottom:Math.min(innerHeight,at+ah-sy)};return v.right-v.left>=240&&v.bottom-v.top>=160?v:w;}catch{return w;}}
+ /* last word on placement: whatever the rules above chose, the whole card stays inside the visible area */
+ function keepInside(V,margin){if(!card)return;const r=card.getBoundingClientRect();const room=V.bottom-V.top-2*margin;if(r.height>room)card.style.setProperty('max-height',Math.max(120,Math.round(room))+'px','important');
+  const s=card.getBoundingClientRect();if(s.top<V.top+margin||s.bottom>V.bottom-margin){card.style.bottom='';card.style.top=Math.round(Math.max(V.top+margin,Math.min(V.bottom-margin-s.height,s.top)))+'px';}
+  if(s.left<V.left+margin||s.right>V.right-margin)card.style.left=Math.round(Math.max(V.left+margin,Math.min(V.right-margin-s.width,s.left)))+'px';}
  function more(){if(!card)return;const left=card.scrollHeight-card.clientHeight-card.scrollTop;card.toggleAttribute('data-more',left>4);}
  function place(){if(!card)return;const width=cardWidth();card.style.width=width+'px';card.classList.toggle('tome-card-compact',width<400);for(const x of card.querySelectorAll('.mg-ai-btn,.tomoyo-save-sentence-button'))if(!x.title)x.title=x.textContent.replace(/^\s*☆\s*/,'').trim();
   if(!card.__tomeMore){card.__tomeMore=true;card.addEventListener('scroll',more,{passive:true});new ResizeObserver(more).observe(card);let queued=0;new MutationObserver(()=>{if(!queued)queued=requestAnimationFrame(()=>{queued=0;more();});}).observe(card,{childList:true,subtree:true,characterData:true,attributes:true,attributeFilter:['open','hidden']});}
-  if(card.__tomeMoved){const s=card.getBoundingClientRect();card.style.bottom='';card.style.left=Math.max(12,Math.min(innerWidth-s.width-12,s.left))+'px';card.style.top=Math.max(12,
-   Math.min(innerHeight-s.height-12,s.top))+'px';window.__tomoyoHitRegionsRefresh?.(true);return;}
+  const V=view();
+  if(card.__tomeMoved){const s=card.getBoundingClientRect();card.style.bottom='';card.style.left=Math.max(V.left+12,Math.min(V.right-s.width-12,s.left))+'px';card.style.top=Math.max(V.top+12,
+   Math.min(V.bottom-s.height-12,s.top))+'px';window.__tomoyoHitRegionsRefresh?.(true);return;}
   const rects=hitRects(),u=rects.length?{left:Math.min(...rects.map(r=>r.left)),right:Math.max(...rects.map(r=>r.right)),top:Math.min(...rects.map(r=>r.top)),bottom:Math.max(...rects.map(r=>r.bottom))}:{
    left:innerWidth/2,right:innerWidth/2,top:innerHeight/2,bottom:innerHeight/2};
   {const line=sentenceRect();if(line&&line.top<=u.bottom&&line.bottom>=u.top){u.top=Math.min(u.top,line.top);u.bottom=Math.max(u.bottom,line.bottom);}}
@@ -40,13 +57,13 @@
   const point=anchor?.__megulitPoint||lastPoint,size=card.getBoundingClientRect(),gap=10,margin=12;
   // Centred on the click when it lies on (or right next to) the hit text, else on the hit text; kept on screen.
   const cx=point&&point.x>=u.left-40&&point.x<=u.right+40?point.x:(u.left+u.right)/2;
-  card.style.left=Math.round(Math.max(margin,Math.min(innerWidth-size.width-margin,cx-size.width/2)))+'px';
+  card.style.left=Math.round(Math.max(V.left+margin,Math.min(V.right-size.width-margin,cx-size.width/2)))+'px';
   // Just above the hit text; just below it when the card does not fit above; otherwise the roomier side, capped.
-  const above=u.top-gap-margin,below=innerHeight-u.bottom-gap-margin,h=Math.min(size.height,cap),up=above>=h||(below<h&&above>=below);
+  const above=u.top-gap-margin-V.top,below=V.bottom-u.bottom-gap-margin,h=Math.min(size.height,cap),up=above>=h||(below<h&&above>=below);
   if(up){card.style.top='';card.style.bottom=Math.round(innerHeight-u.top+gap)+'px';card.style.setProperty('max-height',Math.max(120,Math.round(Math.min(cap,above)))+'px','important');
    }
   else{card.style.bottom='';card.style.top=Math.round(u.bottom+gap)+'px';card.style.setProperty('max-height',Math.max(120,Math.round(Math.min(cap,below)))+'px','important');}
-  more();window.__tomoyoHitRegionsRefresh?.(true);}
+  keepInside(V,margin);more();window.__tomoyoHitRegionsRefresh?.(true);}
  function dragCard(head){head.style.cursor='grab';head.addEventListener('pointerdown',e=>{if(e.button!==0||e.target.closest('button,a,input,select,textarea,summary,[role=button]'))return;
   e.preventDefault();e.stopPropagation();const s=card.getBoundingClientRect(),dx=e.clientX-s.left,dy=e.clientY-s.top;try{head.setPointerCapture(e.pointerId);}catch{
   }head.style.cursor='grabbing';card.__tomeMoved=true;card.style.bottom='';

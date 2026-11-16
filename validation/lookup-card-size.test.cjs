@@ -47,3 +47,32 @@ test('lookup card: smaller type, width 360-440, at most half the game window, no
   }
  }finally{cdp?.stop();server?.close();await sleep(400);try{fs.rmSync(temp,{recursive:true,force:true});}catch{}}
 });
+
+/* 2026-11-16 (user: 我点读窗口呢？, The Song of Saya ver1.00S): in overlay placement the sentence block was a full-window box
+   (0,0,1920,1079, reader-pointer.log) with the glyphs placed at the top. The card took the block as "the sentence", fitted neither
+   above nor below and was put above the window's top edge. Also: a reader window larger than the monitor's work area keeps the card
+   on the work area. */
+const PLACE=`(async()=>{const w=ms=>new Promise(r=>setTimeout(r,ms));const b=window.__tomoyoChinese;b.closeLocalSelection?.();await w(300);
+ b.localLookup=async()=>(${JSON.stringify(WORDS.long)});const t=document.getElementById('t');b.openLocalSelection({text:'x',start:0,end:1,selection:'x'},t);await w(900);
+ const c=document.querySelector('.tomoyo-selection-card'),r=c.getBoundingClientRect(),g=t.getBoundingClientRect();
+ return {top:r.top,bottom:r.bottom,left:r.left,right:r.right,gTop:g.top,gBottom:g.bottom,w:innerWidth,h:innerHeight};})()`;
+test('lookup card: a page-sized sentence block (overlay placement) and a window bigger than the work area keep the card on screen',{skip:!hasEdge&&'Edge not installed',timeout:120000},async()=>{
+ const temp=fs.mkdtempSync(path.join(process.env.MEGULIT_WORK||os.tmpdir(),'megulit-lookup-place-'));let server,cdp;
+ try{server=await serve();cdp=await startEdge(path.join(temp,'edge'));
+  await cdp.send('Page.navigate',{url:`http://127.0.0.1:${server.address().port}/reader/index.html`});
+  let ready=false;for(let i=0;i<120&&!ready;i++){await sleep(250);ready=await cdp.evaluate('!!window.__TOME_READER_READY__').catch(()=>false);}
+  assert.ok(ready,'reader page loaded');
+  await cdp.evaluate(`(()=>{window.__tomoyoMode.set('translation');document.body.classList.add('tomoyo-gal-bound');
+   const s=document.createElement('div');s.className='sentence-text';s.style.cssText='position:fixed;inset:0;font:28px/1.4 Meiryo;color:#fff';
+   const line=document.createElement('div');line.style.cssText='position:absolute;left:40px;top:60px';
+   line.innerHTML='『<span class=char-token>耕</span><span class=char-token>司</span><span class=char-token>ニ</span>ソウ』<br><span class=char-token id=t>楽</span>シクッテ';
+   s.append(line);document.body.append(s);window.__tomoyoChinese.gameArea=()=>({left:0,top:0,width:innerWidth,height:innerHeight});return 1})()`);
+  let c=await cdp.evaluate(PLACE);
+  assert.ok(c.top>=0&&c.bottom<=c.h&&c.left>=0&&c.right<=c.w,'card inside the window: '+JSON.stringify(c));
+  assert.ok(c.top>=c.gBottom,'card below the line that sits at the top: '+JSON.stringify(c));
+  /* the monitor's work area is the window's left/top 600x420 part (the rest hangs off screen) */
+  await cdp.evaluate(`(()=>{for(const [k,v] of Object.entries({availLeft:0,availTop:0,availWidth:600,availHeight:420}))Object.defineProperty(screen,k,{get:()=>v,configurable:true});return 1})()`);
+  c=await cdp.evaluate(PLACE);
+  assert.ok(c.top>=0&&c.bottom<=420&&c.left>=0&&c.right<=600,'card inside the work area: '+JSON.stringify(c));
+ }finally{cdp?.stop();server?.close();await sleep(400);try{fs.rmSync(temp,{recursive:true,force:true});}catch{}}
+});
