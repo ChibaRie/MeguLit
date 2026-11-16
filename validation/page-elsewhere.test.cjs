@@ -26,7 +26,7 @@ assert.ok(/placement\?\.page\(message,\{replaced:this\.hooks\?\.originalReplaced
 let chromium;
 try { ({ chromium } = require(process.env.MEGULIT_PLAYWRIGHT || 'H:/MeguLit-Work/pw/node_modules/playwright-core')); } catch { console.log('PASS page elsewhere (node; DOM skipped: no playwright-core)'); process.exit(0); }
 const code = fs.readFileSync(path.join(__dirname, '..', 'web', 'reader', 'modules', 'text-place.js'), 'utf8');
-const html = `<!doctype html><html><head><meta charset="utf-8"></head><body>
+const html = `<!doctype html><html><head><meta charset="utf-8"><style>.sentence-window{background:rgb(60,80,100)}</style></head><body>
 <main><div class="sentence-window tomoyo-hook-reader"><div class="sentence-text"><span class="char-token">紙</span><span class="char-token">か</span><span class="char-token">ら</span></div><div class="tomoyo-cn-row">从信纸</div></div></main>
 <script>window.__tomoyoChinese={};</script></body></html>`;
 (async () => {
@@ -37,16 +37,17 @@ const html = `<!doctype html><html><head><meta charset="utf-8"></head><body>
     const frame = () => page.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
     const jp = () => page.evaluate(() => getComputedStyle(document.querySelector('.sentence-text')).visibility);
     const cn = () => page.evaluate(() => getComputedStyle(document.querySelector('.tomoyo-cn-row')).visibility);
+    const bg = () => page.evaluate(() => getComputedStyle(document.querySelector('.sentence-window')).backgroundColor);
     await page.evaluate(() => window.__tomoyoChinese.textPlaceMode({ on: true })); await frame();
     /* unarmed page, nothing else hides the line = the game draws it: the reader is not placed over it, it goes back to its
-       own window bilingual (Japanese on top, translation under it); 1.4.10 hid the Japanese here */
+       no plate, the game keeps its Japanese and only the translation is added */
     await page.evaluate(() => window.__tomoyoChinese.textPlacePage({ type: 'textPlacePage', awake: true, armed: false, lines: [], client: [1280, 720] })); await frame();
-    assert.strictEqual(await jp(), 'visible', 'game draws its own line: the reader stays bilingual in its own window'); assert.strictEqual(await cn(), 'visible');
+    assert.strictEqual(await jp(), 'hidden', 'game draws its own line: the game keeps its Japanese'); assert.strictEqual(await cn(), 'visible', 'translation added'); assert.strictEqual(await bg(), 'rgba(0, 0, 0, 0)', 'never a plate');
     assert.strictEqual(await page.evaluate(() => document.body.classList.contains('megulit-placed')), false, 'not placed over the game line');
     /* the same for a ③ line the source says the game still draws */
     await page.evaluate(() => window.__tomoyoChinese.textPlacePage(null)); await page.evaluate(() => window.__tomoyoChinese.textPlace({ visible: true, text: '紙から' })); await frame();
     assert.strictEqual(await page.evaluate(() => document.body.classList.contains('megulit-place-game-drawn')), true);
-    assert.strictEqual(await jp(), 'visible', 'visible note: Japanese stays in the reader window'); assert.strictEqual(await cn(), 'visible');
+    assert.strictEqual(await jp(), 'hidden', 'visible note: the game keeps its Japanese'); assert.strictEqual(await cn(), 'visible'); assert.strictEqual(await bg(), 'rgba(0, 0, 0, 0)', 'never a plate');
     /* the fix: the line is hidden by write-back, the page only says the window is open */
     await page.evaluate(() => window.__tomoyoChinese.textPlacePage({ type: 'textPlacePage', awake: true, armed: false, elsewhere: true, lines: [], client: [1280, 720] })); await frame();
     assert.strictEqual(await jp(), 'visible', 'Japanese stays when the game line is hidden elsewhere'); assert.strictEqual(await cn(), 'visible', 'translation stays under it');
