@@ -32,6 +32,12 @@ async function live(env,now){
  const online=(await one(env,'SELECT COUNT(DISTINCT ip_hash) n FROM probe_pulse WHERE bucket>=?',b-1)).n|0;
  const active1h=(await one(env,'SELECT COUNT(DISTINCT ip_hash) n FROM probe_pulse WHERE bucket>=?',b-6)).n|0;
  const today=(await one(env,'SELECT COUNT(DISTINCT ip_hash) n FROM probe_pulse WHERE bucket>=?',todayBucket)).n|0;
+ /* pulse detail: 10-min series for the last 6 h, rolling 24 h, the busiest 10 min, time online today */
+ const series=new Map((await all(env,'SELECT bucket b, COUNT(DISTINCT ip_hash) n FROM probe_pulse WHERE bucket>? GROUP BY bucket',b-36)).map(r=>[r.b|0,r.n|0])),s6=[];
+ for(let k=b-35;k<=b;k++)s6.push({at:k*BUCKET,n:series.get(k)||0});
+ const d24=(await one(env,'SELECT COUNT(DISTINCT ip_hash) n FROM probe_pulse WHERE bucket>?',b-144)).n|0;
+ const pk10=(await one(env,'SELECT MAX(n) m FROM (SELECT COUNT(DISTINCT ip_hash) n FROM probe_pulse WHERE bucket>? GROUP BY bucket)',b-144)).m|0;
+ const ss=await one(env,'SELECT AVG(c) avg, COALESCE(SUM(CASE WHEN c>=6 THEN 1 ELSE 0 END),0) long FROM (SELECT COUNT(*) c FROM probe_pulse WHERE bucket>=? GROUP BY ip_hash)',todayBucket);
  const pg=await one(env,'SELECT COUNT(*) games, COALESCE(SUM(reporters),0) reporters FROM probe_games');
  const pf=await one(env,"SELECT COUNT(*) games, COALESCE(SUM(CASE WHEN state='ready' THEN 1 ELSE 0 END),0) ready, COALESCE(SUM(CASE WHEN state='uploading' THEN 1 ELSE 0 END),0) uploading, COALESCE(SUM(CASE WHEN state='done' THEN 1 ELSE 0 END),0) done, COALESCE(SUM(CASE WHEN state='ready' THEN size ELSE 0 END),0) bytes FROM probe_full");
  const top=(await all(env,"SELECT title, reporters, state, step, size FROM probe_full WHERE title<>'' ORDER BY reporters DESC, updated_at DESC LIMIT 24"))
@@ -51,7 +57,7 @@ async function live(env,now){
  /* what players are reading lately (leaderboard game rows, opted-in players only) */
  const playing=(await all(env,'SELECT MAX(title) title, COUNT(*) readers, COALESCE(SUM(characters),0) characters, COALESCE(SUM(seconds),0) seconds, MAX(updated_at) at FROM leaderboard_games WHERE updated_at>? GROUP BY game_key ORDER BY at DESC LIMIT 10',t-7*86400))
   .map(r=>({title:String(r.title||'').slice(0,80),readers:r.readers|0,characters:Number(r.characters)||0,seconds:Number(r.seconds)||0,at:r.at|0}));
- return {ok:true,now:t,online,active1h,today,probedGames:pg.games|0,reporters:pg.reporters|0,
+ return {ok:true,now:t,online,active1h,today,series:s6,active24h:d24,peak10:pk10,avgMinToday:Math.round((Number(ss.avg)||0)*10),longToday:ss.long|0,probedGames:pg.games|0,reporters:pg.reporters|0,
   full:{minMB:mb(fx.mn),maxMB:mb(fx.mx),reporters:fx.rep|0,d1:fx.d1|0,d7:fx.d7|0,expiring:fx.expiring|0,oldestAt:fx.oldest|0,vndb:fx.vndb|0,inflight,apps,lastAt:recent.length?recent[0].at:0,games:pf.games|0,ready:pf.ready|0,uploading:pf.uploading|0,done:pf.done|0,storedMB:Math.round((pf.bytes|0)/1048576*10)/10,limitMB:8192},
   probeStates:pstates,vndbMatched:pv.vndb|0,issues:pv.issues|0,playing,recent,steps,top:top.sort((a,c)=>c.reporters-a.reporters).slice(0,24)};}
 

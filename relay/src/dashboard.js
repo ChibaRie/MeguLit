@@ -58,6 +58,7 @@ body{background:var(--bg);color:var(--fg);font-family:var(--mono);font-size:13px
 .pane .tr{position:absolute;top:-8px;right:10px;background:var(--bg);padding:0 6px;font-size:11px;color:var(--dim);line-height:14px}
 /* 24h histogram */
 .hist{display:grid;grid-template-columns:repeat(24,minmax(0,1fr));gap:2px;align-items:end;height:104px;border-bottom:1px solid var(--line);padding-top:4px}
+.hist.h6{grid-template-columns:repeat(36,minmax(0,1fr));gap:1px;height:72px;margin-top:10px}
 .hist i{display:block;background:var(--red);min-height:2px;opacity:.85}.hist i.z{background:var(--dim2);opacity:1}.hist i.now{background:var(--hi);opacity:1}
 .hist i:hover{opacity:1;outline:1px solid var(--hi)}
 .chips{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px}.chips span{border:1px solid var(--dim2);color:var(--dim);font-size:11px;padding:0 5px}.chips b{color:var(--hi);font-weight:400}
@@ -156,14 +157,20 @@ tbody tr:hover td{background:#121212}
           <span class="k">since</span><span class="d" id="since">--</span>
         </div>
       </div>
-      <div class="spark" id="spark"></div>
-      <div class="axis"><span id="ax0">-15m</span><span>now</span></div>
+      <div class="hist h6" id="h6"></div>
+      <div class="axis"><span>-6h</span><span>-3h</span><span>now</span></div>
+      <div class="kv" style="margin-top:6px"><span class="k">now / 1h</span><span id="oNow">--</span><span class="k">6h avg</span><span id="o6">--</span></div>
+      <div class="spark" id="spark" hidden></div><span id="ax0" hidden></span>
     </section>
 
     <section class="pane c3">
       <span class="ti">┤ <b>stats</b> ├</span><span class="tr">/api/probe/stats</span>
       <div class="m"><span class="k">active 1h</span><span class="bar" id="b1"></span><span class="v" id="v1">--</span></div>
       <div class="m"><span class="k">active today</span><span class="bar" id="b2"></span><span class="v" id="v2">--</span></div>
+      <div class="m"><span class="k">active 24h</span><span class="bar" id="bA24"></span><span class="v" id="vA24">--</span></div>
+      <div class="m"><span class="k">peak 10 min</span><span class="bar"></span><span class="v" id="vP10">--</span></div>
+      <div class="m"><span class="k">avg online</span><span class="bar"><span class="d">per player today</span></span><span class="v" id="vAvg">--</span></div>
+      <div class="m"><span class="k">1h+ sessions</span><span class="bar"><span class="d">today</span></span><span class="v" id="vLong">--</span></div>
       <div class="sep"></div>
       <div class="m"><span class="k">probed games</span><span class="bar" id="b3"></span><span class="v" id="v3">--</span></div>
       <div class="m"><span class="k">reporters</span><span class="bar"></span><span class="v" id="v4">--</span></div>
@@ -174,11 +181,11 @@ tbody tr:hover td{background:#121212}
       <span class="ti">┤ <b>activity</b> ├</span><span class="tr">online per hour · 24h</span>
       <div class="hist" id="hist"></div>
       <div class="axis"><span>-24h</span><span>-12h</span><span>now</span></div>
-      <div class="kv" style="margin-top:8px"><span class="k">peak hour</span><span id="hPeak">--</span><span class="k">avg / hour</span><span id="hAvg">--</span><span class="k">quiet hours</span><span id="hZero">--</span></div>
+      <div class="kv" style="margin-top:8px"><span class="k">peak hour</span><span id="hPeak">--</span><span class="k">avg / hour</span><span id="hAvg">--</span><span class="k">quiet hours</span><span id="hZero">--</span><span class="k">this hour</span><span id="hNow">--</span><span class="k">busiest 3h</span><span id="h3">--</span></div>
     </section>
 
     <section class="pane c3">
-      <span class="ti">┤ <b>quota</b> ├</span><span class="tr">free plans · usage / limit</span>
+      <span class="ti">┤ <b>quota</b> ├</span><span class="tr">usage / limit</span>
       <div id="quota"><div class="empty">-- loading</div></div>
     </section>
 
@@ -377,14 +384,15 @@ function renderPlaying(list){var w=$("playing");
   return '<tr><td class="s">'+ago(g.at).replace(" ago","")+'</td><td class="t">'+esc(g.title)+'</td><td class="z rt">'+g.readers+'</td><td class="v rt">'+K(g.characters)+'</td></tr>';}).join("")+'</tbody></table>';}
 /* ---- quota: usage against the free plans, with reset times ---- */
 function bytes(b){b=Number(b)||0;return b>=1073741824?(b/1073741824).toFixed(2)+" GB":b>=1048576?(b/1048576).toFixed(1)+" MB":Math.round(b/1024)+" KB";}
+function bshort(b){b=Number(b)||0;return b>=1073741824?(b/1073741824).toFixed(b>=10737418240?0:1)+'G':b>=1048576?Math.round(b/1048576)+'M':Math.round(b/1024)+'K';}
 function renderQuota(j){var el=$("quota");if(!el)return;var q=j.quota||{},it=q.items||{},L=q.limits||{},f=j.full||{},x=j.ext||{};barQ=[];
  var r2est=(((f.storedMB||0)+((x.bundles||{}).mb||0)+((x.diagnostics||{}).mb||0)+(x.contrib||[]).reduce(function(a,c){return a+(c.mb||0);},0))*1048576);
  var rows=[
   ["workers req","day",it.workersReq,L.workersReq,K],
   ["d1 reads","day",it.d1Read,L.d1Read,K],
   ["d1 writes","day",it.d1Write,L.d1Write,K],
-  ["d1 storage","",it.d1Bytes,L.d1Bytes,bytes],
-  ["r2 storage",it.r2Bytes!=null?"":"est",it.r2Bytes!=null?it.r2Bytes:r2est,L.r2Bytes,bytes],
+  ["d1 storage","",it.d1Bytes,L.d1Bytes,bshort],
+  ["r2 storage",it.r2Bytes!=null?"":"est",it.r2Bytes!=null?it.r2Bytes:r2est,L.r2Bytes,bshort],
   ["r2 class a","mo",it.r2A,L.r2A,K],
   ["r2 class b","mo",it.r2B,L.r2B,K],
   ["ai neurons","day",it.aiNeurons,L.aiNeurons,K],
@@ -393,10 +401,20 @@ function renderQuota(j){var el=$("quota");if(!el)return;var q=j.quota||{},it=q.i
   return '<div class="m m5'+(pct>=80?' hot':'')+'"><span class="k" title="per '+(r[1]||'total')+'">'+r[0]+'</span><span class="bar" id="qb'+i+'"></span>'+
    '<span class="v">'+(has?(pct<10?pct.toFixed(1):Math.round(pct))+'%':'--')+'</span><span class="pc">'+(has?r[4](r[2])+'/'+r[4](r[3]):'')+'</span></div>';}).join("");
  var now=new Date(),utc0=new Date(Date.UTC(now.getUTCFullYear(),now.getUTCMonth(),now.getUTCDate()+1)),left=Math.max(0,Math.round((utc0-now)/60000));
- html+='<div class="sub" style="margin-top:6px">workers / d1 / ai per day · r2 ops per month · github per hour</div><div class="sub">day resets in '+Math.floor(left/60)+'h'+String(left%60).padStart(2,"0")+'m · 00:00 UTC'+(it.ghReset?' · github '+Math.max(0,Math.round((it.ghReset*1000-now)/60000))+'m':'')+'</div>';
- if(!q.token)html+='<div class="sub"><span class="r">cloudflare usage offline</span> · set CF_API_TOKEN (account analytics: read)</div>';
+ html+='<div class="sub" style="margin-top:6px">daily reset '+Math.floor(left/60)+'h'+String(left%60).padStart(2,"0")+'m · r2 ops monthly · github hourly</div>';
+ if(!q.token)html+='<div class="sub"><span class="r">cf usage offline</span> · needs CF_API_TOKEN</div>';
  var errs=Object.keys(q.errors||{});if(errs.length)html+='<div class="sub">'+errs.map(function(k){return '<span class="r">'+esc(k)+'</span> '+esc(q.errors[k]);}).join(" · ")+'</div>';
  el.innerHTML=html;flushBars();}
+function renderRow1(j){
+ var se=j.series||[],mx=Math.max(1,Math.max.apply(null,se.map(function(p){return p.n;}).concat([0]))),sum=0;
+ $("h6").innerHTML=se.map(function(p,i){sum+=p.n;var d=new Date(p.at*1000);return '<i class="'+(p.n?"":"z ")+(i===se.length-1?"now":"")+'" style="height:'+(p.n?Math.max(8,Math.round(p.n/mx*100)):3)+'%" title="'+String(d.getHours()).padStart(2,"0")+':'+String(d.getMinutes()).padStart(2,"0")+' \u00b7 '+p.n+'"></i>';}).join("");
+ $("oNow").innerHTML=hv(fmt(j.online))+'<span class="d"> / '+fmt(j.active1h)+'</span>';$("o6").innerHTML=hv(se.length?(sum/se.length).toFixed(1):"--")+'<span class="d"> per 10 min</span>';
+ meter($("bA24"),j.active24h,Math.max(j.active24h|0,j.today|0,1));$("vA24").textContent=fmt(j.active24h);
+ $("vP10").textContent=fmt(j.peak10);$("vAvg").textContent=j.avgMinToday!=null?(j.avgMinToday>=60?Math.floor(j.avgMinToday/60)+"h"+String(j.avgMinToday%60).padStart(2,"0"):j.avgMinToday+"m"):"--";$("vLong").textContent=fmt(j.longToday);
+ var hs=(j.ext||{}).hourly||[];if(hs.length){var last=hs[hs.length-1].n,avg=hs.reduce(function(a,h){return a+h.n;},0)/hs.length,best=0,bi=0;
+  for(var i=0;i+3<=hs.length;i++){var w=hs[i].n+hs[i+1].n+hs[i+2].n;if(w>best){best=w;bi=i;}}
+  $("hNow").innerHTML=hv(last)+' <span class="'+(last>=avg?"r":"d")+'">'+(last>=avg?"\u25b2":"\u25bc")+' vs '+avg.toFixed(1)+' avg</span>';
+  $("h3").innerHTML=best?hv(best)+' <span class="d">'+String(new Date(hs[bi].at*1000).getHours()).padStart(2,"0")+':00\u2013'+String((new Date(hs[bi].at*1000).getHours()+3)%24).padStart(2,"0")+':00</span>':"--";}}
 function stateTag(s){return '<span class="st '+esc(s)+'">'+esc(s||"-")+'</span>';}
 function renderTop(list){var w=$("top");
  if(!list||!list.length){w.innerHTML='<div class="empty">-- no rows</div>';return;}
@@ -437,7 +455,7 @@ function render(j){spark();
  meter($("bR2"),f.storedMB||0,f.limitMB||8192);$("vR2").textContent=((f.storedMB||0)/(f.limitMB||8192)*100).toFixed(1)+"%";
  $("fMB").innerHTML=mb(f.storedMB||0)+' <span class="d">/ '+mb(f.limitMB||8192)+'</span>';
  $("fAvg").textContent=f.ready?mb((f.storedMB||0)/f.ready):"--";$("fLast").textContent=ago(f.lastAt);
- renderSteps(j.steps,j);renderTop(j.top);renderPlaying(j.playing);renderExt(j.ext);renderFullMore(j);renderQuota(j);}
+ renderSteps(j.steps,j);renderTop(j.top);renderPlaying(j.playing);renderExt(j.ext);renderFullMore(j);renderQuota(j);renderRow1(j);}
 function nodesLine(){$("node").innerHTML=NODES.map(function(n){var v=lat[n[0]];return n[0]+" "+(v==null?"--":v<0?'<span class="r">down</span>':v+"ms");}).join(" · ");
  var ok=NODES.filter(function(n){return lat[n[0]]>0;}).map(function(n){return lat[n[0]];});$("latT").textContent=ok.length?"latency "+Math.min.apply(null,ok)+"ms":"latency";}
 function tick(){var p=poll();p.first.then(apply).catch(function(){$("mode").textContent="DOWN";$("mode").className="md err";$("code").textContent="timeout";log("ERR","GET /api/probe/stats failed on every node · retry in "+PERIOD+"s");});p.all.then(nodesLine);}
