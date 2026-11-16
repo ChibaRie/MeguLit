@@ -335,7 +335,7 @@ const dumpMemo=new Map();
 function dumpDoc(file){
  let st;try{st=fs.statSync(file);}catch{return null;}const key=st.size+'|'+st.mtimeMs,hit=dumpMemo.get(file);if(hit&&hit.key===key)return hit.doc;
  let doc=null;
- try{const raw=fs.readFileSync(file);let psbDoc=null;try{psbDoc=psb.parse(raw);}catch{psbDoc=psb.openCx(raw);}
+ try{const raw=fs.readFileSync(file);let psbDoc=null;try{psbDoc=psb.parse(raw);}catch{/* a stray byte only costs the values it sits in (ambision: 1 of 54 saved scenes read as nothing) */try{psbDoc=psb.parse(raw,{tolerant:true});}catch{psbDoc=psb.openCx(raw);}}
   if(psbDoc?.root&&typeof psbDoc.root==='object'){const refs=new Set();let seen=0;
    (function walk(v,depth){if(seen++>200000||depth>40)return;if(typeof v==='string'){if(/\.(?:ks|scn)$/i.test(v)&&v.length<300)refs.add(v);}else if(v&&typeof v==='object')for(const k in v)walk(v[k],depth+1);})(psbDoc.root,0);
    doc={name:typeof psbDoc.root.name==='string'&&psbDoc.root.name?psbDoc.root.name:path.basename(file),file:path.basename(file),scenes:cxText().textsOf(psbDoc),refs:[...refs]};}
