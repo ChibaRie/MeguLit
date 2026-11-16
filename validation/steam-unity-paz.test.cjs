@@ -37,7 +37,7 @@ test('PAZ: a Chinese patch (GBK) or a long English script is not offered as Japa
  const gbk=Buffer.concat([Buffer.from('.message\t10\t\t','latin1'),Buffer.from([0xce,0xd2,0xc3,0xc7,0xa1,0xa3]),Buffer.from('\r\n','latin1')]);/* 我们。 */
  fs.writeFileSync(path.join(dir,'scr.paz'),pazFile('eden_en',s,'scr',{'A001.sc':Buffer.concat(Array(5).fill(gbk))}));
  const scenes=require('../services/original-engines/scenes.cjs');assert.strictEqual(scenes.detect(dir),null);
- assert.strictEqual(scenes.unsupportedReason(dir).code,'PAZ_NO_JAPANESE');
+ assert.strictEqual(scenes.unsupportedReason(dir).code,'PAZ_CHINESE_ONLY');
  assert.deepStrictEqual(paz.parse(Buffer.from(Array(30).fill('.message\t1\t\t\tHello there.').join('\n'),'latin1')).lines,[]);
  assert.deepStrictEqual(paz.parse(Buffer.from('.message\t40\t\tA\tabc','latin1')).lines,['A','abc'],'short fixtures stay readable');
  fs.rmSync(dir,{recursive:true,force:true});
@@ -79,5 +79,5 @@ test('real: DDLC Plus (Unity Mono) reads Japanese with Chinese on every line',{s
 test('real: eden* (minori PAZ) opens with GARbro\'s Steam keys; voice.paz clips are Ogg; a Chinese-patched scr.paz is reported',{skip:!has('eden')},()=>{
  const dir=path.join(STEAM,'eden');assert.strictEqual(paz.list(path.join(dir,'scr.paz')).filter(e=>/\.sc$/.test(e.name)).length>20,true);
  const v=paz.audio(path.join(dir,'voice.paz'));assert.ok(v.length>5000);assert.strictEqual(v[0].read().toString('latin1',0,4),'OggS');
- const scenes=require('../services/original-engines/scenes.cjs');if(scenes.detect(dir)===null)assert.strictEqual(scenes.unsupportedReason(dir).code,'PAZ_NO_JAPANESE');
+ const scenes=require('../services/original-engines/scenes.cjs');if(scenes.detect(dir)===null)assert.strictEqual(scenes.unsupportedReason(dir).code,'PAZ_CHINESE_ONLY');
 });
