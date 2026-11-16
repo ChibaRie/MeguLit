@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 /* 2026-11-16 beta live-usage dashboard served by the relay (GET /dashboard). Polls /api/probe/stats on both relay nodes
    (CORS open) every 15 s, shows the first answer and each node's latency. Phone: https://cn-api.megulit.com/dashboard.
-   Operator console (btop/htop/tmux idiom), black + red, LED dot-matrix live counter. */
+   Operator console (btop/htop/tmux idiom), black + red, LED dot-matrix live counter, full-width 12-column grid. */
 export const DASHBOARD_HTML=String.raw`<!doctype html>
 <html lang="zh">
 <head>
@@ -21,7 +21,7 @@ html,body{margin:0}
 body{background:var(--bg);color:var(--fg);font-family:var(--mono);font-size:13px;line-height:1.55;font-variant-numeric:tabular-nums;
   padding-left:max(12px,env(safe-area-inset-left,0px));padding-right:max(12px,env(safe-area-inset-right,0px));padding-block:0 28px;overflow-x:hidden}
 .r{color:var(--red)}.d{color:var(--dim)}.h{color:var(--hi)}.dd{color:var(--dim2)}.g{color:var(--ok)}
-.wrap{max-width:1040px;margin:0 auto}
+.wrap{max-width:1760px;margin:0 auto}
 
 /* tmux status line */
 .tmux{display:flex;align-items:center;margin:10px 0 12px;background:#111;border:1px solid var(--line2);font-size:12px;white-space:nowrap;overflow:hidden}
@@ -40,13 +40,19 @@ body{background:var(--bg);color:var(--fg);font-family:var(--mono);font-size:13px
 @keyframes g1k{0%{clip-path:inset(0 0 40% 0);transform:translateX(-4px)}50%{clip-path:inset(50% 0 0 0);transform:translateX(3px)}100%{clip-path:inset(0 0 100% 0)}}
 
 /* panes */
-.grid{display:grid;grid-template-columns:1.25fr 1fr;gap:14px 12px}
-@media(max-width:720px){.grid{grid-template-columns:1fr}}
+.grid{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:14px 12px}
+.grid>.pane{grid-column:span 12}
+@media(min-width:900px){.grid>.c3,.grid>.c4,.grid>.c6{grid-column:span 6}.grid>.c8,.grid>.c12{grid-column:span 12}}
+@media(min-width:1400px){.grid>.c3{grid-column:span 3}.grid>.c4{grid-column:span 4}.grid>.c6{grid-column:span 6}.grid>.c8{grid-column:span 8}}
 .pane{position:relative;border:1px solid var(--line);background:var(--pane);padding:16px 12px 10px;min-width:0}
 .pane .ti{position:absolute;top:-8px;left:10px;background:var(--bg);padding:0 6px;font-family:var(--px);font-size:10px;letter-spacing:.06em;color:var(--hi);line-height:14px}
 .pane .ti b{color:var(--red);font-weight:400}
 .pane .tr{position:absolute;top:-8px;right:10px;background:var(--bg);padding:0 6px;font-size:11px;color:var(--dim);line-height:14px}
-.pane.wide{grid-column:1/-1}
+/* 24h histogram */
+.hist{display:grid;grid-template-columns:repeat(24,minmax(0,1fr));gap:2px;align-items:end;height:104px;border-bottom:1px solid var(--line);padding-top:4px}
+.hist i{display:block;background:var(--red);min-height:2px;opacity:.85}.hist i.z{background:var(--dim2);opacity:1}.hist i.now{background:var(--hi);opacity:1}
+.hist i:hover{opacity:1;outline:1px solid var(--hi)}
+.chips{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px}.chips span{border:1px solid var(--dim2);color:var(--dim);font-size:11px;padding:0 5px}.chips b{color:var(--hi);font-weight:400}
 
 /* online */
 .on-row{display:flex;align-items:flex-end;gap:18px;flex-wrap:wrap}
@@ -66,6 +72,9 @@ body{background:var(--bg);color:var(--fg);font-family:var(--mono);font-size:13px
 .m .bar i{font-style:normal;color:var(--red)}
 .m .v{color:var(--hi);min-width:4ch;text-align:right}
 .sep{border-top:1px dashed var(--line);margin:8px 0}
+.m.m4{grid-template-columns:8em 1fr auto 3.5ch}
+.m .pc{color:var(--dim);text-align:right;font-size:11px}
+.sub{color:var(--dim);font-size:11px;margin-bottom:2px}
 
 /* full dumps counters */
 .cnt{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:8px}
@@ -127,7 +136,7 @@ tbody tr:hover td{background:#121212}
   </div>
 
   <div class="grid">
-    <section class="pane">
+    <section class="pane c4">
       <span class="ti">┤ <b>online</b> ├</span><span class="tr">last 10 min</span>
       <div class="on-row">
         <canvas class="big" id="big" role="img" aria-label="online"></canvas>
@@ -141,7 +150,7 @@ tbody tr:hover td{background:#121212}
       <div class="axis"><span id="ax0">-15m</span><span>now</span></div>
     </section>
 
-    <section class="pane">
+    <section class="pane c4">
       <span class="ti">┤ <b>stats</b> ├</span><span class="tr">/api/probe/stats</span>
       <div class="m"><span class="k">active 1h</span><span class="bar" id="b1"></span><span class="v" id="v1">--</span></div>
       <div class="m"><span class="k">active today</span><span class="bar" id="b2"></span><span class="v" id="v2">--</span></div>
@@ -151,7 +160,14 @@ tbody tr:hover td{background:#121212}
       <div class="m"><span class="k">per game</span><span class="bar"></span><span class="v" id="v5">--</span></div>
     </section>
 
-    <section class="pane">
+    <section class="pane c4">
+      <span class="ti">┤ <b>activity</b> ├</span><span class="tr">online per hour · 24h</span>
+      <div class="hist" id="hist"></div>
+      <div class="axis"><span>-24h</span><span>-12h</span><span>now</span></div>
+      <div class="kv" style="margin-top:8px"><span class="k">peak hour</span><span id="hPeak">--</span><span class="k">avg / hour</span><span id="hAvg">--</span><span class="k">quiet hours</span><span id="hZero">--</span></div>
+    </section>
+
+    <section class="pane c3">
       <span class="ti">┤ <b>full dumps</b> ├</span><span class="tr">r2://probe-full</span>
       <div class="cnt">
         <div><div class="v r" id="fReady">--</div><div class="k">ready</div></div>
@@ -166,29 +182,49 @@ tbody tr:hover td{background:#121212}
       </div>
     </section>
 
-    <section class="pane">
+    <section class="pane c3">
       <span class="ti">┤ <b>why</b> ├</span><span class="tr">by step</span>
       <div id="steps"><div class="empty">-- no data</div></div>
     </section>
 
-    <section class="pane wide">
+    <section class="pane c3">
+      <span class="ti">┤ <b>accounts</b> ├</span><span class="tr">login · sync</span>
+      <div id="acc"><div class="empty">-- loading</div></div>
+    </section>
+
+    <section class="pane c3">
+      <span class="ti">┤ <b>community</b> ├</span><span class="tr">board · forum · social</span>
+      <div id="com"><div class="empty">-- loading</div></div>
+    </section>
+
+    <section class="pane c8">
       <span class="ti">┤ <b>targets</b> ├</span><span class="tr">by reporters</span>
       <div id="top"><div class="empty">-- no rows</div></div>
     </section>
 
-    <section class="pane">
+    <section class="pane c4">
+      <span class="ti">┤ <b>most read</b> ├</span><span class="tr">by characters</span>
+      <div id="most"><div class="empty">-- loading</div></div>
+    </section>
+
+    <section class="pane c4">
+      <span class="ti">┤ <b>adapters</b> ├</span><span class="tr">packs · reports · uploads</span>
+      <div id="adp"><div class="empty">-- loading</div></div>
+    </section>
+
+    <section class="pane c4">
       <span class="ti">┤ <b>recent</b> ├</span><span class="tr">ls -lt full_dumps/</span>
       <div id="recent"><div class="empty">-- no uploads yet</div></div>
     </section>
 
-    <section class="pane">
+    <section class="pane c4">
       <span class="ti">┤ <b>relay.log</b> ├</span><span class="tr" id="latT">latency</span>
       <div class="lat" id="lat"></div>
       <div class="log" id="log"></div>
     </section>
   </div>
 
-  <div class="vim"><span class="md" id="mode">LINK</span><span id="ep">GET /api/probe/stats</span><span class="d" id="code">--</span><span class="sp"></span><span class="d" id="node">--</span><span>poll <span id="count">15</span>s<span class="cur"></span></span></div>
+  <div class="vim"><span class="md" id="mode">LINK</span><span id="ep">GET /api/probe/stats</span><span class="d" id="code">--</span><span class="sp"></span><span class="d" id="extAt">ext --</span><span class="d" id="node">--</span><span>poll <span id="count">15</span>s<span class="cur"></span></span></div>
 </div>
 
 <script>
@@ -241,11 +277,60 @@ function sparkStr(el,vals,cw){var w=cols(el,cw),v=vals.slice(-w),mx=Math.max(1,M
 function spark(){var el=$("spark");el.innerHTML=sparkStr(el,hist.map(function(p){return p[1];}),8.4);$("ax0").textContent="-"+Math.round(cols(el,8.4)*PERIOD/60)+"m";
  var l=$("lat");l.innerHTML=sparkStr(l,lath.map(function(p){return p[1];}),7.3);}
 
-function renderSteps(list){var w=$("steps");
- if(!list||!list.length){w.innerHTML='<div class="empty">-- no data</div>';return;}
- var mx=Math.max.apply(null,list.map(function(s){return s.n;}));
- w.innerHTML=list.map(function(s,i){return '<div class="m"><span class="k" title="'+esc(s.step)+'">'+esc(s.step)+'</span><span class="bar" id="sb'+i+'"></span><span class="v">'+s.n+'</span></div>';}).join("");
- list.forEach(function(s,i){meter($("sb"+i),s.n,mx);});}
+function renderSteps(list,j){var w=$("steps");j=j||{};var html="";
+ if(list&&list.length){var mx=Math.max.apply(null,list.map(function(s){return s.n;})),tot=list.reduce(function(a,s){return a+s.n;},0);
+  html+=list.map(function(s,i){return '<div class="m m4"><span class="k" title="'+esc(s.step)+'">'+esc(s.step)+'</span><span class="bar" id="sb'+i+'"></span><span class="v">'+s.n+'</span><span class="pc">'+Math.round(s.n/tot*100)+'%</span></div>';}).join("");}
+ else html+='<div class="empty">-- no data</div>';
+ var ps=j.probeStates||[],pt=ps.reduce(function(a,s){return a+s.n;},0);
+ if(ps.length){html+='<div class="sep"></div><div class="sub">probe quality <span class="dd">· '+pt+' desensitized probes</span></div>'+
+  ps.map(function(s,i){return '<div class="m m4"><span class="k">'+esc(s.state)+'</span><span class="bar" id="qb'+i+'"></span><span class="v">'+s.n+'</span><span class="pc">'+Math.round(s.n/Math.max(1,pt)*100)+'%</span></div>';}).join("");}
+ var f=j.full||{},fg=f.games|0;
+ html+='<div class="sep"></div><div class="kv">'+
+  '<span class="k">vndb matched</span><span><span class="h">'+fmt(j.vndbMatched)+'</span><span class="d"> / '+fmt(j.probedGames)+'</span></span>'+
+  '<span class="k">github issues</span><span class="h">'+fmt(j.issues)+'</span>'+
+  '<span class="k">adapted</span><span><span class="h">'+(f.done|0)+'</span><span class="d"> / '+fg+' full dumps · '+(fg?Math.round((f.done|0)/fg*100):0)+'%</span></span></div>';
+ w.innerHTML=html;
+ (list||[]).forEach(function(s,i){meter($("sb"+i),s.n,mx);});
+ ps.forEach(function(s,i){meter($("qb"+i),s.n,Math.max.apply(null,ps.map(function(x){return x.n;})));});}
+/* ---- wide aggregates (relay ext, refreshed every 5 min server side) ---- */
+function K(n){n=Number(n)||0;return n>=1e9?(n/1e9).toFixed(2)+"B":n>=1e6?(n/1e6).toFixed(2)+"M":n>=1e4?(n/1e3).toFixed(1)+"k":String(n);}
+function H(sec){var h=(Number(sec)||0)/3600;return h>=100?Math.round(h)+"h":h.toFixed(1)+"h";}
+function kvs(rows){return '<div class="kv">'+rows.map(function(r){return '<span class="k">'+r[0]+'</span><span>'+r[1]+'</span>';}).join("")+'</div>';}
+function hv(v){return '<span class="h">'+v+'</span>';}
+function p7(n){return n?' <span class="r">+'+K(n)+'</span><span class="d"> 7d</span>':' <span class="d">+0 7d</span>';}
+var barQ=[];
+function bars(list,lab,id){if(!list||!list.length)return "";var tot=list.reduce(function(a,s){return a+(s.n|0);},0),mx=Math.max.apply(null,list.map(function(s){return s.n|0;}));
+ return list.map(function(s,i){barQ.push([id+i,s.n|0,mx]);return '<div class="m m4"><span class="k">'+esc(s[lab])+'</span><span class="bar" id="'+id+i+'"></span><span class="v">'+K(s.n)+'</span><span class="pc">'+Math.round((s.n|0)/Math.max(1,tot)*100)+'%</span></div>';}).join("");}
+function flushBars(){barQ.forEach(function(q){var el=$(q[0]);if(el)meter(el,q[1],q[2]);});barQ=[];}
+function sub(t){return '<div class="sep"></div><div class="sub">'+t+'</div>';}
+function renderExt(x){if(!x)return;barQ=[];
+ var hs=x.hourly||[],mx=Math.max(1,Math.max.apply(null,hs.map(function(h){return h.n;}).concat([0]))),pk=null,sum=0,zero=0;
+ $("hist").innerHTML=hs.map(function(h,i){sum+=h.n;if(!h.n)zero++;if(!pk||h.n>pk.n)pk=h;var d=new Date(h.at*1000),lab=String(d.getHours()).padStart(2,"0")+":00 · "+h.n;
+  return '<i class="'+(h.n?"":"z ")+(i===hs.length-1?"now":"")+'" style="height:'+(h.n?Math.max(6,Math.round(h.n/mx*100)):2)+'%" title="'+lab+'"></i>';}).join("");
+ $("hPeak").innerHTML=pk&&pk.n?hv(pk.n)+' <span class="d">at '+String(new Date(pk.at*1000).getHours()).padStart(2,"0")+':00</span>':"--";
+ $("hAvg").innerHTML=hs.length?hv((sum/hs.length).toFixed(1)):"--";$("hZero").innerHTML=hv(zero)+'<span class="d"> / 24</span>';
+ var a=x.accounts||{},s=x.sync||{};
+ $("acc").innerHTML=kvs([["accounts",hv(K(a.total))+p7(a.new7d)],["logged in 7d",hv(K(a.active7d))],["live sessions",hv(K(a.sessions))],["synced records",hv(K(s.records))],["synced users",hv(K(s.accounts))]])+
+  (s.kinds&&s.kinds.length?sub("sync by kind")+bars(s.kinds,"kind","sk"):"");
+ var l=x.leaderboard||{},f=x.forum||{},so=x.social||{},lk=x.lookups||{};
+ $("com").innerHTML=kvs([["board users",hv(K(l.users))+' <span class="d">'+K(l.sharing)+' share games</span>'],["board active",hv(K(l.active7d))+'<span class="d"> 7d</span>'],
+  ["chars read",hv(K(l.characters))],["time read",hv(H(l.seconds))],["games tracked",hv(K(l.games))]])+
+  sub("forum")+kvs([["posts",hv(K(f.posts))+p7(f.posts7d)],["replies",hv(K(f.replies))+p7(f.replies7d)],["authors",hv(K(f.authors))]])+
+  (f.tags&&f.tags.length?'<div class="chips">'+f.tags.map(function(t){return '<span>'+esc(t.tag)+' <b>'+t.n+'</b></span>';}).join("")+'</div>':"")+
+  sub("social")+kvs([["profiles",hv(K(so.profiles))+' <span class="d">'+K(so.public)+' public</span>'],["follows",hv(K(so.follows))],
+   ["lookups",hv(K(lk.count))+' <span class="d">'+K(lk.terms)+' words · '+K(lk.users)+' users</span>']])+
+  ((x.avatars||[]).length?'<div class="chips">'+x.avatars.map(function(v){return '<span>avatar '+esc(v.status)+' <b>'+v.n+'</b></span>';}).join("")+'</div>':"");
+ var mr=x.mostRead||[];
+ $("most").innerHTML=mr.length?'<table><thead><tr><th>#</th><th>title</th><th class="rt">ppl</th><th class="rt">chars</th><th class="rt hide-s">time</th></tr></thead><tbody>'+mr.map(function(g,i){
+  return '<tr><td class="n">'+(i+1)+'</td><td class="t">'+esc(g.title)+'</td><td class="z rt">'+g.readers+'</td><td class="v rt">'+K(g.characters)+'</td><td class="s rt hide-s">'+H(g.seconds)+'</td></tr>';}).join("")+'</tbody></table>':'<div class="empty">-- no rows</div>';
+ var ad=x.adapters||{},dg=x.diagnostics||{},bd=x.bundles||{};
+ $("adp").innerHTML=kvs([["packs",hv(K(ad.packs))+' <span class="d">'+K(ad.ids)+' games · '+K(ad.withdrawn)+' withdrawn</span>'],["shared records",hv(K(ad.records))+p7(ad.records7d)],
+  ["record reports",hv(K(ad.recordReports))],["probe requests",hv(K(ad.openRequests))+' <span class="d">open / '+K(ad.requests)+'</span>']])+
+  ((ad.reports||[]).length?sub("pack reports")+bars(ad.reports,"state","pr"):"")+
+  ((x.contrib||[]).length?sub("contrib uploads")+bars(x.contrib,"state","cu"):"")+
+  sub("uploads")+kvs([["diagnostics",hv(K(dg.total))+p7(dg.n7d)+' <span class="d">'+mb(dg.mb||0)+'</span>'],["diag issues",hv(K(dg.issues))],["probe bundles",hv(K(bd.total))+p7(bd.n7d)+' <span class="d">'+mb(bd.mb||0)+'</span>']]);
+ flushBars();
+ $("extAt").textContent="ext "+ago(x.at);}
 function stateTag(s){return '<span class="st '+esc(s)+'">'+esc(s||"-")+'</span>';}
 function renderTop(list){var w=$("top");
  if(!list||!list.length){w.innerHTML='<div class="empty">-- no rows</div>';return;}
@@ -286,7 +371,7 @@ function render(j){spark();
  meter($("bR2"),f.storedMB||0,f.limitMB||8192);$("vR2").textContent=((f.storedMB||0)/(f.limitMB||8192)*100).toFixed(1)+"%";
  $("fMB").innerHTML=mb(f.storedMB||0)+' <span class="d">/ '+mb(f.limitMB||8192)+'</span>';
  $("fAvg").textContent=f.ready?mb((f.storedMB||0)/f.ready):"--";$("fLast").textContent=ago(f.lastAt);
- renderSteps(j.steps);renderTop(j.top);renderRecent(j.recent);}
+ renderSteps(j.steps,j);renderTop(j.top);renderRecent(j.recent);renderExt(j.ext);}
 function nodesLine(){$("node").innerHTML=NODES.map(function(n){var v=lat[n[0]];return n[0]+" "+(v==null?"--":v<0?'<span class="r">down</span>':v+"ms");}).join(" · ");
  var ok=NODES.filter(function(n){return lat[n[0]]>0;}).map(function(n){return lat[n[0]];});$("latT").textContent=ok.length?"latency "+Math.min.apply(null,ok)+"ms":"latency";}
 function tick(){var p=poll();p.first.then(apply).catch(function(){$("mode").textContent="DOWN";$("mode").className="md err";$("code").textContent="timeout";log("ERR","GET /api/probe/stats failed on every node · retry in "+PERIOD+"s");});p.all.then(nodesLine);}
