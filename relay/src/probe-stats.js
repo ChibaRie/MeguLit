@@ -43,8 +43,13 @@ async function live(env,now){
  /* probe quality and matching, from the desensitized probes (probe_games) */
  const pstates=(await all(env,"SELECT state, COUNT(*) n FROM probe_games GROUP BY state ORDER BY n DESC")).map(r=>({state:String(r.state||'?'),n:r.n|0}));
  const pv=await one(env,"SELECT COALESCE(SUM(CASE WHEN vndb<>'' THEN 1 ELSE 0 END),0) vndb, COALESCE(SUM(CASE WHEN issue_url<>'' THEN 1 ELSE 0 END),0) issues FROM probe_games");
+ /* more about the full dumps: sizes, pace, expiry, in-flight uploads, client versions */
+ const fx=await one(env,"SELECT MIN(size) mn, MAX(size) mx, COALESCE(SUM(reporters),0) rep, COALESCE(SUM(CASE WHEN created_at>? THEN 1 ELSE 0 END),0) d1, COALESCE(SUM(CASE WHEN created_at>? THEN 1 ELSE 0 END),0) d7, COALESCE(SUM(CASE WHEN state='ready' AND expires_at<? THEN 1 ELSE 0 END),0) expiring, MIN(CASE WHEN state='ready' THEN created_at END) oldest, COALESCE(SUM(CASE WHEN vndb<>'' THEN 1 ELSE 0 END),0) vndb FROM probe_full",t-86400,t-7*86400,t+7*86400);
+ const inflight=(await all(env,"SELECT f.title title, f.size size, f.parts parts, COUNT(p.part) got, COALESCE(SUM(p.size),0) bytes, f.updated_at at FROM probe_full f LEFT JOIN probe_full_parts p ON p.identity=f.identity WHERE f.state='uploading' GROUP BY f.identity ORDER BY f.updated_at DESC LIMIT 5"))
+  .map(r=>({title:String(r.title||'?').slice(0,60),mb:mb(r.size),parts:r.parts|0,got:r.got|0,pct:r.size?Math.min(100,Math.round((r.bytes||0)/r.size*100)):0,at:r.at|0}));
+ const apps=(await all(env,"SELECT app, COUNT(*) n FROM probe_full GROUP BY app ORDER BY n DESC LIMIT 5")).map(r=>({app:String(r.app||'?').slice(0,24)||'?',n:r.n|0}));
  return {ok:true,now:t,online,active1h,today,probedGames:pg.games|0,reporters:pg.reporters|0,
-  full:{lastAt:recent.length?recent[0].at:0,games:pf.games|0,ready:pf.ready|0,uploading:pf.uploading|0,done:pf.done|0,storedMB:Math.round((pf.bytes|0)/1048576*10)/10,limitMB:8192},
+  full:{minMB:mb(fx.mn),maxMB:mb(fx.mx),reporters:fx.rep|0,d1:fx.d1|0,d7:fx.d7|0,expiring:fx.expiring|0,oldestAt:fx.oldest|0,vndb:fx.vndb|0,inflight,apps,lastAt:recent.length?recent[0].at:0,games:pf.games|0,ready:pf.ready|0,uploading:pf.uploading|0,done:pf.done|0,storedMB:Math.round((pf.bytes|0)/1048576*10)/10,limitMB:8192},
   probeStates:pstates,vndbMatched:pv.vndb|0,issues:pv.issues|0,recent,steps,top:top.sort((a,c)=>c.reporters-a.reporters).slice(0,24)};}
 
 /* everything else the relay can count, aggregate only */

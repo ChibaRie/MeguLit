@@ -188,6 +188,7 @@ tbody tr:hover td{background:#121212}
         <span class="k">avg / dump</span><span id="fAvg">--</span>
         <span class="k">last upload</span><span id="fLast">--</span>
       </div>
+      <div id="fMore"></div>
     </section>
 
     <section class="pane c3">
@@ -339,6 +340,21 @@ function renderExt(x){if(!x)return;barQ=[];
   sub("uploads")+kvs([["diagnostics",hv(K(dg.total))+p7(dg.n7d)+' <span class="d">'+mb(dg.mb||0)+'</span>'],["diag issues",hv(K(dg.issues))],["probe bundles",hv(K(bd.total))+p7(bd.n7d)+' <span class="d">'+mb(bd.mb||0)+'</span>']]);
  flushBars();
  $("extAt").textContent="ext "+ago(x.at);}
+function renderFullMore(j){var f=j.full||{},x=j.ext||{},el=$("fMore");if(!el)return;barQ=[];
+ var html=kvs([["size range",hv(mb(f.minMB||0))+'<span class="d"> \u2192 </span>'+hv(mb(f.maxMB||0))],["reporters",hv(K(f.reporters))],
+  ["uploads 24h",hv(K(f.d1))+' <span class="d">'+K(f.d7)+' in 7d \u00b7 '+K(f.games)+' total</span>'],
+  ["expiring 7d",(f.expiring?'<span class="r">'+f.expiring+'</span>':hv(0))+' <span class="d">kept 30d</span>'],
+  ["oldest ready",f.oldestAt?hv(ago(f.oldestAt).replace(" ago",""))+'<span class="d"> waiting</span>':hv("--")],
+  ["vndb matched",hv(K(f.vndb))+'<span class="d"> / '+K(f.games)+'</span>']]);
+ var fl=f.inflight||[];
+ if(fl.length){html+=sub("in flight");fl.forEach(function(u,i){barQ.push(["fi"+i,u.pct,100]);
+  html+='<div class="m m4"><span class="k" title="'+esc(u.title)+'">'+esc(u.title)+'</span><span class="bar" id="fi'+i+'"></span><span class="v">'+u.pct+'%</span><span class="pc">'+u.got+'/'+u.parts+'</span></div>'+
+   '<div class="sub" style="margin:-2px 0 4px">'+mb(u.mb)+' \u00b7 last part '+ago(u.at)+'</div>';});}
+ if((f.apps||[]).length)html+=sub("by app version")+bars(f.apps,"app","fa");
+ var bdm=(x.bundles||{}).mb||0,dgm=(x.diagnostics||{}).mb||0,cum=(x.contrib||[]).reduce(function(a,c){return a+(c.mb||0);},0),tot=(f.storedMB||0)+bdm+dgm+cum;
+ html+=sub("r2 bucket \u00b7 free tier 10 GB")+'<div class="m"><span class="k">used</span><span class="bar" id="fr2"></span><span class="v">'+(tot/10240*100).toFixed(1)+'%</span></div>'+
+  kvs([["full dumps",hv(mb(f.storedMB||0))],["contrib",hv(mb(cum))],["probe bundles",hv(mb(bdm))],["diagnostics",hv(mb(dgm))],["total",hv(mb(tot))+'<span class="d"> / 10.00 GB</span>']]);
+ el.innerHTML=html;barQ.push(["fr2",tot,10240]);flushBars();}
 function stateTag(s){return '<span class="st '+esc(s)+'">'+esc(s||"-")+'</span>';}
 function renderTop(list){var w=$("top");
  if(!list||!list.length){w.innerHTML='<div class="empty">-- no rows</div>';return;}
@@ -379,7 +395,7 @@ function render(j){spark();
  meter($("bR2"),f.storedMB||0,f.limitMB||8192);$("vR2").textContent=((f.storedMB||0)/(f.limitMB||8192)*100).toFixed(1)+"%";
  $("fMB").innerHTML=mb(f.storedMB||0)+' <span class="d">/ '+mb(f.limitMB||8192)+'</span>';
  $("fAvg").textContent=f.ready?mb((f.storedMB||0)/f.ready):"--";$("fLast").textContent=ago(f.lastAt);
- renderSteps(j.steps,j);renderTop(j.top);renderRecent(j.recent);renderExt(j.ext);}
+ renderSteps(j.steps,j);renderTop(j.top);renderRecent(j.recent);renderExt(j.ext);renderFullMore(j);}
 function nodesLine(){$("node").innerHTML=NODES.map(function(n){var v=lat[n[0]];return n[0]+" "+(v==null?"--":v<0?'<span class="r">down</span>':v+"ms");}).join(" · ");
  var ok=NODES.filter(function(n){return lat[n[0]]>0;}).map(function(n){return lat[n[0]];});$("latT").textContent=ok.length?"latency "+Math.min.apply(null,ok)+"ms":"latency";}
 function tick(){var p=poll();p.first.then(apply).catch(function(){$("mode").textContent="DOWN";$("mode").className="md err";$("code").textContent="timeout";log("ERR","GET /api/probe/stats failed on every node · retry in "+PERIOD+"s");});p.all.then(nodesLine);}
