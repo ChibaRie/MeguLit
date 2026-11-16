@@ -93,7 +93,7 @@ if(typeof value.rubyRowOffsetsX==='string')result.rubyRowOffsetsX=value.rubyRowO
   /* E550 per-line colour (ファタモルガーナの館: narration grey #9d9d9d, speech white). lineKind: 'speech' for a line in
      brackets (「」『』（）, also after a speaker name), 'narration' otherwise. lineColor: the engine's colour for this line when
      it reported one (not near black over light text: that is an outline), else the colour learned for the line's kind, else ''
-     (the plain text colour applies). A user's own read/gradient colours always win, as in paintFor. */
+     (the plain text colour applies). In automatic mode a current draw overrides saved read/gradient colours. */
   function lineKind(text) {
     const t = String(text || '').replace(/^[\s　]+/, '');
     if (!t) return '';
@@ -102,19 +102,18 @@ if(typeof value.rubyRowOffsetsX==='string')result.rubyRowOffsetsX=value.rubyRowO
   function lineColor(settings, text='', engineColor='') {
     if (!settings || settings.autoGameStyle === false) return '';
     const own = settings.textGradient || settings.readTextGradient || !!settings.readTextColor && String(settings.readTextColor).toLowerCase() !== String(settings.textColor).toLowerCase();
-    if (own) return '';
     const hex = c => /^#[0-9a-f]{6}$/i.test(String(c || ''));
     const lum = c => { const v = [1,3,5].map(i => parseInt(String(c).slice(i, i + 2), 16)); return v[0] * .2126 + v[1] * .7152 + v[2] * .0722; };
     if (hex(engineColor) && !(lum(engineColor) < 48 && !(hex(settings.textColor) && lum(settings.textColor) < 96))) return engineColor.toLowerCase();
+    if (own) return '';
     const kind = lineKind(text), learned = kind && settings[kind + 'TextColor'];
     return hex(learned) ? learned.toLowerCase() : '';
   }
   function paintFor(settings, read=false, engineColor='') {
     // An actual engine colour takes priority over a learned/manual gradient for that sentence.
-    // ...unless the user set read and unread apart (or a gradient): then their own colours win (user, 2026-11-02).
-    const own=settings.textGradient||settings.readTextGradient||!!settings.readTextColor&&String(settings.readTextColor).toLowerCase()!==String(settings.textColor).toLowerCase();
+    // Saved read colours can come from calibration; they must not suppress this sentence's draw evidence.
     /* An engine colour near black over a light text setting is a shadow/outline or an unset field, not the text (user: ISLAND sometimes came out black) */const lum=c=>{const v=[1,3,5].map(i=>parseInt(String(c).slice(i,i+2),16));return v[0]*.2126+v[1]*.7152+v[2]*.0722;};if(/^#[0-9a-f]{6}$/i.test(engineColor)&&lum(engineColor)<48&&!(/^#[0-9a-f]{6}$/i.test(settings.textColor)&&lum(settings.textColor)<96))engineColor='';
-    if(settings.autoGameStyle!==false&&!own&&/^#[0-9a-f]{6}$/i.test(engineColor))return {color:engineColor,gradient:'none',fill:'currentColor'};
+    if(settings.autoGameStyle!==false&&/^#[0-9a-f]{6}$/i.test(engineColor))return {color:engineColor,gradient:'none',fill:'currentColor'};
     const prefix=read?'readText':'text',on=settings[prefix+'Gradient'];
     return {color:read?(settings.readTextColor||settings.textColor):settings.textColor,
       gradient:on?'linear-gradient(to bottom, '+settings[prefix+'GradientTop']+' '+(Number(settings[prefix+'GradientStart'])||0)+'%, '+settings[prefix+'GradientBottom']+' 100%)':'none',fill:on?'transparent':'currentColor'};

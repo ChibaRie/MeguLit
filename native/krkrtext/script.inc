@@ -64,6 +64,7 @@ LR"MGLT((function(){
      this.fontReport(L);
      rec.line=++this.line;this.active=rec;rec.x0=cx;rec.y0=cy;rec.x1=cx;rec.y1=cy;rec.size=size;rec.text='';rec.sw=sw;rec.sh=sh;
      rec.nvl=L.height>=sh*0.45?1:0;rec.same=rec.cleared?0:1;rec.cleared=false;rec.rs='';rec.cn=0;rec.hc=0;rec.ct='';
+     rec.color=-1; /* a missing colour belongs to this sentence, never the previous draw */
      if(typeof L.chColor=='Integer') rec.color=L.chColor&0xffffff; /* E550: begin carries the colour too (narration grey / speech white), before the line is shown */
      var right=a[0]+L.width-(+L.marginR)-size;
      if(!(right>cx)) right=cx;

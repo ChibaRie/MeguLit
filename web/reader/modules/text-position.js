@@ -13,8 +13,8 @@
  const unit=v=>Number.isFinite(v)&&Math.abs(v)<=20000;
  const plausibleMap=v=>!!v&&[v.s,v.bx,v.by,v.dx,v.dy].every(Number.isFinite)&&v.s>.1&&v.s<10&&Math.abs(v.bx)<=20000&&Math.abs(v.by)<=20000&&Math.abs(v.dx)<=20000&&Math.abs(v.dy)<=20000&&v.cw>0&&v.ch>0;
  const api={
-  resetSession(nextIdentity){map=last=cal=null;lastAt=0;following=false;applied='';if(nextIdentity!==undefined)identity=String(nextIdentity);repaint();},
-  refresh(){if(last)b.textPosition(last);},
+  resetSession(nextIdentity){map=last=cal=null;lastAt=0;following=false;applied='';if(nextIdentity!==undefined)identity=String(nextIdentity);b.lineColorReset?.();repaint();},
+  refresh(){if(last)b.textPosition(last,true);},
   mapExtent(m){if(!plausibleMap(map)||map.engine!==m.engine)return null;const l=b.galLayoutInfo?.(),kx=(l?.clientWidth||map.cw)/map.cw,ky=(l?.clientHeight||map.ch)/map.ch;return {x:(map.s*m.x0+map.bx)*kx,y:(map.s*m.y0+map.by)*ky,width:map.s*(m.x1-m.x0+m.size)*kx,size:map.s*m.size*ky};},
   getMap:()=>map?{...map}:null,
   state:()=>({source:!!last&&Date.now()-lastAt<15*60*1000,calibrated:!!map&&(!last||map.engine===last.engine)||/_adv_v1$/.test(String(last?.engine||''))&&last.sw>0&&last.sh>0,following}),
@@ -34,7 +34,7 @@
    if(!plausibleMap(next))return;map=next;if(options.persist!==false)send({type:'textPosMapSave',map:next,key:b.gameProfileKey?.()});repaint();return next;}
  };
  window.__tomeTextPosition=api;
- const priorStatus=b.galStatus;b.galStatus=m=>{if(m.type==='gameClosed'){api.resetSession('');b.lineColorReset?.();}else if(typeof m.hookSource==='string'&&m.hookSource.trim())b.lineColorFor?.(m.hookSource);else if(m.gameStarted||m.gameProcessId){const old=identity.split('|'),next=String(m.gameProcessId||old[0]||'')+'|'+String(m.gameStarted||old[1]||'');if(identity&&next!==identity)api.resetSession(next);identity=next;}return priorStatus?.(m);};
+ const priorStatus=b.galStatus;b.galStatus=m=>{if(m.type==='gameClosed'){api.resetSession('');}else if(typeof m.hookSource==='string'&&m.hookSource.trim())b.lineColorFor?.(m.hookSource,m.hookSequence);else if(m.gameStarted||m.gameProcessId){const old=identity.split('|'),next=String(m.gameProcessId||old[0]||'')+'|'+String(m.gameStarted||old[1]||'');if(identity&&next!==identity)api.resetSession(next);identity=next;}return priorStatus?.(m);};
  // ISLAND (CS2) reports dialogue in its message texture: pages sit in 720-high slots of a tall texture (y 4364-4837
  // seen for one on-screen page), and the message layer is drawn about 63 px right and 8 px down on the 1280x720
  // canvas (measured against the game's own screenshots). Normalized coordinates are reported as cs2_screen_v3, so
@@ -53,15 +53,31 @@
  api.canvasMap=canvasMap;
  /* E550 per-line colour: the colour the engine drew this line with (KiriKiri chColor: narration grey, speech white), else the
     colour learned for its kind (speech in 「」 or narration) at calibration, else the text colour. */
- let engineColorAt=0;
+ // A colour belongs to a draw transaction, never to a wall-clock cache. Source can arrive on either side of begin.
+ let colorSource='',colorSequence=null,colorDraw=null,latestDraw=null,waitingDraw=false;
  const paintLine=(color,text)=>{const gs=window.TomoyoGameStyle,p=b.galPreferences?.()||{},c=gs?.lineColor?gs.lineColor(p,text||'',color):'',root=document.documentElement.style;
-  const on=!!c&&String(c).toLowerCase()!==String(p.textColor||'').toLowerCase();document.body.classList.toggle('tome-line-color',on);if(on)root.setProperty('--tomoyo-gal-line-color',c);else root.removeProperty('--tomoyo-gal-line-color');};
+  const on=!!c;document.body.classList.toggle('tome-line-color',on);if(on)root.setProperty('--tomoyo-gal-line-color',c);else root.removeProperty('--tomoyo-gal-line-color');};
  api.paintLine=paintLine;
- b.lineColorReset=()=>{engineColorAt=0;paintLine('','');};
- b.lineColorFor=text=>{if(Date.now()-engineColorAt<60000)return;paintLine('',text);};
- b.textPosition=m=>{m=cs2Canvas(m);
+ b.lineColorReset=()=>{colorSource='';colorSequence=null;colorDraw=latestDraw=null;waitingDraw=false;paintLine('','');};
+ b.lineColorFor=(text,sequence)=>{const next=String(text||''),seq=Number.isSafeInteger(sequence)?sequence:null;
+  if(next===colorSource&&(seq===null||seq===colorSequence))return;colorSource=next;colorSequence=seq;
+  if(colorDraw?.pending){colorDraw.pending=false;paintLine(colorDraw.color,next);return;}
+  colorDraw=null;waitingDraw=true;paintLine('',next);
+ };
+ const lineColor=m=>{
+  if(!/_adv_v1$/.test(String(m.engine||''))||!Number.isSafeInteger(m.line))return;
+  if(latestDraw?.engine===m.engine&&m.line<latestDraw.line)return;
+  const same=latestDraw?.engine===m.engine&&latestDraw.line===m.line;
+  if(m.phase==='end'&&!same)return;
+  if(!same){latestDraw={engine:m.engine,line:m.line};colorDraw={...latestDraw,pending:!waitingDraw,color:''};waitingDraw=false;}
+  // A late end for the previous source cannot recolour a sentence waiting for its own begin.
+  if(!colorDraw||colorDraw.engine!==m.engine||colorDraw.line!==m.line)return;
+  colorDraw.color=typeof m.color==='string'&&/^#[0-9a-f]{6}$/i.test(m.color)?m.color:'';
+  paintLine(colorDraw.color,colorSource);
+ };
+ b.textPosition=(m,refresh=false)=>{m=cs2Canvas(m);
   if(!m||![m.x0,m.y0,m.x1,m.y1].every(unit)||m.x1<m.x0||m.y1<m.y0||!Number.isFinite(m.size)||m.size<=0||m.size>256)return;const firstSource=!last;last=m;lastAt=Date.now();
-  if(/_adv_v1$/.test(m.engine)&&typeof m.color==='string'&&/^#[0-9a-f]{6}$/i.test(m.color)){engineColorAt=Date.now();paintLine(m.color,'');}
+  if(!refresh)lineColor(m);
   if(cal){if(Number.isSafeInteger(m.token)&&m.token>=0)cal.lines.set(m.token,{...m});cal.engine=m.engine;cal.x0=Math.min(cal.x0,m.x0);cal.y0=Math.min(cal.y0,m.y0);cal.x1=Math.max(cal.x1,m.x1);cal.y1=Math.max(cal.y1,m.y1);cal.size=Math.max(cal.size,m.size||0);}
   if(b.islandPage?.position(m)){repaint();return;}
   /* ADV lines (E550) arrive as the game starts drawing, before their text: no page token to match */
