@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-/* 2026-11-16 beta live-usage dashboard served by the relay (GET /dashboard, same-origin poll of /api/probe/stats).
-   Phone: https://cn-api.megulit.com/dashboard (mainland) / https://api.megulit.com/dashboard. megu-edit x DedSec. */
+/* 2026-11-16 beta live-usage dashboard served by the relay (GET /dashboard). Polls /api/probe/stats on both relay nodes
+   (CORS open) every 15 s, shows the first answer and each node's latency. Phone: https://cn-api.megulit.com/dashboard.
+   Operator console (btop/htop/tmux idiom), black + red, LED dot-matrix live counter. */
 export const DASHBOARD_HTML=String.raw`<!doctype html>
 <html lang="zh">
 <head>
@@ -8,295 +9,303 @@ export const DASHBOARD_HTML=String.raw`<!doctype html>
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>MeguLit Live Ops</title>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant:ital,wght@0,500;1,500;1,600&family=IBM+Plex+Mono:wght@300;500&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Silkscreen&family=DotGothic16&display=swap">
 
 <style>
-/* megu-edit x DedSec. Two poles (black / paper), one accent (MeguLit red). DedSec's 1-bit dithered pixel stickers carry the
-   marks (logo, live number); megu-edit carries the text and rhythm: tiny lowercase wide-tracked typed lines, a roman serif
-   glow line, paper PiP cards with blueprint rules, barcode + speed-line hits, single-frame flash / invert. */
-:root{
-  --black:#000; --paper:#f4f4f2; --ink:#111; --dim:#8a8a8a; --dim2:#4a4a4a; --red:#c8323c;
-  --serif:"Cormorant","Times New Roman",serif;
-  --mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
-  color-scheme:dark;
-}
+/* operator console in the btop / htop / tmux idiom: titled hairline panes, aligned columns, bar meters, sparklines,
+   a request log with latency. Black and one red. Code mono for data, small pixel caps for labels, pixel CJK. */
+:root{--bg:#070707;--pane:#0b0b0b;--line:#262626;--line2:#1a1a1a;--fg:#cfcfcf;--hi:#f2f2f2;--dim:#626262;--dim2:#3a3a3a;--red:#e0303e;--ok:#5b9a6b;
+  --mono:"JetBrains Mono","DotGothic16",ui-monospace,Menlo,Consolas,monospace;--px:"Silkscreen",ui-monospace,monospace;color-scheme:dark}
 *{box-sizing:border-box}
 html,body{margin:0}
-body{background:var(--black);color:var(--paper);font-family:var(--mono);font-weight:300;
-  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:0 52px;overflow-x:hidden}
-.grain{position:fixed;inset:-50%;z-index:30;pointer-events:none;opacity:.07;
-  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
-  animation:grain .8s steps(6) infinite}
-@keyframes grain{0%{transform:translate(0,0)}25%{transform:translate(-3%,2%)}50%{transform:translate(2%,-3%)}75%{transform:translate(-2%,-1%)}100%{transform:translate(1%,3%)}}
-.wrap{max-width:760px;margin:0 auto;position:relative}
-.wrap.in{animation:push .9s cubic-bezier(.16,1,.3,1) both}
-@keyframes push{from{transform:scale(1.06);filter:blur(6px)}to{transform:none;filter:none}}
+body{background:var(--bg);color:var(--fg);font-family:var(--mono);font-size:13px;line-height:1.55;font-variant-numeric:tabular-nums;
+  padding-left:max(12px,env(safe-area-inset-left,0px));padding-right:max(12px,env(safe-area-inset-right,0px));padding-block:0 28px;overflow-x:hidden}
+.r{color:var(--red)}.d{color:var(--dim)}.h{color:var(--hi)}.dd{color:var(--dim2)}.g{color:var(--ok)}
+.wrap{max-width:1040px;margin:0 auto}
 
-/* tiny lowercase wide-tracked caption, megu-edit */
-.tiny{font-size:11px;letter-spacing:.3em;text-transform:lowercase;color:var(--dim)}
-.cur::after{content:"\25AE";color:var(--red);margin-left:.15em;animation:bl 1s steps(1) infinite}
-@keyframes bl{50%{opacity:0}}
+/* tmux status line */
+.tmux{display:flex;align-items:center;margin:10px 0 12px;background:#111;border:1px solid var(--line2);font-size:12px;white-space:nowrap;overflow:hidden}
+.tmux>span{padding:3px 10px}
+.tmux .sess{background:var(--red);color:#000;font-family:var(--px);font-size:10px;letter-spacing:.06em;padding:4px 10px}
+.tmux .win{color:var(--dim)}.tmux .win.on{color:var(--hi);background:#1b1b1b}
+.tmux .sp{flex:1}.tmux .host{color:var(--dim)}
+.tmux .clk{color:var(--hi);border-left:1px solid var(--line)}
+.gl{position:relative;display:inline-block}
+.gl::before,.gl::after{content:attr(data-t);position:absolute;inset:0;padding:inherit;overflow:hidden}
+.gl::before{animation:g1 3.1s steps(1) infinite;background:var(--red);color:#000}
+.gl::after{animation:g2 4.3s steps(1) infinite;color:var(--hi)}
+@keyframes g1{0%,90%,100%{clip-path:inset(0 0 100% 0);transform:none}91%{clip-path:inset(0 0 50% 0);transform:translateX(-3px)}93%{clip-path:inset(55% 0 0 0);transform:translateX(2px)}95%{clip-path:inset(25% 0 45% 0);transform:translateX(-1px)}}
+@keyframes g2{0%,84%,100%{clip-path:inset(0 0 100% 0);transform:none}85%{clip-path:inset(35% 0 30% 0);transform:translateX(3px)}87%{clip-path:inset(70% 0 5% 0);transform:translateX(-2px)}}
+.gl.kick::before{animation:g1k .3s steps(1)}
+@keyframes g1k{0%{clip-path:inset(0 0 40% 0);transform:translateX(-4px)}50%{clip-path:inset(50% 0 0 0);transform:translateX(3px)}100%{clip-path:inset(0 0 100% 0)}}
 
-/* boot: black silence, typed line, white flash */
-#boot{position:fixed;inset:0;z-index:60;background:#000;display:grid;place-items:center;padding:24px}
-#boot .tw{font-size:12px;letter-spacing:.42em;color:var(--paper);text-transform:lowercase;line-height:2.2;max-width:460px;width:100%}
-#boot .tw .r{color:var(--red)}
-#flash{position:fixed;inset:0;z-index:70;background:var(--paper);pointer-events:none;opacity:0}
-#flash.on{opacity:1}
-#boot.off{display:none}
+/* panes */
+.grid{display:grid;grid-template-columns:1.25fr 1fr;gap:14px 12px}
+@media(max-width:720px){.grid{grid-template-columns:1fr}}
+.pane{position:relative;border:1px solid var(--line);background:var(--pane);padding:16px 12px 10px;min-width:0}
+.pane .ti{position:absolute;top:-8px;left:10px;background:var(--bg);padding:0 6px;font-family:var(--px);font-size:10px;letter-spacing:.06em;color:var(--hi);line-height:14px}
+.pane .ti b{color:var(--red);font-weight:400}
+.pane .tr{position:absolute;top:-8px;right:10px;background:var(--bg);padding:0 6px;font-size:11px;color:var(--dim);line-height:14px}
+.pane.wide{grid-column:1/-1}
 
-/* header */
-.top{display:flex;flex-direction:column;gap:14px;padding-top:16px}
-.logo{image-rendering:pixelated;image-rendering:crisp-edges;width:min(100%,460px);height:auto;display:block;margin-left:-6px;filter:drop-shadow(6px 5px 0 var(--red))}
-.badge{display:flex;justify-content:space-between;align-items:center;gap:10px}
-.badge .pl{display:flex;align-items:center;gap:8px;border:1px solid var(--paper);padding:5px 9px 5px 7px;font-size:11px;letter-spacing:.3em;text-transform:lowercase}
-.badge .pl i{width:8px;height:8px;background:var(--red);display:block;animation:bl 1.1s steps(1) infinite}
-.badge .when{display:flex;align-items:baseline;gap:10px}
-.badge .tm{font-family:var(--serif);font-style:italic;font-size:26px;line-height:1;color:var(--paper);text-shadow:0 0 14px rgba(244,244,242,.35)}
+/* online */
+.on-row{display:flex;align-items:flex-end;gap:18px;flex-wrap:wrap}
+.big{display:block;image-rendering:pixelated}
+.big.hit{animation:hit .28s steps(1)}
+@keyframes hit{0%{transform:translateX(-3px);color:var(--hi)}40%{transform:translateX(2px)}100%{transform:none}}
+.side{display:grid;grid-template-columns:auto auto;gap:0 12px;font-size:12px;align-content:end}
+.side .k{color:var(--dim)}
+.spark{margin-top:12px;color:var(--red);white-space:pre;overflow:hidden;font-size:14px;line-height:1}
+.axis{display:flex;justify-content:space-between;color:var(--dim2);font-size:10px;margin-top:3px}
+.cap{color:var(--dim);font-size:12px;margin-top:8px}
 
-/* hero */
-.hero{position:relative;margin-top:26px;padding:6px 0 4px;min-height:150px}
-.hero .burst{position:absolute;left:-10%;top:-30%;width:120%;height:160%;pointer-events:none;opacity:0}
-.hero.hit .burst{animation:burst .5s cubic-bezier(.16,1,.3,1)}
-@keyframes burst{0%{opacity:.9;transform:scale(.85)}100%{opacity:0;transform:scale(1.15)}}
-.numrow{display:flex;align-items:flex-end;gap:18px;flex-wrap:wrap;position:relative}
-#num{image-rendering:pixelated;image-rendering:crisp-edges;height:clamp(120px,34vw,200px);width:auto;display:block;filter:drop-shadow(6px 5px 0 var(--red))}
-.hero.inv{filter:invert(1)}
-.lead{padding-bottom:8px;min-width:0}
-.lead .glow{font-family:var(--serif);font-style:italic;font-weight:500;font-size:clamp(34px,9vw,52px);line-height:1;color:var(--paper);
-  text-shadow:0 0 18px rgba(244,244,242,.45),0 0 2px #fff;text-transform:lowercase}
-.lead .tiny{display:block;margin-top:10px}
-.lead .delta{display:block;margin-top:6px;font-size:11px;letter-spacing:.3em;color:var(--paper)}
-.lead .delta b{color:var(--red);font-weight:500}
-.barcode{height:14px;margin-top:14px;background:repeating-linear-gradient(90deg,var(--paper) 0 2px,transparent 2px 5px,var(--paper) 5px 6px,transparent 6px 9px,var(--paper) 9px 13px,transparent 13px 15px);opacity:.85;
-  -webkit-mask-image:linear-gradient(90deg,#000 0 70%,transparent);mask-image:linear-gradient(90deg,#000 0 70%,transparent)}
-.hero.hit .barcode{animation:bar .4s steps(4)}
-@keyframes bar{0%{background-position:0 0}100%{background-position:60px 0}}
+/* meters, htop style */
+.m{display:grid;grid-template-columns:8em 1fr auto;gap:10px;align-items:center;padding:2px 0}
+.m .k{color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.m .bar{white-space:pre;overflow:hidden;color:var(--dim2)}
+.m .bar i{font-style:normal;color:var(--red)}
+.m .v{color:var(--hi);min-width:4ch;text-align:right}
+.sep{border-top:1px dashed var(--line);margin:8px 0}
 
-/* paper PiP cards with blueprint rules */
-.cards{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:22px}
-@media(max-width:560px){.cards{grid-template-columns:repeat(2,1fr)}}
-.card{position:relative;background:var(--paper);color:var(--ink);padding:12px 12px 10px;
-  background-image:linear-gradient(rgba(17,17,17,.06) 1px,transparent 1px),linear-gradient(90deg,rgba(17,17,17,.06) 1px,transparent 1px);background-size:12px 12px}
-.card::before,.card::after{content:"";position:absolute;width:9px;height:9px;border-color:var(--ink);border-style:solid}
-.card::before{top:4px;left:4px;border-width:1px 0 0 1px}
-.card::after{bottom:4px;right:4px;border-width:0 1px 1px 0}
-.card .n{font-family:var(--serif);font-style:italic;font-weight:600;font-size:clamp(40px,11vw,58px);line-height:.95;font-variant-numeric:tabular-nums}
-.card .k{font-size:10px;letter-spacing:.32em;text-transform:lowercase;color:#555;margin-top:6px;border-top:1px dashed #999;padding-top:6px}
-.card.acc .n{color:var(--red)}
+/* full dumps counters */
+.cnt{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:8px}
+.cnt>div{border:1px solid var(--line2);padding:6px 8px}
+.cnt .v{font-size:22px;line-height:1.1;color:var(--hi)}
+.cnt .v.r{color:var(--red)}
+.cnt .k{color:var(--dim);font-size:11px}
+.kv{display:grid;grid-template-columns:8em 1fr;gap:2px 10px;font-size:12px}
+.kv .k{color:var(--dim)}
 
-/* sections */
-.sec{margin-top:30px}
-.sh{display:flex;align-items:center;gap:12px;margin-bottom:12px}
-.sh .t{font-size:12px;letter-spacing:.45em;text-transform:lowercase;color:var(--paper)}
-.sh .z{font-size:10px;letter-spacing:.3em;color:var(--dim)}
-.sh .rule{flex:1;border-top:1px dashed var(--dim2)}
-/* wireframe -> filled on a hit */
-.wires{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
-@media(max-width:560px){.wires{grid-template-columns:repeat(2,1fr)}}
-.wire{border:1px solid var(--dim2);padding:10px 12px;transition:background .25s,border-color .25s}
-.wire .v{font-family:var(--serif);font-style:italic;font-size:34px;line-height:1;color:var(--paper)}
-.wire .v small{font-family:var(--mono);font-style:normal;font-size:10px;letter-spacing:.2em;color:var(--dim)}
-.wire .l{font-size:10px;letter-spacing:.3em;color:var(--dim);margin-top:6px;text-transform:lowercase}
-.wire.full{background:var(--red);border-color:var(--red)}.wire.full .v,.wire.full .l,.wire.full .v small{color:var(--paper)}
-
-/* list */
-.row{display:grid;grid-template-columns:40px 1fr auto;gap:12px;align-items:baseline;padding:10px 0;border-bottom:1px dashed var(--dim2)}
-.row .rk{font-family:var(--serif);font-style:italic;font-size:22px;color:var(--red)}
-.row .tt{min-width:0;word-break:break-word;font-size:14px;font-weight:300;color:var(--paper);letter-spacing:.04em}
-.row .tt .st{display:block;font-size:10px;letter-spacing:.3em;color:var(--dim);margin-top:3px}
-.row .pp{font-family:var(--serif);font-style:italic;font-size:24px;color:var(--paper)}
-.tag{font-size:9px;letter-spacing:.2em;background:var(--red);color:var(--paper);padding:1px 6px;margin-left:8px;vertical-align:2px}
-.empty{border:1px dashed var(--dim2);padding:22px 14px;text-align:center;line-height:2}
-.empty .glow{font-family:var(--serif);font-style:italic;font-size:22px;color:var(--paper);text-shadow:0 0 12px rgba(244,244,242,.35)}
+/* tables */
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{font-family:var(--px);font-size:9px;letter-spacing:.06em;color:var(--dim);font-weight:400;text-align:left;padding:2px 6px 5px;border-bottom:1px solid var(--line)}
+th.rt,td.rt{text-align:right}
+td{padding:4px 6px;border-bottom:1px solid var(--line2);vertical-align:top}
+td.n{color:var(--dim);width:3ch}td.v{color:var(--red);white-space:nowrap}
+td.t{color:var(--hi);word-break:break-word}
+td.s{color:var(--dim);white-space:nowrap;font-size:11px}
+td.z{color:var(--fg);white-space:nowrap}
+tbody tr:hover td{background:#121212}
+.tag{color:#000;background:var(--red);font-size:10px;padding:0 4px;margin-left:6px}
+.st{display:inline-block;font-size:10px;padding:0 5px;border:1px solid var(--dim2);color:var(--dim)}
+.st.ready{border-color:var(--red);color:var(--red)}.st.uploading{border-color:var(--hi);color:var(--hi)}.st.done{border-color:var(--ok);color:var(--ok)}
+.empty{color:var(--dim);font-size:12px;padding:4px 0}
+@media(max-width:520px){.hide-s{display:none}}
 
 /* log */
-.log{margin-top:30px;border-left:2px solid var(--red);padding:4px 0 4px 12px;font-size:11px;letter-spacing:.18em;line-height:2;color:var(--dim);text-transform:lowercase;min-height:64px}
-.log .ln{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.log .ln:first-child{color:var(--paper)}
-.log .err{color:var(--red)}
-.foot{display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;margin-top:12px}
+.log{font-size:12px;max-height:9.5em;overflow:hidden}
+.log div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lv{display:inline-block;width:3.2ch}.lv.i{color:var(--ok)}.lv.e{color:var(--red)}
+.ms{color:var(--dim)}
+.lat{color:var(--red);white-space:pre;font-size:12px;line-height:1;margin-bottom:6px;overflow:hidden}
 
-/* glitch: rgb split + slice, on hits only */
-.gl.hit2{animation:slice .34s steps(1) 1}
-@keyframes slice{0%{clip-path:inset(0);transform:none;filter:none}
- 25%{clip-path:inset(14% 0 56% 0);transform:translateX(-8px);filter:drop-shadow(4px 0 var(--red))}
- 50%{clip-path:inset(52% 0 20% 0);transform:translateX(6px)}
- 75%{clip-path:inset(30% 0 42% 0);transform:translateX(-3px)}
- 100%{clip-path:inset(0);transform:none;filter:none}}
+/* vim-ish footer */
+.vim{display:flex;margin-top:14px;border:1px solid var(--line2);font-size:11px;white-space:nowrap;overflow:hidden;background:#0e0e0e}
+.vim>span{padding:3px 9px}
+.vim .md{background:var(--hi);color:#000;font-family:var(--px);font-size:9px;padding:4px 9px}
+.vim .md.err{background:var(--red)}
+.vim .sp{flex:1}
+.vim .cur::after{content:"";display:inline-block;width:.55em;height:1em;background:var(--red);vertical-align:-2px;margin-left:4px;animation:bl 1s steps(1) infinite}
+@keyframes bl{50%{opacity:0}}
+#boot{position:fixed;inset:0;z-index:9;background:var(--bg);padding:16px max(14px,env(safe-area-inset-left,0px));font-size:13px;color:var(--fg)}
+#boot .ok{color:var(--ok)}#boot.off{display:none}
+@media(max-width:520px){.tmux .win:not(.on),.tmux .host,.vim #ep{display:none}}
 @media(prefers-reduced-motion:reduce){*{animation:none!important}}
 </style>
 </head>
 <body>
 
-<div class="grain"></div>
-<div id="flash"></div>
-<div id="boot"><div class="tw" id="tw"></div></div>
+<div id="boot"><div id="tw"></div></div>
 
-<div class="wrap" id="wrap">
-  <header class="top gl" id="hdr">
-    <div class="badge"><span class="pl"><i></i>live</span><span class="when"><span class="tm" id="clock">--:--</span><span class="tiny" id="date">----.--.--</span></span></div>
-    <canvas id="logo" class="logo" role="img" aria-label="MeguLit"></canvas>
-  </header>
-
-  <section class="hero gl" id="hero">
-    <svg class="burst" viewBox="-100 -100 200 200" aria-hidden="true" preserveAspectRatio="none"><g id="rays" stroke="#f4f4f2" stroke-width=".6"></g></svg>
-    <div class="numrow">
-      <canvas id="num" role="img" aria-label="0"></canvas>
-      <div class="lead">
-        <div class="glow">people online</div>
-        <span class="tiny cur" id="cap">正在用 megulit 的人 · 最近十分钟</span>
-        <span class="delta" id="delta">// waiting for the next ping</span>
-      </div>
-    </div>
-    <div class="barcode"></div>
-  </section>
-
-  <div class="cards">
-    <div class="card"><div class="n" id="active1h">0</div><div class="k">一小时活跃</div></div>
-    <div class="card"><div class="n" id="today">0</div><div class="k">今日活跃</div></div>
-    <div class="card acc"><div class="n" id="games">0</div><div class="k">探针游戏</div></div>
-    <div class="card"><div class="n" id="reporters">0</div><div class="k">上报人次</div></div>
+<div class="wrap">
+  <div class="tmux">
+    <span class="sess gl" id="name" data-t="MEGULIT">MEGULIT</span>
+    <span class="win on">0:live*</span><span class="win">1:dumps</span><span class="win">2:log</span>
+    <span class="sp"></span>
+    <span class="host" id="host">relay ─</span>
+    <span class="clk" id="clock">--:--:--</span>
   </div>
 
-  <section class="sec">
-    <div class="sh"><span class="t">full dumps</span><span class="z">完整剧本上传</span><span class="rule"></span></div>
-    <div class="wires">
-      <div class="wire" id="wReady"><div class="v" id="fReady">0</div><div class="l">待适配</div></div>
-      <div class="wire" id="wUp"><div class="v" id="fUp">0</div><div class="l">上传中</div></div>
-      <div class="wire" id="wDone"><div class="v" id="fDone">0</div><div class="l">已适配</div></div>
-      <div class="wire"><div class="v"><span id="fMB">0</span><small> / <span id="fLimit">8192</span> mb</small></div><div class="l">r2 存储</div></div>
-    </div>
-  </section>
+  <div class="grid">
+    <section class="pane">
+      <span class="ti">┤ <b>online</b> ├</span><span class="tr">last 10 min</span>
+      <div class="on-row">
+        <canvas class="big" id="big" role="img" aria-label="online"></canvas>
+        <div class="side">
+          <span class="k">peak</span><span class="h" id="peak">--</span>
+          <span class="k">Δ poll</span><span id="delta">--</span>
+          <span class="k">since</span><span class="d" id="since">--</span>
+        </div>
+      </div>
+      <div class="spark" id="spark"></div>
+      <div class="axis"><span id="ax0">-15m</span><span>now</span></div>
+      <div class="cap">正在用 MeguLit 的人 · 每 15 秒采样</div>
+    </section>
 
-  <section class="sec">
-    <div class="sh"><span class="t">targets</span><span class="z">多少人在读</span><span class="rule"></span></div>
-    <div id="topWrap"><div class="empty"><div class="glow">scanning</div><div class="tiny">// …</div></div></div>
-  </section>
+    <section class="pane">
+      <span class="ti">┤ <b>stats</b> ├</span><span class="tr">/api/probe/stats</span>
+      <div class="m"><span class="k">active 1h</span><span class="bar" id="b1"></span><span class="v" id="v1">--</span></div>
+      <div class="m"><span class="k">active today</span><span class="bar" id="b2"></span><span class="v" id="v2">--</span></div>
+      <div class="sep"></div>
+      <div class="m"><span class="k">probed games</span><span class="bar" id="b3"></span><span class="v" id="v3">--</span></div>
+      <div class="m"><span class="k">reporters</span><span class="bar"></span><span class="v" id="v4">--</span></div>
+      <div class="m"><span class="k">per game</span><span class="bar"></span><span class="v" id="v5">--</span></div>
+    </section>
 
-  <div class="log" id="log"></div>
-  <div class="foot"><span class="tiny" id="status">// standby</span><span class="tiny">poll <span id="count">15</span>s</span></div>
+    <section class="pane">
+      <span class="ti">┤ <b>full dumps</b> ├</span><span class="tr">完整剧本上传</span>
+      <div class="cnt">
+        <div><div class="v r" id="fReady">--</div><div class="k">ready 待适配</div></div>
+        <div><div class="v" id="fUp">--</div><div class="k">uploading 上传中</div></div>
+        <div><div class="v" id="fDone">--</div><div class="k">done 已适配</div></div>
+      </div>
+      <div class="m"><span class="k">r2</span><span class="bar" id="bR2"></span><span class="v" id="vR2">--</span></div>
+      <div class="kv" style="margin-top:6px">
+        <span class="k">stored</span><span id="fMB">--</span>
+        <span class="k">avg / dump</span><span id="fAvg">--</span>
+        <span class="k">last upload</span><span id="fLast">--</span>
+      </div>
+    </section>
+
+    <section class="pane">
+      <span class="ti">┤ <b>why</b> ├</span><span class="tr">读不好的原因</span>
+      <div id="steps"><div class="empty">-- no data</div></div>
+    </section>
+
+    <section class="pane wide">
+      <span class="ti">┤ <b>targets</b> ├</span><span class="tr">多少人在读</span>
+      <div id="top"><div class="empty">-- no rows</div></div>
+    </section>
+
+    <section class="pane">
+      <span class="ti">┤ <b>recent</b> ├</span><span class="tr">ls -lt full_dumps/</span>
+      <div id="recent"><div class="empty">-- no uploads yet</div></div>
+    </section>
+
+    <section class="pane">
+      <span class="ti">┤ <b>relay.log</b> ├</span><span class="tr" id="latT">latency</span>
+      <div class="lat" id="lat"></div>
+      <div class="log" id="log"></div>
+    </section>
+  </div>
+
+  <div class="vim"><span class="md" id="mode">LINK</span><span id="ep">GET /api/probe/stats</span><span class="d" id="code">--</span><span class="sp"></span><span class="d" id="node">--</span><span>poll <span id="count">15</span>s<span class="cur"></span></span></div>
 </div>
 
 <script>
 "use strict";
-var ENDPOINTS=["/api/probe/stats"];
-var PERIOD=15;
+var NODES=[["cn-api","https://cn-api.megulit.com/api/probe/stats"],["api","https://api.megulit.com/api/probe/stats"]];
+var PERIOD=15,HIST=60;
 var $=function(id){return document.getElementById(id);};
 var reduce=matchMedia("(prefers-reduced-motion:reduce)").matches;
-function fmt(n){return (n==null||isNaN(n))?"--":String(n).replace(/\B(?=(\d{3})+(?!\d))/g,",");}
+function fmt(n){return (n==null||isNaN(n))?"--":String(n);}
 function esc(s){return String(s).replace(/[&<>]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;"}[c];});}
+function ago(sec){if(!sec)return "--";var s=Math.max(0,Math.floor(Date.now()/1000-sec));if(s<60)return s+"s ago";if(s<3600)return Math.floor(s/60)+"m ago";if(s<86400)return Math.floor(s/3600)+"h"+String(Math.floor(s%3600/60)).padStart(2,"0")+"m ago";return Math.floor(s/86400)+"d ago";}
+function mb(v){return v==null?"--":(v>=1024?(v/1024).toFixed(2)+" GB":v.toFixed(1)+" MB");}
 
-/* ---- DedSec pixel-sticker engine: base grid of cell types -> tilt -> hatch/dither -> stepped outline -> paper cut ----
-   types: 1 dithered fill (letters, digits)  2 dark hatch (hat)  3 red  4 black */
-var PAPER=[244,244,242,255],INK=[0,0,0,255],RED=[200,50,60,255],NONE=[0,0,0,0],BAY=[0,8,2,10,12,4,14,6,3,11,1,9,15,7,13,5];
-function sticker(cv,W,H,base,fillTop,fillH,ang){
- var co=Math.cos(ang),si=Math.sin(ang),cx=W/2,cy=H/2,R=new Uint8Array(W*H),BY=new Float32Array(W*H);
- for(var oy=0;oy<H;oy++)for(var ox=0;ox<W;ox++){var ix=Math.round(co*(ox-cx)+si*(oy-cy)+cx),iy=Math.round(-si*(ox-cx)+co*(oy-cy)+cy);
-  if(ix>=0&&iy>=0&&ix<W&&iy<H){R[oy*W+ox]=base[iy*W+ix];BY[oy*W+ox]=iy;}}
- function at(x,y){return (x>=0&&y>=0&&x<W&&y<H)?R[y*W+x]:0;}
- var out=new Array(W*H),minx=W,miny=H,maxx=0,maxy=0;
- for(var y=0;y<H;y++)for(var x=0;x<W;x++){var t=at(x,y),col=NONE;
-  if(t===1){var edge=at(x+1,y)>1||at(x-1,y)>1||at(x,y+1)>1||at(x,y-1)>1;
-   var s=Math.max(0,Math.min(1,(BY[y*W+x]-fillTop)/fillH));
-   /* top: white with '/' hatching; lower part dithers down to black, like a 1-bit print */
-   /* white body; the hatch and the dither toward the bottom are red dots, the outline stays black */
-   col=edge?INK:((((x+y)%7)===0&&s>.35)||(s>.62&&BAY[(y&3)*4+(x&3)]<(s-.62)/.38*16))?RED:PAPER;}
-  else if(t===2)col=(((x+y)%6)===0)?RED:INK;
-  else if(t===3)col=RED;else if(t===4)col=INK;
-  else col=null;
-  out[y*W+x]=col;}
- /* empty cells: distance to the art, then a flood from the border through far cells; counters and letter gaps the flood
-    cannot reach go black, only the outside gets the white sticker cut */
- var D=new Uint8Array(W*H),EX=new Uint8Array(W*H),q=[];
- for(var y3=0;y3<H;y3++)for(var x3=0;x3<W;x3++){if(at(x3,y3)){D[y3*W+x3]=0;continue;}var d=9;
-  for(var yy=-6;yy<=6;yy++)for(var xx=-6;xx<=6;xx++)if(at(x3+xx,y3+yy))d=Math.min(d,Math.max(Math.abs(xx),Math.abs(yy)));D[y3*W+x3]=d;
-  if((x3===0||y3===0||x3===W-1||y3===H-1)&&d>=5){EX[y3*W+x3]=1;q.push(y3*W+x3);}}
- while(q.length){var i=q.pop(),qx=i%W,qy=(i-qx)/W;[[1,0],[-1,0],[0,1],[0,-1]].forEach(function(v){var nx=qx+v[0],ny=qy+v[1];if(nx<0||ny<0||nx>=W||ny>=H)return;var j=ny*W+nx;if(!EX[j]&&D[j]>=5){EX[j]=1;q.push(j);}});}
- function nearEx(x,y,r){for(var yy=-r;yy<=r;yy++)for(var xx=-r;xx<=r;xx++){var nx=x+xx,ny=y+yy;if(nx>=0&&ny>=0&&nx<W&&ny<H&&EX[ny*W+nx])return true;}return false;}
- for(var y4=0;y4<H;y4++)for(var x4=0;x4<W;x4++){var k=y4*W+x4;if(out[k]===null){var dd=D[k];
-   out[k]=EX[k]?NONE:(dd<=2?INK:((dd<=4&&nearEx(x4,y4,2))?PAPER:INK));}
-  if(out[k][3]){if(x4<minx)minx=x4;if(y4<miny)miny=y4;if(x4>maxx)maxx=x4;if(y4>maxy)maxy=y4;}}
- if(maxx<minx)return;var cw=maxx-minx+1,ch=maxy-miny+1;cv.width=cw;cv.height=ch;var ctx=cv.getContext("2d"),img=ctx.createImageData(cw,ch);
- for(var y2=0;y2<ch;y2++)for(var x2=0;x2<cw;x2++){var c=out[(y2+miny)*W+x2+minx],p=(y2*cw+x2)*4;img.data[p]=c[0];img.data[p+1]=c[1];img.data[p+2]=c[2];img.data[p+3]=c[3];}
- ctx.putImageData(img,0,0);}
-var GLYPH={M:["10001","11011","10101","10101","10001","10001","10001"],E:["11111","10000","10000","11110","10000","10000","11111"],
- G:["01111","10000","10000","10111","10001","10001","01111"],U:["10001","10001","10001","10001","10001","10001","01110"],
- L:["10000","10000","10000","10000","10000","10000","11111"],I:["11111","00100","00100","00100","00100","00100","11111"],
- T:["11111","00100","00100","00100","00100","00100","00100"],
- "0":["01110","10001","10011","10101","11001","10001","01110"],"1":["00100","01100","00100","00100","00100","00100","01110"],
- "2":["01110","10001","00001","00010","00100","01000","11111"],"3":["11110","00001","00001","01110","00001","00001","11110"],
+/* LED dot-matrix digits: 5x7 glyphs, every dot its own square; lit dots red with a faint bloom, unlit dots stay as a
+   dark grid, empty leading slots are dark too (a counter) */
+var GL={"0":["01110","10001","10011","10101","11001","10001","01110"],"1":["00100","01100","00100","00100","00100","00100","01110"],
+ "2":["01110","10001","00001","00010","00100","01000","11111"],"3":["11111","00010","00100","00010","00001","10001","01110"],
  "4":["00010","00110","01010","10010","11111","00010","00010"],"5":["11111","10000","11110","00001","00001","10001","01110"],
  "6":["00110","01000","10000","11110","10001","10001","01110"],"7":["11111","00001","00010","00100","01000","01000","01000"],
  "8":["01110","10001","10001","01110","10001","10001","01110"],"9":["01110","10001","10001","01111","00001","00010","01100"],
  "-":["00000","00000","00000","11111","00000","00000","00000"]};
-function stamp(base,W,H,text,lx,ly,S){for(var k=0;k<text.length;k++){var g=GLYPH[text.charAt(k)];if(!g)continue;
- for(var r=0;r<7;r++)for(var c=0;c<5;c++)if(g[r].charAt(c)==="1")for(var a=0;a<S;a++)for(var b=0;b<S;b++){var x=lx+(k*6+c)*S+b,y=ly+r*S+a;if(x>=0&&y>=0&&x<W&&y<H)base[y*W+x]=1;}}}
-function inPoly(px,py,p){var c=false;for(var i=0,j=p.length-1;i<p.length;j=i++){var xi=p[i][0],yi=p[i][1],xj=p[j][0],yj=p[j][1];if(((yi>py)!==(yj>py))&&(px<(xj-xi)*(py-yi)/(yj-yi)+xi))c=!c;}return c;}
-/* logo: a fat witch hat (MeguLit) with a red band, sitting on the word */
-function drawLogo(){var W=250,H=140,base=new Uint8Array(W*H);
- function set(x,y,v){if(x>=0&&y>=0&&x<W&&y<H)base[y*W+x]=v;}
- var cone=[[74,58],[88,26],[118,8],[136,13],[130,19],[110,29],[130,58]];
- for(var y=0;y<H;y++)for(var x=0;x<W;x++){if(inPoly(x+.5,y+.5,cone))set(x,y,(y>=46&&y<=52)?3:2);var dx=(x-104)/66,dy=(y-60)/7;if(dx*dx+dy*dy<=1)set(x,y,2);}
- stamp(base,W,H,"MEGULIT",14,70,5);
- sticker($("logo"),W,H,base,70,35,-0.11);}
-/* the live number in the same pixel language */
-function drawNum(text){var S=6,n=Math.max(1,text.length),W=n*6*S+16,H=7*S+22,base=new Uint8Array(W*H);
- stamp(base,W,H,text,8,11,S);sticker($("num"),W,H,base,11,7*S,-0.06);$("num").setAttribute("aria-label",text);}
+var SLOTS=3;
+function drawLed(t){var cv=$("big"),slots=Math.max(SLOTS,t.length),cell=innerWidth<520?9:11,gap=2,pad=6,dpr=Math.max(1,window.devicePixelRatio||1);
+ var cols=slots*6-1,W=cols*cell+pad*2,H=7*cell+pad*2;cv.style.width=W+"px";cv.style.height=H+"px";cv.width=Math.round(W*dpr);cv.height=Math.round(H*dpr);
+ var x=cv.getContext("2d");x.setTransform(dpr,0,0,dpr,0,0);x.clearRect(0,0,W,H);
+ var s=String(t);while(s.length<slots)s=" "+s;var lit=[];
+ for(var k=0;k<slots;k++){var g=GL[s.charAt(k)];for(var r=0;r<7;r++)for(var c=0;c<5;c++){var on=g&&g[r].charAt(c)==="1",px=pad+(k*6+c)*cell,py=pad+r*cell;
+  x.fillStyle=on?"#e0303e":"#151515";x.fillRect(px,py,cell-gap,cell-gap);if(on)lit.push([px,py]);}}
+ x.save();x.globalCompositeOperation="lighter";x.shadowColor="rgba(224,48,62,.55)";x.shadowBlur=cell*.9;x.fillStyle="rgba(224,48,62,.18)";
+ lit.forEach(function(p){x.fillRect(p[0],p[1],cell-gap,cell-gap);});x.restore();
+ x.fillStyle="rgba(255,255,255,.10)";lit.forEach(function(p){x.fillRect(p[0],p[1],cell-gap,1);});}
+var shown="";
+function setBig(v){var t=fmt(v),el=$("big");el.setAttribute("aria-label",t+" online");
+ if(t===shown||reduce){shown=t;drawLed(t);return;}
+ var i=0,iv=setInterval(function(){i++;if(i>=7){clearInterval(iv);shown=t;drawLed(t);el.classList.remove("hit");void el.offsetWidth;el.classList.add("hit");return;}
+  var s="";for(var k=0;k<t.length;k++)s+=String(Math.floor(Math.random()*10));drawLed(s);},45);}
 
-/* ---- motion helpers ---- */
-(function(){var g=$("rays"),s="";for(var i=0;i<38;i++){var a=i/38*Math.PI*2,r1=42+Math.random()*16,r2=95+Math.random()*30;
- s+='<line x1="'+(Math.cos(a)*r1).toFixed(1)+'" y1="'+(Math.sin(a)*r1).toFixed(1)+'" x2="'+(Math.cos(a)*r2).toFixed(1)+'" y2="'+(Math.sin(a)*r2).toFixed(1)+'"/>';}g.innerHTML=s;})();
-function retrig(el,cls){if(reduce||!el)return;el.classList.remove(cls);void el.offsetWidth;el.classList.add(cls);}
-function hitHero(){retrig($("hero"),"hit");if(!reduce){$("hero").classList.add("inv");setTimeout(function(){$("hero").classList.remove("inv");},50);}}
-setInterval(function(){retrig(Math.random()<.5?$("hero"):$("hdr"),"hit2");},5200);
-var curNum="";
-function scrambleNum(val){var target=String(val==null?"--":val);if(reduce||target===curNum){curNum=target;drawNum(target);return;}
- var i=0,t=setInterval(function(){i++;if(i>=8){clearInterval(t);curNum=target;drawNum(target);return;}
-  var s="";for(var k=0;k<target.length;k++)s+=String(Math.floor(Math.random()*10));drawNum(s);},45);}
-function scrambleTo(el,val){var target=fmt(val);if(reduce||el.textContent===target){el.textContent=target;return;}
- var i=0;clearInterval(el._t);el._t=setInterval(function(){i++;if(i>=8){clearInterval(el._t);el.textContent=target;return;}
-  var s="";for(var k=0;k<target.length;k++){var c=target.charAt(k);s+=c===","?c:String(Math.floor(Math.random()*10));}el.textContent=s;},40);}
+/* htop meter */
+function cols(el,cw){return Math.max(8,Math.floor(el.clientWidth/cw));}
+function meter(el,v,max){var w=cols(el,7.9)-2,n=max>0?Math.round(Math.min(1,(v||0)/max)*w):0;
+ el.innerHTML="["+"<i>"+"|".repeat(n)+"</i>"+" ".repeat(Math.max(0,w-n))+"]";}
+
+/* sparklines from this viewer's own samples */
+function load(k){try{return JSON.parse(localStorage.getItem(k)||"[]").filter(function(p){return Date.now()-p[0]<HIST*PERIOD*1000;});}catch(e){return [];}}
+function keep(k,a){try{localStorage.setItem(k,JSON.stringify(a));}catch(e){}}
+var hist=load("ml-online-hist"),lath=load("ml-lat-hist");
+var BARS=["▁","▂","▃","▄","▅","▆","▇","█"];
+function sparkStr(el,vals,cw){var w=cols(el,cw),v=vals.slice(-w),mx=Math.max(1,Math.max.apply(null,v.concat([0])));
+ return '<span class="dd">'+"▁".repeat(Math.max(0,w-v.length))+"</span>"+v.map(function(x){return x<=0?'<span class="dd">▁</span>':BARS[Math.min(7,Math.max(1,Math.round(x/mx*7)))];}).join("");}
+function spark(){var el=$("spark");el.innerHTML=sparkStr(el,hist.map(function(p){return p[1];}),8.4);$("ax0").textContent="-"+Math.round(cols(el,8.4)*PERIOD/60)+"m";
+ var l=$("lat");l.innerHTML=sparkStr(l,lath.map(function(p){return p[1];}),7.3);}
+
+var STEP_CN={"unknown-pack":"封包不认识","not-japanese":"不是日文","parse-failed":"解析失败","decrypt-failed":"解密失败","chinese-build":"汉化版","low-pairing":"中日配不上","timeout":"超时"};
+function renderSteps(list){var w=$("steps");
+ if(!list||!list.length){w.innerHTML='<div class="empty">-- no data</div>';return;}
+ var mx=Math.max.apply(null,list.map(function(s){return s.n;}));
+ w.innerHTML=list.map(function(s,i){return '<div class="m"><span class="k" title="'+esc(s.step)+'">'+esc(s.step)+'</span><span class="bar" id="sb'+i+'"></span><span class="v">'+s.n+'</span></div>';}).join("")+
+  '<div class="cap">'+list.map(function(s){return STEP_CN[s.step]?esc(s.step)+" = "+STEP_CN[s.step]:"";}).filter(Boolean).join(" · ")+'</div>';
+ list.forEach(function(s,i){meter($("sb"+i),s.n,mx);});}
+function stateTag(s){return '<span class="st '+esc(s)+'">'+esc(s||"-")+'</span>';}
+function renderTop(list){var w=$("top");
+ if(!list||!list.length){w.innerHTML='<div class="empty">-- no rows</div>';return;}
+ w.innerHTML='<table><thead><tr><th>#</th><th>title</th><th class="hide-s">why</th><th class="rt hide-s">size</th><th>state</th><th class="rt">ppl</th></tr></thead><tbody>'+list.map(function(g,i){
+  return '<tr><td class="n">'+(i+1)+'</td><td class="t">'+esc(g.title)+(g.full?'<span class="tag">full</span>':'')+'</td><td class="s hide-s">'+esc(g.step||"-")+'</td><td class="z rt hide-s">'+(g.mb!=null?mb(g.mb):"-")+'</td><td>'+stateTag(g.state)+'</td><td class="v rt">'+fmt(g.reporters)+'</td></tr>';}).join("")+'</tbody></table>';}
+function renderRecent(list){var w=$("recent");
+ if(!list||!list.length){w.innerHTML='<div class="empty">-- no uploads yet</div>';return;}
+ w.innerHTML='<table><tbody>'+list.map(function(g){return '<tr><td class="s">'+ago(g.at)+'</td><td>'+stateTag(g.state)+'</td><td class="z rt">'+mb(g.mb)+'</td><td class="t">'+esc(g.title)+'</td></tr>';}).join("")+'</tbody></table>';}
 
 var logs=[];
-function log(msg,cls){var t=new Date().toTimeString().slice(0,8);logs.unshift('<div class="ln '+(cls||"")+'">'+t+'  '+msg+'</div>');logs=logs.slice(0,3);$("log").innerHTML=logs.join("");}
-function raceStats(){return Promise.any(ENDPOINTS.map(function(u){return fetch(u,{cache:"no-store"}).then(function(r){if(!r.ok)throw 0;return r.json().then(function(j){j.__src=u;return j;});});}));}
+function log(level,msg){logs.unshift('<div><span class="d">'+new Date().toTimeString().slice(0,8)+'</span> <span class="lv '+(level==="ERR"?"e":"i")+'">'+level+'</span> '+msg+'</div>');logs=logs.slice(0,6);$("log").innerHTML=logs.join("");}
+function kick(){if(reduce)return;var n=$("name");n.classList.remove("kick");void n.offsetWidth;n.classList.add("kick");}
 
-var prev=null;
-function renderTop(list){var w=$("topWrap");
- if(!list||!list.length){w.innerHTML='<div class="empty"><div class="glow">no targets yet</div><div class="tiny">完整剧本上传发版后，这里列出每个游戏有多少人在读</div></div>';return;}
- w.innerHTML=list.map(function(g,i){return '<div class="row"><span class="rk">'+(i+1)+'</span><span class="tt">'+esc(g.title)+(g.full?'<span class="tag">full</span>':'')+(g.step?'<span class="st">'+esc(g.step)+'</span>':'')+'</span><span class="pp">'+fmt(g.reporters)+'</span></div>';}).join("");}
-function wire(id,v){$(id).classList.toggle("full",(v|0)>0);}
+/* both relay nodes are hit every poll; the first good answer is shown, each node's latency is kept */
+var lat={};
+function poll(){var t0=performance.now();
+ var reqs=NODES.map(function(n){return fetch(n[1],{cache:"no-store"}).then(function(r){var ms=Math.round(performance.now()-t0);lat[n[0]]=r.ok?ms:-1;if(!r.ok)throw 0;
+  return r.json().then(function(j){j.__node=n[0];j.__ms=ms;j.__code=r.status;return j;});},function(e){lat[n[0]]=-1;throw e;});});
+ return {first:Promise.any(reqs),all:Promise.allSettled(reqs)};}
+var prev=null,peak=0,since=Date.now(),last=null;
 function apply(j){
- var changed=prev!=null&&j.online!==prev;
- scrambleNum(j.online);
- if(prev!=null){var d=j.online-prev;$("delta").innerHTML=d>0?'<b>+'+d+'</b>  since last ping':d<0?'<b>'+d+'</b>  since last ping':'// steady';}
- if(changed||prev==null)hitHero();prev=j.online;
- scrambleTo($("active1h"),j.active1h);scrambleTo($("today"),j.today);scrambleTo($("games"),j.probedGames);scrambleTo($("reporters"),j.reporters);
- var f=j.full||{};scrambleTo($("fReady"),f.ready);scrambleTo($("fUp"),f.uploading);scrambleTo($("fDone"),f.done);wire("wReady",f.ready);wire("wUp",f.uploading);wire("wDone",f.done);
- $("fMB").textContent=f.storedMB==null?"--":f.storedMB;$("fLimit").textContent=fmt(f.limitMB||8192);
- renderTop(j.top);
- var host=(j.__src||"").indexOf("cn-")>=0?"cn":(j.__src?"global":"local");
- $("status").textContent="// linked · node "+host+" · "+new Date().toTimeString().slice(0,8);
- log("sync ok · "+j.online+" online · "+j.probedGames+" games");}
-function tick(){raceStats().then(apply).catch(function(){$("status").textContent="// link lost · retrying";log("uplink dropped · retrying","err");});}
+ var on=j.online|0;hist.push([Date.now(),on]);hist=hist.slice(-HIST);keep("ml-online-hist",hist);
+ lath.push([Date.now(),j.__ms]);lath=lath.slice(-HIST);keep("ml-lat-hist",lath);
+ peak=Math.max(peak,Math.max.apply(null,hist.map(function(p){return p[1];})));
+ if(prev!=null){var d=on-prev;$("delta").innerHTML=d>0?'<span class="r">+'+d+'</span>':d<0?'<span class="r">'+d+'</span>':'<span class="d">0</span>';if(d!==0){kick();since=Date.now();}}
+ else $("delta").innerHTML='<span class="d">0</span>';
+ prev=on;setBig(on);$("peak").textContent=peak;last=j;render(j);
+ $("host").textContent="relay ─ "+j.__node;$("code").textContent=j.__code+" · "+j.__ms+"ms";$("mode").textContent="LINK";$("mode").className="md";
+ log("INF",'GET /api/probe/stats <span class="h">'+j.__code+'</span> <span class="ms">'+j.__ms+'ms '+j.__node+'</span> online=<span class="r">'+on+'</span> 1h='+j.active1h+' ready='+((j.full||{}).ready|0));}
+function render(j){spark();
+ var today=Math.max(j.today|0,1);
+ meter($("b1"),j.active1h,today);$("v1").textContent=fmt(j.active1h);
+ $("b2").innerHTML='<span class="d">1h/today '+(j.today?Math.round((j.active1h|0)/j.today*100):0)+'%</span>';$("v2").textContent=fmt(j.today);
+ var f=j.full||{};
+ $("b3").innerHTML='<span class="d">'+(f.games|0)+' with full dump</span>';$("v3").textContent=fmt(j.probedGames);
+ $("v4").textContent=fmt(j.reporters);$("v5").textContent=j.probedGames?(j.reporters/j.probedGames).toFixed(2):"--";
+ $("fReady").textContent=fmt(f.ready);$("fUp").textContent=fmt(f.uploading);$("fDone").textContent=fmt(f.done);
+ meter($("bR2"),f.storedMB||0,f.limitMB||8192);$("vR2").textContent=((f.storedMB||0)/(f.limitMB||8192)*100).toFixed(1)+"%";
+ $("fMB").innerHTML=mb(f.storedMB||0)+' <span class="d">/ '+mb(f.limitMB||8192)+'</span>';
+ $("fAvg").textContent=f.ready?mb((f.storedMB||0)/f.ready):"--";$("fLast").textContent=ago(f.lastAt);
+ renderSteps(j.steps);renderTop(j.top);renderRecent(j.recent);}
+function nodesLine(){$("node").innerHTML=NODES.map(function(n){var v=lat[n[0]];return n[0]+" "+(v==null?"--":v<0?'<span class="r">down</span>':v+"ms");}).join(" · ");
+ var ok=NODES.filter(function(n){return lat[n[0]]>0;}).map(function(n){return lat[n[0]];});$("latT").textContent=ok.length?"latency "+Math.min.apply(null,ok)+"ms":"latency";}
+function tick(){var p=poll();p.first.then(apply).catch(function(){$("mode").textContent="DOWN";$("mode").className="md err";$("code").textContent="timeout";log("ERR","GET /api/probe/stats failed on every node · retry in "+PERIOD+"s");});p.all.then(nodesLine);}
+addEventListener("resize",function(){drawLed(shown||"--");if(last)render(last);else spark();});
 
-/* ---- boot: black silence -> typed lowercase lines -> single white flash -> push in ---- */
-var LINES=["dedsec uplink // megulit beta","handshake <span class='r'>ok</span>","we are in."];
-function typeLines(el,lines,done){var li=0,ci=0,html="";
- function plain(s){return s.replace(/<[^>]+>/g,"");}
- (function step(){if(li>=lines.length){done();return;}var full=lines[li],txt=plain(full);
-  if(ci<=txt.length){el.innerHTML=html+"<div>"+(ci===txt.length?full:esc(txt.slice(0,ci)))+'<span style="color:var(--red)">▮</span></div>';ci++;setTimeout(step,ci===1?160:34);}
-  else{html+="<div>"+full+"</div>";li++;ci=0;setTimeout(step,200);}})();}
-function boot(){var b=$("boot");if(reduce){b.className="off";start();return;}
- typeLines($("tw"),LINES,function(){setTimeout(function(){var f=$("flash");f.className="on";b.className="off";$("wrap").classList.add("in");
-  setTimeout(function(){f.className="";},70);start();},260);});}
+var LINES=[['$ ssh op@relay.megulit.com',''],['  authenticated · ed25519','ok'],['$ tmux attach -t megulit',''],['  attached','ok']];
+function boot(){var b=$("boot"),tw=$("tw");if(reduce){b.className="off";start();return;}
+ var li=0,ci=0,done="";(function step(){if(li>=LINES.length){setTimeout(function(){b.className="off";start();},180);return;}
+  var t=LINES[li][0],cls=LINES[li][1];if(ci<=t.length){tw.innerHTML=done+'<div class="'+cls+'">'+esc(t.slice(0,ci))+'█</div>';ci++;setTimeout(step,ci===1?90:18);}
+  else{done+='<div class="'+cls+'">'+esc(t)+'</div>';li++;ci=0;setTimeout(step,110);}})();}
 function start(){var left=PERIOD;
- setInterval(function(){var d=new Date();$("clock").textContent=d.toTimeString().slice(0,5);
-  $("date").textContent=d.getFullYear()+"."+String(d.getMonth()+1).padStart(2,"0")+"."+String(d.getDate()).padStart(2,"0");
+ setInterval(function(){$("clock").textContent=new Date().toTimeString().slice(0,8);$("since").textContent=Math.floor((Date.now()-since)/1000)+"s";
+  if(last)$("fLast").textContent=ago((last.full||{}).lastAt);
   if(--left<=0){left=PERIOD;tick();}$("count").textContent=left;},1000);
- log("uplink established");tick();}
-drawLogo();drawNum("0");boot();
+ setInterval(kick,6200);setBig("--");spark();log("INF","session attached");tick();}
+boot();
 </script>
 
 </body>
