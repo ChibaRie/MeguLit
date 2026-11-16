@@ -10,7 +10,7 @@
      inventory:{files,bytes,ext:{'.xp3':3,...},archives:[{name,size,magic,format}]}   names desensitized
      engines:[{id,scenes,lines,error,ms}]               every reader that recognised something (or failed trying)
      detected:'<engine id>'|null, lines, japaneseLines, sizes:[lines per scene]
-     step:'ok'|'unknown-pack'|'decrypt-failed'|'parse-failed'|'not-japanese'|'no-script'|'low-pairing'|'timeout',
+     step:'ok'|'unknown-pack'|'decrypt-failed'|'parse-failed'|'not-japanese'|'chinese-build'|'decode-suspect'|'no-script'|'low-pairing'|'timeout',
      detail:'<code>', unsupported:{engine,code}|null, preparing:'unpack'|'capture'|null }
    No line of text leaves this function: only counts. The pairing part (low-pairing) is added by adapter-probe.cjs from
    the zero-latency state. */
@@ -47,26 +47,53 @@ function inventory(dir,{depth=2,limit=6000}={}){
 
 const DECRYPT=/decrypt|encrypt|cipher|key|filter|scheme|CX|PROTECT|TPM/i;
 const KANA=/[ぁ-ゖァ-ヺ]/;
+const HAN=/[㐀-鿿]/;
+/* E600 language counting. dialogue = a line that can be spoken text: script commands, identifiers, file names and
+   resource paths are not (they would drown the ratio of games with many of them). chinese = Han and no kana. */
+const PATHISH=/^[\w.\-\/\\:$%]+$/,SCRIPTISH_LINE=/^[@#\[<*;%$&]|^[A-Za-z_][\w.]*\s*[(=]|\.(png|jpe?g|bmp|ogg|wav|mp3|ks|tjs|txt|ws2|scr|mjo|bsc|ybn|dat|arc|xp3)\b/i;
+function lineKind(l){const t=String(l).trim();if(!t||PATHISH.test(t)||SCRIPTISH_LINE.test(t)&&!KANA.test(t))return 0;
+ if(KANA.test(t))return 3;if(HAN.test(t))return 2;return /[A-Za-z]+\s+[A-Za-z]+/.test(t)?1:0;}
+/* → {dialogue,japanese,chinese} over a list of lines; japanese keeps the old meaning (any kana, whole list) */
+function countLines(lines){let dialogue=0,japanese=0,chinese=0;for(const l of lines||[]){if(KANA.test(l))japanese++;const k=lineKind(l);if(k)dialogue++;if(k===2)chinese++;}return {dialogue,japanese,chinese};}
 /* every engine of scenes.cjs, plus System4 / BGI from original-text.cjs, with a per-engine time cap */
 function runEngines(dir,{deadline}){
  const scenes=require('./original-engines/scenes.cjs'),out=[];
  for(const id of Object.keys(scenes.ENGINES)){if(Date.now()>deadline){out.push({id,scenes:-1,lines:0,error:'BUDGET',ms:0});continue;}
-  const engine=scenes.ENGINES[id],t=Date.now();let list=null,error='',lines=0,sizes=[],japanese=0,parsed=0;
+  const engine=scenes.ENGINES[id],t=Date.now();let list=null,error='',lines=0,sizes=[],japanese=0,parsed=0,dialogue=0,chinese=0;
   try{list=engine.scenes(dir)||[];}catch(e){error=String(e?.code||e?.message||e).slice(0,60);}
   if(list&&list.length){for(const s of list){if(Date.now()>deadline){error=error||'BUDGET';break;}let p;try{p=engine.parse(s.read());parsed++;}catch(e){if(!error)error=String(e?.code||e?.message||e).slice(0,60);sizes.push(0);continue;}
-    const n=p?.lines?.length||0;lines+=n;sizes.push(n);for(const l of p?.lines||[])if(KANA.test(l))japanese++;}}
-  if(list?.length||error)out.push({id,scenes:list?list.length:-1,parsed,lines,japaneseLines:japanese,sizes:sizes.slice(0,4000),error,ms:Date.now()-t});}
+    const n=p?.lines?.length||0;lines+=n;sizes.push(n);const c=countLines(p?.lines);japanese+=c.japanese;dialogue+=c.dialogue;chinese+=c.chinese;}}
+  if(list?.length||error)out.push({id,scenes:list?list.length:-1,parsed,lines,japaneseLines:japanese,dialogueLines:dialogue,chineseLines:chinese,sizes:sizes.slice(0,4000),error,ms:Date.now()-t});}
  return out;}
 function nativeEngines(dir,executable){const out=[];let ot;try{ot=require('./original-text.cjs');}catch{return out;}
  for(const id of ['system4','bgi']){const a=ot.ADAPTERS?.[id];if(!a)continue;const t=Date.now();let loc=null,error='';try{loc=a.locate(dir,path.parse(String(executable||'')).name);}catch(e){error=String(e?.message||e).slice(0,60);}
-  if(!loc&&!error)continue;let lines=0,japanese=0,sizes=[];if(loc)try{const r=a.read(loc.target);lines=r.lines.length;for(const l of r.lines)if(KANA.test(l))japanese++;sizes=(r.sizes||[]).slice(0,4000);}catch(e){error=String(e?.message||e).slice(0,60);}
-  out.push({id,scenes:loc?1:-1,parsed:loc?1:0,lines,japaneseLines:japanese,sizes,error,ms:Date.now()-t});}
+  if(!loc&&!error)continue;let lines=0,japanese=0,dialogue=0,chinese=0,sizes=[];if(loc)try{const r=a.read(loc.target);lines=r.lines.length;const c=countLines(r.lines);japanese=c.japanese;dialogue=c.dialogue;chinese=c.chinese;sizes=(r.sizes||[]).slice(0,4000);}catch(e){error=String(e?.message||e).slice(0,60);}
+  out.push({id,scenes:loc?1:-1,parsed:loc?1:0,lines,japaneseLines:japanese,dialogueLines:dialogue,chineseLines:chinese,sizes,error,ms:Date.now()-t});}
  return out;}
 
+/* Language of a reader's text, from counts only (no text). → 'japanese' | 'chinese-build' | 'decode-suspect' | 'not-japanese'
+   - denominator is the dialogue-line count when the probe has it (E600+), else every line;
+   - a big absolute number of Japanese lines is Japanese whatever the ratio (a 160k-line script with 2.6k kana lines
+     is a Japanese game whose rest is commands);
+   - Chinese lines in the majority, or (old probes without chineseLines) a Chinese-build title → 'chinese-build';
+   - almost no Japanese in a big script → 'decode-suspect': the reader most likely mis-decoded it, not a language fact. */
+const CHINESE_TITLE=/汉化|漢化|简体|簡體|繁体|繁體|中文|官中|国语|國語|翻译|翻譯|和谐|和諧|AI\s*翻|机翻|機翻|Chinese|CHS|CHT/i;
+const SIMPLIFIED_ONLY=/[华镜诅传说汉兰寻译为这个们对时开关与东发见现过还进动机实队网图书写读语终贝车电马鱼鸟龙长门风飞饭给结经红绿纪约级维线细织统缘继续]/;
+const chineseTitle=t=>{const s=String(t||'');return !!s&&(CHINESE_TITLE.test(s)||!KANA.test(s)&&SIMPLIFIED_ONLY.test(s));};
+function judgeLanguage({lines=0,japaneseLines=0,dialogueLines,chineseLines,title}={}){
+ const base=dialogueLines>0?Math.min(dialogueLines,lines)||dialogueLines:lines,jp=japaneseLines;
+ if(lines<50)return 'japanese';
+ const knownChinese=Number.isFinite(chineseLines);
+ if(knownChinese&&chineseLines>=base*.5&&chineseLines>=jp)return 'chinese-build';
+ if(!knownChinese&&jp<base*.1&&chineseTitle(title))return 'chinese-build';/* old probe: the title says Chinese build, and kana lines are a sliver */
+ if(jp>=1000||jp>=base*.3)return 'japanese';
+ if(jp<Math.max(10,lines*.001)&&lines>=1000)return 'decode-suspect';
+ return jp>=Math.min(300,base*.05)?'japanese':'not-japanese';}
+
 /* which step failed, from the evidence */
-function classify({engines,inventory:inv,unsupported,preparing}){
+function classify({engines,inventory:inv,unsupported,preparing,title}){
  const read=engines.filter(e=>e.lines>0).sort((a,b)=>b.lines-a.lines)[0];
- if(read){if(read.japaneseLines<read.lines*.3&&read.lines>=50)return {step:'not-japanese',detail:read.id,detected:read.id};return {step:'ok',detail:read.id,detected:read.id};}
+ if(read){const lang=judgeLanguage({...read,title});if(lang==='chinese-build'||lang==='decode-suspect'||lang==='not-japanese')return {step:lang,detail:read.id,detected:read.id};return {step:'ok',detail:read.id,detected:read.id};}
  if(unsupported)return {step:DECRYPT.test(unsupported.code)?'decrypt-failed':'parse-failed',detail:(unsupported.engine+':'+unsupported.code).slice(0,60),detected:null};
  const failedDecrypt=engines.find(e=>e.error&&DECRYPT.test(e.error));if(failedDecrypt)return {step:'decrypt-failed',detail:failedDecrypt.id+':'+failedDecrypt.error,detected:null};
  if(preparing==='capture')return {step:'decrypt-failed',detail:'encrypted-archive',detected:null};
@@ -76,16 +103,16 @@ function classify({engines,inventory:inv,unsupported,preparing}){
  if(inv.scripts)return {step:'parse-failed',detail:'loose-scripts',detected:null};
  return {step:'no-script',detail:'',detected:null};}
 
-function probeGame({dir,executable},{budgetMs=60000}={}){
+function probeGame({dir,executable,title},{budgetMs=60000}={}){
  const t=Date.now(),deadline=t+budgetMs;let fingerprint=null;
  try{if(executable)fingerprint=require('./shared-adaptation.cjs').fingerprint(executable);}catch{}
  const inv=inventory(dir);let unsupported=null,preparing=null;
  try{const scenes=require('./original-engines/scenes.cjs');unsupported=scenes.unsupportedReason(dir);preparing=scenes.preparing(dir)?.kind||null;}catch{}
  const engines=[...nativeEngines(dir,executable),...runEngines(dir,{deadline})];
- const c=classify({engines,inventory:inv,unsupported,preparing});const best=engines.find(e=>e.id===c.detected);
+ const c=classify({engines,inventory:inv,unsupported,preparing,title});const best=engines.find(e=>e.id===c.detected);
  return {schema:'megulit.probe-result',version:1,reader:reader(),ms:Date.now()-t,fingerprint:fingerprint?{key:fingerprint.key,exe:maskString(fingerprint.exe),size:fingerprint.size}:null,
   inventory:{files:inv.files,bytes:inv.bytes,ext:inv.ext,scripts:inv.scripts,archives:inv.archives.map(({_path,...a})=>a)},
-  engines:engines.map(({sizes,...e})=>e),detected:c.detected,lines:best?.lines||0,japaneseLines:best?.japaneseLines||0,sizes:best?.sizes||[],
+  engines:engines.map(({sizes,...e})=>e),detected:c.detected,lines:best?.lines||0,japaneseLines:best?.japaneseLines||0,dialogueLines:best?.dialogueLines||0,chineseLines:best?.chineseLines||0,sizes:best?.sizes||[],
   step:c.step,detail:c.detail,unsupported:unsupported?{engine:unsupported.engine,code:unsupported.code}:null,preparing,_archives:inv.archives.map(a=>a._path)};
 }
-module.exports={probeGame,classify,inventory,reader,MAGICS};
+module.exports={probeGame,classify,judgeLanguage,countLines,inventory,reader,MAGICS};

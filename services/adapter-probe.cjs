@@ -76,7 +76,7 @@ function probeOne(live,{dir,executable},perGameMs){
   const onExit=()=>{live.child=null;done({schema:'megulit.probe-result',version:1,step:live.cancelled?'cancelled':'parse-failed',detail:'WORKER_EXIT',engines:[],inventory:{files:0,bytes:0,ext:{},archives:[]},lines:0,japaneseLines:0});};
   const timer=setTimeout(()=>{try{child.kill();}catch{}live.child=null;done({schema:'megulit.probe-result',version:1,step:'timeout',detail:'PER_GAME_BUDGET',engines:[],inventory:{files:0,bytes:0,ext:{},archives:[]},lines:0,japaneseLines:0});},perGameMs);
   live.timer=timer;child.on('message',onMessage);child.once('exit',onExit);
-  try{child.send({type:'probe',id,dir,executable,budgetMs:Math.max(5000,perGameMs-5000)});}catch{done({schema:'megulit.probe-result',version:1,step:'parse-failed',detail:'WORKER_SEND',engines:[],inventory:{files:0,bytes:0,ext:{},archives:[]},lines:0,japaneseLines:0});}
+  try{child.send({type:'probe',id,dir,executable,title:next.title,budgetMs:Math.max(5000,perGameMs-5000)});}catch{done({schema:'megulit.probe-result',version:1,step:'parse-failed',detail:'WORKER_SEND',engines:[],inventory:{files:0,bytes:0,ext:{},archives:[]},lines:0,japaneseLines:0});}
  });}
 /* one job in a fresh worker (structural samples for the upload): resolves its answer, or null on timeout / crash */
 function inWorker(message,timeout=120000){return new Promise(resolve=>{let child;try{child=spawnWorker();}catch{return resolve(null);}const id=Math.random().toString(36).slice(2);
