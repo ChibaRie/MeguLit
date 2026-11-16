@@ -572,7 +572,7 @@
   bridge.galLayoutInfo = () => layoutInfo ? { ...layoutInfo } : null;
   bridge.previewGalPosition = values => { preferences = appearance.clean({ ...preferences, ...styleOnly(values) }); send({ type:'galPreview', settings:preferences });
    apply(); };
-  bridge.restoreGalSettings = saved => { for (const key of Object.keys(defaults)) if (saved?.[key] !== undefined) preferences[key] = saved[key]; localStorage.setItem('tomoyo-gal-settings',
+  bridge.restoreGalSettings = saved => { const restored={}; for (const key of Object.keys(defaults)) if (saved?.[key] !== undefined) preferences[key] = restored[key] = saved[key]; /* host state (hook route) changed while the Alt+T menu is open: the menu's snapshot follows, or closing it reverts the host */commitSynchronizedStyle?.(restored); localStorage.setItem('tomoyo-gal-settings',
    JSON.stringify({...preferences,translationPrompt:undefined})); apply(); };
   /* Alt+M (services/bind-hotkey.cjs): 「已绑定：<窗口标题>」 or why the window in front was not bound, as a short hint on the reader layer */
   bridge.bindHotkeyResult = message => { bridge.galPickState?.(false); document.querySelector('.megulit-bind-hint')?.remove(); const text=String(message?.message||''); if(!text)return;
@@ -911,7 +911,7 @@
     dragLabel(false); dialog.addEventListener('close', () => dragMode(false), { once:true });
     form.addEventListener('submit', save, true);
     dialog.addEventListener('close', () => { if(previewFrame){cancelAnimationFrame(previewFrame);previewFrame=0;}preferences = {...committed,interfaceMode:preferences.interfaceMode};
-     dialogFields = null;commitSynchronizedStyle=null;if(bound)send({type:'galPreview',settings:preferences});setTimeout(()=>send({ type: 'galMenu', open: !!document.querySelector('.tomoyo-cn-dialog[open],.tome-backlog[data-open],.tomoyo-cn-dialog[data-leaving],.tome-backlog[data-leaving]') }),
+     dialogFields = null;commitSynchronizedStyle=null;/* 2026-11-16 Alt+T: closing only drops the menu's unsaved edits; re-sending the snapshot as a preview turned the embed off */if(bound)send({type:'galPreviewEnd'});setTimeout(()=>send({ type: 'galMenu', open: !!document.querySelector('.tomoyo-cn-dialog[open],.tome-backlog[data-open],.tomoyo-cn-dialog[data-leaving],.tome-backlog[data-leaving]') }),
      340);apply(); }, { once: true });
     send({ type: 'galWindows' }); send({ type: 'galMenu', open: true });
   };

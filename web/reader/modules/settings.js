@@ -264,6 +264,8 @@
   };
   document.addEventListener('keydown', event => {
     if(event.code==='Escape'&&dialog?.open){event.preventDefault();event.stopImmediatePropagation();dialog.dispatchEvent(new Event('cancel',{cancelable:true}));return;}
+    /* 2026-11-16 one path per hotkey: when the bridge holds Alt+T / Alt+H (RegisterHotKey) the page never handles them as well */
+    if (event.altKey && (event.code === 'KeyT' && bridge.nativeHotkeys?.menu === true || event.code === 'KeyH' && bridge.nativeHotkeys?.cover === true)) { event.preventDefault(); event.stopImmediatePropagation(); return; }
     if (event.altKey && event.code === 'KeyH' && !event.repeat) {
       event.preventDefault(); event.stopImmediatePropagation();
       try { window.__tomoyoTranslateRequest(JSON.stringify({type:'galToggleCover'})); } catch {}

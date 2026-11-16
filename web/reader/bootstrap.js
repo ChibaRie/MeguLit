@@ -53,6 +53,7 @@ function event(message){if(!loaded){queued.push(message);return;}if(message.type
  if(typeof message.hookLineUnreadable==='boolean'||message.type==='gameClosed'){document.body.classList.toggle('megulit-line-unreadable',message.hookLineUnreadable===true);window.__tomoyoHitRegionsRefresh?.(true);}
  if(message.type==='dialogVisibility'){document.body.classList.toggle('megulit-dialog-hidden',message.visible===false);/* 2026-11-13 choices on screen while the game hid its text box: the reader shows them, not the old line */document.body.classList.toggle('megulit-choice-only',message.choiceOnly===true);return;}
  if(message.type==='fonts'){b.gameFonts?.(message.fonts);return;}
+ /* which hotkeys the bridge holds (ready / hotkeyState): those keys have their single path there (settings.js) */if(typeof message.hotkey==='boolean')b.nativeHotkeys={menu:message.hotkey,cover:message.coverHotkey===true};
  if(message.type==='hotkey')b.toggleGalMenu?.();else b.galStatus?.(message);
  b.learningStatus?.(message);b.hookReaderStatus?.();
  // interface-mode-host owns mode navigation, avoiding a duplicate home reveal/focus.
