@@ -83,6 +83,7 @@
     document.body.classList.toggle('megulit-place-fallback', fallback === true);
     for (const w of document.querySelectorAll('.megulit-place-window')) {
       w.classList.remove('megulit-place-window');
+      for (const o of w.querySelectorAll('.tomoyo-cn-row *')) { o.style.removeProperty('font-size'); o.style.removeProperty('line-height'); }
       for (const n of w.querySelectorAll('.char-token,.megulit-ruby-base,.tomoyo-cn-row')) { n.classList.remove('megulit-unplaced'); for (const p of ['left', 'top', 'width', 'height', 'font-size', 'line-height']) n.style.removeProperty(p); }
     }
     if (lastGeom) { lastGeom = ''; dispatchEvent(new CustomEvent('megulit-reveal-progress', { detail: { typing: false } })); }
@@ -344,8 +345,12 @@
          last row out of the window): its size came from the stylesheet and was only made smaller when there was room, so a
          line that filled the text box got the full stylesheet size. The size is now always derived from the Japanese
          glyphs (one size for every line of the box) and only ever made smaller to fit. */
-      const base = Math.max(12, Math.round((only ? 1 : .55) * size));
+      /* from the boxes' height (one per text box): widths vary with proportional kana and moved the size line to line */
+      const tall = median(all.map(r => r[3])) || size, base = Math.max(12, Math.round((only ? 1 : .55) * tall));
       set(row, 'font-size', base + 'px'); set(row, 'line-height', '1.25');
+      /* 2026-11-16 (1.4.16 live: the row was 10px, its text 32px and over the SAVE/LOAD bar): the translation's own elements carry the
+         game style's size rule; inline, they take the row's size and line height */
+      for (const o of row.querySelectorAll('*')) { set(o, 'font-size', 'inherit'); set(o, 'line-height', 'inherit'); }
       /* not before the line is complete: during the game's typewriter only part of it is placed, and a translation of the
          whole line next to half a Japanese line does not match it */
       row.style.visibility = shown.filter(t => !t.classList.contains('megulit-unplaced')).length < shown.length * .85 ? 'hidden' : '';
@@ -361,7 +366,7 @@
       boxBottom = Math.max(boxBottom, y1);
       /* 2026-11-16 (1.4.16 recording: 「在公园悠闲地度过……」 on the SAVE/LOAD bar): the bottom is a hard limit, about one and a half
          Japanese rows above the client bottom where games keep their bars; under it the translation shrinks, never lower */
-      const limit = Math.min(B - size * 1.5, Math.max(Math.max(boxBottom, y1) + size * 1.6, y1 + size * 1.25));
+      const limit = Math.min(B - (median(all.map(r => r[3])) || size) * 1.3, Math.max(Math.max(boxBottom, y1) + size * 1.6, y1 + size * 1.25));
       const below = y1 + size * .2, room = limit - (only ? y0 : below);
       let rh = row.offsetHeight || base * 1.25;
       row.style.removeProperty('max-height'); row.style.removeProperty('overflow');

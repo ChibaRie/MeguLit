@@ -49,6 +49,10 @@ class OverlayPlacement {
       /* 2026-11-15 (沙耶の唄: MeguLit's Japanese drawn a few px off the game's own, unhidden line): the source says the game
          draws this line itself (not hidden yet, or never). The reader must not put its Japanese over it: it gets a
          `visible` note for this text and shows only the translation until the line is placed. */
+      /* 2026-11-16 (1.4.16 live, user: 切一次屏之后文字层就不见了 再点一下才出来): after a focus change the game repaints the line it
+         already showed hidden from its cached glyphs, and the repaint reports it as not hidden. That is the same line,
+         still hidden on screen: it stays placed. */
+      if (m.hidden !== true && this.current && !this.current.fallback && this.current.id === id && this.current.text === flat.join('')) return;
       if (m.hidden !== true) { if (this.current?.id === id) this.clear(); const vis = flat.join(''); if (vis && vis !== this.visibleKey) { this.visibleKey = vis; this.send({ type: 'textPlace', visible: true, text: vis }); } return; }
       this.visibleKey = '';
       this.emitLine({ id, engine: m.engine, text: flat.join(''), rects, client: this.client.slice() });
