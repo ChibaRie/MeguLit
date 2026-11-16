@@ -2,9 +2,12 @@
 
 <img src="docs/assets/logo.png" width="480" alt="MeguLit">
 
-<h3>Read the game, keep the game.</h3>
+<h3>Click any word in a Japanese visual novel to look it up — translation and furigana right beside the original</h3>
+<h3>在 Galgame 里点哪个词查哪个词，翻译和注音就在原文旁边</h3>
 
-在 Galgame 里读日语的小魔导书 ✦
+<sub>Reads text straight from the game — no OCR, no second window · 直接从游戏里读出原文，不用 OCR，不开第二个窗口</sub>
+
+<br><br>
 
 [![Website](https://img.shields.io/badge/website-megulit.com-e0a84b?style=flat-square)](https://megulit.com)
 [![Version](https://img.shields.io/github/v/release/ilynthn/MeguLit?style=flat-square&label=version&color=e0a84b)](https://github.com/ilynthn/MeguLit/releases/latest)
@@ -31,30 +34,33 @@
 
 # 简体中文
 
+## 它做什么
+
+你照常玩日文原版，MeguLit 在旁边帮你读
+
+- **点读**：直接点游戏里的词，读音、释义马上出来；拖一段查短语。点了不会推进剧情
+- **原文**：直接从游戏里读出正在显示的台词，不截图、不 OCR，字不会认错
+- **翻译和注音**：写在原文旁边，不盖住游戏画面。装过汉化补丁的话，直接用汉化组的译文，一句不等
+- **AI 讲解**：选中词或整句，让 AI 讲语法和语境
+- **声音**：有配音的句子播游戏原声，没配音的才用本地语音
+- **学习**：查过的词进生词本，一键做成带截图和原声的 Anki 卡片；零基础可以从五十音和语法课开始
+
+界面有简体中文、English、日本語。主要面向学日语的中文 / 英文用户，反过来用日语学中文或英文也可以
+
 <a id="zh-new"></a>
 
-## ✦ v1.2 新内容
+## 最近更新
 
 | | |
 |---|---|
-| **零延迟翻译** | 你装过的汉化补丁直接当译文用：日文原文 + 汉化组的翻译，一句不等。KiriKiri、BGI、Siglus、YU-RIS、Artemis、Ren'Py 等引擎，euphoria、WHITE ALBUM2、月姬、千恋＊万花都已实测；没有汉化的句子提前机翻 |
-| **日文原版恢复** | Steam 中文 / 英文版一键换回日文；也能直接选日文原版的压缩包、文件夹，甚至光盘镜像，MeguLit 自动对照替换，全部备份、一键还原 |
-| **内嵌替换更多游戏** | YU-RIS 通用内嵌，64 位 KiriKiri，整页文字的魔法使之夜逐行对齐原文 |
-| **省心** | 扫描范围跟着窗口和全屏自动调整 · 读到乱码一键重选文本流 · 中文版启动时直接告诉你怎么换成日文 |
-| **社区评价** | Steam 评论可选语言区，长评在 MeguLit 里直接展开全文 |
+| **内嵌显示** | 原文、注音、翻译直接画进游戏里，选项按钮也能内嵌。新支持 ファタモルガーナの館（海市蜃楼之馆）、沙耶の唄（沙耶之歌）HD、魔法使いの夜（魔法使之夜）整页、euphoria、穢翼のユースティア（秽翼的尤斯蒂娅）等 |
+| **游戏原声** | 有配音的句子一律播游戏自己的 CV：CLANNAD、千恋＊万花（千恋万花）、WHITE ALBUM2（白色相簿2）等；Anki 录音自动去掉背景音乐 |
+| **语法课** | 从 N5 一路到 N0（含 2025–2026 流行语），例句来自你读过的台词 |
+| **新首页和日报** | 首页重做，自己挑展示的作品；「日报」看 Galgame 新闻和每日热词 |
+| **零延迟翻译** | 你装过的汉化补丁直接当译文，KiriKiri、BGI、Siglus、YU-RIS、Artemis、Ren'Py 等引擎都能对上；没汉化的句子提前机翻 |
+| **日文原版恢复** | Steam 中文 / 英文版一键换回日文，也能用日文原版的压缩包、文件夹或光盘镜像对照替换，全部备份、一键还原 |
 
-> [!NOTE]
-> v1.1.0 和 v1.1.1 的自动更新有 bug：点「重启并更新」后打开的还是旧版本。请手动下载 v1.4.13 覆盖安装一次，从 v1.1.2 开始就能正常自动更新了
-
-<br>
-
-## 为什么做这个
-
-想靠 Galgame 学日语，可现有的工具都逼人二选一：要么玩原版，遇到生词就切出去查；要么在旁边外挂一个窗口，游戏里的原文照样显示，两份字叠在眼前
-
-MeguLit 想做的只有一件事：让你在游戏里直接读懂日语。原文、翻译、注音、查词、AI 讲解、生词本、Anki 复习，都在游戏旁边完成，不用来回切窗口
-
-界面有简体中文、English、日本語。主要面向学日语的中文 / 英文用户，反过来用日语学中文或英文也可以
+更早的更新见 [Releases](https://github.com/ilynthn/MeguLit/releases)
 
 <br>
 
@@ -96,12 +102,17 @@ MeguLit 想做的只有一件事：让你在游戏里直接读懂日语。原文
 
 ### 阅读层
 
-浮在游戏上面，不抢焦点，点它也不会让剧情往下走
+两种显示方式，都不抢焦点，点它也不会让剧情往下走
+
+- **内嵌**：原文、注音、翻译直接画进游戏的文本框位置，选项按钮也一样
+- **阅读层**：浮在游戏上面，内嵌不了的游戏用它
+
 
 - **点一下**查单词，**拖一段**查短语，离线词典
 - 注音优先用游戏自带的 ruby，没有再用词典和上下文
 - 翻译支持 DeepL、Bing、Google、Gemini、DeepSeek、Sakura、Ollama 和 OpenAI 兼容接口，密钥加密存在本地
 - 选中词或整句，让 AI 讲语法和语境
+- 有配音的句子播游戏原声，没配音的才用本地 TTS
 - 每部作品单独记字体、颜色和位置
 
 ### 历史
@@ -236,9 +247,9 @@ MeguLit 想做的只有一件事：让你在游戏里直接读懂日语。原文
 4. 点一部作品 →「启动游戏」，**用窗口模式玩**
 5. 零基础的话，先去 学习 → 五十音
 
-装过旧版：用新文件覆盖旧的 MeguLit 文件夹即可，组件和数据都保留
+之后每次启动会自动检查更新，只换程序文件，游戏库、学习记录和设置都保留
 
-需要 Windows 10 / 11 x64 和 Microsoft Edge WebView2 Runtime。本地翻译模型比较大，不在安装包里，需要时在设置里下载
+需要 Windows 10 / 11 x64 和 Microsoft Edge WebView2 Runtime
 
 <br>
 
@@ -251,16 +262,7 @@ MeguLit 想做的只有一件事：让你在游戏里直接读懂日语。原文
 
 <br>
 
-请把游戏切到**窗口模式**。全屏（独占全屏）现在有 bug：游戏会盖住其他所有窗口，阅读层没法稳定地画在游戏上面。窗口模式下效果最好，窗口拉大一点也没关系
-
-</details>
-
-<details>
-<summary><b>点「启动游戏」提示「无法检查游戏是否已运行」</b></summary>
-
-<br>
-
-v1.1.0 已经修复。旧版本在部分电脑上（多半是杀毒软件拦了进程查询）会这样，更新就好
+请把游戏切到**窗口模式**。独占全屏下游戏会盖住其他所有窗口，阅读层没法稳定地画在游戏上面。窗口拉大一点也没关系
 
 </details>
 
@@ -269,7 +271,7 @@ v1.1.0 已经修复。旧版本在部分电脑上（多半是杀毒软件拦了�
 
 <br>
 
-剧情必须是日文原文。汉化版先试试「工具 → 日文原版恢复」
+剧情必须是日文原文。汉化版先试试「工具 → 日文原版恢复」；乱码的话在 <kbd>Alt</kbd> + <kbd>T</kbd> 里重选文本流
 
 </details>
 
@@ -296,32 +298,39 @@ v1.1.0 已经修复。旧版本在部分电脑上（多半是杀毒软件拦了�
 
 <br>
 
-不同引擎差别很大。请在 [Issues](https://github.com/ilynthn/MeguLit/issues) 留下游戏名，最好附上 MeguLit 的 `logs` 文件夹
+不同引擎差别很大。请在「关于 → 一键上传问题反馈」告诉我们，或者在 [Issues](https://github.com/ilynthn/MeguLit/issues) 留下游戏名
 
 </details>
 
 <br>
 
+## 支持哪些游戏
+
+KiriKiri、YU-RIS、Artemis、BGI、Siglus、Ren'Py、Unity 等主流引擎都能读。每个引擎能做到哪一步（读原文、对汉化、内嵌），见 [引擎覆盖表](docs/engine-coverage.md)
+
+读不到的游戏请在 [Issues](https://github.com/ilynthn/MeguLit/issues) 留下游戏名
+
 ## 现在能做什么
 
 | 功能 | 状态 | 说明 |
 |---|:---:|---|
-| 抓取游戏文本 | ✅ | 基于 LunaHook，自动挑文本流，不对可以手动换 |
+| 抓取游戏文本 | ✅ | 基于 LunaHook 和自有读取器，自动挑文本流，不对可以手动换 |
+| 内嵌显示 | ✅ | 原文、注音、翻译画进游戏；选项按钮也支持 |
 | 阅读层 · 注音 · 点读 | ✅ | 游戏自带 ruby 优先；点读不推进剧情 |
+| 汉化补丁对照 | ✅ | 已装的汉化当译文，零延迟 |
 | 实时翻译 · AI 讲解 | ✅ | 多家翻译和大模型接口，密钥加密存在本地 |
+| 游戏原声 · 本地语音 | ✅ | 有配音播原声，没配音用本地 TTS |
 | 生词本 · Anki | ✅ | 单词、例句、回收站；制卡带截图和原声 |
 | 游戏库 · 启动器 | ✅ | 扫文件夹和 Steam，自动认日文原版 EXE |
-| 学习统计 | ✅ | 年 / 月 / 周 / 日，每块单独切换 |
+| 学习统计 · 等级段位 | ✅ | 年 / 月 / 周 / 日，每块单独切换 |
+| 五十音 · 语法课 | ✅ | 25 课五十音、三个小游戏；语法 N5–N0 |
 | 自动更新 · 备份恢复 | ✅ | 只换程序文件；备份恢复失败自动回滚 |
-| 五十音 | Beta | 25 课、五十音图、三个小游戏、学习手帐 |
-| 内嵌替换 | 实验中 | 部分引擎会报错甚至闪退 |
-| 本地模型与 TTS | 实验中 | 需要本地显卡环境 |
+| 本地翻译模型 | ✅ | 需要显卡，在设置里下载 |
 
 ## 接下来
 
 - [ ] **第四个假名小游戏：太鼓风节奏游戏**，随机用你装的 Galgame 的 BGM，检测 BPM 和鼓点，跟着节奏认假名
 - [ ] 五十音学习的英文、日文界面
-- [ ] 按引擎判断能不能安全内嵌；区分「重绘」和「真的又说了一遍」
 - [ ] 保住游戏原生 LOG 里的原文；开场、章节标题、独立字幕
 - [ ] 联网排行榜：阅读量、生词数、连续打卡天数
 - [ ] 更多学习语言，以及 Galgame 以外的游戏
@@ -350,21 +359,26 @@ GPL-3.0-or-later，见 [LICENSE](LICENSE)；第三方组件按各自许可证，
 
 # English
 
-**A small grimoire for reading Japanese inside visual novels.** Original text, translation, furigana, lookups, AI explanations, a word list and Anki review all happen next to the game, with no alt-tabbing.
+**You play the Japanese original. MeguLit reads along with you.**
 
-### New in v1.2
+- **Click to look up**: click any word in the game for its reading and meaning, drag for a phrase. Clicking never advances the story
+- **Original text**: read straight from the game, no screenshots or OCR, so no misread characters
+- **Translation and furigana**: drawn beside the original, never covering the picture. If you have a translation patch installed, its wording is used with zero delay
+- **AI explanations**: select a word or line and ask about grammar and context
+- **Voice**: voiced lines play the game's own voice; local speech only fills in unvoiced lines
+- **Learning**: looked-up words go to a word list and become Anki cards with a screenshot and the original audio; beginners can start with kana and grammar lessons
+
+### Recently
 
 | | |
 |---|---|
-| **Zero-latency translation** | A translation patch you already have becomes the translation: the Japanese original with the group's wording, no waiting. Tested on KiriKiri, BGI, Siglus, YU-RIS, Artemis and Ren'Py games such as euphoria, WHITE ALBUM2, Tsukihime and Senren＊Banka; untranslated lines are machine-translated ahead of time |
-| **Restore Japanese** | Switch Steam Chinese / English releases back to Japanese, or pick a Japanese release as an archive, folder or even a disc image; MeguLit swaps the files, backs everything up and undoes in one click |
-| **In-game replacement for more games** | Generic YU-RIS embedding, 64-bit KiriKiri, and full-page text in Witch on the Holy Night aligned line by line |
-| **Less fiddling** | The scan area follows the window and full screen · one click re-picks a garbled text stream · Chinese builds tell you how to switch to Japanese |
-| **Community reviews** | Steam reviews by language region; long reviews expand inside MeguLit |
+| **In-game display** | Original, furigana and translation drawn inside the game, choice buttons included. New: The House in Fata Morgana, The Song of Saya HD, Witch on the Holy Night (full page), euphoria, Eustia and more |
+| **The game's own voice** | Voiced lines always play the original cast (CLANNAD, Senren＊Banka, WHITE ALBUM2…); Anki recordings drop the music |
+| **Grammar lessons** | N5 to N0 (with 2025–2026 slang), examples taken from lines you have read |
+| **Translation patches as translation** | A patch you already have becomes the translation, no waiting; untranslated lines are machine-translated ahead of time |
+| **Restore Japanese** | Switch Steam Chinese / English releases back to Japanese, with backups and one-click undo |
 
-The updater in v1.1.0 and v1.1.1 reopens the old version, so download v1.1.2 by hand once; from v1.1.2 on it updates itself.
-
-From then on MeguLit checks for a new release on every start and downloads it in the background (or check by hand under About → Check for updates). Only program files are replaced.
+Supported engines and what works for each: [engine coverage](docs/engine-coverage.md)
 
 <table>
 <tr>
@@ -381,14 +395,14 @@ From then on MeguLit checks for a new release on every start and downloads it in
 
 1. Download `MeguLit-v1.4.13-win-x64.zip` (about 18 MB) from [Releases](https://github.com/ilynthn/MeguLit/releases/latest), unzip it and run `MeguLit.exe`
 2. Pick **Full** (about 565 MB, furigana dictionaries and the AivisSpeech voice engine) or **Lite** (about 107 MB)
-3. Choose your game folder, pick a game and press *Launch*. Press <kbd>Alt</kbd> + <kbd>T</kbd> for the overlay menu
+3. Choose your game folder, pick a game and press *Launch*. Play in **windowed mode**. Press <kbd>Alt</kbd> + <kbd>T</kbd> for the menu
 
-The game's story text must be the original Japanese. Needs Windows 10 / 11 x64 and the WebView2 Runtime.
+The game's story text must be the original Japanese. Needs Windows 10 / 11 x64 and the WebView2 Runtime. MeguLit updates itself; only program files are replaced.
 
 ### FAQ
 
-- **Translations cut off, or text on the desktop in fullscreen?** Play in **windowed mode**. Exclusive fullscreen has a bug where the overlay cannot stay on top of the game.
-- **"Could not check whether the game was running"?** Fixed in v1.1.0.
+- **Translations cut off, or text on the desktop in fullscreen?** Play in **windowed mode**. In exclusive fullscreen the overlay cannot stay on top of the game.
+- **Garbled text?** The story must be in Japanese. Otherwise re-pick the text stream from <kbd>Alt</kbd> + <kbd>T</kbd>.
 - **Does an update delete my data?** No. Only program files are replaced.
 
 GPL-3.0-or-later · [LICENSE](LICENSE) · [THIRD-PARTY.md](THIRD-PARTY.md)
@@ -401,19 +415,26 @@ GPL-3.0-or-later · [LICENSE](LICENSE) · [THIRD-PARTY.md](THIRD-PARTY.md)
 
 # 日本語
 
-**ギャルゲーの中で日本語を読むための小さな魔導書。**原文、翻訳、ふりがな、辞書、AI 解説、単語帳、Anki 復習を、ゲームの横で全部済ませられます
+**日本語の原版をそのまま遊び、MeguLit が横で読むのを手伝います**
 
-### v1.2 の新機能
+- **クリックで辞書**：ゲーム内の単語をクリックすると読みと意味がすぐ出ます。ドラッグでフレーズも。クリックしてもシナリオは進みません
+- **原文**：ゲームから直接テキストを取得。スクショも OCR も使わないので読み違いがありません
+- **翻訳とふりがな**：原文の横に表示し、画面を隠しません。翻訳パッチがあれば、その訳を待ち時間なしで使います
+- **AI 解説**：単語や一文を選んで文法やニュアンスを質問
+- **音声**：ボイス付きの文はゲーム本来のボイスを再生。ボイスのない文だけローカル音声で補います
+- **学習**：調べた単語は単語帳へ。スクショと原音付きの Anki カードも作れます。五十音と文法講座もあります
+
+### 最近の更新
 
 | | |
 |---|---|
-| **ゼロ遅延翻訳** | 手元の中国語パッチをそのまま訳文に。日本語原文と翻訳グループの訳が待ち時間なしで並びます。KiriKiri、BGI、Siglus、YU-RIS、Artemis、Ren'Py など、euphoria、WHITE ALBUM2、月姫、千恋＊万花で確認済み。訳のない文は先に機械翻訳 |
-| **日本語原版に戻す** | Steam の中国語 / 英語版を日本語に戻せます。日本語版の圧縮ファイル、フォルダ、ディスクイメージからも取り込み可能。すべてバックアップし、ワンクリックで元に戻せます |
-| **埋め込み対応の拡大** | YU-RIS の汎用埋め込み、64 bit KiriKiri、全画面テキストの魔法使いの夜を行ごとに原文へ合わせて表示 |
-| **手間いらず** | スキャン範囲がウィンドウと全画面に自動追従 · 文字化けしたらワンクリックでストリーム選び直し · 中国語版なら日本語への切り替え方を案内 |
-| **コミュニティレビュー** | Steam レビューを言語地域別に表示、長文はアプリ内で全文展開 |
+| **ゲーム内表示** | 原文・ふりがな・訳文をゲームの中に直接描画、選択肢にも対応。ファタモルガーナの館、沙耶の唄 HD、魔法使いの夜（全画面）、euphoria、穢翼のユースティアなどに新対応 |
+| **ゲームのボイス** | ボイス付きの文は必ず原作のキャストで再生（CLANNAD、千恋＊万花、WHITE ALBUM2 など）。Anki の録音は BGM を除去 |
+| **文法講座** | N5 から N0 まで（2025–2026 年の流行語も）。例文はあなたが読んだ台詞から |
+| **翻訳パッチをそのまま訳文に** | 手元の翻訳パッチの訳を待ち時間なしで表示。訳のない文は先に機械翻訳 |
+| **日本語原版に戻す** | Steam の中国語 / 英語版を日本語に戻せます。すべてバックアップし、ワンクリックで元に戻せます |
 
-v1.1.0 と v1.1.1 の自動更新には不具合があるため、今回だけ手動で v1.1.2 をダウンロードしてください。v1.1.2 からは自動で更新されます
+対応エンジンと機能ごとの対応状況：[エンジン対応表](docs/engine-coverage.md)
 
 <table>
 <tr>
@@ -426,14 +447,14 @@ v1.1.0 と v1.1.1 の自動更新には不具合があるため、今回だけ�
 
 1. [Releases](https://github.com/ilynthn/MeguLit/releases/latest) から `MeguLit-v1.4.13-win-x64.zip`（約 18 MB）をダウンロードして展開し、`MeguLit.exe` を起動
 2. 初回セットアップで **完全版**（約 565 MB）か **軽量版**（約 107 MB）を選択
-3. ゲームフォルダを選び、作品を選んで「ゲーム起動」。<kbd>Alt</kbd> + <kbd>T</kbd> でメニュー
+3. ゲームフォルダを選び、作品を選んで「ゲーム起動」。**ウィンドウモード**で遊んでください。<kbd>Alt</kbd> + <kbd>T</kbd> でメニュー
 
-シナリオ本文は日本語原文である必要があります。Windows 10 / 11 x64 と WebView2 Runtime が必要です
+シナリオ本文は日本語原文である必要があります。Windows 10 / 11 x64 と WebView2 Runtime が必要です。アップデートは自動で、プログラムだけを置き換えます
 
 ### よくある質問
 
-- **フルスクリーンで翻訳が欠ける・文字がデスクトップに出る**：**ウィンドウモード**で遊んでください。排他フルスクリーンには不具合があります
-- **「ゲームが起動中か確認できません」**：v1.1.0 で修正済みです
+- **フルスクリーンで翻訳が欠ける・文字がデスクトップに出る**：**ウィンドウモード**で遊んでください。排他フルスクリーンではオーバーレイを前面に保てません
+- **文字化けする**：本文が日本語か確認し、<kbd>Alt</kbd> + <kbd>T</kbd> からテキストストリームを選び直してください
 - **アップデートでデータは消える？**：消えません。プログラムだけを置き換えます
 
 GPL-3.0-or-later · [LICENSE](LICENSE) · [THIRD-PARTY.md](THIRD-PARTY.md)
