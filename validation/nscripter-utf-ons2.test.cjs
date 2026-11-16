@@ -19,6 +19,6 @@ test('pscript.dat is UTF-8 under XOR 0x84',()=>{const d=tmp();const b=Buffer.fro
 test('ONS2 *.file (onscripter-ru) is decoded; default.file wins over ru.file',()=>{const d=tmp();
  fs.writeFileSync(path.join(d,'ru.file'),ons2Encode(JA.replace(/医者は/g,'врач ').replace(/[ぁ-ゖァ-ヺ]/g,'')));fs.writeFileSync(path.join(d,'default.file'),ons2Encode(JA));
  assert.ok(path.basename(ns.sources(d)[0])==='default.file');assert.ok(kana(read(d).lines)>=2);});
-test('a Chinese NScripter build is reported ok, not not-japanese',()=>{const {classify}=require('../services/adapter-probe-core.cjs');
- const r=classify({engines:[{id:'nscripter',lines:1000,japaneseLines:29,hanLines:900}],inventory:{archives:[]}});assert.strictEqual(r.step,'ok');
- assert.strictEqual(classify({engines:[{id:'x',lines:1000,japaneseLines:29,hanLines:0}],inventory:{archives:[]}}).step,'not-japanese');});
+test('a Chinese NScripter build is reported chinese-build, not not-japanese',()=>{const {classify}=require('../services/adapter-probe-core.cjs');
+ const r=classify({engines:[{id:'nscripter',lines:1000,japaneseLines:29,chineseLines:900}],inventory:{archives:[]}});assert.strictEqual(r.step,'chinese-build');
+ assert.strictEqual(classify({engines:[{id:'x',lines:1000,japaneseLines:29,chineseLines:0}],inventory:{archives:[]}}).step,'not-japanese');});
