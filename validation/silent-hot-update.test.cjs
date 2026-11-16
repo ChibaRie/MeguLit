@@ -156,3 +156,13 @@ test('silent: hot-done note strings exist in zh, ja and en',()=>{
  const s=fs.readFileSync(path.join(__dirname,'..','web','update-notice.js'),'utf8');
  for(const key of ['hotDone:','hotDoneMore:','hotDoneClose:','hotDoneNone:'])assert.equal(s.split(key).length-1,3,key);
 });
+
+test('consent: undecided → card at every start (no update, offline too); agreed or declined → no card',async()=>{
+ const {checkForUpdates}=await notice();
+ const run=async(consent,check)=>{let shown=0;await checkForUpdates({api:async a=>a==='contrib_consent'?consent:check(),invoke:async()=>{},version:'1.5.1',show:()=>{shown++;},silent:()=>{}});return shown;};
+ const none=()=>({newer:false}),off=()=>{throw new Error('offline');};
+ for(let i=0;i<3;i++)assert.equal(await run({ask:true,decided:false},none),1,'undecided: every start shows the card');
+ assert.equal(await run({ask:true,decided:false},off),1,'undecided: shown offline too');
+ assert.equal(await run({ask:false,decided:true,enabled:true},none),0,'agreed: no card');
+ assert.equal(await run({ask:false,decided:true,enabled:false},none),0,'declined: no card');
+});
