@@ -64,3 +64,8 @@ test('E542 fit: loaded in the reader, only for the bound dialogue window, reset 
  assert.match(src,/m\.hookSource!==line\)\{line=m\.hookSource;reset\(\);/);
  assert.doesNotMatch(src,/background:/,'nothing is drawn over the game');
 });
+test('2026-11-16 (user: 不要自动调日文字体大小): the fit never scales the Japanese, only the translation',()=>{
+ const s=require('fs').readFileSync(require('path').join(__dirname,'../web/reader/modules/game-fit.js'),'utf8');
+ assert.doesNotMatch(s,/\.sentence-text\{font-size:calc\([^)]*--megulit-fit/);
+ assert.match(s,/\.tomoyo-cn-output\{font-size:calc\(var\(--tomoyo-gal-cn-size,24px\) \* var\(--megulit-fit,1\)\)/);
+});

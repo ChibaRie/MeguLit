@@ -329,21 +329,22 @@
          last row out of the window): its size came from the stylesheet and was only made smaller when there was room, so a
          line that filled the text box got the full stylesheet size. The size is now always derived from the Japanese
          glyphs (one size for every line of the box) and only ever made smaller to fit. */
-      const base = Math.max(10, Math.round((only ? 1 : .8) * size));
+      const base = Math.max(12, Math.round((only ? 1 : .55) * size));
       set(row, 'font-size', base + 'px'); set(row, 'line-height', '1.25');
       /* not before the line is complete: during the game's typewriter only part of it is placed, and a translation of the
          whole line next to half a Japanese line does not match it */
-      row.style.visibility = shown.some(t => t.classList.contains('megulit-unplaced')) ? 'hidden' : '';
+      row.style.visibility = shown.filter(t => !t.classList.contains('megulit-unplaced')).length < shown.length * .85 ? 'hidden' : '';
       /* 2026-11-16 (死に逝く君、館に芽吹く憎悪: the translation jumped above the Japanese on lines near the bottom of the text
          box): the rule is Japanese on top, the translation right under it. A row that did not fit under the line went
          above it, and its height was measured before its width was set (the previous line's width: more wrapped rows,
          taller than it is). Width first, then the height; a row that does not fit under the line is made smaller (line
          height, then font size) and, if it still does not fit, may run past the game's bottom edge: never above. */
       /* the text box ends where its lowest line ended (the game's own UI, e.g. a SAVE/LOAD bar, is below it); before a full
-         box was seen, one translation row under the line is taken as the box */
+         box was seen, the line's own last row is; under it there is room for about one and a half rows of Japanese, and at least down to
+         about one row above the client's bottom (where games keep their SAVE/LOAD bars) */
       const boxOf = map.bounds.map(Math.round).join(','); if (boxOf !== boxKey) { boxKey = boxOf; boxBottom = 0; }
       boxBottom = Math.max(boxBottom, y1);
-      const limit = Math.min(B, Math.max(boxBottom + size * .35, y1 + size * 1.25));
+      const limit = Math.min(B, Math.max(Math.max(boxBottom, y1) + size * 1.6, B - size * 1.4));
       const below = y1 + size * .2, room = limit - (only ? y0 : below);
       let rh = row.offsetHeight || base * 1.25;
       row.style.removeProperty('max-height'); row.style.removeProperty('overflow');

@@ -26,7 +26,8 @@
   if(!b){d.addEventListener('DOMContentLoaded',()=>install(w),{once:true});return;}
   if(b.gameFit)return;
   const css=d.createElement('style');css.id='megulit-game-fit-style';
-  css.textContent='html body.tomoyo-gal-bound.megulit-fit-on .sentence-window:not(.tome-island-page) .sentence-text{font-size:calc(var(--tomoyo-gal-jp-size,26px) * var(--megulit-fit,1))!important}'+
+  /* 2026-11-16 (user: 不要自动调日文字体大小): the Japanese keeps its size; only the translation is made smaller */
+  css.textContent=
    'html body.tomoyo-gal-bound.megulit-fit-on .sentence-window:not(.tome-island-page) .tomoyo-cn-output{font-size:calc(var(--tomoyo-gal-cn-size,24px) * var(--megulit-fit,1))!important}'+
    'html body.tomoyo-gal-bound.megulit-fit-up .sentence-window:not(.tome-island-page){top:calc(var(--tomoyo-reader-y,0px) + var(--megulit-fit-shift,0px))!important}'+
    'html body.tomoyo-gal-bound.megulit-fit-room .sentence-window:not(.tome-island-page) .tomoyo-cn-output{max-height:var(--megulit-fit-room,4em)!important;overflow-y:auto!important;overscroll-behavior:contain}';

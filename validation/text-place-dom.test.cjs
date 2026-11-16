@@ -96,10 +96,10 @@ const html = `<!doctype html><html><head><meta charset="utf-8"><style>
       await page.evaluate(() => { window.__tomoyoChinese.textPlaceMode({ on: false }); window.__tomoyoChinese.textPlaceMode({ on: true }); });
       await put(3, '短'); await frame(); const big = await rowFs();
       await put(1, '今天是晴天'); await frame(); const one = await rowFs();
-      assert.ok(one <= 32 && one >= 20, 'size from the Japanese glyphs, not the stylesheet (' + one + ')');
+      assert.ok(one <= 24 && one >= 14, 'size from the Japanese glyphs, not the stylesheet (' + one + ')');
       await put(3, '衣服破破烂烂，皮肤上满是擦伤，连续走了好几个小时的双腿已经开始失去知觉。'.repeat(3)); await frame();
       const [, t3, , h3] = await box('.tomoyo-cn-row'); assert.ok(await rowFs() <= one, 'a long translation is only ever made smaller');
-      assert.ok(t3 + h3 <= 512 + 32 * 1.25 + 2, 'inside the text box, not over the UI under it (bottom ' + (t3 + h3) + ')');
+      assert.ok(t3 + h3 <= Math.max(512 + 32 * 1.6, 720 - 32 * 1.4) + 2, 'inside the text box, not over the UI under it (bottom ' + (t3 + h3) + ')');
       await put(1, '今天是晴天'); await frame(); assert.strictEqual(await rowFs(), one, 'the next short line has the same size again');
       assert.ok(big >= one, 'size never grows past the box size');
       await page.evaluate(() => window.__tomoyoChinese.textPlace({ text: '今日は晴れ', client: [1280, 720], rects: [[100, 400, 32, 32], [132, 400, 32, 32], null, null, null] })); await frame();
