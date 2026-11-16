@@ -14,6 +14,12 @@ $taskProblems = New-Object System.Collections.Generic.List[string]
 function Resolve-First([string[]]$candidates) { foreach ($c in $candidates) { if ($c -and (Test-Path -LiteralPath $c)) { return (Resolve-Path -LiteralPath $c).Path } } return $null }
 
 $taskTools = $(if ($env:MEGULIT_BUILD_TOOLS) { $env:MEGULIT_BUILD_TOOLS } else { Join-Path (Split-Path $taskRoot) 'build-tools' })
+# A git worktree usually lives elsewhere (e.g. H:\...\wt\x): fall back to the build-tools folder next to the main checkout
+if (-not $env:MEGULIT_BUILD_TOOLS -and -not (Test-Path -LiteralPath $taskTools)) {
+ $taskCommon = $null
+ try { $taskCommon = (& git -C $taskRoot rev-parse --path-format=absolute --git-common-dir 2>$null) } catch {}
+ if ($taskCommon) { $taskMainTools = Join-Path (Split-Path (Split-Path $taskCommon)) 'build-tools'; if (Test-Path -LiteralPath $taskMainTools) { $taskTools = $taskMainTools } }
+}
 $taskLocalTools = Test-Path -LiteralPath (Join-Path $taskTools 'rustup\toolchains\stable-x86_64-pc-windows-msvc\bin\rustc.exe')
 
 # Rust
