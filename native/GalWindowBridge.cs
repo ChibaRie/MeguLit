@@ -631,7 +631,7 @@ public class GalWindowBridge {
         // The game's own popups (IME candidate list, dialogs) belong to its process but not to its window tree: the IME
         // list of a Chinese input method used to hide the whole reading layer as "fg=other" in Subahibi.
         uint fgPid=0,gamePid=0;GetWindowThreadProcessId(GetForegroundWindow(),out fgPid);GetWindowThreadProcessId(Target,out gamePid);bool gameOwned=fg==gameRoot||(fgPid!=0&&(fgPid==gamePid||ImeHost(ProcessName(fgPid))));
-        bool homeOwned=PreferredOverlay!=IntPtr.Zero&&fgPid==(uint)OverlayPid&&fg!=overlayRoot;bool contextActive=gameOwned||fg==overlayRoot||homeOwned;bool visible=ReadingVisible(contextActive||menuPinned,IsIconic(Target),IsIconic(Overlay),CoverEnabled,DialogVisible,MenuOpen&&MenuRegionReady);
+        bool homeOwned=PreferredOverlay!=IntPtr.Zero&&fgPid==(uint)OverlayPid&&fg!=overlayRoot;bool contextActive=gameOwned||fg==overlayRoot||homeOwned;bool visible=ReadingVisible(contextActive||menuPinned,IsIconic(Target),IsIconic(Overlay),CoverEnabled,DialogVisible,MenuOpen);/* 2026-11-16 #299 (Strawberry Nauts: the Alt+T menu vanished as it opened): an open menu keeps the layer up from the first tick, before its hit region is reported, whatever the engine's dialogue flag does */
         if(!contextActive)MenuFocusPending=false;
         // Another application in front: never topmost, also with the menu open (it stays visible, just above the game;
         // KeepAboveGame keeps it there). Topmost over everything after Alt+Tab was wrong (user, 2026-11-03).
