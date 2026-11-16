@@ -48,9 +48,12 @@ async function live(env,now){
  const inflight=(await all(env,"SELECT f.title title, f.size size, f.parts parts, COUNT(p.part) got, COALESCE(SUM(p.size),0) bytes, f.updated_at at FROM probe_full f LEFT JOIN probe_full_parts p ON p.identity=f.identity WHERE f.state='uploading' GROUP BY f.identity ORDER BY f.updated_at DESC LIMIT 5"))
   .map(r=>({title:String(r.title||'?').slice(0,60),mb:mb(r.size),parts:r.parts|0,got:r.got|0,pct:r.size?Math.min(100,Math.round((r.bytes||0)/r.size*100)):0,at:r.at|0}));
  const apps=(await all(env,"SELECT app, COUNT(*) n FROM probe_full GROUP BY app ORDER BY n DESC LIMIT 5")).map(r=>({app:String(r.app||'?').slice(0,24)||'?',n:r.n|0}));
+ /* what players are reading lately (leaderboard game rows, opted-in players only) */
+ const playing=(await all(env,'SELECT MAX(title) title, COUNT(*) readers, COALESCE(SUM(characters),0) characters, COALESCE(SUM(seconds),0) seconds, MAX(updated_at) at FROM leaderboard_games WHERE updated_at>? GROUP BY game_key ORDER BY at DESC LIMIT 10',t-7*86400))
+  .map(r=>({title:String(r.title||'').slice(0,80),readers:r.readers|0,characters:Number(r.characters)||0,seconds:Number(r.seconds)||0,at:r.at|0}));
  return {ok:true,now:t,online,active1h,today,probedGames:pg.games|0,reporters:pg.reporters|0,
   full:{minMB:mb(fx.mn),maxMB:mb(fx.mx),reporters:fx.rep|0,d1:fx.d1|0,d7:fx.d7|0,expiring:fx.expiring|0,oldestAt:fx.oldest|0,vndb:fx.vndb|0,inflight,apps,lastAt:recent.length?recent[0].at:0,games:pf.games|0,ready:pf.ready|0,uploading:pf.uploading|0,done:pf.done|0,storedMB:Math.round((pf.bytes|0)/1048576*10)/10,limitMB:8192},
-  probeStates:pstates,vndbMatched:pv.vndb|0,issues:pv.issues|0,recent,steps,top:top.sort((a,c)=>c.reporters-a.reporters).slice(0,24)};}
+  probeStates:pstates,vndbMatched:pv.vndb|0,issues:pv.issues|0,playing,recent,steps,top:top.sort((a,c)=>c.reporters-a.reporters).slice(0,24)};}
 
 /* everything else the relay can count, aggregate only */
 async function wide(env,now){
