@@ -16,6 +16,7 @@ public sealed class GameWaitMarker:IDisposable{
  // Set while the reading layer is auto-hidden (no dialogue): keep reporting presence so the layer can come back when
  // the dialogue box (and its marker) returns, but put no patch on the game.
  public bool ProbeOnly;
+ public void ResetPresence(){Present=null;SeenStreak=MissStreak=0;}
  // Diagnostics: a short status line when the state changes, and an occasional copy of the scan area in logs\.
  string LastStatus="";DateTime LastStatusAt=DateTime.MinValue,LastFoundAt=DateTime.MinValue,LastDumpAt=DateTime.MinValue,BoundAt=DateTime.MinValue;
  public GameWaitMarker(Action<object> emit){Emit=emit;}

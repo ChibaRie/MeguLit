@@ -22,6 +22,8 @@ class Immersion{
  // CS2 re-sends the current line's text several times per line and again on redraws: only a different line counts as
  // a new line, or a repeat would cancel every pending hide (OP, CG) right after the sprite went off.
  input(){this.inputAt=this.now();}
+ // A game may stop drawing its waiting marker while unfocused or under our menu; that is not a hidden dialogue box.
+ context(active){if(typeof active!=='boolean'||active===this.contextActive)return;this.contextActive=active;this.markerPresent=false;this.markerSeen=false;this.markerGoneAt=0;this.drawnAt=0;this.inputAt=null;if(this.pending&&!['engine','hook'].includes(this.pending.source))this.pending=null;}
  /* Issue 127 (user: with blurred translations, hovering back and forth over them sometimes lost the subtitles). The pointer on
     MeguLit's own text means the line is being read: a marker that left meanwhile (many engines drop it while the pointer
     moves) does not hide the layer, and a marker hide already in place is lifted. */
@@ -46,7 +48,7 @@ class Immersion{
  reveal(text,typing){if(text!==this.currentText||typeof typing!=='boolean')return;this.typing=typing;if(typing){this.markerSeen=false;this.markerGoneAt=0;this.drawnAt=0;}else this.lineReadyAt=Math.min(this.lineReadyAt,this.now());}
  /* E411 (user, WoH: the layer kept hiding by itself). A full-screen page has no dialogue box to see: the visual box edge
     and the auto box never hide it. */
- evidence(visible,source){if(!this.enabled||visible&&(this.sceneHidden||this.skipAt!=null))return;if(!visible&&this.isFlow()&&(source==='visual'||source==='auto'))return;if(this.engineLive()&&source!=='engine')return;if(visible){this.pending=null;this.set(true);}else if(!this.pending||this.pending.source!==source)this.pending={at:this.now(),source};}
+ evidence(visible,source){if(this.contextActive===false&&!['engine','hook'].includes(source))return;if(!this.enabled||visible&&(this.sceneHidden||this.skipAt!=null))return;if(!visible&&this.isFlow()&&(source==='visual'||source==='auto'))return;if(this.engineLive()&&source!=='engine')return;if(visible){this.pending=null;this.set(true);}else if(!this.pending||this.pending.source!==source)this.pending={at:this.now(),source};}
  // A marker that comes back after a marker-based hide means the same line's dialogue box is back (window restored
  // after Hide W., a menu or the backlog closed): show the layer again instead of waiting for the next line.
  // The engine signal covers only the window it watches (ISLAND: the narration page). Lines drawn elsewhere (ADV box,
@@ -54,9 +56,9 @@ class Immersion{
  engineLive(){return this.engineSignal!=null&&(this.engineAt||0)>=this.lineAt-1500;}
  engine(visible,engine){if(!/^[a-z][a-z0-9_-]{1,40}$/i.test(engine||'')||typeof visible!=='boolean')return;this.engineAt=this.now();this.engineSignal=visible;/* 2026-11-12 (user: our text must do what the game's does) when the engine itself shows or hides its text window, so do our lines, whatever the immersion setting */if(!this.enabled){this.set(visible,visible?'':'engine');return;}if(visible){this.drawn();if(this.sceneHidden||this.skipAt!=null)return;this.pending=null;if(this.visible)this.set(true);else if(!this.resumeAt)this.resumeAt=this.now()+150;}else{this.resumeAt=0;this.evidence(false,'engine');}}
  // E263: the auto-calibrated box probe (any game, no setup). A visible wait marker or an engine signal wins.
- autoBox(visible){if(!this.enabled||typeof visible!=='boolean'||this.engineLive()||this.isFlow())return;if(visible){this.drawn();if(this.hiddenByAuto){this.hiddenByAuto=false;if(!this.sceneHidden&&this.skipAt==null)this.set(true);}if(this.pending?.source==='auto')this.pending=null;return;}if(this.typing||this.present())return;this.hiddenByAuto=true;this.evidence(false,'auto');}
- marker(present){if(this.engineLive())return;this.markerPresent=!!present;if(present)this.drawn();if(this.typing||this.now()<this.lineReadyAt)return;if(present){this.markerSeen=true;if(this.hiddenByMarker&&this.enabled&&this.mode==='marker'&&!this.sceneHidden&&this.skipAt==null){this.hiddenByMarker=false;this.set(true);}}else if(this.markerSeen)this.markerGoneAt=this.now();}
- markerDrawn(){this.drawn();if(this.engineLive()||this.typing||this.now()<this.lineReadyAt)return;this.drawnAt=this.now();this.markerSeen=true;}
+ autoBox(visible){if(this.contextActive===false||!this.enabled||typeof visible!=='boolean'||this.engineLive()||this.isFlow())return;if(visible){this.drawn();if(this.hiddenByAuto){this.hiddenByAuto=false;if(!this.sceneHidden&&this.skipAt==null)this.set(true);}if(this.pending?.source==='auto')this.pending=null;return;}if(this.typing||this.present())return;this.hiddenByAuto=true;this.evidence(false,'auto');}
+ marker(present){if(this.contextActive===false||this.engineLive())return;this.markerPresent=!!present;if(present)this.drawn();if(this.typing||this.now()<this.lineReadyAt)return;if(present){this.markerSeen=true;if(this.hiddenByMarker&&this.enabled&&this.mode==='marker'&&!this.sceneHidden&&this.skipAt==null){this.hiddenByMarker=false;this.set(true);}}else if(this.markerSeen)this.markerGoneAt=this.now();}
+ markerDrawn(){if(this.contextActive===false)return;this.drawn();if(this.engineLive()||this.typing||this.now()<this.lineReadyAt)return;this.drawnAt=this.now();this.markerSeen=true;}
  present(){return this.markerPresent||this.now()-this.drawnAt<1500;}
  tick(){
   if(!this.enabled)return;
@@ -66,7 +68,7 @@ class Immersion{
   // A show precedes a new line. Let its confirmed source replace the old page before restoring the layer.
   if(this.resumeAt&&this.now()>=this.resumeAt){this.resumeAt=0;this.set(true);}
   if(this.pending&&this.now()-this.pending.at>=(this.pending.source==='engine'?600:350)){const why=this.pending.source;this.pending=null;this.set(false,why);return;}
-  if(this.engineLive())return;
+  if(this.engineLive()||this.contextActive===false)return;
   /* E411: on a full-screen page the wait marker leaves at every click while the page's text stays (reader log: "marker"
      hides every few seconds); its absence is no sign that the text is gone. Skip and the page's own lines still decide. */
   if(this.isFlow())return;

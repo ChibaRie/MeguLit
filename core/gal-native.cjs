@@ -30,7 +30,7 @@ class GalNative {
     createInterface({ input: this.process.stdout }).on('line', line => {
       if(this.stopped)return;let message; try { message = JSON.parse(line); } catch { return; }
       if(message.type==='hookVisual'){this.controller.visual(message);return;}
-      if(message.type==='readerPointer'||message.type==='hostFrame'){this.onEvent(message);return;}
+      if(message.type==='readerPointer'||message.type==='hostFrame'||message.type==='readerContext'){this.onEvent(message);return;}
       if(message.type==='sceneShot'){const pending=this.mediaPending?.get('s'+message.id);if(pending){this.mediaPending.delete('s'+message.id);pending(message);}return;}
       if(message.type==='rawFrame'){const pending=this.mediaPending?.get('r'+message.id);if(pending){this.mediaPending.delete('r'+message.id);pending(message);}return;}if(message.type==='sceneFrame'||message.type==='sceneProbe'){const key=(message.type==='sceneFrame'?'f':'p')+message.id,pending=this.mediaPending?.get(key);if(pending){this.mediaPending.delete(key);pending(message);}return;}
       if(message.type==='mediaClip'){const pending=this.mediaPending?.get(String(message.id));if(pending){this.mediaPending.delete(String(message.id));pending(message);}return;}
