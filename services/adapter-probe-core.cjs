@@ -20,7 +20,7 @@ const {maskString}=require('./desensitize.cjs');
 /* Known archive magics (format names only; the bytes that follow are never kept). */
 const MAGICS=[['xp3','58503333'.slice(0,6)],['xp3','5850330d0a'],['pfs-pf8','706638'],['pfs-pf6','706636'],['bgi-arc20','4255524b4f20415243'],['bgi-packfile','5061636b46696c6520'],['ypf','59504600'],['kcap','4b434150'],['npk2','4e504b32'],['npa','4e504100'],
  ['iga','49474130'],['mpk','4d504b00'],['cpk','43504b20'],['afs','41465300'],['psb','50534200'],['mdf','6d646600'],['zip','504b0304'],['rar','52617221'],['7z','377abcaf'],['unityfs','556e69747946532000'],['wolf','574f4c46'],
- ['ain','56455253'],['ai2','41493200'],['gpk','47504b'],['lpk','4c504b'],['ykc','594b433030'],['dxa','4458'],['pac-nep','5041430000'],['arc-advhd','41524332'],['cat2-int','4b494600'],['ogg','4f676753'],['png','89504e47'],['riff','52494646']];
+ ['ain','56455253'],['aar','41415200'],['afa','41464148'],['alk','414c4b30'],['qnt','514e5400'],['ai2','41493200'],['gpk','47504b'],['lpk','4c504b'],['ykc','594b433030'],['dxa','4458'],['pac-nep','5041430000'],['arc-advhd','41524332'],['cat2-int','4b494600'],['ogg','4f676753'],['png','89504e47'],['riff','52494646']];
 const ARCHIVE=/\.(xp3|pfs|pf8|arc|pac|pak|dat|ypf|int|mpk|nsa|sar|ns2|gpk|ykc|lpk|mrg|fpk|afs|vfs|dxa|bin|cpz|hxp|lib|lac|pck|epk|vff|isa|nnk|ar2|psb|npk|npa|iga|cpk|wolf|ain|dbs|wad|assets|bundle)$/i;
 /* anything else of some size near the top of the game folder may be an archive in a format no reader knows */
 const NOT_ARCHIVE=/\.(exe|dll|ini|cfg|log|url|html?|pdf|ico|png|jpe?g|bmp|gif|webp|ogg|wav|mp3|m4a|flac|opus|mp4|webm|avi|wmv|mpe?g|mkv|ttf|otf|ttc|fon|xml|md|bat|cmd|lnk|sav|sys|reg|manifest|config|txt|ks|tjs|json|rpy|rpyc|lua|cs|js|css|vdf|acf|dmp)$/i;
@@ -72,7 +72,7 @@ function classify({engines,inventory:inv,unsupported,preparing}){
  if(preparing==='capture')return {step:'decrypt-failed',detail:'encrypted-archive',detected:null};
  const opened=engines.find(e=>e.scenes>0);if(opened)return {step:'parse-failed',detail:opened.id,detected:null};
  const errored=engines.find(e=>e.error&&e.error!=='BUDGET');if(errored)return {step:'parse-failed',detail:errored.id+':'+errored.error,detected:null};
- const unknown=inv.archives.filter(a=>!['ogg','png','riff','zip'].includes(a.format));if(unknown.length)return {step:'unknown-pack',detail:unknown[0].format||'magic:'+unknown[0].magic.slice(0,8),detected:null};
+ const unknown=inv.archives.filter(a=>!['ogg','png','riff','zip','aar','afa','alk','qnt'].includes(a.format));if(unknown.length)return {step:'unknown-pack',detail:unknown[0].format||'magic:'+unknown[0].magic.slice(0,8),detected:null};
  if(inv.scripts)return {step:'parse-failed',detail:'loose-scripts',detected:null};
  return {step:'no-script',detail:'',detected:null};}
 

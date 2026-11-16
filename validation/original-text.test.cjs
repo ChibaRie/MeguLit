@@ -3,7 +3,7 @@
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),os=require('node:os'),zlib=require('node:zlib');
 const ot=require('../services/original-text.cjs');
 function ain(lines,encoding,functions=['main','scene'],table1=false){
- const encode=encoding==='gbk'?gbk:sjis;
+ const encode=encoding==='gbk'?gbk:encoding==='utf8'?(t=>Buffer.from(t,'utf8')):sjis;
  const table=(tag,items)=>{const n=Buffer.alloc(4);n.writeUInt32LE(items.length);return Buffer.concat([Buffer.from(tag,'latin1'),n,...items.flatMap(b=>[b,Buffer.from([0])])]);};
  const vers=Buffer.alloc(8);vers.write('VERS',0,'latin1');vers.writeUInt32LE(6,4);
  const msg1=items=>{const head=Buffer.alloc(12);head.write('MSG1',0,'latin1');head.writeUInt32LE(items.length,4);return Buffer.concat([head,...items.flatMap(b=>{const len=Buffer.alloc(4);len.writeUInt32LE(b.length);const x=Buffer.from(b);for(let k=0;k<x.length;k++)x[k]=(x[k]+k+0x60)&255;return [len,x];})]);};
@@ -96,3 +96,21 @@ test('MT19937-encrypted AIN files decrypt and read; a stray tag in the code is s
  const plain=Buffer.concat([body.subarray(0,8),code,body.subarray(8)]);
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'megulit-ainx-'));fs.writeFileSync(path.join(dir,'x.ain'),ot._ain.mtXor(plain,0x5D3E3));
  const r=ot.readAin(path.join(dir,'x.ain'));assert.equal(r.version,6);assert.deepEqual(r.lines,original);fs.rmSync(dir,{recursive:true,force:true});});
+
+test('UTF-8 AIN tables of newer System4 titles read as Japanese, and a System 3.9 AINI beside does not hide the real .ain',()=>{
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'megulit-s4u8-'));fs.writeFileSync(path.join(dir,'Game.ain'),ain(original,'utf8'));
+ const r=ot.readAin(path.join(dir,'Game.ain'));assert.equal(r.codepage,'utf-8');assert.deepEqual(r.lines,original);
+ const zh=path.join(dir,'zh');fs.mkdirSync(zh);fs.writeFileSync(path.join(zh,'a.ain'),Buffer.from('AINI    xxxxxxxx'));fs.writeFileSync(path.join(zh,'b.ain'),ain(original,'sjis'));fs.writeFileSync(path.join(zh,'c.ain'),ain(patched,'gbk'));
+ assert.ok(ot.ADAPTERS.system4.locate(zh,'Other')?.target.endsWith('b.ain')||ot.ADAPTERS.system4.locate(zh,'Other')?.target.endsWith('c.ain'));
+ assert.equal(ot.readAin(path.join(zh,'b.ain')).codepage,'shift_jis');assert.equal(ot.readAin(path.join(zh,'c.ain')).codepage,'gbk');fs.rmSync(dir,{recursive:true,force:true});});
+test('AAR archives (v0 raw/ZLB, v2 obfuscated names + symlink) list and extract',()=>{
+ const {listAar,readAarEntry}=require('../services/original-engines/alicesoft.cjs'),dir=fs.mkdtempSync(path.join(os.tmpdir(),'megulit-aar-'));
+ for(const ver of [0,2]){const key=ver>=2?0x60:0,payload=Buffer.from('ハロー世界'),z=zlib.deflateSync(payload),zlb=Buffer.alloc(16);zlb.write('ZLB ',0,'latin1');zlb.writeUInt32LE(payload.length,8);zlb.writeUInt32LE(z.length,12);
+  const files=[['a.txt',Buffer.from('plain'),0],['b/c.bin',Buffer.concat([zlb,z]),1],...(ver>=2?[['link.txt',Buffer.alloc(0),2,'a.txt']]:[])];
+  const nm=t=>Buffer.concat([Buffer.from([...Buffer.from(t)].map(x=>(x+key)&255)),Buffer.from([0])]);
+  const ents=files.map(f=>({f,idx:Buffer.concat([Buffer.alloc(12),nm(f[0]),...(ver>=2?[nm(f[3]||'')]:[])])}));const first=12+ents.reduce((n,e)=>n+e.idx.length,0);let off=first;
+  for(const e of ents){e.idx.writeUInt32LE(e.f[2]===2?0:off,0);e.idx.writeUInt32LE(e.f[1].length,4);e.idx.writeUInt32LE(e.f[2],8);if(e.f[2]!==2)off+=e.f[1].length;}
+  const head=Buffer.alloc(12);head.write('AAR ',0,'latin1');head.writeUInt32LE(ver,4);head.writeUInt32LE(files.length,8);const first4=Buffer.alloc(4);first4.writeUInt32LE(first);
+  const file=path.join(dir,'t'+ver+'.red');fs.writeFileSync(file,Buffer.concat([head,...ents.map(e=>e.idx),...files.filter(f=>f[2]!==2).map(f=>f[1])]));
+  const l=listAar(file);assert.equal(l.length,files.length);assert.equal(l[1].name,'b/c.bin');assert.equal(readAarEntry(file,l[0]).toString(),'plain');assert.equal(readAarEntry(file,l[1]).toString(),'ハロー世界');if(ver>=2)assert.equal(l[2].link,'a.txt');}
+ fs.rmSync(dir,{recursive:true,force:true});});
