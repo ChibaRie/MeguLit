@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 /* 2026-11-16 beta live-usage dashboard served by the relay (GET /dashboard). Polls /api/probe/stats on both relay nodes
    (CORS open) every 15 s, shows the first answer and each node's latency. Phone: https://cn-api.megulit.com/dashboard.
-   Operator console (btop/htop/tmux idiom), black + red. */
+   Operator console (btop/htop/tmux idiom), black + red, LED dot-matrix live counter. */
 export const DASHBOARD_HTML=String.raw`<!doctype html>
 <html lang="zh">
 <head>
@@ -50,7 +50,7 @@ body{background:var(--bg);color:var(--fg);font-family:var(--mono);font-size:13px
 
 /* online */
 .on-row{display:flex;align-items:flex-end;gap:18px;flex-wrap:wrap}
-.big{margin:0;color:var(--red);font-family:var(--mono);font-size:clamp(9px,2.6vw,13px);line-height:1;letter-spacing:-.02em;white-space:pre;text-shadow:0 0 12px rgba(224,48,62,.35)}
+.big{display:block;image-rendering:pixelated}
 .big.hit{animation:hit .28s steps(1)}
 @keyframes hit{0%{transform:translateX(-3px);color:var(--hi)}40%{transform:translateX(2px)}100%{transform:none}}
 .side{display:grid;grid-template-columns:auto auto;gap:0 12px;font-size:12px;align-content:end}
@@ -130,7 +130,7 @@ tbody tr:hover td{background:#121212}
     <section class="pane">
       <span class="ti">┤ <b>online</b> ├</span><span class="tr">last 10 min</span>
       <div class="on-row">
-        <pre class="big" id="big" aria-label="online"></pre>
+        <canvas class="big" id="big" role="img" aria-label="online"></canvas>
         <div class="side">
           <span class="k">peak</span><span class="h" id="peak">--</span>
           <span class="k">Δ poll</span><span id="delta">--</span>
@@ -203,16 +203,29 @@ function esc(s){return String(s).replace(/[&<>]/g,function(c){return {"&":"&amp;
 function ago(sec){if(!sec)return "--";var s=Math.max(0,Math.floor(Date.now()/1000-sec));if(s<60)return s+"s ago";if(s<3600)return Math.floor(s/60)+"m ago";if(s<86400)return Math.floor(s/3600)+"h"+String(Math.floor(s%3600/60)).padStart(2,"0")+"m ago";return Math.floor(s/86400)+"d ago";}
 function mb(v){return v==null?"--":(v>=1024?(v/1024).toFixed(2)+" GB":v.toFixed(1)+" MB");}
 
-/* block digits */
-var B="█",DIG={"0":["###","# #","# #","# #","###"],"1":[" # ","## "," # "," # ","###"],"2":["###","  #","###","#  ","###"],"3":["###","  #","###","  #","###"],
- "4":["# #","# #","###","  #","  #"],"5":["###","#  ","###","  #","###"],"6":["###","#  ","###","# #","###"],"7":["###","  #","  #","  #","  #"],
- "8":["###","# #","###","# #","###"],"9":["###","# #","###","  #","###"],"-":["   ","   ","###","   ","   "]};
-function blocks(t){var rows=["","","","",""];for(var i=0;i<t.length;i++){var g=DIG[t.charAt(i)]||DIG["-"];for(var r=0;r<5;r++)rows[r]+=g[r].replace(/#/g,B+B).replace(/ /g,"  ")+(i<t.length-1?"  ":"");}return rows.join("\n");}
+/* LED dot-matrix digits: 5x7 glyphs, every dot its own square; lit dots red with a faint bloom, unlit dots stay as a
+   dark grid, empty leading slots are dark too (a counter) */
+var GL={"0":["01110","10001","10011","10101","11001","10001","01110"],"1":["00100","01100","00100","00100","00100","00100","01110"],
+ "2":["01110","10001","00001","00010","00100","01000","11111"],"3":["11111","00010","00100","00010","00001","10001","01110"],
+ "4":["00010","00110","01010","10010","11111","00010","00010"],"5":["11111","10000","11110","00001","00001","10001","01110"],
+ "6":["00110","01000","10000","11110","10001","10001","01110"],"7":["11111","00001","00010","00100","01000","01000","01000"],
+ "8":["01110","10001","10001","01110","10001","10001","01110"],"9":["01110","10001","10001","01111","00001","00010","01100"],
+ "-":["00000","00000","00000","11111","00000","00000","00000"]};
+var SLOTS=3;
+function drawLed(t){var cv=$("big"),slots=Math.max(SLOTS,t.length),cell=innerWidth<520?9:11,gap=2,pad=6,dpr=Math.max(1,window.devicePixelRatio||1);
+ var cols=slots*6-1,W=cols*cell+pad*2,H=7*cell+pad*2;cv.style.width=W+"px";cv.style.height=H+"px";cv.width=Math.round(W*dpr);cv.height=Math.round(H*dpr);
+ var x=cv.getContext("2d");x.setTransform(dpr,0,0,dpr,0,0);x.clearRect(0,0,W,H);
+ var s=String(t);while(s.length<slots)s=" "+s;var lit=[];
+ for(var k=0;k<slots;k++){var g=GL[s.charAt(k)];for(var r=0;r<7;r++)for(var c=0;c<5;c++){var on=g&&g[r].charAt(c)==="1",px=pad+(k*6+c)*cell,py=pad+r*cell;
+  x.fillStyle=on?"#e0303e":"#151515";x.fillRect(px,py,cell-gap,cell-gap);if(on)lit.push([px,py]);}}
+ x.save();x.globalCompositeOperation="lighter";x.shadowColor="rgba(224,48,62,.55)";x.shadowBlur=cell*.9;x.fillStyle="rgba(224,48,62,.18)";
+ lit.forEach(function(p){x.fillRect(p[0],p[1],cell-gap,cell-gap);});x.restore();
+ x.fillStyle="rgba(255,255,255,.10)";lit.forEach(function(p){x.fillRect(p[0],p[1],cell-gap,1);});}
 var shown="";
 function setBig(v){var t=fmt(v),el=$("big");el.setAttribute("aria-label",t+" online");
- if(t===shown||reduce){shown=t;el.textContent=blocks(t);return;}
- var i=0,iv=setInterval(function(){i++;if(i>=7){clearInterval(iv);shown=t;el.textContent=blocks(t);el.classList.remove("hit");void el.offsetWidth;el.classList.add("hit");return;}
-  var s="";for(var k=0;k<t.length;k++)s+=String(Math.floor(Math.random()*10));el.textContent=blocks(s);},45);}
+ if(t===shown||reduce){shown=t;drawLed(t);return;}
+ var i=0,iv=setInterval(function(){i++;if(i>=7){clearInterval(iv);shown=t;drawLed(t);el.classList.remove("hit");void el.offsetWidth;el.classList.add("hit");return;}
+  var s="";for(var k=0;k<t.length;k++)s+=String(Math.floor(Math.random()*10));drawLed(s);},45);}
 
 /* htop meter */
 function cols(el,cw){return Math.max(8,Math.floor(el.clientWidth/cw));}
@@ -280,7 +293,7 @@ function render(j){spark();
 function nodesLine(){$("node").innerHTML=NODES.map(function(n){var v=lat[n[0]];return n[0]+" "+(v==null?"--":v<0?'<span class="r">down</span>':v+"ms");}).join(" · ");
  var ok=NODES.filter(function(n){return lat[n[0]]>0;}).map(function(n){return lat[n[0]];});$("latT").textContent=ok.length?"latency "+Math.min.apply(null,ok)+"ms":"latency";}
 function tick(){var p=poll();p.first.then(apply).catch(function(){$("mode").textContent="DOWN";$("mode").className="md err";$("code").textContent="timeout";log("ERR","GET /api/probe/stats failed on every node · retry in "+PERIOD+"s");});p.all.then(nodesLine);}
-addEventListener("resize",function(){if(last)render(last);else spark();});
+addEventListener("resize",function(){drawLed(shown||"--");if(last)render(last);else spark();});
 
 var LINES=[['$ ssh op@relay.megulit.com',''],['  authenticated · ed25519','ok'],['$ tmux attach -t megulit',''],['  attached','ok']];
 function boot(){var b=$("boot"),tw=$("tw");if(reduce){b.className="off";start();return;}
