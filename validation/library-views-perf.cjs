@@ -35,17 +35,26 @@ function startWeb(service){const server=http.createServer(async(req,res)=>{try{
  return new Promise(r=>server.listen(0,'127.0.0.1',()=>r(server)));}
 
 /* ---------- headless Edge over CDP ---------- */
+const CDP_MS=Number(process.env.MEGULIT_CDP_TIMEOUT)||60000;
 function edgePath(){for(const p of [process.env.MEGULIT_EDGE,'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe','C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe'])if(p&&fs.existsSync(p))return p;throw Error('EDGE_NOT_FOUND');}
 async function startEdge(profile){const child=spawn(edgePath(),['--headless=new','--remote-debugging-port=0','--user-data-dir='+profile,'--window-size='+String(arg('size','1920x1080')).replace('x',','),'--hide-scrollbars','--force-device-scale-factor=1',
   '--no-first-run','--no-default-browser-check','--disable-extensions','--mute-audio','about:blank'],{stdio:'ignore'});
  const portFile=path.join(profile,'DevToolsActivePort');for(let i=0;i<100&&!fs.existsSync(portFile);i++)await sleep(100);const port=fs.readFileSync(portFile,'utf8').split(/\r?\n/)[0];
- let target;for(let i=0;i<50&&!target;i++){target=(await fetch(`http://127.0.0.1:${port}/json/list`).then(r=>r.json()).catch(()=>[])).find(t=>t.type==='page');if(!target)await sleep(100);}
- const ws=new WebSocket(target.webSocketDebuggerUrl);await new Promise((r,j)=>{ws.onopen=r;ws.onerror=j;});let next=1;const waits=new Map();
+ let target;for(let i=0;i<50&&!target;i++){target=(await fetch(`http://127.0.0.1:${port}/json/list`,{signal:AbortSignal.timeout(5000)}).then(r=>r.json()).catch(()=>[])).find(t=>t.type==='page');if(!target)await sleep(100);}
+ if(!target){child.kill();throw Error('EDGE_NO_PAGE');}
+ const ws=new WebSocket(target.webSocketDebuggerUrl);let next=1;const waits=new Map();
+ await new Promise((r,j)=>{const t=setTimeout(()=>j(Error('CDP_CONNECT_TIMEOUT')),10000);ws.onopen=()=>{clearTimeout(t);r();};ws.onerror=e=>{clearTimeout(t);j(e);};}).catch(e=>{child.kill();throw e;});
  ws.onmessage=e=>{const m=JSON.parse(e.data);if(m.method&&globalThis.__cdpEvent)globalThis.__cdpEvent(m);const w=m.id&&waits.get(m.id);if(w){waits.delete(m.id);m.error?w[1](Error(m.error.message)):w[0](m.result);}};
- const send=(method,params={})=>new Promise((res,rej)=>{const id=next++;waits.set(id,[res,rej]);ws.send(JSON.stringify({id,method,params}));});
+ /* CI 2026-11-16: a reply that never came (an evaluate whose promise never settles, a stalled renderer) kept the test awaiting
+    past its own timeout, so its finally never stopped Edge or the page server and the file's process never exited; the
+    whole node --test run sat until the job's 30-minute limit. Every call now fails after CDP_MS, and a closed socket or
+    stop() fails whatever is still waiting. */
+ const fail=err=>{for(const w of waits.values())w[1](err);waits.clear();};ws.onclose=()=>fail(Error('CDP_CLOSED'));
+ const send=(method,params={},ms=CDP_MS)=>new Promise((res,rej)=>{const id=next++,t=setTimeout(()=>{if(waits.delete(id))rej(Error('CDP_TIMEOUT '+method));},ms);
+  waits.set(id,[v=>{clearTimeout(t);res(v);},e=>{clearTimeout(t);rej(e);}]);try{ws.send(JSON.stringify({id,method,params}));}catch(e){waits.delete(id);clearTimeout(t);rej(e);}});
  const evaluate=async(expression)=>{const r=await send('Runtime.evaluate',{expression,awaitPromise:true,returnByValue:true});if(r.exceptionDetails)throw Error('EVAL: '+(r.exceptionDetails.exception?.description||r.exceptionDetails.text));return r.result.value;};
  await send('Page.enable');await send('Runtime.enable');await send('Emulation.setDeviceMetricsOverride',{width:Number(String(arg('size','1920x1080')).split('x')[0]),height:Number(String(arg('size','1920x1080')).split('x')[1]),deviceScaleFactor:1,mobile:false});
- const api={send,evaluate,set onEvent(f){globalThis.__cdpEvent=f;},get onEvent(){return globalThis.__cdpEvent;},stop:()=>{try{ws.close();}catch{}child.kill();}};return api;}
+ const api={send,evaluate,set onEvent(f){globalThis.__cdpEvent=f;},get onEvent(){return globalThis.__cdpEvent;},stop:()=>{fail(Error('CDP_STOPPED'));try{ws.close();}catch{}child.kill();}};return api;}
 
 
 /* tiny PNG writer: a vertical two-colour gradient cover */
