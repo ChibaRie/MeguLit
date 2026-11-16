@@ -23,7 +23,7 @@ const MAGICS=[['xp3','58503333'.slice(0,6)],['xp3','5850330d0a'],['pfs-pf8','706
  ['ain','56455253'],['ai2','41493200'],['gpk','47504b'],['lpk','4c504b'],['ykc','594b433030'],['dxa','4458'],['pac-nep','5041430000'],['arc-advhd','41524332'],['cat2-int','4b494600'],['ogg','4f676753'],['png','89504e47'],['riff','52494646']];
 const ARCHIVE=/\.(xp3|pfs|pf8|arc|pac|pak|dat|ypf|int|mpk|nsa|sar|ns2|gpk|ykc|lpk|mrg|fpk|afs|vfs|dxa|bin|cpz|hxp|lib|lac|pck|epk|vff|isa|nnk|ar2|psb|npk|npa|iga|cpk|wolf|ain|dbs|wad|assets|bundle)$/i;
 /* anything else of some size near the top of the game folder may be an archive in a format no reader knows */
-const NOT_ARCHIVE=/\.(exe|dll|ini|cfg|log|url|html?|pdf|ico|png|jpe?g|bmp|gif|webp|ogg|wav|mp3|m4a|flac|opus|mp4|webm|avi|wmv|mpe?g|mkv|ttf|otf|ttc|fon|xml|md|bat|cmd|lnk|sav|sys|reg|manifest|config|txt|ks|tjs|json|rpy|rpyc|lua|cs|js|css|vdf|acf|dmp)$/i;
+const NOT_ARCHIVE=/\.(g0[0-2]|g[ia]n|tcr|cgm|exe|dll|ini|cfg|log|url|html?|pdf|ico|png|jpe?g|bmp|gif|webp|ogg|wav|mp3|m4a|flac|opus|mp4|webm|avi|wmv|mpe?g|mkv|ttf|otf|ttc|fon|xml|md|bat|cmd|lnk|sav|sys|reg|manifest|config|txt|ks|tjs|json|rpy|rpyc|lua|cs|js|css|vdf|acf|dmp)$/i;
 const SCRIPTISH=/\.(ks|tjs|ast|txt|scr|ss|s|sc|scn|ws2|ybn|bsc|ain|rpy|json|lua|nut|asb|mjo|hcb|dbs|lin)$/i;
 const SKIP_DIR=/^(save|savedata|movie|movies|video|bgm|sound|voice|se|logs?|\.megulit|_commonredist|directx|redist)$/i;
 
@@ -72,7 +72,8 @@ function classify({engines,inventory:inv,unsupported,preparing}){
  if(preparing==='capture')return {step:'decrypt-failed',detail:'encrypted-archive',detected:null};
  const opened=engines.find(e=>e.scenes>0);if(opened)return {step:'parse-failed',detail:opened.id,detected:null};
  const errored=engines.find(e=>e.error&&e.error!=='BUDGET');if(errored)return {step:'parse-failed',detail:errored.id+':'+errored.error,detected:null};
- const unknown=inv.archives.filter(a=>!['ogg','png','riff','zip'].includes(a.format));if(unknown.length)return {step:'unknown-pack',detail:unknown[0].format||'magic:'+unknown[0].magic.slice(0,8),detected:null};
+ const unknown=inv.archives.filter(a=>!['ogg','png','riff','zip'].includes(a.format));
+ const scenePck=unknown.find(a=>/(^|\/)scene\.pck$/i.test(a.name));if(scenePck)return {step:'unknown-pack',detail:'siglus-scene-pck',detected:null};if(unknown.length)return {step:'unknown-pack',detail:unknown[0].format||'magic:'+unknown[0].magic.slice(0,8),detected:null};
  if(inv.scripts)return {step:'parse-failed',detail:'loose-scripts',detected:null};
  return {step:'no-script',detail:'',detected:null};}
 
