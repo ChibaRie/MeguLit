@@ -287,6 +287,8 @@ function unquoteSlot(t,ja){if(t.length<2||!/^"[\s\S]*"$/.test(t)||/^"/.test(ja))
  if(!close||!ja.trimEnd().endsWith(close)||inner.startsWith(open))return inner;return open+inner+close;}
 /* the Japanese slot of most lines has no kana but Han: a Chinese translation's own scene files */
 function chineseDocs(docs){let han=0,kana=0;for(const d of docs)for(const sc of d.scenes||[])for(const r of sc.rows.slice(0,40)){const t=r[0]||'';if(/[ぁ-ゖァ-ヺ]/.test(t))kana++;else if(/[一-鿿]/.test(t))han++;}return han>=20&&han>kana*3;}
+/* E610 a folder whose only readable cx scene files are a Chinese translation patch (the Japanese original stays encrypted): {lines} of the patch, or null. The probe reports it as a Chinese build instead of decrypt-failed. */
+function cxChineseOnly(dir){let lines=0,docsAny=false;for(const file of cxArchives(dir)){const docs=cxDocs(file);if(!docs||!docs.length)continue;docsAny=true;if(!chineseDocs(docs))return null;for(const d of docs)for(const sc of d.scenes||[])lines+=sc.rows.length;}return docsAny&&lines?{lines}:null;}
 const kirikiriCx={
  id:'kirikiri-cx',hint:'scn.xp3 / data.xp3',
  // One copy per scene file: patch archives override the rest, as the engine loads them (patch < patch2 < ...).
@@ -542,4 +544,4 @@ function preparing(dir){
 }
 /* E375 why a recognised game cannot be read (an engine's own check, e.g. encrypted WOLF archives), or null. */
 function unsupportedReason(dir){for(const e of Object.values(ENGINES)){if(typeof e.unsupported!=='function')continue;let code='';try{code=e.unsupported(dir);}catch{}if(code)return {engine:e.id,code,detail:e.REASONS?.[code]||''};}return null;}
-module.exports={cxPrepareSync,ownCx,unquoteSlot,unsupportedReason,preparing,cxBuilds,chineseColumn,ENGINES,detect,readable,read,fingerprint,parseKs,parseAst,parseRpy,pfsList,pfsRead,tlPairs,decode};
+module.exports={cxChineseOnly,cxPrepareSync,ownCx,unquoteSlot,unsupportedReason,preparing,cxBuilds,chineseColumn,ENGINES,detect,readable,read,fingerprint,parseKs,parseAst,parseRpy,pfsList,pfsRead,tlPairs,decode};

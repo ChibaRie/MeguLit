@@ -45,6 +45,8 @@ function inventory(dir,{depth=2,limit=6000}={}){
    if((ARCHIVE.test(e.name)&&size>=4096||!NOT_ARCHIVE.test(e.name)&&size>=512&&level<=1)&&inv.archives.length<48){const h=head(full);inv.archives.push({name:maskString(path.relative(dir,full).replace(/\\/g,'/')).slice(0,120),size,magic:magicHex(h),format:format(h),_path:full});}}};
  walk(dir,0);inv.archives.sort((a,b)=>b.size-a.size);return inv;}
 
+/* readers that scan whole folders for anything text-like: they must never outrank or delay a dedicated reader */
+const GENERIC=new Set(['garbro','unity-assets','cpk']),DEDICATED_JP=30,GENERIC_MS=30000;
 const DECRYPT=/decrypt|encrypt|cipher|key|filter|scheme|CX|PROTECT|TPM/i;
 const KANA=/[ぁ-ゖァ-ヺ]/;
 const HAN=/[㐀-鿿]/;
@@ -60,11 +62,14 @@ function runEngines(dir,{deadline}){
  const scenes=require('./original-engines/scenes.cjs'),out=[];
  /* the GARbro last resort never runs over a folder whose KiriKiri cx archives MeguLit decrypts itself (detect() skips it the same way): on a cold cache it spent 20-80 s unpacking them for nothing and the probe timed out (ATRI) */
  let skipGarbro=false;try{skipGarbro=scenes.ownCx(dir);}catch{}
- for(const id of Object.keys(scenes.ENGINES)){if(id==='garbro'&&skipGarbro)continue;if(Date.now()>deadline){out.push({id,scenes:-1,lines:0,error:'BUDGET',ms:0});continue;}
-  const engine=scenes.ENGINES[id],t=Date.now();let list=null,error='',lines=0,sizes=[],japanese=0,parsed=0,dialogue=0,chinese=0;
+ /* E610 dedicated readers first, in scenes.detect order; the generic scans (garbro, unity-assets, cpk) only when no dedicated reader read a sizeable amount of Japanese, and each with its own time cap */
+ const ids=Object.keys(scenes.ENGINES),order=[...ids.filter(i=>!GENERIC.has(i)),...ids.filter(i=>GENERIC.has(i))];let dedicatedJp=0;
+ for(const id of order){const generic=GENERIC.has(id);if(generic&&dedicatedJp>=DEDICATED_JP)continue;if(id==='garbro'&&skipGarbro)continue;if(Date.now()>deadline){out.push({id,scenes:-1,lines:0,error:'BUDGET',ms:0});continue;}
+  const engine=scenes.ENGINES[id],t=Date.now(),limit=generic?Math.min(deadline,t+GENERIC_MS):deadline;let list=null,error='',lines=0,sizes=[],japanese=0,parsed=0,dialogue=0,chinese=0;
   try{list=engine.scenes(dir)||[];}catch(e){error=String(e?.code||e?.message||e).slice(0,60);}
-  if(list&&list.length){for(const s of list){if(Date.now()>deadline){error=error||'BUDGET';break;}let p;try{p=engine.parse(s.read());parsed++;}catch(e){if(!error)error=String(e?.code||e?.message||e).slice(0,60);sizes.push(0);continue;}
+  if(list&&list.length){for(const s of list){if(Date.now()>limit){error=error||'BUDGET';break;}let p;try{p=engine.parse(s.read());parsed++;}catch(e){if(!error)error=String(e?.code||e?.message||e).slice(0,60);sizes.push(0);continue;}
     const n=p?.lines?.length||0;lines+=n;sizes.push(n);const c=countLines(p?.lines);japanese+=c.japanese;dialogue+=c.dialogue;chinese+=c.chinese;}}
+  if(!generic)dedicatedJp=Math.max(dedicatedJp,japanese);
   if(list?.length||error)out.push({id,scenes:list?list.length:-1,parsed,lines,japaneseLines:japanese,dialogueLines:dialogue,chineseLines:chinese,sizes:sizes.slice(0,4000),error,ms:Date.now()-t});}
  return out;}
 function nativeEngines(dir,executable){const out=[];let ot;try{ot=require('./original-text.cjs');}catch{return out;}
@@ -83,18 +88,19 @@ const CHINESE_TITLE=/汉化|漢化|简体|簡體|繁体|繁體|中文|官中|国
 const SIMPLIFIED_ONLY=/[华镜诅传说汉兰寻译为这个们对时开关与东发见现过还进动机实队网图书写读语终贝车电马鱼鸟龙长门风飞饭给结经红绿纪约级维线细织统缘继续]/;
 const chineseTitle=t=>{const s=String(t||'');return !!s&&(CHINESE_TITLE.test(s)||!KANA.test(s)&&SIMPLIFIED_ONLY.test(s));};
 function judgeLanguage({lines=0,japaneseLines=0,dialogueLines,chineseLines,title}={}){
- const base=dialogueLines>0?Math.min(dialogueLines,lines)||dialogueLines:lines,jp=japaneseLines;
+ const base=dialogueLines>0?Math.max(Math.min(dialogueLines,lines),lines*.05):lines,jp=japaneseLines;/* floor: a handful of dialogue-looking lines in a big script is a mis-read, not a tiny game */
  if(lines<50)return 'japanese';
  const knownChinese=Number.isFinite(chineseLines);
- if(knownChinese&&chineseLines>=base*.5&&chineseLines>=jp)return 'chinese-build';
+ if(knownChinese&&chineseLines>=base*.5&&chineseLines>=jp*2)return 'chinese-build';
  if(!knownChinese&&jp<base*.1&&chineseTitle(title))return 'chinese-build';/* old probe: the title says Chinese build, and kana lines are a sliver */
  if(jp>=1000||jp>=base*.3)return 'japanese';
- if(jp<Math.max(10,lines*.001)&&lines>=1000)return 'decode-suspect';
+ if(jp<Math.max(10,lines*.001)&&lines>=100)return 'decode-suspect';
  return jp>=Math.min(300,base*.05)?'japanese':'not-japanese';}
 
 /* which step failed, from the evidence */
 function classify({engines,inventory:inv,unsupported,preparing,title}){
- const read=engines.filter(e=>e.lines>0).sort((a,b)=>b.lines-a.lines)[0];
+ const readers=engines.filter(e=>e.lines>0).sort((a,b)=>b.lines-a.lines);
+ const read=readers.find(e=>!GENERIC.has(e.id)&&e.japaneseLines>=DEDICATED_JP)||readers[0];
  if(read){const lang=judgeLanguage({...read,title});if(lang==='chinese-build'||lang==='decode-suspect'||lang==='not-japanese')return {step:lang,detail:read.id,detected:read.id};return {step:'ok',detail:read.id,detected:read.id};}
  if(unsupported)return {step:DECRYPT.test(unsupported.code)?'decrypt-failed':'parse-failed',detail:(unsupported.engine+':'+unsupported.code).slice(0,60),detected:null};
  const failedDecrypt=engines.find(e=>e.error&&DECRYPT.test(e.error));if(failedDecrypt)return {step:'decrypt-failed',detail:failedDecrypt.id+':'+failedDecrypt.error,detected:null};
@@ -115,6 +121,7 @@ function probeGame({dir,executable,title},{budgetMs=60000}={}){
  try{require('./original-engines/scenes.cjs').cxPrepareSync(dir,{deadline:t+budgetMs/2});}catch{}
  try{const scenes=require('./original-engines/scenes.cjs');unsupported=scenes.unsupportedReason(dir);preparing=scenes.preparing(dir)?.kind||null;}catch{}
  const engines=[...nativeEngines(dir,executable),...runEngines(dir,{deadline})];
+ if(!engines.some(e=>e.lines>0))try{const z=require('./original-engines/scenes.cjs').cxChineseOnly(dir);if(z)engines.push({id:'kirikiri-cx',scenes:1,parsed:1,lines:z.lines,japaneseLines:0,dialogueLines:z.lines,chineseLines:z.lines,error:'zh-patch-only',ms:0});}catch{}
  const c=classify({engines,inventory:inv,unsupported,preparing,title});const best=engines.find(e=>e.id===c.detected);
  return {schema:'megulit.probe-result',version:1,reader:reader(),ms:Date.now()-t,fingerprint:fingerprint?{key:fingerprint.key,exe:maskString(fingerprint.exe),size:fingerprint.size}:null,
   inventory:{files:inv.files,bytes:inv.bytes,ext:inv.ext,scripts:inv.scripts,archives:inv.archives.map(({_path,...a})=>a)},

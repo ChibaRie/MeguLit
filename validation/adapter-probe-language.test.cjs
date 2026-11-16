@@ -32,3 +32,10 @@ test('classify routes the new steps and leaves ok alone',()=>{
  assert.equal(classify({engines:[e({lines:30000,japaneseLines:3})],inventory:inv,title:'某游戏 汉化版'}).step,'chinese-build');
  assert.equal(classify({engines:[e({lines:30,japaneseLines:0})],inventory:inv}).step,'ok');
 });
+test('E610 integrate: Chinese majority needs twice the Japanese; big script with a few dialogue lines is decode-suspect',()=>{
+ assert.equal(judgeLanguage({lines:11838,japaneseLines:5630,dialogueLines:11414,chineseLines:5781}),'japanese');
+ assert.equal(judgeLanguage({lines:180,japaneseLines:1,dialogueLines:3,chineseLines:0}),'decode-suspect');
+ const inv={archives:[],scripts:0},e=(id,o)=>({id,scenes:1,...o});
+ assert.equal(classify({engines:[e('garbro',{lines:500000,japaneseLines:90000,dialogueLines:90000,chineseLines:0}),e('fvp',{lines:40000,japaneseLines:5000,dialogueLines:40000,chineseLines:0})],inventory:inv}).detected,'fvp');
+ assert.equal(classify({engines:[e('garbro',{lines:5000,japaneseLines:4000,dialogueLines:5000,chineseLines:0}),e('kirikiri',{lines:100,japaneseLines:3,dialogueLines:100,chineseLines:0})],inventory:inv}).detected,'garbro');
+});
