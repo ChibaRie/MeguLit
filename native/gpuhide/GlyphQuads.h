@@ -100,8 +100,8 @@ struct GlyphLearner {
     (LineSized textures): the text stays the game's own layout, so every character keeps its real place, width and row.
     Every glyph place of the page is tracked; a LINE claims the places that appear for it (the hook delivers the text a
     moment after the game started typing: places up to 3 s older are its own, at most n). Claimed places are left out
-    of every draw while armed, new places are left out at once (a typing sentence whose LINE is on its way) and are given
-    back to the game when no LINE takes them within 2.5 s (a menu, a backlog, a page shown by loading a save). The page is
+    of every draw while armed. New places keep their pixels until a LINE claims them, so a font-height match alone
+    cannot hide a menu, backlog or page shown by loading a save. The page is
     reported whole (ToMe_PAGE: every line's text and its places in reading order) whenever it changes; places that stop
     being drawn while others stay are a page turn (lines forgotten), all places gone is "asleep" (text window hidden, a
     title screen): the same places drawn again wake the page with its lines. */
@@ -141,7 +141,7 @@ struct GlyphLearner {
   if (std::fabs(h - pageH) <= 1.5f) {
    if (!pageRtW) { pageRt = rt; pageRtW = rtW; pageRtH = rtH; }
    sheetNow.insert(tex);
-   // the page drawn again into a buffer of another size (effects): follows the page as a whole
+   // Another target has no confirmed character correspondence yet.
    if (rtW != pageRtW || rtH != pageRtH) return false;
    int i = PageFind(Rect{ x.x0, x.y0, x.x1, x.y1 }, now); PPos &p = ppos[i];
    p.lastFrame = frameNo; if (p.r.x1 - p.r.x0 < x.x1 - x.x0 - 0.5f && std::fabs(p.r.x0 - x.x0) < 1.5f) p.r = Rect{ x.x0, x.y0, x.x1, x.y1 };
