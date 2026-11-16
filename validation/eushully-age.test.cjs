@@ -22,3 +22,14 @@ test('Eushully AGE script and archive',()=>{
  const scenes=eu.engine.scenes(dir);assert.strictEqual(scenes.length,1);
  const r=eu.engine.parse(scenes[0].read());assert.deepStrictEqual(r.lines,['魔女','こんにちは世界漢']);
 });
+test('Eushully AGE: an unknown opcode falls back to the string pool',()=>{
+ const sjis2=require('../services/original-engines/kit.cjs').encodeSjis;const w=n=>{const b=Buffer.alloc(4);b.writeInt32LE(n);return b;};
+ const enc=s=>{const e=Buffer.concat([Buffer.from(sjis2(s)),Buffer.from([0])]);return Buffer.from(Buffer.concat([e,Buffer.alloc((4-e.length%4)%4)]).map(c=>c^0xff));};
+ const a=enc('こんにちは'),b2=enc('世界');
+ const code=Buffer.concat([w(0x6e),w(0),w(0),w(2),w(0),w(0x999),w(0)]);/* Print(0,str@pool) then an unknown opcode */
+ const poolAddr=code.length/4,pool=Buffer.concat([a,b2]);
+ const code2=Buffer.concat([w(0x6e),w(0),w(0),w(2),w(poolAddr),w(0x999),w(0)]);
+ const head=Buffer.alloc(0x3c);head.write('SYS4',0,'latin1');head.writeUInt32LE(0x1c,0x20);head.writeInt32LE(poolAddr+pool.length/4,0x28);
+ const r=eu.parse(Buffer.concat([head,code2,pool]));
+ assert.deepStrictEqual(r.lines,['こんにちは','世界']);
+});

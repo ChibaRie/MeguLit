@@ -63,28 +63,35 @@ function stringAt(b,addr){const o=offsetOf(addr);if(o<0||o>=b.length)return '';c
  for(let q=o;q<b.length&&s.length<0x2000;q++){const c=b[q]^0xff;if(!c)break;s.push(c);}
  const out=[];for(let i=0;i<s.length;i++){const w=(s[i]<<8)|(s[i+1]??0),r=REPL.find(([k])=>k===w);if(r){out.push(...r[1]);i++;continue;}out.push(s[i]);if(s[i]>=0x81&&s[i]<=0xfc&&i+1<s.length)out.push(s[++i]);}
  return kit.SJIS.decode(Buffer.from(out));}
-function* instructions(b){if(b.length<0x3c||b.toString('latin1',0,4)!=='SYS4'||b.readUInt32LE(0x20)!==0x1c)return;
+function* instructions(b,state={}){if(b.length<0x3c||b.toString('latin1',0,4)!=='SYS4'||b.readUInt32LE(0x20)!==0x1c)return;
  let pool=offsetOf(b.readInt32LE(0x28));if(pool<0x3c||pool>b.length)pool=b.length;let p=0x3c;
- while(p+4<=pool){const op=b.readUInt32LE(p),n=OPS.get(op);if(n===undefined)return;if(p+4+n*8>b.length)return;const args=[];
+ while(p+4<=pool){const op=b.readUInt32LE(p),n=OPS.get(op);if(n===undefined||p+4+n*8>b.length){state.aborted=true;return;}const args=[];
   for(let i=0;i<n;i++)args.push({type:b.readUInt32LE(p+4+i*8),value:b.readInt32LE(p+8+i*8)});p+=4+n*8;
   for(const [i,a] of args.entries()){const o=a.type===STR||op===LOAD_ARRAY&&i===1?offsetOf(a.value):-1;if(o>=p&&o<pool)pool=o;}
+  state.pool=pool;
   yield {op,args};}}
 const trim=t=>kit.trimBoth(t.replace(/\s*\r?\n\s*/g,''));
 function parse(buf){const b=Buffer.isBuffer(buf)?buf:Buffer.from(buf),lines=[],anchors=[];let msg=null;
  const flush=()=>{if(msg!==null){const t=trim(msg);if(t)lines.push(t);}msg=null;};
- for(const {op,args} of instructions(b)){
+ const state={aborted:false,pool:0};
+ for(const {op,args} of instructions(b,state)){
   if(op===PRINT&&args[0]?.type===INT&&args[0].value===0&&args[1]?.type===STR){msg=(msg||'')+stringAt(b,args[1].value);continue;}
   if(op===NEWLINE){if(msg!==null)msg+='\n';continue;}
   if(op===FURIGANA&&args[1]?.type===STR){msg=(msg||'')+stringAt(b,args[1].value);continue;}
   flush();
   if(op===PRINT&&args[0]?.type===INT&&args[0].value===2&&args[1]?.type===STR){const n=trim(stringAt(b,args[1].value));if(n)lines.push(n);continue;}
   for(const a of args)if(a.type===STR){const s=stringAt(b,a.value);if(s&&kit.ascii(s))anchors.push(s);}}
- flush();return {lines,anchors};}
+ flush();
+ /* a newer title's opcode the table does not know ends the walk: the string pool (NOT-ed C strings in use order, from the
+    first string the code used up to the address tables) still holds the text, so its non-ASCII strings are the lines */
+ if(state.aborted&&state.pool>0x3c){lines.length=0;const end=offsetOf(b.readInt32LE(0x28));const stop=end>state.pool&&end<=b.length?end:b.length;let p=state.pool;
+  while(p<stop){let q=p;while(q<stop&&(b[q]^0xff)!==0)q++;const t=trim(stringAt(b,(p-0x3c)/4));if(t&&!kit.ascii(t)&&!/�/.test(t))lines.push(t);p=q+1;p+=(4-((p-0x3c)%4))%4;}}
+ return {lines,anchors};}
 const isScript=b=>b.length>=0x3c&&b.toString('latin1',0,4)==='SYS4';
 
 const engine=kit.engine({id:'eushully',hint:'sys4ini.bin + *.ALF',
  archives:{find:dir=>alfs(dir).map(a=>a.file),list:file=>{const a=alfs(path.dirname(file)).find(x=>x.file===file);if(!a)return null;
   const scripts=a.entries.filter(e=>/\.bin$/i.test(e.name));if(!scripts.length)return null;
   return scripts.map(e=>({name:e.name,read:()=>kit.readAt(file,e.offset,e.size)}));},sort:false},
- parse,test:n=>/\.bin$/i.test(n)});
+ loose:{name:/^(?!sys[34]ini)[^]*[.]bin$/i,subs:["","script","scr"]},parse,test:n=>/\.bin$/i.test(n)});
 module.exports={engine,parse,readIni,alfs,instructions,stringAt,isScript,OPS};
