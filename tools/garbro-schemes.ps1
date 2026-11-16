@@ -54,7 +54,15 @@ if($Engine -eq 'malie'){
    $e.ExtraCrypt=$xe}
   $list+=$e}
  $out.Remove('schemes');$out.SharedData=$shared;$out.CommonImages=$commons;$out.schemes=$list
-}
+}elseif($Engine -eq 'npa'){
+ # E-nitro NPA: per title {TitleId, NameKey, Order (hex)}; TitleId names matter (LAMENTO, TOTONO change the algorithm)
+ $known=$arcFormats.GetType('GameRes.Formats.NitroPlus.NpaOpener')::KnownSchemes
+ foreach($k in $known.Keys){$s=$known[$k];$out.schemes[$k]=[ordered]@{title=$s.TitleId.ToString();nameKey=[uint32]$s.NameKey;order=(Hex $s.Order)}}
+}elseif($Engine -eq 'npk'){
+ $op=[Activator]::CreateInstance($arcFormats.GetType('GameRes.Formats.NitroPlus.NpkOpener'))
+ $kk=$op.Scheme.KnownKeys
+ foreach($k in $kk.Keys){$out.schemes[$k]=[ordered]@{key=(Hex $kk[$k])}}
+}else{}
 $titles=@{};if($Engine -eq 'warc'){foreach($e in $out.schemes){$titles[$e.Name]=1}}else{foreach($k in $out.schemes.Keys){$titles[$k]=1}}
 $map=Field $catalog 'm_game_map';if($map){$g=[ordered]@{};foreach($k in ($map.Keys|Sort-Object)){if($titles.ContainsKey($map[$k])){$g[$k]=$map[$k]}};$out[$(if($Engine -eq 'warc'){'GameMap'}else{'games'})]=$g}
 [Console]::Out.WriteLine($(if($Engine -eq 'warc'){$out|ConvertTo-Json -Depth 8 -Compress}else{$out|ConvertTo-Json -Depth 6}))

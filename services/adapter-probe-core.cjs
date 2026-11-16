@@ -18,7 +18,7 @@ const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypt
 const {maskString}=require('./desensitize.cjs');
 
 /* Known archive magics (format names only; the bytes that follow are never kept). */
-const MAGICS=[['xp3','58503333'.slice(0,6)],['xp3','5850330d0a'],['pfs-pf8','706638'],['pfs-pf6','706636'],['bgi-arc20','4255524b4f20415243'],['bgi-packfile','5061636b46696c6520'],['ypf','59504600'],['kcap','4b434150'],['npk2','4e504b32'],['npa','4e504100'],
+const MAGICS=[['xp3','58503333'.slice(0,6)],['xp3','5850330d0a'],['pfs-pf8','706638'],['pfs-pf6','706636'],['bgi-arc20','4255524b4f20415243'],['bgi-packfile','5061636b46696c6520'],['ypf','59504600'],['kcap','4b434150'],['npk2','4e504b32'],['npa','4e504101'],['npk3','4e504b33'],
  ['iga','49474130'],['mpk','4d504b00'],['cpk','43504b20'],['afs','41465300'],['psb','50534200'],['mdf','6d646600'],['zip','504b0304'],['rar','52617221'],['7z','377abcaf'],['unityfs','556e69747946532000'],['wolf','574f4c46'],
  ['ain','56455253'],['ai2','41493200'],['gpk','47504b'],['lpk','4c504b'],['ykc','594b433030'],['dxa','4458'],['pac-nep','5041430000'],['arc-advhd','41524332'],['cat2-int','4b494600'],['ogg','4f676753'],['png','89504e47'],['riff','52494646']];
 const ARCHIVE=/\.(xp3|pfs|pf8|arc|pac|pak|dat|ypf|int|mpk|nsa|sar|ns2|gpk|ykc|lpk|mrg|fpk|afs|vfs|dxa|bin|cpz|hxp|lib|lac|pck|epk|vff|isa|nnk|ar2|psb|npk|npa|iga|cpk|wolf|ain|dbs|wad|assets|bundle)$/i;
