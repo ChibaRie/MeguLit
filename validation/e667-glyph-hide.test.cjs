@@ -85,7 +85,7 @@ test('packaged MeguLitFont32/64.dll are the glyph-hide build (version export >= 
  const b=read('Build.ps1');assert.ok(b.includes("foreach ($taskNb in (Get-Content -LiteralPath (Join-Path $taskRoot 'native/native-builds.json')"),'Build.ps1 builds every listed native binary');
  assert.ok(b.includes('throw "Native self-test failed:'),'self-tests fail the build');assert.match(b,/tools\/native-stale\.cjs'\)( @\w+)?; if \(\$LASTEXITCODE -ne 0\) \{ throw/,'staleness check fails the build');
  const ci=read('.github/workflows/ci.yml');assert.ok(ci.includes('native\\native-builds.json'));assert.ok(ci.includes('node tools/native-stale.cjs --ci'));
- assert.ok(read('Release.ps1').includes('& node tools/native-stale.cjs;if($LASTEXITCODE -ne 0){throw'),'Release stops on a stale native binary even when it reuses a build');
+ assert.match(read('Release.ps1'),/& node tools\/native-stale\.cjs;(\$ErrorActionPreference=\$ea;)?if\(\$LASTEXITCODE -ne 0\)\{throw/,'Release stops on a stale native binary even when it reuses a build');
  const h=read('native/HookBridge.cs');assert.ok(h.includes('hideTrying=item.Key==Selected&&c.gdiProbe&&!c.hideOnly&&(ReplacementEnabled||ProbeWanted)&&!GlyphCached'));
  const g=read('web/reader/modules/gal.js');assert.ok(g.includes("item.hideOnly?' [隐藏原文]':item.embeddable?' [可清空]':item.hideTrying?' [仅读取 · 尝试隐藏原文]':' [仅读取]'"),'three-state stream label');});
 
