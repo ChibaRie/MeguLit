@@ -19,7 +19,7 @@ test('the foreign line the game draws on another writable stream is hidden next 
 });
 
 test('hook-control keeps the stream the foreign picker mapped to dialogue; a manual pick is marked',()=>{
- assert.match(read('core/hook-control.cjs'),/const foreignPicked=h\.hooks\.foreignPicked&&threads\.find/);
+ assert.match(read('core/hook-control.cjs'),/foreignPicked=h\.hooks\.foreignPicked&&threads\.find\(x=>x\.id===h\.hooks\.foreignPicked&&x\.embeddable&&!left\.has\(x\.code\)\);(?:\/\*[^*]*\*\/)?const t=foreignPicked\|\|/,'the picked stream wins the ranking, unless the bridge left that hook (E610)');
  assert.match(read('services/reader.cjs'),/case 'hookSelect':g\?\.hooks\.select\(r\.id,true\)/);
 });
 

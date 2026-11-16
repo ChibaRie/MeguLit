@@ -303,3 +303,24 @@ line is drawn again. Built and run by `Build.ps1` and CI through `native/native-
   not built because it cannot tell text tiles from other new tiles as safely as glyph quads.
 - Not covered yet: Direct3D 12, OpenGL vertex array objects bound before the DLL arrived with buffers never written again (same learner, `GlyphQuads.h`, needs the API side), Direct3D 9 vertex shaders /
   declarations, Direct3D 11 instanced / indirect draws, engines that bake the whole text into one texture per line (one quad per line, not per glyph).
+
+### Unarmed page ≠ "the game draws the line" (2026-11-15, E691)
+
+- Report (user group, 1.4.10, 時計仕掛けのレイライン -黄昏時の境界線-, SoftPal `PAL.dll`, Direct3D 9): 「翻译倒是正常显示了，但是
+  只有翻译了，要替换的原文没了」. 1.4.10 hid the writable Pal stream by write-back again (glyph pass-through needs proof),
+  but layer 4 still reported the text window as a page with `awake=1 armed=0`. The reader treated every unarmed awake
+  page as "the game's own text is on screen" (`megulit-place-game-drawn`) and dropped its Japanese, while write-back
+  had already blanked the game's line: the box showed the translation alone. The one line the user screenshotted with
+  the game's Japanese + MeguLit's Chinese fits the same rule (a line the bridge passed through, e.g. the GDI trial line).
+- Fix (all engines, reader layer): `core/gal-native.cjs` passes `hook-native originalReplaced()` to
+  `OverlayPlacement.page()`; an unarmed awake page while another path hides the line goes out as `{elsewhere:true}` and
+  `web/reader/modules/text-place.js` places the line as without a page (glyph boxes, or its own place without plate).
+  And whenever the game still draws the line itself (an unarmed page with nothing else hiding it, a ③ `visible` note)
+  the reader is not placed over the game's line but goes back to its own window, bilingual (Japanese on top, clickable
+  for lookups; translation under it), never on a plate (2026-11-16: the user rejected any plate behind MeguLit text).
+  The "only the translation was left" report is covered by `elsewhere` alone. An armed page and a gone window keep their rules.
+- Lesson: a layer's page message is only that layer's word. "Not armed" means "this layer does not hide", not "nothing
+  hides"; combine it with the other hide paths before deciding who draws the Japanese.
+- Test: `validation/page-elsewhere.test.cjs` (node + headless Edge DOM), `validation/saya-garble.test.cjs` updated to the
+  bilingual fallback. Headless before/after on the user's screenshot: before = translation alone, after = both. Not verified in the game: this copy needs the
+  DVD (only an unknown no-DVD patch exe in the folder, not run); verify with the reporter's log / next live check.

@@ -23,10 +23,12 @@
     'body.megulit-placed .megulit-place-window .char-token{position:absolute!important;display:block!important;margin:0!important;padding:0!important;text-align:center!important;white-space:pre!important;letter-spacing:0!important;text-indent:0!important;pointer-events:auto}',
     'body.megulit-placed .megulit-place-window .char-token.megulit-unplaced{display:none!important}',
     /* fallback (the game drew its line blank but said nowhere where): the reader keeps its own place, without any plate */
-    'body.megulit-place-fallback .sentence-window.tomoyo-hook-reader,body.megulit-place-fallback .sentence-window.tomoyo-hook-reader .tomoyo-cn-row{background:none!important;border-color:transparent!important;box-shadow:none!important;backdrop-filter:none!important}',
-    'body.megulit-place-fallback .sentence-window.tomoyo-hook-reader::before,body.megulit-place-fallback .sentence-window.tomoyo-hook-reader::after,body.megulit-place-fallback .tome-box-deco{display:none!important}',
-    /* 2026-11-15 the game still draws this line itself (core/overlay-placement.cjs `visible`): no Japanese or ruby over it, the translation stays */
-    'body.megulit-place-game-drawn .sentence-window.tomoyo-hook-reader .sentence-text:not(.megulit-old-line){visibility:hidden!important}',
+    'body.megulit-place-fallback .sentence-window.tomoyo-hook-reader,body.megulit-place-fallback .sentence-window.tomoyo-hook-reader .tomoyo-cn-row,body.megulit-place-game-drawn .sentence-window.tomoyo-hook-reader,body.megulit-place-game-drawn .sentence-window.tomoyo-hook-reader .tomoyo-cn-row{background:none!important;border-color:transparent!important;box-shadow:none!important;backdrop-filter:none!important}',
+    'body.megulit-place-fallback .sentence-window.tomoyo-hook-reader::before,body.megulit-place-fallback .sentence-window.tomoyo-hook-reader::after,body.megulit-place-fallback .tome-box-deco,body.megulit-place-game-drawn .sentence-window.tomoyo-hook-reader::before,body.megulit-place-game-drawn .sentence-window.tomoyo-hook-reader::after,body.megulit-place-game-drawn .tome-box-deco{display:none!important}',
+    /* the game still draws this line itself (core/overlay-placement.cjs `visible`, an unarmed page): the reader stays in its
+       own window, Japanese on top (clickable for lookups) and the translation under it, but never on a plate (2026-11-16 user:
+       no plate behind any MeguLit text). Only a placed page whose places do not hold the line yet hides its Japanese. */
+    'body.megulit-place-game-drawn.megulit-placed .sentence-window.tomoyo-hook-reader .sentence-text:not(.megulit-old-line){visibility:hidden!important}',
     'body.megulit-place-game-drawn .sentence-window.tomoyo-hook-reader .tomoyo-cn-row{visibility:visible!important}',
     /* layer 4 page model: older lines of the page (their own .sentence-text, placed like the current one) */
     'body.megulit-place-asleep .sentence-window.tomoyo-hook-reader{visibility:hidden!important}',
@@ -46,6 +48,24 @@
   ].join('\n');
   document.head.append(style);
   const blank = c => /^[\s　​﻿]*$/.test(c);
+  /* reader characters -> indexes into the placed line's characters (null: not on the game's line, e.g. a repeated copy
+     of the sentence). In order, dashes of any kind are one character; a dash the reader has twice where the game has
+     it once shares that cell (index + .5 = its right half). null when fewer than 60 % of the game's characters (and
+     of the reader's, up to the game's length) are found: another line. */
+  const DASHES = /[‒-―─━⸺⸻]/;
+  const same = (a, b) => a === b || (DASHES.test(a) && DASHES.test(b));
+  function align(reader, placed) {
+    const out = new Array(reader.length).fill(null); let p = 0, found = 0;
+    for (let j = 0; j < reader.length; j++) {
+      const prev = j > 0 ? out[j - 1] : null;
+      if (prev != null && prev % 1 === 0 && DASHES.test(reader[j]) && DASHES.test(placed[prev]) && !DASHES.test(placed[p] || '')) { out[j] = prev + .5; continue; }
+      let k = -1; for (let q = p; q < placed.length && q <= p + 6; q++) if (same(reader[j], placed[q])) { k = q; break; }
+      if (k >= 0) { out[j] = k; p = k + 1; found++; }
+    }
+    const need = Math.ceil(.6 * Math.min(placed.length, reader.length));
+    return found && found >= need ? out : null;
+  }
+  b.textPlaceAlign = align;
   const median = list => { const v = list.filter(n => n > 0).sort((x, y) => x - y); return v.length ? v[v.length >> 1] : 0; };
   function target() {
     const own = document.querySelector('.sentence-window.tomoyo-hook-reader');
@@ -257,15 +277,20 @@
     /* map the reader's characters onto the record (the record may carry a speaker or more before the reader's text) */
     const placeRects = [], chars = [...line.text];
     chars.forEach((c, i) => { if (!blank(c)) placeRects.push(line.rects[i]); });
-    const at = readerText ? placeText.indexOf(readerText) : -1;
+    /* 2026-11-16 (死に逝く君、館に芽吹く憎悪: every other line jumped between the game's text box and the reader's own place):
+       the reader's text is not always a copy of the placed line: its source doubles a dash (「――」 for the game's 「―」),
+       repeats the sentence, drops a repeated syllable. An exact match was required, and every such line fell back to the
+       reader's own place, a different spot from the line before. The characters are aligned instead (align()); a line
+       is placed when most of the game's characters are found in it. */
+    const idx = readerText ? align([...readerText], [...placeText]) : null;
     /* a placement of another line (the current one is not placed yet): the game's own copy of this line may still be on
        screen, so no plateless Japanese at the reader's place when the source said so */
-    if (at < 0) { if (gameDrawn()) release(); else release(true); return; }
+    if (!idx) { if (gameDrawn()) release(); else release(true); return; }
     if (document.body.classList.contains('megulit-place-game-drawn')) { document.body.classList.remove('megulit-place-game-drawn'); window.__tomoyoHitRegionsRefresh?.(true); }
     /* record px are game-client px; the reader surface may be larger than the game (galLayoutInfo: client origin and size
        in physical px), CSS px = physical / devicePixelRatio */
     const map = mapper(line.client);
-    const boxes = shown.map((t, j) => { const r = placeRects[[...placeText.slice(0, at)].length + j]; return r && map(r); });
+    const boxes = shown.map((t, j) => { const k = idx[j]; if (k == null) return null; const r = placeRects[Math.floor(k)]; if (!r) return null; const m = map(r); /* half cells: two reader dashes on one game dash */ return m && k % 1 ? [m[0] + m[2] / 2, m[1], m[2] / 2, m[3]] : m && idx[j + 1] === k + .5 ? [m[0], m[1], m[2] / 2, m[3]] : m; });
     const cjk = boxes.filter((r, j) => r && /[^\x00-\x7f｡-ﾟ]/.test(shown[j].textContent)).map(r => r[2]);
     const size = Math.max(6, median(cjk) || median(boxes.filter(Boolean).map(r => r[3])));
     /* no real box for any of the reader's characters (all 0 / null / outside the game): the reader keeps its own place;
@@ -313,7 +338,9 @@
   const schedule = () => { if (!frame) frame = requestAnimationFrame(apply); };
   b.textPlace = m => { if (m?.visible === true) { drawnByGame = [...String(m.text || '')].filter(c => !blank(c)).join(''); schedule(); return; } if (m && Array.isArray(m.rects) && m.text) drawnByGame = ''; if (m?.clear) line = null; else if (m?.fallback && m.text) line = { fallback: true, text: String(m.text) }; else if (m && Array.isArray(m.rects) && m.text) line = { text: String(m.text), rects: m.rects, client: Array.isArray(m.client) ? m.client : [innerWidth, innerHeight] }; schedule(); };
   const pageGone = () => { for (const n of document.querySelectorAll('.megulit-old-line')) n.remove(); clones.clear(); document.body.classList.remove('megulit-place-asleep'); };
-  b.textPlacePage = m => { const had = !!page; page = m && Array.isArray(m.lines) ? { awake: m.awake === true, armed: m.armed === true, lines: m.lines.filter(l => l && typeof l.text === 'string' && Array.isArray(l.rects)), client: Array.isArray(m.client) ? m.client : [innerWidth, innerHeight] } : null; if (page) { line = null; drawnByGame = ''; } else if (had) pageGone(); schedule(); };
+  /* 2026-11-15 `elsewhere` (core/overlay-placement.cjs page()): the layer is not armed and another path hides the game's
+     line (write-back, glyph layer); the page says nothing about the line, so the reader places it as without a page */
+  b.textPlacePage = m => { const had = !!page; if (m?.elsewhere === true) { page = null; drawnByGame = ''; if (had) { pageGone(); dropOld(null); document.getElementById('megulit-page-ahead')?.replaceChildren(); document.body.classList.remove('megulit-place-game-drawn'); } schedule(); return; } page = m && Array.isArray(m.lines) ? { awake: m.awake === true, armed: m.armed === true, lines: m.lines.filter(l => l && typeof l.text === 'string' && Array.isArray(l.rects)), client: Array.isArray(m.client) ? m.client : [innerWidth, innerHeight] } : null; if (page) { line = null; drawnByGame = ''; } else if (had) pageGone(); schedule(); };
   b.textPlaceExtra = m => { extras = { items: Array.isArray(m?.items) ? m.items.filter(i => i && typeof i.text === 'string' && Array.isArray(i.rects)) : [], client: Array.isArray(m?.client) ? m.client : null }; schedule(); };
   b.textPlaceMode = m => { on = m?.on === true; if (!on) { line = null; drawnByGame = ''; if (page) { page = null; pageGone(); } } schedule(); };
   b.textPlaceStatus = () => ({ on, line: line ? { text: line.text, n: line.rects?.length || 0, fallback: !!line.fallback } : null, placed: document.body.classList.contains('megulit-placed'), geom: lastGeom.split(';').length });

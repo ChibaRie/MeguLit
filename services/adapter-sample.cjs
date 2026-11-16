@@ -73,12 +73,12 @@ function sampleGame({dir,executable,result}){
  return {samples:samples.slice(0,PER_GAME_SAMPLES+3),keys};}
 
 /* ---- service side ----------------------------------------------------------------------------------------------- */
-const ALLOWED_STEPS=['unknown-pack','decrypt-failed','parse-failed','not-japanese','low-pairing','timeout'];
+const ALLOWED_STEPS=['unknown-pack','decrypt-failed','parse-failed','not-japanese','chinese-build','decode-suspect','low-pairing','timeout'];
 /* the uploaded part of a probe result: counts and names that went through maskString, nothing else */
-function publicResult(r){const inv=r.inventory||{};return {step:r.step,detail:String(r.detail||'').replace(/[^\x20-\x7e]/g,'?').slice(0,80),detected:r.detected||null,reader:String(r.reader||''),lines:r.lines|0,japaneseLines:r.japaneseLines|0,sizes:(r.sizes||[]).slice(0,4000).map(n=>n|0),
+function publicResult(r){const inv=r.inventory||{};return {step:r.step,detail:String(r.detail||'').replace(/[^\x20-\x7e]/g,'?').slice(0,80),detected:r.detected||null,reader:String(r.reader||''),lines:r.lines|0,japaneseLines:r.japaneseLines|0,dialogueLines:r.dialogueLines|0,chineseLines:r.chineseLines|0,sizes:(r.sizes||[]).slice(0,4000).map(n=>n|0),
  pairing:r.pairing&&r.pairing.total?{total:r.pairing.total|0,paired:r.pairing.paired|0,unpaired:r.pairing.unpaired|0,rate:r.pairing.rate,reasons:r.pairing.reasons||{}}:null,
  inventory:{files:inv.files|0,bytes:inv.bytes||0,scripts:inv.scripts|0,ext:Object.fromEntries(Object.entries(inv.ext||{}).filter(([k])=>/^[\x20-\x7e]{1,12}$/.test(k)).slice(0,60)),archives:(inv.archives||[]).slice(0,48).map(a=>({name:d.maskString(a.name).slice(0,120),size:a.size||0,magic:/^[0-9a-f]{0,16}$/.test(a.magic||'')?a.magic:'',format:/^[a-z0-9-]{0,20}$/.test(a.format||'')?a.format:''}))},
- engines:(r.engines||[]).slice(0,60).map(e=>({id:String(e.id).slice(0,30),scenes:e.scenes|0,parsed:e.parsed|0,lines:e.lines|0,japaneseLines:e.japaneseLines|0,error:String(e.error||'').replace(/[^\x20-\x7e]/g,'?').slice(0,60),ms:e.ms|0})),
+ engines:(r.engines||[]).slice(0,60).map(e=>({id:String(e.id).slice(0,30),scenes:e.scenes|0,parsed:e.parsed|0,lines:e.lines|0,japaneseLines:e.japaneseLines|0,dialogueLines:e.dialogueLines|0,chineseLines:e.chineseLines|0,error:String(e.error||'').replace(/[^\x20-\x7e]/g,'?').slice(0,60),ms:e.ms|0})),
  unsupported:r.unsupported?{engine:String(r.unsupported.engine||'').slice(0,30),code:String(r.unsupported.code||'').replace(/[^\x20-\x7e]/g,'?').slice(0,40)}:null,preparing:r.preparing||null};}
 /* last line of defence: outside titles, the bundle may hold no kana/kanji but placeholders and kept punctuation */
 const TEXTISH=/[぀-ヿ㐀-鿿가-힯０-ｚ]/g;
@@ -91,7 +91,7 @@ async function prepare(root,db,{ids=null,sampler,titles=true}={}){
  const want=ids?new Set(ids.map(String)):null,list=[];
  for(const g of games){const r=results[g.id];if(!r||!ALLOWED_STEPS.includes(r.step))continue;if(want&&!want.has(g.id))continue;
   let fp=null;try{fp=require('./shared-adaptation.cjs').fingerprint(g.executable);}catch{}
-  let extra={samples:[],keys:[]};if(sampler&&r.step!=='low-pairing'&&r.step!=='not-japanese')try{extra=await sampler(g,r)||extra;}catch{}
+  let extra={samples:[],keys:[]};if(sampler&&r.step!=='low-pairing'&&!['not-japanese','chinese-build'].includes(r.step))try{extra=await sampler(g,r)||extra;}catch{}
   /* runtime findings of this game, through the privacy gate once more */
   let runtime=null;try{const rh=require('./runtime-harvest.cjs');runtime=rh.gate(rh.load(root,g.id));}catch{}
   let ident={id:'',vndb:''};try{const pi=require('./probe-identity.cjs');ident=pi.identity({executable:g.executable,result:r,vndb:pi.vndbOf(db,g.id)});}catch{}

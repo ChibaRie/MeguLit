@@ -25,7 +25,7 @@ const opt=(name,fallback)=>{const i=args.indexOf('--'+name);if(i<0)return fallba
 const repo=path.resolve(__dirname,'..');
 const fail=m=>{console.error(m);process.exit(1);};
 const relay=()=>(opt('relay',process.env.MEGULIT_RELAY_BASE||'https://api.megulit.com')).replace(/\/+$/,'');
-const token=()=>process.env.MEGULIT_ADAPTER_ADMIN_TOKEN||fail('MEGULIT_ADAPTER_ADMIN_TOKEN is not set');
+const token=()=>require('./admin-token.cjs').adminToken()||fail('MEGULIT_ADAPTER_ADMIN_TOKEN is not set');
 const readPack=f=>{try{return JSON.parse(fs.readFileSync(f,'utf8'));}catch(e){fail('cannot read '+f+': '+e.message);}};
 async function call(method,route,body){const r=await fetch(relay()+route,{method,headers:{'content-type':'application/json',authorization:'Bearer '+token(),'user-agent':'MeguLit-maintainer'},body:body?JSON.stringify(body):undefined});const t=await r.text();console.log(r.status,t);if(!r.ok)process.exit(1);}
 (async()=>{switch(cmd){

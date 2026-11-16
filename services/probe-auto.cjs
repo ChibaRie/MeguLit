@@ -87,14 +87,21 @@ async function run(root,db,{ids=null,fetcher=globalThis.fetch,endpoint,hasEndpoi
   if(probeFirst&&!ids&&Date.now()-s.probedAt>PROBE_EVERY&&probe.status(root).state!=='running'){
    s.probedAt=Date.now();save(root,s);probe.start(root,db,{reason:'auto'});
    for(let i=0;i<2400&&probe.status(root).state==='running';i++)await wait(1000);}
-  const results=probe.results(root),games=probe.libraryGames(db),want=ids?new Set(ids.map(String)):null,out={},full={};
+  const results=probe.results(root),games=probe.libraryGames(db),want=ids?new Set(ids.map(String)):null,out={},full={},contrib=require('./adapter-contrib.cjs'),contribOut={};
+  /* rule 3 (adapter-contrib.cjs): local packages never stay longer than KEEP_DAYS, nor at all once the switch is off */
+  contrib.purgeOutbox(root,contrib.enabled(root)?{olderThan:contrib.KEEP_DAYS*86400000}:{});
   for(const p of probe.problems(root)){if(want&&!want.has(p.id))continue;const g=games.find(x=>x.id===p.id);if(!g||!results[p.id])continue;
    const keep=s.games[p.id]?.full;let o;try{o=await one(root,db,g,results[p.id],s,{fetcher,endpoint,hasEndpoint,sampler});}catch{o='failed';}
    if(keep&&s.games[p.id]&&!s.games[p.id].full)s.games[p.id].full=keep;
-   out[p.id]=o;save(root,s);if(o==='offline')break;await wait(o==='skipped'?0:1500);
-   let fo;try{fo=await fullOne(root,db,g,results[p.id],s,{fetcher,fullBase,fuller});}catch{fo='failed';}
-   full[p.id]=fo;save(root,s);if(fo==='offline')break;if(fo!=='skipped')await wait(1500);}
-  save(root,s);return {state:'done',results:out,full};})();
+   out[p.id]=o;save(root,s);if(o==='offline')break;
+   /* 2026-11-16 informed consent (adapter-contrib.cjs consentState): the contribution and the full script + exe upload
+      run only after the player agreed (update card 同意并下一步 or the Settings switch); without it nothing of the game is sent */
+   if(contrib.enabled(root)){
+    try{contribOut[p.id]=await contrib.forGame(root,db,g,results[p.id],{fetcher});}catch{contribOut[p.id]='failed';}
+    let fo;try{fo=await fullOne(root,db,g,results[p.id],s,{fetcher,fullBase,fuller});}catch{fo='failed';}
+    full[p.id]=fo;save(root,s);if(fo==='offline')break;if(fo!=='skipped')await wait(1500);}
+   await wait(o==='skipped'?0:1500);}
+  save(root,s);return {state:'done',results:out,contrib:contribOut,full};})();
  try{return await busy;}finally{busy=null;}}
 
 /* status(root) → {enabled, busy, games, log} (the probe dialog shows log + each bundle's manifest as the record) */

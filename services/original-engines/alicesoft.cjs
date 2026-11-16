@@ -134,6 +134,20 @@ function listAfa(file){const h=kit.head(file,44);if(h.length<44||h.toString('lat
   const off=idx.readUInt32LE(p),size=idx.readUInt32LE(p+4);p+=8;out.push({name:new TextDecoder("shift_jis").decode(nb),offset:dataStart+off,size});}
  return out;}
 
+/* ---- AAR (System4 "AAR ": the newer resource / data archive, libsys4 src/aar.c) --------------------------------------
+   header {"AAR ", version 0|2, count, index size}; per entry {offset, size, type 0 raw|1 ZLB|2 symlink}, name (v2: every byte
+   +0x60, then a link target); a ZLB entry is "ZLB ", 0, outSize, inSize + zlib. */
+function listAar(file){const h=kit.head(file,16);if(h.length<16||h.toString('latin1',0,4)!=='AAR ')return null;
+ const ver=h.readUInt32LE(4),count=h.readUInt32LE(8),idxEnd=h.readUInt32LE(12);if(ver!==0&&ver!==2||count>1e6||idxEnd<16||idxEnd>(64<<20))return null;
+ const idx=kit.readAt(file,0,idxEnd),key=ver>=2?0x60:0,fsz=kit.size(file),out=[];let p=12;
+ const str=()=>{const s=p;while(p<idx.length&&idx[p])p++;if(p>=idx.length)throw Error('AAR_INDEX');const b=Buffer.from(idx.subarray(s,p));p++;for(let i=0;i<b.length;i++)b[i]=(b[i]-key)&255;return new TextDecoder('shift_jis').decode(b);};
+ try{for(let i=0;i<count;i++){if(p+12>idx.length)throw Error('AAR_INDEX');const offset=idx.readUInt32LE(p),size=idx.readUInt32LE(p+4),type=idx.readUInt32LE(p+8);p+=12;const name=str(),link=ver>=2?str():'';
+  if(type!==2&&offset+size>fsz)return null;out.push({name,offset,size,type,link});}}catch{return null;}
+ return p===idxEnd?out:null;}
+function readAarEntry(file,e){if(e.type===2)return null;const b=kit.readAt(file,e.offset,e.size);if(e.type!==1)return b;
+ if(b.length<16||b.toString('latin1',0,4)!=='ZLB '||b.readUInt32LE(4)!==0)return null;const out=b.readUInt32LE(8),inn=b.readUInt32LE(12);if(inn+16>b.length)return null;
+ const d=zlib.inflateSync(b.subarray(16,16+inn),{maxOutputLength:out+1});return d.length===out?d:null;}
+
 /* ---- engine: scenes are the SCO pages of the scenario ALDs (and loose SCO files) ------------------------------------- */
 const SCEN=/s[a-z]\.ald$/i;
 const ainMemo=new Map();
@@ -156,4 +170,4 @@ function sources(dir){return [...kit.files(dir,{name:/\.ald$/i}).filter(f=>SCEN.
 const engine={id:'alicesoft',hint:'*SA.ALD / System39.ain',scenes,archives:scenes,sources,parse,test:n=>/\.sco$/i.test(n)};
 /* a System4 folder: its script is the .ain (original-text.cjs), its .afa / .ald archives are CG and sound only */
 function system4(dir){return kit.names(dir).some(n=>/\.ain$/i.test(n)&&!['AINI','AIN2'].includes(kit.head(path.join(dir,n),4).toString('latin1')));}
-module.exports={engine,parse,listAld,listAfa,readAin39,walk,scoLines,cali,system4,messageRun};
+module.exports={engine,parse,listAld,listAfa,listAar,readAarEntry,readAin39,walk,scoLines,cali,system4,messageRun};

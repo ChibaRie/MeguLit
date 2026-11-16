@@ -34,7 +34,8 @@ foreach ($taskNb in (Get-Content -LiteralPath (Join-Path $taskRoot 'native/nativ
   if ($taskNb.selftestNeeds -eq 'python' -and -not (Get-Command python.exe -ErrorAction SilentlyContinue)) { Write-Warning "native $($taskNb.name): no python on PATH, $taskSt skipped"; continue }
   if ((Invoke-TaskCmd (Join-Path $taskRoot $taskSt)) -ne 0) { throw "Native self-test failed: $($taskNb.name) ($taskSt)" } }
 }
-& $taskNode (Join-Path $taskRoot 'tools/native-stale.cjs'); if ($LASTEXITCODE -ne 0) { throw 'A shipped native binary is older than its sources (tools/native-stale.cjs)' }
+$taskStaleArgs = @(); if ($env:GITHUB_ACTIONS -eq 'true') { $taskStaleArgs = @('--ci') }  # CI has no LunaHook tree: entries with "ci": false may be missing
+& $taskNode (Join-Path $taskRoot 'tools/native-stale.cjs') @taskStaleArgs; if ($LASTEXITCODE -ne 0) { throw 'A shipped native binary is older than its sources (tools/native-stale.cjs)' }
 & (Join-Path $taskRoot 'native/Build-GameStyleProbe.ps1')
 & (Join-Path $taskRoot 'native/Build-StartupIsland.ps1') -OutputPath (Join-Path $taskRoot 'native/StartupIsland.exe')
 & $taskCsc /nologo /target:exe /optimize+ ("/out:" + (Join-Path $taskRoot 'native\GameProcess.exe')) (Join-Path $taskRoot 'native\GameProcess.cs')
@@ -64,13 +65,14 @@ $taskBuilt = Join-Path $taskRoot 'desktop\target\release\megulit.exe'
 if ($Check) {
  $taskTests = @(Get-ChildItem -LiteralPath (Join-Path $taskRoot 'validation') -Filter '*.test.cjs' -File -Recurse | ForEach-Object { $_.FullName })
  if (-not $taskTests.Count) { throw 'No tests found in validation/*.test.cjs; -Check must not pass with zero tests' }
- $taskTestOutput = & $taskNode --test @taskTests 2>&1
+ # Cap test parallelism: at full CPU concurrency the timing-sensitive tests (runtime-harvest, relay-race, topmost/altt window checks) flake under load, though each passes alone. 2 keeps the suite fast while not saturating the machine.
+ $taskTestOutput = & $taskNode --test --test-concurrency=2 @taskTests 2>&1
  $taskTestExit = $LASTEXITCODE
  $taskTestOutput | Set-Content -LiteralPath (Join-Path $taskRoot 'validation/automated-results.txt') -Encoding utf8
  $taskTestText = $taskTestOutput -join "`n"
  @{ recordedAt=[DateTime]::UtcNow.ToString('o'); exitCode=$taskTestExit; tests=[int]([regex]::Match($taskTestText,'(?m)tests\s+(\d+)').Groups[1].Value); passed=[int]([regex]::Match($taskTestText,'(?m)pass\s+(\d+)').Groups[1].Value); failed=[int]([regex]::Match($taskTestText,'(?m)fail\s+(\d+)').Groups[1].Value) } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $taskRoot 'validation/automated-results.json') -Encoding utf8
  Write-Output ($taskTestOutput | Select-Object -Last 9)
- if ($taskTestExit -ne 0) { $taskTestOutput | Select-String -Pattern '^not ok|^\s+(error|location):' | ForEach-Object { Write-Output $_.Line }; throw 'Independent data checks failed; see validation/automated-results.txt' }
+ if ($taskTestExit -ne 0) { $taskTestOutput | Select-String -Pattern '^not ok' -Context 0,24 | ForEach-Object { Write-Output $_.Line; $_.Context.PostContext | Where-Object { $_ -match '^\s' } | ForEach-Object { Write-Output $_ } }; throw 'Independent data checks failed; see validation/automated-results.txt' }
  if (-not ([regex]::Match($taskTestText,'(?m)tests\s+(\d+)').Success) -or [int]([regex]::Match($taskTestText,'(?m)tests\s+(\d+)').Groups[1].Value) -eq 0) { throw 'Test runner reported zero tests' }
 }
 $taskOutput = Join-Path $taskRoot 'MeguLit.exe'

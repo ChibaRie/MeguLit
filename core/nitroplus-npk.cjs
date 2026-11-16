@@ -11,6 +11,9 @@
 const fs=require('node:fs'),crypto=require('node:crypto'),zlib=require('node:zlib');
 
 const KEYS={saya:Buffer.from('763a14338b0dac040accfc13851cfacbb20b000b01f868486b460f8c34d42a96','hex')};
+/* every NPK2 key GARbro knows (Formats.dat, exported by tools/garbro-schemes.ps1 -Engine npk) plus Saya's: an NPK2 archive from
+   another build or title is opened with whichever key turns its index into entries */
+const ALL_KEYS=[KEYS.saya,...Object.values(require('../services/original-engines/nitro-schemes.json').npk2).map(h=>Buffer.from(h,'hex'))];
 const SEGMENT=65536;
 
 function aes(decrypt,key,iv,data){const c=(decrypt?crypto.createDecipheriv:crypto.createCipheriv)('aes-256-cbc',key,iv);return Buffer.concat([c.update(data),c.final()]);}
@@ -23,6 +26,7 @@ function readNpk(buf,key=KEYS.saya){
  let idx;try{idx=aes(true,key,iv,buf.subarray(0x20,0x20+size));}catch{throw Error('NPK_KEY');}
  const entries=npkIndex(idx,count,buf.length);
  return {buf,key,iv,version:buf.readUInt32LE(4),entries};}
+function readNpkAny(buf){let err;for(const k of ALL_KEYS){try{return readNpk(buf,k);}catch(e){err=e;}}throw err||Error('NPK_KEY');}
 /* E580 the decrypted index -> entries; shared with the script reader (services/original-engines/npk.cjs) */
 function npkIndex(idx,count,fileSize=Infinity){let o=0;const entries=[];
  for(let i=0;i<count;i++){
@@ -79,4 +83,4 @@ function createPak(files,tag='SAYA'){
  const raw=Buffer.concat(rows),idx=zlib.deflateSync(raw),head=Buffer.alloc(0x114);
  head.writeUInt32LE(2,0);head.writeUInt32LE(rows.length,4);head.writeUInt32LE(raw.length,8);head.writeUInt32LE(idx.length,12);head.write(tag,0x14,'latin1');
  return Buffer.concat([head,idx,...bodies]);}
-module.exports={npkIndex,KEYS,isNpk2,readNpk,npkData,writeNpk,createNpk,isPak,readPak,createPak};
+module.exports={npkIndex,KEYS,ALL_KEYS,readNpkAny,isNpk2,readNpk,npkData,writeNpk,createNpk,isPak,readPak,createPak};

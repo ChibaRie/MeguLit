@@ -28,6 +28,8 @@ const EN_NEEDLES=rf.ENGLISH.flatMap(e=>{const w=e.split(/\s+/);const out=[];for(
 /* every string in a JSON value, and every base64 / hex field decoded, in every encoding */
 function surfaces(value){const out=[];const walk=(v,k)=>{if(v&&typeof v==='object'&&typeof v.gzip==='string'){for(const t of decodings(d.partBytes(v)))out.push(t);}if(typeof v==='string'){out.push(v);if(v.length>=8&&/^[A-Za-z0-9+/]+=*$/.test(v)&&v.length%4===0)for(const t of decodings(Buffer.from(v,'base64')))out.push(t);if(/^(?:[0-9a-f]{2}){4,}$/.test(v))for(const t of decodings(Buffer.from(v,'hex')))out.push(t);}
  else if(Array.isArray(v))v.forEach(x=>walk(x,k));else if(v&&typeof v==='object')for(const [kk,x] of Object.entries(v))walk(x,kk);};walk(value,'');return out;}
+/* where a leak sits (field path, which decoding, a few bytes around it), so a runner-only failure can be read from its log */
+function leakPaths(value){const out=[];const walk=(v,p)=>{if(typeof v==='string'||(v&&typeof v==='object'&&typeof v.gzip==='string')){const f=leaks(v);if(f.length){const bytes=typeof v!=='string'?d.partBytes(v):(v.length>=8&&/^[A-Za-z0-9+/]+=*$/.test(v)&&v.length%4===0)?Buffer.from(v,'base64'):null;const hits=bytes?decodings(bytes).map((t,i)=>{const r=f.map(n=>t.indexOf(n)).find(x=>x>=0);return r>=0?{dec:i,at:r,ctx:[...t.slice(Math.max(0,r-6),r+9)].map(c=>c.charCodeAt(0).toString(16)).join(' ')}:null;}).filter(Boolean):null;out.push({path:p,found:f.slice(0,5),len:bytes?bytes.length:v.length,hits});}return;}if(Array.isArray(v))v.forEach((x,i)=>walk(x,p+'['+i+']'));else if(v&&typeof v==='object')for(const [k,x] of Object.entries(v))walk(x,p+'.'+k);};walk(value,'');return out;}
 function leaks(value){const found=[];for(const s of surfaces(value)){for(const n of NEEDLES)if(s.includes(n))found.push(n);for(const n of EN_NEEDLES)if(s.includes(n))found.push(n);
  /* any kana run of 3+ that is not placeholders */const m=s.match(/[ぁ-ゖァ-ヺ]{3,}/g);if(m)for(const r of m)if([...r].some(ch=>!PLACE.has(ch)))found.push(r);}
  return [...new Set(found)];}
@@ -199,7 +201,7 @@ test('native reader: a live stand-in process — keys, index and script layout f
   assert.ok(local.keys.some(k=>k.algo==='blowfish'&&k.state.equals(G.state)),'the schedule held by the live process');
   assert.ok(local.indexes.some(i=>i.count===G.records.length&&i.stride===32),'the index held by the live process: '+JSON.stringify({stats:local.stats,ix:local.indexes.map(i=>[i.count,i.stride,i.archive.name])}));
   assert.ok(local.scripts.length>=1);
-  const pub=rh.gate(rh.publicize(local));assert.deepEqual(leaks(pub),[]);
+  const pub=rh.gate(rh.publicize(local));assert.deepEqual(leaks(pub),[],'leaks at: '+JSON.stringify(leakPaths(pub)));
   /* cancel: a second read stops at once */
   const ac=new AbortController();const t=Date.now();const p=rh.scan({pid:child.pid,archives:ARCH,budgetMs:90000,signal:ac.signal});setTimeout(()=>ac.abort(),300);const c=await p;
   assert.equal(c.stats.error,'CANCELLED');assert.ok(Date.now()-t<30000);

@@ -44,7 +44,7 @@ function start(root,db,{ids=null,reason='manual',budgetMs=DEFAULT_BUDGET,perGame
  if(!(resume&&s.run?.queue?.length&&s.run.done.length<s.run.queue.length)){
   let games=libraryGames(db);if(Array.isArray(ids)&&ids.length){const want=new Set(ids.map(String));games=games.filter(g=>want.has(g.id));}
   const fresh=Date.now()-FRESH_DAYS*86400000;
-  const queue=games.filter(g=>force||!s.results[g.id]||s.results[g.id].stamp!==stampOf(g.executable)||(s.results[g.id].at||0)<fresh);
+  const queue=games.filter(g=>force||!s.results[g.id]||s.results[g.id].stamp!==stampOf(g.executable)||s.results[g.id].step==='preparing'||(s.results[g.id].at||0)<fresh);
   s.run={reason:String(reason).slice(0,30),queue,done:[],state:'running',startedAt:Date.now(),updatedAt:Date.now(),budgetMs,perGameMs,usedMs:0};}
  else Object.assign(s.run,{state:'running',updatedAt:Date.now(),budgetMs:Math.max(budgetMs,s.run.budgetMs||0),usedMs:0});
  {const known=new Set(libraryGames(db).map(g=>g.id));if(known.size)for(const id of Object.keys(s.results))if(!known.has(id))delete s.results[id];}
@@ -62,12 +62,12 @@ async function loop(root,live){
   live.current={id:next.id,title:next.title};try{live.emit('adapter-probe',status(root));}catch{}
   let result;const dir=path.dirname(next.executable);
   if(!fs.existsSync(next.executable))result={schema:'megulit.probe-result',version:1,step:'no-script',detail:'GAME_MISSING',engines:[],inventory:{files:0,bytes:0,ext:{},archives:[]},lines:0,japaneseLines:0};
-  else result=await probeOne(live,{dir,executable:next.executable},run.perGameMs||PER_GAME);
+  else result=await probeOne(live,{dir,executable:next.executable,title:next.title},run.perGameMs||PER_GAME);
   if(live.cancelled)return;
   const now=load(root);if(!now.run)return;now.results[next.id]=finish(root,next,result);now.run.done.push(next.id);now.run.updatedAt=Date.now();now.run.usedMs=Date.now()-began;save(root,now);
   live.current=null;await new Promise(r=>setTimeout(r,150));}
 }
-function probeOne(live,{dir,executable},perGameMs){
+function probeOne(live,{dir,executable,title},perGameMs){
  return new Promise(resolve=>{
   if(!live.child||live.child.exitCode!==null||live.child.killed)live.child=spawnWorker();
   const child=live.child,id=Math.random().toString(36).slice(2);let settled=false;
@@ -76,7 +76,7 @@ function probeOne(live,{dir,executable},perGameMs){
   const onExit=()=>{live.child=null;done({schema:'megulit.probe-result',version:1,step:live.cancelled?'cancelled':'parse-failed',detail:'WORKER_EXIT',engines:[],inventory:{files:0,bytes:0,ext:{},archives:[]},lines:0,japaneseLines:0});};
   const timer=setTimeout(()=>{try{child.kill();}catch{}live.child=null;done({schema:'megulit.probe-result',version:1,step:'timeout',detail:'PER_GAME_BUDGET',engines:[],inventory:{files:0,bytes:0,ext:{},archives:[]},lines:0,japaneseLines:0});},perGameMs);
   live.timer=timer;child.on('message',onMessage);child.once('exit',onExit);
-  try{child.send({type:'probe',id,dir,executable,budgetMs:Math.max(5000,perGameMs-5000)});}catch{done({schema:'megulit.probe-result',version:1,step:'parse-failed',detail:'WORKER_SEND',engines:[],inventory:{files:0,bytes:0,ext:{},archives:[]},lines:0,japaneseLines:0});}
+  try{child.send({type:'probe',id,dir,executable,title,budgetMs:Math.max(5000,perGameMs-5000)});}catch{done({schema:'megulit.probe-result',version:1,step:'parse-failed',detail:'WORKER_SEND',engines:[],inventory:{files:0,bytes:0,ext:{},archives:[]},lines:0,japaneseLines:0});}
  });}
 /* one job in a fresh worker (structural samples for the upload): resolves its answer, or null on timeout / crash */
 function inWorker(message,timeout=120000){return new Promise(resolve=>{let child;try{child=spawnWorker();}catch{return resolve(null);}const id=Math.random().toString(36).slice(2);
@@ -91,7 +91,7 @@ function cancel(root){const key=path.resolve(root),live=runs.get(key);if(live){l
 function resumeLater(root,openDb,{delay=180000}={}){if(process.env.NODE_TEST_CONTEXT)return null;const s=load(root);if(!s.run||!['running','paused'].includes(s.run.state))return null;
  const t=setTimeout(()=>{let db;try{db=openDb();const games=libraryGames(db);try{db.close();}catch{}resume(root,{prepare:()=>({all:()=>games})});}catch{try{db?.close();}catch{}}},delay);t.unref?.();return t;}
 /* the games whose probe found a problem: [{id,title,step,detail}] */
-function problems(root){return Object.entries(results(root)).filter(([,r])=>r.step&&r.step!=='ok'&&r.step!=='no-script').map(([id,r])=>({id,title:r.title||'',step:r.step,detail:r.detail||''}));}
+function problems(root){return Object.entries(results(root)).filter(([,r])=>r.step&&r.step!=='ok'&&r.step!=='no-script'&&r.step!=='preparing').map(([id,r])=>({id,title:r.title||'',step:r.step,detail:r.detail||''}));}
 /* one row for the 适配总览 dialog: {step,detail,lines,pairing,at} or null */
 function brief(root,id){const r=results(root)[String(id)];if(!r)return null;return {step:r.step,detail:r.detail||'',engine:r.detected||null,lines:r.lines||0,japaneseLines:r.japaneseLines||0,pairing:r.pairing?.rate??null,at:r.at||null};}
 module.exports={inWorker,sampleInWorker,fullInWorker,start,resume,cancel,status,results,problems,brief,resumeLater,load,fileOf,LOW_PAIRING,finish,pairingOf,libraryGames};

@@ -219,6 +219,45 @@ Desensitizing whole tables surfaced one more rule: two half-width-kana bytes bet
 (`0x03A6B010` = `10 B0 A6 03`), not text; such runs now count as text only when 3+ long with ASCII / NUL / text on both
 sides, so index numbers stay intact.
 
+## 适配贡献（2026-11-15，知情同意的剧本与程序代码上传）
+
+读不好的游戏，光靠脱敏结构有时写不出适配。玩家同意后，MeguLit 会把这类游戏的剧本条目和启动程序的代码段传给维护者，维护者写好适配包（签名 JSON，6 小时内生效）或 JS 热更新发回。三条底线写在代码里，不能拿掉：
+
+1. **知情同意**（`services/adapter-contrib.cjs` consentState / setConsent）
+   - 公开版：默认关。开屏更新卡片的更新内容最下面有说明，主按钮变「同意并下一步」，点了才开；旁边「不参与」记为拒绝。没有更新时也会弹一张只有这段说明的卡片。
+   - 封测版（x.y.z-beta.n）：默认开，但要先在卡片里显示过一次说明（`adapterContribNoticeAt`）才生效。
+   - 设置 → 游戏库「后台上传读不好的游戏的剧本和启动程序」随时关；关掉会立刻删掉本地待传的包。没动过的开关保存设置时不会替玩家做决定。
+2. **只碰游戏**（collect）
+   - 只处理游戏库里登记、且探针判为读不好（`problems()`）的游戏；只读该游戏文件夹（真实路径校验，不跟随链接）。文件夹是盘符根、用户目录、桌面/文档/下载等时整个拒绝。
+   - 只取：封包里的脚本条目（XP3 走 `xp3.cjs rawEntries`，加密条目原样）、散落的脚本文件、汉化补丁里的脚本、exe 的 PE 头 + 代码段 + .rdata/.data、KiriKiri .tpm 插件代码、读不开的脚本封包的索引窗口（头尾各 2 MB）、顶层文件大小与 exe 哈希。
+   - 从不取：图片、语音、视频、字体（扩展名 + 文件头双重检查）、存档/截图目录、.rsrc、readme、文件夹外的任何东西。
+   - 用户目录路径、用户名、电脑名在清单和每个数据块里都会打码。
+3. **用完即删**
+   - 客户端：relay 收齐所有分块后立刻删本地包；超过 7 天的残留包也删。
+   - relay（`relay/src/contrib.js`）：维护者 `done` 后删该游戏所有分块；30 天自动过期删除；48 小时没传完的分块清掉（每 30 分钟的 cron）。
+
+包格式 `.mgct.gz`：gzip("MGCT" 0x01, u32 清单长度, 清单 JSON, 数据块)。上限压缩后 24 MB，按 4 MB 分块，断点续传（`GET /api/contrib/status` 列出已收分块）。同一游戏（probe-identity）只收一份。
+
+估算大小（压缩后）：exe 代码段 1–4 MB；KiriKiri/BGI 等明文剧本 1–6 MB；加密剧本封包基本不压缩，5–20 MB，超出 24 MB 时按优先级（exe → 补丁剧本 → 剧本 → 索引窗口）截断。
+
+上传走现有 relay 域名（api.megulit.com / cn-api.megulit.com，客户端已自动选快的那个），国内可达；发回的适配包照旧走 cn-dl 镜像。
+
+部署：`npx wrangler d1 migrations apply megulit-relay --remote`（新增 0018_contrib.sql），R2 用现有 `megulit-diagnostics` 桶，前缀 `contrib/`。
+
+维护者工作台（`tools/contrib-workbench.cjs`，工作目录默认 `H:\MeguLit-Work\contrib`，拒绝放 C:）：
+
+令牌用 `MEGULIT_ADMIN_TOKEN` 或 `MEGULIT_ADAPTER_ADMIN_TOKEN`（和 `tools/adapter-pack.cjs` 同一个 relay 密钥，设过一次就不用再设）。`<id>` 可以是上传 id、它的前 6 位以上、游戏 identity，或标题的一部分。api.megulit.com 连不上时自动改走 cn-api.megulit.com。每个包的文件夹里有 `SUMMARY.md`，开适配会话时从它读起。
+
+```
+node tools/contrib-workbench.cjs                    总览：relay 上有什么、本地有什么、下一步做什么
+node tools/contrib-workbench.cjs sync               把收齐但还没下载的包全部取回并解开
+node tools/contrib-workbench.cjs get <id>           取一个包：下载+校验+解包+剧本转 UTF-8+写 SUMMARY.md
+node tools/contrib-workbench.cjs info <id>          这个包里有什么（按角色、按编码；日文最多的剧本排在前面）
+node tools/contrib-workbench.cjs text <id>          剧本转成 UTF-8 放到 text/（Shift-JIS、UTF-16、UTF-8；编译/加密的留在 files/）
+node tools/contrib-workbench.cjs done <id>          适配完成：relay 删包，本地副本一起删（--keep 保留本地）
+node tools/contrib-workbench.cjs clean <id>|--all   删本地副本（--all：relay 已不再保存的全部删掉）
+```
+
 ### Full probe upload — closed beta (2026-11-15)
 
 Alongside the desensitized probe, a problem game's **full** script text + exe now goes up so the maintainer can reproduce

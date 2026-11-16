@@ -15,7 +15,7 @@ export function coverageRows(levels){return (levels||[]).map(l=>({level:l.level,
 /* 2026-11-11 rebuilt in the megu-edit look (user: 读过的词全面优化，不要维持现状): a HUD strip, a black stage with this
    week's most-read word, then each list as a ranked track (rank, the word large, reading, meaning, JLPT, a count bar,
    where it came from, 收录 / 已掌握), folded after eight; JLPT coverage as five level tiles. */
-const FOLD_RI=8;
+const FOLD_RI=5;
 const actions=(item,{w,esc,saving})=>`<span class="ri-actions"><button class="ri-save" type="button" data-save="${esc(item.key)}" data-base="${esc(item.base)}"${saving.has(item.key)?' disabled':''}>${saving.has(item.key)?w.saving:w.save}</button><button class="ri-known" type="button" data-known="${esc(item.key)}" data-base="${esc(item.base)}"${saving.has(item.key)?' disabled':''}>${esc(w.known)}</button></span>`;
 const meta=(item,{w,esc})=>[item.games?.length?`${w.from} ${item.games.map(g=>g.title||'').filter(Boolean).join(' · ')}`:'',item.lastAt?`${w.last} ${readTime(item.lastAt,w.locale)}`:''].filter(Boolean).map(t=>`<span>${esc(t)}</span>`).join('');
 function wordList(items,{w,esc,number,saving,id}){

@@ -80,7 +80,7 @@ test('a line the game still draws itself: the placement host says so, a placed l
 
 test('HookBridge: nothing unreadable is hidden, every write goes through the code-page guard', () => {
   const b = read('native/HookBridge.cs'), p = read('native/EmbedTextPolicy.cs');
-  assert.match(b, /static void GlyphLine\(string text\)\{FlushFit\(\);\/\*[^*]*\*\/[^\n]*?if\(EmbedTextPolicy\.Unreadable\(text\)&&SelectedReadableRun<2&&!EmbedTextPolicy\.EngineText\(selCode\)\)\{[^}]*GlyphOff\(\);return;\}GpuLine\(text\);/);
+  assert.match(b, /static void GlyphLine\(string text\)\{FlushFit\(\);if\(SkipHeld\)\{GlyphOff\(\);return;\}\/\*[^*]*\*\/[^\n]*?if\(EmbedTextPolicy\.Unreadable\(text\)&&SelectedReadableRun<2&&!EmbedTextPolicy\.EngineText\(selCode\)\)\{[^}]*GlyphOff\(\);return;\}GpuLine\(text\);/);
   assert.match(b, /string reply=hide\?\(p\.hidden\?\?""\):EmbedTextPolicy\.Writeback\(p\.text,trans\);reply=SafeReply\(p\.code,p\.text,reply,"embed-translate"\);/);
   assert.match(b, /replacement=SafeReply\(candidate\.code,text,replacement,candidate\.name\);\r?\n   Luna_EmbedCallback\(tp,text,replacement==text\?"":replacement\);/);
   assert.match(b, /if\(replacement\.Length>0&&EmbedTextPolicy\.Unreadable\(text\)&&SelectedReadableRun<2\)\{replacement="";/);
@@ -107,11 +107,11 @@ test('the front end never sends a garbled translation to be written into a game'
   assert.match(read('web/reader/host-surface.css'), /body\.megulit-line-unreadable #reader-host,/);
 });
 
-test('reader DOM: a game-drawn line shows the translation only; a placed line shows everything', async t => {
+test('reader DOM: a game-drawn line goes back to the reader window, bilingual, without a plate; a placed line shows everything', async t => {
   let chromium;
   try { ({ chromium } = require(process.env.MEGULIT_PLAYWRIGHT || 'H:/MeguLit-Work/pw/node_modules/playwright-core')); } catch { t.skip('no playwright-core'); return; }
   const code = read('web/reader/modules/text-place.js');
-  const html = `<!doctype html><html><head><meta charset="utf-8"><style>.sentence-window{position:fixed;left:100px;top:280px;width:800px;height:150px}.tomoyo-cn-row{display:block}</style></head><body>
+  const html = `<!doctype html><html><head><meta charset="utf-8"><style>.sentence-window{background:rgb(60,80,100);position:fixed;left:100px;top:280px;width:800px;height:150px}.tomoyo-cn-row{display:block}</style></head><body>
 <main><div class="sentence-window tomoyo-hook-reader"><div class="sentence-text"><span class="megulit-ruby-base" data-tomoyo-reading="にく"><span class="char-token">肉</span></span><span class="char-token">塊</span><span class="char-token">が</span></div><div class="tomoyo-cn-row">肉块</div></div></main>
 <script>window.__tomoyoChinese={};</script></body></html>`;
   const browser = await chromium.launch({ channel: 'msedge', headless: true });
@@ -124,7 +124,11 @@ test('reader DOM: a game-drawn line shows the translation only; a placed line sh
     await page.evaluate(`${b}.textPlaceMode({ on: true })`); await frame();
     assert.deepEqual(await vis(), ['visible', 'visible', 'visible'], 'nothing known yet: unchanged');
     await page.evaluate(`${b}.textPlace({ visible: true, text: '肉塊が、暗く' })`); await frame();
-    assert.deepEqual(await vis(), ['hidden', 'hidden', 'visible'], 'game draws it: no Japanese or ruby over it, translation stays');
+    /* 2026-11-15 (1.4.10 user group: 「只有翻译了，要替换的原文没了」) the Japanese is never dropped: not placed over the
+       game's line, the reader goes back to its own window (no plate, 2026-11-16), Japanese on top and the translation under it */
+    assert.deepEqual(await vis(), ['visible', 'visible', 'visible'], 'game draws it: reader window bilingual, Japanese clickable');
+assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('.sentence-window')).backgroundColor), 'rgba(0, 0, 0, 0)', 'never a plate');
+    assert.deepEqual(await page.evaluate(() => [document.body.classList.contains('megulit-placed'), document.body.classList.contains('megulit-place-fallback')]), [false, false], 'not placed over it');
     /* a stale placement of the previous line does not bring the plateless Japanese back */
     await page.evaluate(`${b}.textPlace({ text: 'ぷよぷよ', client: [1280, 960], rects: [[10,10,30,30],[40,10,30,30],[70,10,30,30],[100,10,30,30]] })`); await frame();
     assert.equal(await page.evaluate(() => document.body.classList.contains('megulit-place-fallback')), true, 'another line placed: fallback for this one');

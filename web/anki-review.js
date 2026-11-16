@@ -102,7 +102,7 @@ export async function renderAnkiReview({target,api,text,esc,isCurrent,toast,quie
  function mountMixer(){
   const toolbar=target.querySelector('.anki-toolbar'),labels=mixLabels[locale];
   const mixer=document.createElement('details');mixer.className='anki-mixer';
-  mixer.innerHTML='<summary>'+labels[0]+'</summary><div class="anki-mixer-controls">'+mixChannels.map((key,i)=>'<label><span>'+labels[i+1]+'</span><input type="range" min="0" max="100" step="1" data-mix="'+key+'" value="'+mix[key]+'"><output>'+mix[key]+'%</output></label>').join('')+'<small>'+labels[5]+'</small></div>';
+  mixer.innerHTML='<summary>'+labels[0]+'</summary><div class="anki-mixer-controls">'+mixChannels.map((key,i)=>'<label><span>'+labels[i+1]+'</span><input type="range" min="0" max="100" step="1" data-mix="'+key+'" value="'+mix[key]+'"><output>'+mix[key]+'%</output></label>').join('')+'</div>';
   toolbar.prepend(mixer);try{mountAutoplay(toolbar);}catch{}
   mixer.addEventListener('toggle',()=>{if(mixer.open)toolbar.querySelectorAll('details[open]').forEach(d=>{if(d!==mixer)d.open=false;});});
   mixer.addEventListener('input',event=>{
@@ -148,7 +148,7 @@ export async function renderAnkiReview({target,api,text,esc,isCurrent,toast,quie
  let replaying=null;
  function playClips(clips){replaying?.pause();const channel=name=>/^tomoyo_g_/i.test(name)?'game':/^tomoyo_s_/i.test(name)?'sentence':/^tomoyo_/i.test(name)?'word':'';
   const level=key=>Number.isFinite(mix[key])?Math.min(1,Math.max(0,mix[key]/100)):1;const next=i=>{const clip=clips[i];if(!clip||!isCurrent())return;
-   const audio=new Audio(clip.src);replaying=audio;audio.volume=level('master')*level(channel(clip.name));audio.onended=()=>{if(replaying===audio)next(i+1);};
+   const audio=new Audio(clip.src);replaying=audio;audio.volume=level('master')*level(clip.channel||channel(clip.name));audio.onended=()=>{if(replaying===audio)next(i+1);};
    audio.play().catch(()=>{if(replaying===audio&&isCurrent())toast(copy.failed);});};next(0);}
  async function replay(card,button){if(!isCurrent()||currentCard!==card||button?.disabled)return;if(button)button.disabled=true;try{const r=await api('anki_play_audio',
   {cardId:card.cardId});if(isCurrent()&&currentCard===card&&Array.isArray(r?.clips)&&r.clips.length)playClips(r.clips);}catch(error){if(isCurrent())failed(error);}finally{if(button)button.disabled=false;}}

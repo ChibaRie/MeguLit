@@ -7,12 +7,13 @@
 const fs=require('node:fs'),path=require('node:path');
 const npk=require('../../core/nitroplus-npk.cjs'),{signature}=require('../../core/saya-script-port.cjs');
 
-const SCENE=/^media\/script\/nps\/[^/]+\.nps$/i;
+/* any .nps entry: another build keeps its scenes under a different folder */
+const SCENE=/(?:^|\/)[^/]+\.nps$/i;
 const LEAD=/^(?:[ \t]*<(?!\/?R[\s>])[^>]*>)*/i;
 const memo=new Map(),BOM=new RegExp('^'+String.fromCharCode(0xfeff));
 function archive(file){const st=fs.statSync(file),key=path.resolve(file).toLowerCase()+'|'+st.size+'|'+st.mtimeMs;
  if(memo.has(key))return memo.get(key);let arc=null;
- try{const head=Buffer.alloc(0x20),fd=fs.openSync(file,'r');try{fs.readSync(fd,head,0,0x20,0);}finally{fs.closeSync(fd);}if(npk.isNpk2(head))arc=npk.readNpk(fs.readFileSync(file));}catch{arc=null;}
+ try{const head=Buffer.alloc(0x20),fd=fs.openSync(file,'r');try{fs.readSync(fd,head,0,0x20,0);}finally{fs.closeSync(fd);}if(npk.isNpk2(head))arc=npk.readNpkAny(fs.readFileSync(file));}catch{arc=null;}
  memo.clear();memo.set(key,arc);return arc;}
 function scenesOf(file){const arc=archive(file);if(!arc)return [];
  return arc.entries.filter(e=>SCENE.test(e.name)).map(e=>({name:path.posix.basename(e.name),read:()=>npk.npkData(arc,e)}));}

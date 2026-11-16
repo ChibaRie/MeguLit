@@ -42,7 +42,9 @@ function inflateAin(file){const b=Buffer.isBuffer(file)?file:fs.readFileSync(fil
 function section(d,tag,read){let last=null;for(let at=d.indexOf(tag);at>=0;at=d.indexOf(tag,at+1)){if(at+8>d.length)break;try{const out=read(at);if(out)return out;}catch(e){last=e;}}if(last)throw last;return null;}
 function strings(d,tag){return section(d,tag,at=>{let p=at+4;const n=d.readUInt32LE(p);p+=4;if(n>4e6)return null;const out=[];for(let i=0;i<n;i++){const e=d.indexOf(0,p);if(e<0)throw Error('AIN_TRUNCATED_'+tag);out.push(d.subarray(p,e));p=e+1;}return out;});}
 // One code page per file: a Chinese patch stores everything (its leftover Japanese too) as GBK, an original as Shift-JIS.
-function codepage(buffers){const sample=buffers.filter(b=>b.length>3).slice(0,4000),score=enc=>{const dec=new TextDecoder(enc);let bad=0,kana=0;for(const b of sample){const t=dec.decode(b);bad+=(t.match(/�/g)||[]).length;kana+=(t.match(KANA)||[]).length;}return {enc,bad,kana};};const [sj,gbk]=[score('shift_jis'),score('gbk')];return sj.bad<gbk.bad||sj.bad===gbk.bad&&sj.kana>=gbk.kana?'shift_jis':'gbk';}
+function codepage(buffers){const sample=buffers.filter(b=>b.length>3).slice(0,4000),score=enc=>{const dec=new TextDecoder(enc);let bad=0,kana=0;for(const b of sample){const t=dec.decode(b);bad+=(t.match(/�/g)||[]).length;kana+=(t.match(KANA)||[]).length;}return {enc,bad,kana};};const [sj,gbk]=[score('shift_jis'),score('gbk')];const u8=score('utf-8');/* newer System4 titles (ランス03 / 妻みぐい3 / ランス10 …) keep the tables as UTF-8: clean UTF-8 with kana or where both legacy pages break */
+ if(u8.bad===0&&sample.some(b=>b.some(x=>x>0x7f))&&(u8.kana>sj.kana||sj.bad>0&&gbk.bad>0))return 'utf-8';
+ return sj.bad<gbk.bad||sj.bad===gbk.bad&&sj.kana>=gbk.kana?'shift_jis':'gbk';}
 function msg1(d){return section(d,'MSG1',at=>{let p=at+4;const n=d.readUInt32LE(p);p+=8;if(n>4e6)return null;const out=[];for(let i=0;i<n;i++){if(p+4>d.length)throw Error('AIN_TRUNCATED_MSG1');const len=d.readUInt32LE(p);p+=4;if(p+len>d.length)throw Error('AIN_TRUNCATED_MSG1');const b=Buffer.from(d.subarray(p,p+len));for(let k=0;k<len;k++)b[k]=(b[k]-k-0x60)&255;out.push(b);p+=len;}return out;});}
 function readAin(file){
  const d=inflateAin(file),version=d.subarray(0,4).toString('latin1')==='VERS'?d.readUInt32LE(4):0,raw=strings(d,'MSG0')||msg1(d);if(!raw)throw Error('AIN_MESSAGES_MISSING');
@@ -56,7 +58,10 @@ function readState(root){try{return JSON.parse(fs.readFileSync(stateFile(root),'
 function writeState(root,id,patch){const all=readState(root);all[id]={...all[id],...patch,updatedAt:Date.now()};fs.mkdirSync(path.dirname(stateFile(root)),{recursive:true});fs.writeFileSync(stateFile(root)+'.tmp',JSON.stringify(all,null,1));fs.renameSync(stateFile(root)+'.tmp',stateFile(root));return all[id];}
 function writeIndex(root,id,name,value){const dir=indexDir(root,id);fs.mkdirSync(dir,{recursive:true});const file=path.join(dir,name);fs.writeFileSync(file+'.tmp',JSON.stringify(value));fs.renameSync(file+'.tmp',file);return file;}
 function readIndex(file){const value=JSON.parse(fs.readFileSync(file,'utf8'));if(value.schema!==SCHEMA)throw Error('ORIGINAL_INDEX_SCHEMA');return value;}
-function ainOf(dir,base){const files=fs.readdirSync(dir).filter(f=>/\.ain$/i.test(f)&&!/beifen|backup|\.bak/i.test(f));const preferred=files.find(f=>path.parse(f).name.toLowerCase()===String(base||'').toLowerCase());return preferred?path.join(dir,preferred):files.length===1?path.join(dir,files[0]):'';}
+/* E-S4 a folder can hold several .ain (a Chinese and a Japanese one, a System 3.9 AINI next to it): when the exe name picks none, the System4 ones are kept and the biggest wins */
+function isSystem4Ain(f){try{const h=Buffer.alloc(8),fd=fs.openSync(f,'r');try{fs.readSync(fd,h,0,8,0);}finally{fs.closeSync(fd);}const m=h.toString('latin1',0,4);return m==='AI2 '||m==='VERS'||!!plainAin(h);}catch{return false;}}
+function ainOf(dir,base){const files=fs.readdirSync(dir).filter(f=>/\.ain$/i.test(f)&&!/beifen|backup|\.bak/i.test(f));const preferred=files.find(f=>path.parse(f).name.toLowerCase()===String(base||'').toLowerCase());if(preferred)return path.join(dir,preferred);if(files.length===1)return path.join(dir,files[0]);
+ const ok=files.map(f=>path.join(dir,f)).filter(isSystem4Ain).sort((a,b)=>fs.statSync(b).size-fs.statSync(a).size);return ok[0]||'';}
 const bgi=require('./original-engines/bgi.cjs');
 const ADAPTERS={
  system4:{marker:base=>base+'.ain',locate:(dir,base)=>{const file=ainOf(dir,base);return file?{engine:'system4',target:file}:null;},read:target=>readAin(target),fingerprint:target=>sha256(target)},
@@ -83,7 +88,13 @@ function scanRunning(root,id,executable){
  const index=writeIndex(root,id,'runtime-'+hash.slice(0,16)+'.json',{schema:SCHEMA,role:'runtime',engine:ain.engine,version:ain.version,codepage:ain.codepage,source:{file,sha256:hash},structure:ain.structure,lines:ain.lines,...(ain.ruby?{ruby:ain.ruby}:{}),...(ain.sizes?{sizes:ain.sizes}:{})});
  const original=current?.original;const runtime={file,engine:loc.engine,sha256:hash,reader:READER,index,codepage:ain.codepage,version:ain.version,structure:ain.structure,lines:nonEmpty,japaneseLines:japanese};
  // A changed game build invalidates the earlier alignment; the original index itself stays.
- return writeState(root,id,{engine:loc.engine,runtime,status:zhOnly&&!original?.index?'chinese-only':!zhOnly&&japanese>=nonEmpty*.5?'native-japanese':original?.index&&current?.runtime?.sha256===hash?current.status:original?.index?'needs-recheck':'awaiting-original'});
+ const state=writeState(root,id,{engine:loc.engine,runtime,status:zhOnly&&!original?.index?'chinese-only':!zhOnly&&japanese>=nonEmpty*.5?'native-japanese':original?.index&&current?.runtime?.sha256===hash?current.status:original?.index?'needs-recheck':'awaiting-original'});
+ /* A scene engine that reads the Japanese lines behind the running ones from this same folder (CMVS official Chinese:
+    FileHook\ over the archives) adopts them as the original, as the live engines do while the game runs. A copy the
+    user imported stays theirs. */
+ const eng=scenes.ENGINES[loc.engine];
+ if(ADAPTERS[loc.engine].scene&&eng?.originalLines&&!eng.live&&state.status!=='native-japanese'&&(!original||original.auto))try{return adoptOriginal(root,id,state,dir);}catch{}
+ return state;
 }
 // ---- Original import and alignment -------------------------------------------------------------
 function align(runtime,original){

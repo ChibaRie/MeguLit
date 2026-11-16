@@ -251,7 +251,7 @@ const siglus={
 const os=require('node:os');
 const MEDIA_XP3=/^(?:bg|fg|ev|sd)?image|^(?:bgm|voice|sound|se|movie|video|thum|emote|font|sysse)/i;
 const cxArchives=dir=>{try{return fs.readdirSync(dir).filter(f=>/\.xp3$/i.test(f)&&!MEDIA_XP3.test(f)).map(f=>path.join(dir,f));}catch{return [];}};
-const cxCache=file=>{const st=fs.statSync(file);return path.join(os.tmpdir(),'megulit-cx',crypto.createHash('sha256').update(path.resolve(file).toLowerCase()+'|'+st.size+'|'+st.mtimeMs+'|4').digest('hex').slice(0,24)+'.json');};
+const cxCache=file=>{const st=fs.statSync(file);return path.join(os.tmpdir(),'megulit-cx',crypto.createHash('sha256').update(path.resolve(file).toLowerCase()+'|'+st.size+'|'+st.mtimeMs+'|5').digest('hex').slice(0,24)+'.json');};
 const cxBuilds=new Map(),cxMemo=new Map(),cxQueue=[],cxStarted=new Map();let cxRunning=false;
 function cxDocs(file){
  let out;try{out=cxCache(file);}catch{return null;}
@@ -264,6 +264,15 @@ function cxDocs(file){
  }
  return null;
 }
+/* 2026-11-16 probe (#184 #194 #275 #276 #291): the probe worker returns before the background cx build ends (the worker is
+   unref'd), so a first probe of a cx game always read 0 lines and "decrypt-failed encrypted-archive". cxPrepareSync builds
+   the missing caches in this thread, within a deadline; the probe calls it before reading. */
+function cxPrepareSync(dir,{deadline=Infinity}={}){let built=0;
+ const size=f=>{try{return fs.statSync(f).size;}catch{return 0;}},order=cxArchives(dir).sort((a,b)=>(/^scn/i.test(path.basename(b))-/^scn/i.test(path.basename(a)))||size(a)-size(b));
+ for(const file of order){if(Date.now()>deadline)break;let out;try{out=cxCache(file);}catch{continue;}if(fs.existsSync(out))continue;
+  let list;try{list=xp3.list(file);}catch{list=null;}if(!list||!list.files.some(e=>e.encrypted||/\.scn$/i.test(e.name)))continue;
+  try{const r=require('./cx-worker.cjs').build(file);fs.mkdirSync(path.dirname(out),{recursive:true});fs.writeFileSync(out+'.tmp',JSON.stringify({schema:1,file,...r}));fs.renameSync(out+'.tmp',out);built++;}catch{}}
+ return built;}
 function cxNext(){
  if(cxRunning||!cxQueue.length)return;const {file,out}=cxQueue.shift();cxRunning=true;
  const {Worker}=require('node:worker_threads');let w;try{w=new Worker(path.join(__dirname,'cx-worker.cjs'),{workerData:{file,out}});}catch{cxRunning=false;cxBuilds.delete(out);return cxNext();}
@@ -278,6 +287,8 @@ function unquoteSlot(t,ja){if(t.length<2||!/^"[\s\S]*"$/.test(t)||/^"/.test(ja))
  if(!close||!ja.trimEnd().endsWith(close)||inner.startsWith(open))return inner;return open+inner+close;}
 /* the Japanese slot of most lines has no kana but Han: a Chinese translation's own scene files */
 function chineseDocs(docs){let han=0,kana=0;for(const d of docs)for(const sc of d.scenes||[])for(const r of sc.rows.slice(0,40)){const t=r[0]||'';if(/[ぁ-ゖァ-ヺ]/.test(t))kana++;else if(/[一-鿿]/.test(t))han++;}return han>=20&&han>kana*3;}
+/* E610 a folder whose only readable cx scene files are a Chinese translation patch (the Japanese original stays encrypted): {lines} of the patch, or null. The probe reports it as a Chinese build instead of decrypt-failed. */
+function cxChineseOnly(dir){let lines=0,docsAny=false;for(const file of cxArchives(dir)){const docs=cxDocs(file);if(!docs||!docs.length)continue;docsAny=true;if(!chineseDocs(docs))return null;for(const d of docs)for(const sc of d.scenes||[])lines+=sc.rows.length;}return docsAny&&lines?{lines}:null;}
 const kirikiriCx={
  id:'kirikiri-cx',hint:'scn.xp3 / data.xp3',
  // One copy per scene file: patch archives override the rest, as the engine loads them (patch < patch2 < ...).
@@ -326,7 +337,7 @@ const dumpMemo=new Map();
 function dumpDoc(file){
  let st;try{st=fs.statSync(file);}catch{return null;}const key=st.size+'|'+st.mtimeMs,hit=dumpMemo.get(file);if(hit&&hit.key===key)return hit.doc;
  let doc=null;
- try{const raw=fs.readFileSync(file);let psbDoc=null;try{psbDoc=psb.parse(raw);}catch{psbDoc=psb.openCx(raw);}
+ try{const raw=fs.readFileSync(file);let psbDoc=null;try{psbDoc=psb.parse(raw);}catch{/* a stray byte only costs the values it sits in (ambision: 1 of 54 saved scenes read as nothing) */try{psbDoc=psb.parse(raw,{tolerant:true});}catch{psbDoc=psb.openCx(raw);}}
   if(psbDoc?.root&&typeof psbDoc.root==='object'){const refs=new Set();let seen=0;
    (function walk(v,depth){if(seen++>200000||depth>40)return;if(typeof v==='string'){if(/\.(?:ks|scn)$/i.test(v)&&v.length<300)refs.add(v);}else if(v&&typeof v==='object')for(const k in v)walk(v[k],depth+1);})(psbDoc.root,0);
    doc={name:typeof psbDoc.root.name==='string'&&psbDoc.root.name?psbDoc.root.name:path.basename(file),file:path.basename(file),scenes:cxText().textsOf(psbDoc),refs:[...refs]};}
@@ -464,8 +475,9 @@ const pwaat=require('./pwaat.cjs');
 const rpgmaker=require('./rpgmaker.cjs'),wolf=require('./wolf.cjs');
 // E403 DDLC Plus (StreamingAssets/AssetBundles/Windows/lang*.cy): vgprompter.cjs.
 const vgprompter=require('./vgprompter.cjs');
-const fill=require('./fill.cjs'),avg32=require('./avg32.cjs'),nitroNpk=require('./npk.cjs').engine,nitroPak=require('./nitro-pak.cjs').engine,iga=require('./iga.cjs').engine,paz=require('./paz.cjs').engine,bruns=require('./bruns.cjs').engine,rePak=require('./re-pak.cjs').engine,fvp=require('./fvp.cjs').engine,advhd=require('./advhd.cjs').engine,reallive=require('./reallive.cjs').engine;
+const fill=require('./fill.cjs'),avg32=require('./avg32.cjs'),nitroNpk=require('./npk.cjs').engine,nitroPak=require('./nitro-pak.cjs').engine,nitroNpa=require('./nitro-npa.cjs').engine,iga=require('./iga.cjs').engine,paz=require('./paz.cjs').engine,bruns=require('./bruns.cjs').engine,rePak=require('./re-pak.cjs').engine,fvp=require('./fvp.cjs').engine,advhd=require('./advhd.cjs').engine,reallive=require('./reallive.cjs').engine;
 const voiceRef=require('./voice-ref.cjs');
+const unityAssets=require('./unity-assets.cjs'),drv3=require('./drv3.cjs').engine,magesCpk=require('./mages-cpk.cjs').engine;/* E700 generic Unity */
 const catsystem2=require('./catsystem2.cjs'),naninovel=require('./naninovel.cjs'),unityText=require('./unity-text.cjs'),higurashi=require('./higurashi.cjs'),mages=require('./mages.cjs'),capcomMsg=require('./capcom-msg.cjs'),spikeWad=require('./spike-wad.cjs');
 // E409 Nitroplus N4 (Steam The Song of Saya, script.npk NPK2): nitroplus-n4.cjs.
 const nitroplusN4=require('./nitroplus-n4.cjs');
@@ -500,8 +512,9 @@ const webbundle=require('./webbundle.cjs').engines;
 const makers=require('./makers.cjs').ENGINES;
 /* E640–E654 family F4a: Escude, PJADV, Luca System, Stuff (Propeller .msc), STCM2L; archive + generic scan engines */
 const escude=require('./escude.cjs').engine,pjadv=require('./pjadv.cjs').engine,luca=require('./luca.cjs').engine,stuff=require('./stuff.cjs').engine,stcm2=require('./stcm2.cjs').engine;
+const eushully=require('./eushully.cjs').engine;
 const F4A_SCAN=require('./archive-scan.cjs').ENGINES;
-const ENGINES={'adapter-pack':adapterPack,'nitroplus-n4':nitroplusN4,'kirikiri-lang':kirikiriLang,tyrano,kirikiri,artemis,renpy,siglus,'kirikiri-cx':kirikiriCx,'kirikiri-dump':kirikiriDump,'kirikiri-ks':kirikiriKs,hunex,yuris,aquaplus,nscripter,'unity-text':unityText,higurashi,mages,'capcom-msg':capcomMsg,'spike-wad':spikeWad,pwaat,naninovel,catsystem2,rpgmaker,wolf,avg32,'nitro-npk':nitroNpk,'nitro-pak':nitroPak,iga,paz,bruns,'re-pak':rePak,fvp,advhd,reallive,vgprompter,majiro,softpal,systemnnn,liar,rgss,silky,tmrhiro,nekosdk,ikura,exhibit,eagls,ast,seraph,interheart,nexas,malie,shiinario,cmvs,lucifen,kaguya,lcse,yuka,qlie,entis,alicesoft,marble,...webbundle,plaintext:require('./plaintext.cjs').engine,circus,whale,ddsystem,aoi,kid,...makers,escude,pjadv,luca,stuff,stcm2,slg:F4A_SCAN.slg,ism:F4A_SCAN.ism,glib2:F4A_SCAN.glib2,tanuki:F4A_SCAN.tanuki,yaneurao:F4A_SCAN.yaneurao,rits:F4A_SCAN.rits,bluegale:F4A_SCAN.bluegale,cyberworks:F4A_SCAN.cyberworks,dxlib:F4A_SCAN.dxlib,garbro};
+const ENGINES={'adapter-pack':adapterPack,'nitroplus-n4':nitroplusN4,'kirikiri-lang':kirikiriLang,tyrano,kirikiri,artemis,renpy,siglus,'kirikiri-cx':kirikiriCx,'kirikiri-dump':kirikiriDump,'kirikiri-ks':kirikiriKs,hunex,yuris,aquaplus,nscripter,'unity-text':unityText,higurashi,mages,'capcom-msg':capcomMsg,'spike-wad':spikeWad,pwaat,naninovel,'mages-cpk':magesCpk,'unity-assets':unityAssets,drv3,catsystem2,rpgmaker,wolf,avg32,'nitro-npk':nitroNpk,'nitro-pak':nitroPak,'nitro-npa':nitroNpa,iga,paz,bruns,'re-pak':rePak,fvp,advhd,reallive,vgprompter,majiro,softpal,systemnnn,liar,rgss,silky,tmrhiro,nekosdk,ikura,exhibit,eagls,ast,seraph,interheart,nexas,malie,shiinario,cmvs,lucifen,kaguya,lcse,yuka,qlie,entis,alicesoft,marble,...webbundle,plaintext:require('./plaintext.cjs').engine,circus,whale,ddsystem,aoi,kid,...makers,escude,eushully,pjadv,luca,stuff,stcm2,slg:F4A_SCAN.slg,cpk:F4A_SCAN.cpk,evbox:F4A_SCAN.evbox,ism:F4A_SCAN.ism,glib2:F4A_SCAN.glib2,tanuki:F4A_SCAN.tanuki,yaneurao:F4A_SCAN.yaneurao,rits:F4A_SCAN.rits,bluegale:F4A_SCAN.bluegale,cyberworks:F4A_SCAN.cyberworks,dxlib:F4A_SCAN.dxlib,garbro};
 // The engine whose running scripts this folder holds, if any can be read.
 function readable(id,dir){let scenes;try{scenes=ENGINES[id].scenes(dir);}catch{return false;}
  for(const s of scenes.slice(0,64)){try{if(ENGINES[id].parse(s.read()).lines.length)return true;}catch{}}return false;} /* 64: a game may open with many code-only scenes (女王蜂の王房 endings, first.ks) */
@@ -531,4 +544,4 @@ function preparing(dir){
 }
 /* E375 why a recognised game cannot be read (an engine's own check, e.g. encrypted WOLF archives), or null. */
 function unsupportedReason(dir){for(const e of Object.values(ENGINES)){if(typeof e.unsupported!=='function')continue;let code='';try{code=e.unsupported(dir);}catch{}if(code)return {engine:e.id,code,detail:e.REASONS?.[code]||''};}return null;}
-module.exports={unquoteSlot,unsupportedReason,preparing,cxBuilds,chineseColumn,ENGINES,detect,readable,read,fingerprint,parseKs,parseAst,parseRpy,pfsList,pfsRead,tlPairs,decode};
+module.exports={cxChineseOnly,cxPrepareSync,ownCx,unquoteSlot,unsupportedReason,preparing,cxBuilds,chineseColumn,ENGINES,detect,readable,read,fingerprint,parseKs,parseAst,parseRpy,pfsList,pfsRead,tlPairs,decode};

@@ -8,7 +8,7 @@ const syllables={bie:'别',a:'阿',an:'按暗安',ba:'把',bao:'保包',bei:'背
  ke:'可刻',kong:'空控',kou:'口',ku:'库',kuai:'快',kuan:'宽',lang:'朗',la:'拉',lan:'栏',lei:'类',li:'历理离例',gu:'骨',lian:'连链',liang:'亮量两',lie:'列',lin:'临',ling:'零龄',liu:'流留览',long:'龙',
  lu:'录路露',lun:'轮',lv:'率滤',ma:'码',mai:'买',man:'慢',mei:'每没',men:'门',ming:'名明',mo:'模默',mou:'某',mu:'目',na:'拿',nan:'男',nei:'内',nian:'年',niu:'钮',nv:'女',pai:'排',pan:'盘判',
  pei:'配',pi:'批',pian:'片',piao:'漂',pin:'拼',ping:'屏平评',pu:'普',qi:'启起器期齐其',qian:'前浅签',qiang:'强',qie:'切且',qing:'清情请',qu:'区取去',quan:'全权',que:'确',ran:'染然',rang:'让',re:'热',
- ren:'认人任',ri:'日',rong:'容',ru:'入如',ruo:'若',se:'色',sao:'扫',shai:'筛',shang:'上商',she:'设射社',shen:'深',sheng:'声生剩',shi:'时式示史试使实始释识',shou:'收首手',shu:'数输书属鼠',shua:'刷',shuang:'双',
+ ren:'认人任',ri:'日',rong:'容',ru:'入如',ruo:'若',se:'色',sao:'扫',shai:'筛',shan:'删',shang:'上商',she:'设射社',shen:'深',sheng:'声生剩',shi:'时式示史试使实始释识',shou:'收首手',shu:'数输书属鼠',shua:'刷',shuang:'双',
  shui:'水',shun:'顺',si:'四',song:'送',sou:'搜',su:'速素',sui:'随',suo:'缩索锁所',ta:'他它',zhun:'准',mi:'密',tai:'态台',tan:'探',te:'特',ti:'体提题',tian:'天添',tiao:'条跳',ting:'停',tong:'同通统',
  tou:'透头',tu:'图',tui:'推退',tuo:'托拖',wai:'外',wan:'玩完弯',wei:'位为未围',wen:'文问',wo:'我',wu:'无五务',xi:'习细系',xia:'下',xian:'显线限现',xiang:'向项像相',xiao:'小效消',xie:'写斜',xin:'新信',
  xing:'型性形',xiu:'修',xu:'续需序',xuan:'选悬',xue:'学',ya:'压',yan:'颜验延',yang:'样',yao:'要',ye:'页',yi:'译一已移引义依',yin:'音阴隐',ying:'应影英',yong:'用永',you:'游有优右由',yu:'语与域余预于',yuan:'原源圆元',

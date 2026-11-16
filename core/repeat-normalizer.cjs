@@ -10,7 +10,7 @@
 //  - per-character doubling is learned the same way;
 //  - when a block holds Japanese units, units without kana that follow them (other language tracks) are dropped.
 // A stream that does not repeat consistently is passed through unchanged; nothing is removed on string equality alone.
-const KANA=/[ぁ-ゟァ-ヺー]/u,HAN=/[㐀-鿿]/u;
+const KANA=/[ぁ-ゟァ-ヺー]/u,HAN=/[㐀-鿿]/u;const LETTER=/[ぁ-ゟァ-ヺ㐀-鿿A-Za-z0-9Ａ-Ｚａ-ｚ０-９]/u;
 function norm(s){return s.replace(/[\r\n]+/g,'');}
 // Runs of consecutive equal units. Returns [{raw, count}] covering the whole text; non-repeating text is one run.
 function runs(text){
@@ -48,7 +48,11 @@ class RepeatNormalizer{
   for(const r of list){const isJp=KANA.test(r.raw);
    // Other language tracks follow the Japanese line in multilingual builds: drop kana-less Han units after it.
    if(japanese&&seenJapanese&&!isJp&&HAN.test(r.raw)&&r.count>1)continue;if(isJp)seenJapanese=true;
-   const copies=Math.max(1,Math.round(r.count/f));for(let k=0;k<copies;k++)parts.push(r.raw);}
+   /* 2026-11-15 (死に逝く君、館に芽吹く憎悪: 「そして――殺人――――。」 came out as 「そして――殺人――。」 on a stream that draws lines twice):
+      only whole copies are undone. A run inside a line of a symbol-only unit (――, ……, ！！) or of a unit under 3 characters
+      (ドキドキ) is the line's own text, kept as written. */
+   const lineLike=list.length===1||LETTER.test(r.raw)&&norm(r.raw).replace(/\s+/g,'').length>=3;
+   const copies=lineLike?Math.max(1,Math.round(r.count/f)):r.count;for(let k=0;k<copies;k++)parts.push(r.raw);}
   return parts.join('');
  }
 }

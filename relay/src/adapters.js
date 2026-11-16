@@ -92,13 +92,17 @@ export function probeIssueBody(bundle,link,days){
  return lines.join('\n');}
 /* ---- one probe per game (2026-11-14, owner: 去重) ------------------------------------------------------------------ */
 const PROBE_STATES=['complete','partial','failed'];
-function dedupeOf(v){if(!HEX64.test(String(v.identity||'')))return null;
- return {identity:v.identity,items:Math.max(0,Math.min(10000,Number(v.items)|0)),state:PROBE_STATES.includes(v.state)?v.state:'partial',vndb:/^v[1-9]\d{0,7}$/.test(String(v.vndb||''))?v.vndb:''};}
+function dedupeOf(v,app=''){if(!HEX64.test(String(v.identity||'')))return null;
+ return {identity:v.identity,app:/^\d{1,3}\.\d{1,3}\.\d{1,4}$/.test(String(app||''))?String(app):'',items:Math.max(0,Math.min(10000,Number(v.items)|0)),state:PROBE_STATES.includes(v.state)?v.state:'partial',vndb:/^v[1-9]\d{0,7}$/.test(String(v.vndb||''))?v.vndb:''};}
 /* the new probe is worth keeping over the stored one: the stored one failed or is missing items */
-export function betterProbe(stored,next){if(!stored)return true;if(stored.state==='complete')return false;
+/* a.b.c numeric compare; '' sorts lowest */
+export function newerApp(a,b){const p=x=>String(x||'').split('.').map(Number);const x=p(a),y=p(b);for(let i=0;i<3;i++){if((x[i]||0)!==(y[i]||0))return (x[i]||0)>(y[i]||0);}return false;}
+/* rows stored before the app column read as 1.4.12: every probe issue then open was filed by 1.4.12 or older */
+export const APP_BEFORE_COLUMN='1.4.12';
+export function betterProbe(stored,next){if(!stored)return true;if(next.app&&newerApp(next.app,stored.app||APP_BEFORE_COLUMN))return true;if(stored.state==='complete')return false;
  if(stored.state==='failed')return next.state!=='failed'||next.items>stored.items;
  return next.state==='complete'||next.items>stored.items;}
-const storedProbe=(env,id)=>env.DB.prepare('SELECT bundle_id,state,items,issue_url FROM probe_games WHERE identity=?').bind(id).first();
+const storedProbe=(env,id)=>env.DB.prepare('SELECT bundle_id,state,items,issue_url,app FROM probe_games WHERE identity=?').bind(id).first();
 const bump=(env,id,t)=>env.DB.prepare('UPDATE probe_games SET reporters=reporters+1,updated_at=? WHERE identity=? RETURNING reporters').bind(t,id).first();
 /* GET /api/probe/has: one row read; seen=1 (once per app and game) bumps reporters */
 async function probeHas(env,url,now,{json,fail}){const id=url.searchParams.get('id')||'';if(!HEX64.test(id))return fail('INVALID_ID');
@@ -109,7 +113,7 @@ async function probeChunk(request,env,ip,now,url,{json,fail,readJSON}){
  const body=await readJSON(request,Math.ceil(ADAPTER_LIMITS.chunk*4/3)+4096);if(body.error)return fail(body.error,body.error==='PAYLOAD_TOO_LARGE'?413:400);const v=body.value||{};
  if(v.version!==1||!/^[0-9a-f-]{36}$/.test(String(v.upload||''))||!Number.isSafeInteger(v.part)||!Number.isSafeInteger(v.parts)||v.parts<1||v.parts>ADAPTER_LIMITS.parts||v.part<0||v.part>=v.parts||!Number.isSafeInteger(v.size)||v.size<1||v.size>ADAPTER_LIMITS.bundle||!HEX64.test(String(v.sha256||''))||typeof v.data!=='string')return fail('INVALID_CHUNK');
  let bytes;try{bytes=b64(v.data);}catch{return fail('INVALID_CHUNK');}if(bytes.length>ADAPTER_LIMITS.chunk||!bytes.length)return fail('PAYLOAD_TOO_LARGE',413);
- const t=Math.floor(now.getTime()/1000),dd=dedupeOf(v);
+ const t=Math.floor(now.getTime()/1000),dd=dedupeOf(v,request.headers.get('x-megulit-version'));
  const first=await env.DB.prepare('SELECT parts,size,sha256,ip_hash FROM probe_uploads WHERE upload=? LIMIT 1').bind(v.upload).first();
  if(first&&(first.parts!==v.parts||first.size!==v.size||first.sha256!==v.sha256||first.ip_hash!==ip))return fail('CHUNK_MISMATCH',409);
  /* a new upload of a game the relay already holds an as-good probe of: count the reporter, keep nothing */
@@ -139,15 +143,17 @@ async function probeChunk(request,env,ip,now,url,{json,fail,readJSON}){
   const headers={authorization:'Bearer '+env.GITHUB_TOKEN,accept:'application/vnd.github+json','x-github-api-version':'2022-11-28','user-agent':'megulit-relay','content-type':'application/json'};
   /* a better probe of a game that has an issue already: a comment there, not a new issue */
   const old=/^https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/issues\/(\d+)$/.exec(String(stored?.issue_url||''));
-  try{if(old){const r=await (env.fetch||fetch)(`https://api.github.com/repos/${old[1]}/issues/${old[2]}/comments`,{method:'POST',headers,body:JSON.stringify({body:`**更完整的探针 / a more complete probe** (${md(stored.state)} ${stored.items|0} → ${md(dd.state)} ${dd.items})\n\n`+probeIssueBody(bundle,link,days)})});if(r.ok)issueUrl=stored.issue_url;}
+  try{if(old){const r=await (env.fetch||fetch)(`https://api.github.com/repos/${old[1]}/issues/${old[2]}/comments`,{method:'POST',headers,body:JSON.stringify({body:`**更完整的探针 / a more complete probe** (${md(stored.state)} ${stored.items|0} → ${md(dd.state)} ${dd.items})\n\n`+probeIssueBody(bundle,link,days)})});if(r.ok){issueUrl=stored.issue_url;
+    /* a newer release still fails on this game: the issue was closed after a fix, so it opens again */
+    if(dd.app&&newerApp(dd.app,stored.app||APP_BEFORE_COLUMN)&&bundle.games.some(g=>g.step!=='ok')){try{await (env.fetch||fetch)(`https://api.github.com/repos/${old[1]}/issues/${old[2]}`,{method:'PATCH',headers,body:JSON.stringify({state:'open'})});}catch{}}}}
    else{const r=await (env.fetch||fetch)(`https://api.github.com/repos/${repo}/issues`,{method:'POST',headers,body:JSON.stringify({title,body:probeIssueBody(bundle,link,days),labels:['adapter-probe']})});
     if(r.ok){const d=await r.json().catch(()=>({}));issueUrl=typeof d.html_url==='string'?d.html_url:'';}}}catch{}}
  await env.DB.prepare('INSERT INTO probe_bundles(id,object_key,issue_url,ip_hash,size,sha256,created_at,expires_at) VALUES(?,?,?,?,?,?,?,?)').bind(id,objectKey,issueUrl,ip,total,v.sha256,t,expires).run();
  if(dd){/* one probe per game: the one it replaces goes (row and blob). reporters is not bumped here: the app's has-check
     (seen=1) already counted this player */
   if(stored?.bundle_id){const o=await env.DB.prepare('SELECT object_key FROM probe_bundles WHERE id=?').bind(stored.bundle_id).first();if(o){try{await env.BUCKET.delete?.(o.object_key);}catch{}await env.DB.prepare('DELETE FROM probe_bundles WHERE id=?').bind(stored.bundle_id).run();}}
-  await env.DB.prepare("INSERT INTO probe_games(identity,bundle_id,state,items,reporters,vndb,issue_url,first_at,updated_at) VALUES(?,?,?,?,1,?,?,?,?) ON CONFLICT(identity) DO UPDATE SET bundle_id=excluded.bundle_id,state=excluded.state,items=excluded.items,vndb=CASE WHEN excluded.vndb<>'' THEN excluded.vndb ELSE probe_games.vndb END,issue_url=CASE WHEN excluded.issue_url<>'' THEN excluded.issue_url ELSE probe_games.issue_url END,updated_at=excluded.updated_at")
-   .bind(dd.identity,id,dd.state,dd.items,dd.vndb,issueUrl,t,t).run();}
+  await env.DB.prepare("INSERT INTO probe_games(identity,bundle_id,state,items,reporters,vndb,issue_url,first_at,updated_at,app) VALUES(?,?,?,?,1,?,?,?,?,?) ON CONFLICT(identity) DO UPDATE SET bundle_id=excluded.bundle_id,app=CASE WHEN excluded.app<>'' THEN excluded.app ELSE probe_games.app END,state=excluded.state,items=excluded.items,vndb=CASE WHEN excluded.vndb<>'' THEN excluded.vndb ELSE probe_games.vndb END,issue_url=CASE WHEN excluded.issue_url<>'' THEN excluded.issue_url ELSE probe_games.issue_url END,updated_at=excluded.updated_at")
+   .bind(dd.identity,id,dd.state,dd.items,dd.vndb,issueUrl,t,t,dd.app).run();}
  return json({ok:true,id,issueUrl},201);}
 async function probeDownload(url,env,{fail}){const id=url.pathname.split('/').pop()||'',exp=Number(url.searchParams.get('exp')),sig=url.searchParams.get('sig')||'';
  if(!/^[0-9a-f-]{36}$/.test(id)||!Number.isSafeInteger(exp)||!HEX64.test(sig)||!env.LINK_SECRET)return fail('NOT_FOUND',404);

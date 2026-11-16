@@ -63,7 +63,7 @@ async function launch(db,id,runtime=null,windowsLaunch=false,{retried=false,redi
   {let target='';try{const sources=require('./import-source.cjs');sources.backfill(db);target=sources.targetOf(db,db.prepare('SELECT original FROM games WHERE id=?').get(id));}catch{}if(target&&target!==id&&!redirected)return launch(db,target,runtime,windowsLaunch,{redirected:true});}
    const trace=(stage,extra={})=>{try{fs.mkdirSync(path.join(root,'logs'),{recursive:true});fs.appendFileSync(path.join(root,'logs','game-launch.log'),JSON.stringify({at:new Date().toISOString(),gameId:id,stage,...extra})+'\n');}catch{}};
   let stage='launch-preflight',featureWatch=null,drmPlan=null;if(!retried)markLaunch(id,'prepare');
-  try{
+  let launcherRun=null;/* the DRM launcher this start runs (services/launcher-cleanup.cjs) */try{
   if(!game.executable||!fs.existsSync(game.executable))throw Error('EXECUTABLE_MISSING');
   let original={};try{original=JSON.parse(game.original||'{}')||{};}catch{}const profile=original.library || {};
   if(require('./game-language.cjs').originalExecutable(db,id,root).blocked)throw Error('JAPANESE_EXECUTABLE_REQUIRED');
@@ -120,7 +120,7 @@ async function launch(db,id,runtime=null,windowsLaunch=false,{retried=false,redi
   if(launchVia&&!windowsLaunch){
    /* E-DRM: the launcher may first show its own banner (live test: 打开游戏.exe 「Made By 2DJGAME」 waits for OK), so the
       engine program's window is waited for up to 90 s; the launcher's own windows never count as the game. */
-   stage='launcher-start';const {startProcess,waitForVisibleGame}=require('./game-readiness.cjs');
+   stage='launcher-start';{const lists=exe=>gameProcesses(root,exe);await require('./launcher-cleanup.cjs').endHidden({launchVia,gameExe:game.executable,list:lists,trace});launcherRun={launchVia,since:Date.now()};}const {startProcess,waitForVisibleGame}=require('./game-readiness.cjs');
    let child={exit:null};
    if(profile.localeMode==='japanese'&&require('../core/locale-emulator.cjs').x86(launchVia)){
     const lib=runtime?.library?.()||new(require('../core/library.cjs').Library)(require('../core/layout.cjs'));
@@ -213,7 +213,7 @@ async function launch(db,id,runtime=null,windowsLaunch=false,{retried=false,redi
   {const watch=featureWatch;featureWatch=null;setTimeout(()=>watch.stop(),30000).unref?.();}
   db.prepare('UPDATE games SET last_launched_at=? WHERE id=?').run(Math.floor(Date.now()/1000),id);
   runtime?.prepareGame(game.executable);runtime?.bindLaunched?.(state?.pid);return {action:'launched',connected:false};
-  }catch(error){
+  }catch(error){if(launcherRun)try{await require('./launcher-cleanup.cjs').endHidden({...launcherRun,gameExe:game.executable,list:exe=>require('./game-process.cjs').gameProcesses(root,exe),trace});}catch{}
    /* a game that quit after asking Windows for a feature: DirectPlay is placed now, so try once more; anything else is
       offered as an install (no restart) */
    if(featureWatch){featureWatch.stop();const asked=featureWatch.found;featureWatch=null;
@@ -455,7 +455,7 @@ async function dispatch(request,runtime=null) {
       case 'anki_open':return await runtime.ankiProcess().open(String(request.target||''),String(request.deck||''));
       case 'anki_status':case 'anki_current':case 'anki_start':case 'anki_show_answer':case 'anki_grade':case 'anki_play_audio':case 'anki_stop':case 'anki_practice':case 'anki_deck_config':case 'anki_deck_limits':{
         const {AnkiReviewer}=require('./anki-review.cjs');
-        const reviewConfig=store.readJSON(path.join(root,'data','config','v4-preferences.json'),store.readJSON(path.join(root,'migration','baseline-20261103','config','v4-preferences.json')));const reviewer=new AnkiReviewer({db,config:reviewConfig,mediaDir:require('../core/anki-media-cache.cjs').dirFor(root),voiceCheck:async(text,buf)=>{const gv=require('./game-voice.cjs');await Promise.race([gv.refreshStale(root),new Promise(r=>setTimeout(r,8000).unref?.())]);return gv.recordedFits(root,text,buf);},speak:runtime?async text=>{const c=runtime.config?.()||reviewConfig;try{await runtime.services().ensureSpeech(c.aivisUrl,c.aivisGpu);}catch{}return runtime.speech().synthesize({surface:text,reading:'',pitch:[]},c);}:null});
+        const reviewConfig=store.readJSON(path.join(root,'data','config','v4-preferences.json'),store.readJSON(path.join(root,'migration','baseline-20261103','config','v4-preferences.json')));const reviewer=new AnkiReviewer({db,config:reviewConfig,mediaDir:require('../core/anki-media-cache.cjs').dirFor(root),voiceCheck:async(text,buf)=>{const gv=require('./game-voice.cjs');await Promise.race([gv.refreshStale(root),new Promise(r=>setTimeout(r,8000).unref?.())]);return gv.recordedFits(root,text,buf);},gameVoice:async text=>{const v=require('./game-voice.cjs').find(root,text);return v?.source==='scan'?v:null;},speak:runtime?async text=>{const c=runtime.config?.()||reviewConfig;try{await runtime.services().ensureSpeech(c.aivisUrl,c.aivisGpu);}catch{}return runtime.speech().synthesize({surface:text,reading:'',pitch:[]},c);}:null});
         if(request.action==='anki_status')return await reviewer.status();
         if(request.action==='anki_current')return await reviewer.snapshot();
         if(request.action==='anki_stop')return await reviewer.stop();
@@ -561,6 +561,11 @@ async function dispatch(request,runtime=null) {
       case 'update_start':{const u=require('./update.cjs');u.start(root,String(request.current||''));return u.status();}
       case 'update_status':return require('./update.cjs').status();
       case 'update_install':return await require('./update.cjs').install(root);
+      /* 2026-11-15 adaptation contribution consent (services/adapter-contrib.cjs): the update card's 同意并下一步 / 不参与, the beta note */
+      case 'contrib_consent':return require('./adapter-contrib.cjs').consentState(root);
+      case 'contrib_consent_set':return require('./adapter-contrib.cjs').setConsent(root,request.on===true,{source:String(request.source||'card')});
+      case 'contrib_notice_seen':return require('./adapter-contrib.cjs').noticeSeen(root);
+      case 'contrib_status':return require('./adapter-contrib.cjs').status(root);
       case 'update_hot_failed':return require('./update.cjs').hotFail(root,String(request.reason||''));
       case 'kana_progress':return require('./kana.cjs').read(root);
       case 'kana_progress_save':return require('./kana.cjs').save(root,request.data);
