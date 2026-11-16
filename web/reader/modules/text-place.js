@@ -23,14 +23,12 @@
     'body.megulit-placed .megulit-place-window .char-token{position:absolute!important;display:block!important;margin:0!important;padding:0!important;text-align:center!important;white-space:pre!important;letter-spacing:0!important;text-indent:0!important;pointer-events:auto}',
     'body.megulit-placed .megulit-place-window .char-token.megulit-unplaced{display:none!important}',
     /* fallback (the game drew its line blank but said nowhere where): the reader keeps its own place, without any plate */
-    'body.megulit-place-fallback .sentence-window.tomoyo-hook-reader,body.megulit-place-fallback .sentence-window.tomoyo-hook-reader .tomoyo-cn-row{background:none!important;border-color:transparent!important;box-shadow:none!important;backdrop-filter:none!important}',
-    'body.megulit-place-fallback .sentence-window.tomoyo-hook-reader::before,body.megulit-place-fallback .sentence-window.tomoyo-hook-reader::after,body.megulit-place-fallback .tome-box-deco{display:none!important}',
-    /* 2026-11-15 the game still draws this line itself (core/overlay-placement.cjs `visible`, an unarmed page): the reader
-       is not placed over it but goes back to its own window with its plate, bilingual (Japanese on top, translation under
-       it). Only a placed page (layer 4 live) whose places do not hold the reader's line yet keeps that line's Japanese
-       out of sight until it is placed. 1.4.10 hid the Japanese in every case and the user saw the translation alone
-       (時計仕掛けのレイライン: 「只有翻译了，要替换的原文没了」). */
-    'body.megulit-place-game-drawn.megulit-placed .sentence-window.tomoyo-hook-reader .sentence-text:not(.megulit-old-line){visibility:hidden!important}',
+    'body.megulit-place-fallback .sentence-window.tomoyo-hook-reader,body.megulit-place-fallback .sentence-window.tomoyo-hook-reader .tomoyo-cn-row,body.megulit-place-game-drawn .sentence-window.tomoyo-hook-reader,body.megulit-place-game-drawn .sentence-window.tomoyo-hook-reader .tomoyo-cn-row{background:none!important;border-color:transparent!important;box-shadow:none!important;backdrop-filter:none!important}',
+    'body.megulit-place-fallback .sentence-window.tomoyo-hook-reader::before,body.megulit-place-fallback .sentence-window.tomoyo-hook-reader::after,body.megulit-place-fallback .tome-box-deco,body.megulit-place-game-drawn .sentence-window.tomoyo-hook-reader::before,body.megulit-place-game-drawn .sentence-window.tomoyo-hook-reader::after,body.megulit-place-game-drawn .tome-box-deco{display:none!important}',
+    /* the game still draws this line itself (core/overlay-placement.cjs `visible`): never a plate (2026-11-16 user: no plate behind
+       any MeguLit text); the game keeps its own Japanese and only the translation is added under it. The 1.4.10 report
+       "only the translation was left" was a line hidden by write-back, handled by `elsewhere` (textPlacePage). */
+    'body.megulit-place-game-drawn .sentence-window.tomoyo-hook-reader .sentence-text:not(.megulit-old-line){visibility:hidden!important}',
     'body.megulit-place-game-drawn .sentence-window.tomoyo-hook-reader .tomoyo-cn-row{visibility:visible!important}',
     /* layer 4 page model: older lines of the page (their own .sentence-text, placed like the current one) */
     'body.megulit-place-asleep .sentence-window.tomoyo-hook-reader{visibility:hidden!important}',
