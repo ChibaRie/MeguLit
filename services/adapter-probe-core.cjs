@@ -50,7 +50,9 @@ const KANA=/[ぁ-ゖァ-ヺ]/;
 /* every engine of scenes.cjs, plus System4 / BGI from original-text.cjs, with a per-engine time cap */
 function runEngines(dir,{deadline}){
  const scenes=require('./original-engines/scenes.cjs'),out=[];
- for(const id of Object.keys(scenes.ENGINES)){if(Date.now()>deadline){out.push({id,scenes:-1,lines:0,error:'BUDGET',ms:0});continue;}
+ /* the GARbro last resort never runs over a folder whose KiriKiri cx archives MeguLit decrypts itself (detect() skips it the same way): on a cold cache it spent 20-80 s unpacking them for nothing and the probe timed out (ATRI) */
+ let skipGarbro=false;try{skipGarbro=scenes.ownCx(dir);}catch{}
+ for(const id of Object.keys(scenes.ENGINES)){if(id==='garbro'&&skipGarbro)continue;if(Date.now()>deadline){out.push({id,scenes:-1,lines:0,error:'BUDGET',ms:0});continue;}
   const engine=scenes.ENGINES[id],t=Date.now();let list=null,error='',lines=0,sizes=[],japanese=0,parsed=0;
   try{list=engine.scenes(dir)||[];}catch(e){error=String(e?.code||e?.message||e).slice(0,60);}
   if(list&&list.length){for(const s of list){if(Date.now()>deadline){error=error||'BUDGET';break;}let p;try{p=engine.parse(s.read());parsed++;}catch(e){if(!error)error=String(e?.code||e?.message||e).slice(0,60);sizes.push(0);continue;}
@@ -69,6 +71,7 @@ function classify({engines,inventory:inv,unsupported,preparing}){
  if(read){if(read.japaneseLines<read.lines*.3&&read.lines>=50)return {step:'not-japanese',detail:read.id,detected:read.id};return {step:'ok',detail:read.id,detected:read.id};}
  if(unsupported)return {step:DECRYPT.test(unsupported.code)?'decrypt-failed':'parse-failed',detail:(unsupported.engine+':'+unsupported.code).slice(0,60),detected:null};
  const failedDecrypt=engines.find(e=>e.error&&DECRYPT.test(e.error));if(failedDecrypt)return {step:'decrypt-failed',detail:failedDecrypt.id+':'+failedDecrypt.error,detected:null};
+ if(preparing==='unpack')return {step:'preparing',detail:'cx-unpack',detected:null};
  if(preparing==='capture')return {step:'decrypt-failed',detail:'encrypted-archive',detected:null};
  const opened=engines.find(e=>e.scenes>0);if(opened)return {step:'parse-failed',detail:opened.id,detected:null};
  const errored=engines.find(e=>e.error&&e.error!=='BUDGET');if(errored)return {step:'parse-failed',detail:errored.id+':'+errored.error,detected:null};
@@ -80,8 +83,10 @@ function probeGame({dir,executable},{budgetMs=60000}={}){
  const t=Date.now(),deadline=t+budgetMs;let fingerprint=null;
  try{if(executable)fingerprint=require('./shared-adaptation.cjs').fingerprint(executable);}catch{}
  const inv=inventory(dir);let unsupported=null,preparing=null;
- try{const scenes=require('./original-engines/scenes.cjs');unsupported=scenes.unsupportedReason(dir);preparing=scenes.preparing(dir)?.kind||null;}catch{}
+ try{const scenes=require('./original-engines/scenes.cjs');unsupported=scenes.unsupportedReason(dir);}catch{}
  const engines=[...nativeEngines(dir,executable),...runEngines(dir,{deadline})];
+ /* after the readers ran: the KiriKiri cx reader has queued its background decryption by then, so a cold cache reads as unpack */
+ try{preparing=require("./original-engines/scenes.cjs").preparing(dir)?.kind||null;}catch{}
  const c=classify({engines,inventory:inv,unsupported,preparing});const best=engines.find(e=>e.id===c.detected);
  return {schema:'megulit.probe-result',version:1,reader:reader(),ms:Date.now()-t,fingerprint:fingerprint?{key:fingerprint.key,exe:maskString(fingerprint.exe),size:fingerprint.size}:null,
   inventory:{files:inv.files,bytes:inv.bytes,ext:inv.ext,scripts:inv.scripts,archives:inv.archives.map(({_path,...a})=>a)},
