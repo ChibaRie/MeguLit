@@ -324,13 +324,23 @@
       const x0 = Math.min(...all.map(r => r[0])), y0 = Math.min(...all.map(r => r[1])), x1 = Math.max(...all.map(r => r[0] + r[2])), y1 = Math.max(...all.map(r => r[1] + r[3]));
       const only = document.body.classList.contains('tomoyo-gal-zh-only');
       const [L, T, R, B] = map.bounds, width = Math.max(1, Math.min(R - x0, Math.max(x1 - x0, Math.min(R - x0 - 8, size * 20))));
-      let top = only ? y0 : y1 + size * .25;
-      /* kept inside the game client: under the line when it fits, else above it */
-      const rh = row.offsetHeight || size * 1.6;
-      if (top + rh > B) top = only ? B - rh : Math.max(T, y0 - size * .25 - rh);
-      set(row, 'left', Math.min(Math.max(x0, L), Math.max(L, R - width)) + 'px'); set(row, 'top', Math.max(T, top) + 'px');
-      set(row, 'width', width + 'px');
+      set(row, 'left', Math.min(Math.max(x0, L), Math.max(L, R - width)) + 'px'); set(row, 'width', width + 'px');
       if (only) set(row, 'font-size', size + 'px'); else row.style.removeProperty('font-size');
+      row.style.removeProperty('line-height');
+      /* 2026-11-16 (死に逝く君、館に芽吹く憎悪: the translation jumped above the Japanese on lines near the bottom of the text
+         box): the rule is Japanese on top, the translation right under it. A row that did not fit under the line went
+         above it, and its height was measured before its width was set (the previous line's width: more wrapped rows,
+         taller than it is). Width first, then the height; a row that does not fit under the line is made smaller (line
+         height, then font size) and, if it still does not fit, may run past the game's bottom edge: never above. */
+      const below = y1 + size * .25, room = B - (only ? y0 : below);
+      let rh = row.offsetHeight || size * 1.6;
+      if (rh > room && room > 0) {
+        const fs = parseFloat(getComputedStyle(row).fontSize) || size;
+        set(row, 'line-height', '1.2'); rh = row.offsetHeight || rh;
+        if (rh > room) { set(row, 'font-size', Math.max(10, Math.floor(fs * room / rh)) + 'px'); rh = row.offsetHeight || rh; }
+      }
+      const top = only ? (rh > room ? Math.max(T, B - rh) : y0) : below;
+      set(row, 'top', Math.max(T, top) + 'px');
     }
     const key = geom.join(';');
     if (key !== lastGeom) { lastGeom = key; dispatchEvent(new CustomEvent('megulit-reveal-progress', { detail: { typing: false } })); window.__tomoyoHitRegionsRefresh?.(true); }

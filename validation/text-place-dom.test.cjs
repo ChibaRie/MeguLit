@@ -59,11 +59,24 @@ const html = `<!doctype html><html><head><meta charset="utf-8"><style>
     await page.evaluate(() => window.__tomoyoChinese.textPlace({ text: '今日は晴れ', client: [1280, 720], rects: [null, [NaN, 5, 30, 32], [-900, 10, 30, 32], [5000, 10, 30, 32], [0, 0, 0, 0]] })); await frame();
     assert.strictEqual(await page.evaluate(() => document.body.classList.contains('megulit-placed')), false, 'no real box: not placed');
     await page.evaluate(() => window.__tomoyoChinese.textPlace({ text: '今日は晴れ', client: [1280, 720], rects: [[-20, 700, 40, 40], [20, 700, 40, 40], [60, 700, 40, 40], [1260, 700, 40, 40], [3000, 700, 40, 40]] })); await frame();
-    const inside = await page.evaluate(() => [...document.querySelectorAll('.sentence-text .char-token:not(.megulit-unplaced),.tomoyo-cn-row')].map(n => { const r = n.getBoundingClientRect(); return [r.left, r.top, r.right, r.bottom].map(Math.round); }));
-    assert.ok(inside.length >= 4, 'placed tokens and the translation row');
+    const inside = await page.evaluate(() => [...document.querySelectorAll('.sentence-text .char-token:not(.megulit-unplaced)')].map(n => { const r = n.getBoundingClientRect(); return [r.left, r.top, r.right, r.bottom].map(Math.round); }));
+    assert.ok(inside.length >= 3, 'placed tokens');
     for (const [l, t, r, bt] of inside) assert.ok(l >= 200 && t >= 100 && r <= 1000 && bt <= 600, 'inside the game client: ' + [l, t, r, bt]);
+    /* the translation of a line on the client's last pixels: in the client horizontally, under the Japanese (2026-11-16: never above it) */
+    { const [l, t, r] = await page.evaluate(() => { const q = document.querySelector('.tomoyo-cn-row').getBoundingClientRect(); return [q.left, q.top, q.right].map(Math.round); });
+      assert.ok(l >= 200 && r <= 1000 && t >= Math.max(...inside.map(v => v[3])), 'translation row under the line: ' + [l, t, r]); }
     assert.strictEqual(await page.evaluate(() => getComputedStyle([...document.querySelectorAll('.sentence-text .char-token')].pop()).display), 'none', 'a box outside the client is not drawn');
     await page.evaluate(() => { delete window.__tomoyoChinese.galLayoutInfo; window.__tomoyoChinese.textPlace({ fallback: true, text: '今日は晴れ' }); }); await frame();
+    /* 2026-11-16 (死に逝く君、館に芽吹く憎悪): a line near the bottom of the game with a two-row translation. The row is
+       never put above the Japanese: it is made smaller to fit under it, and runs past the bottom when it cannot */
+    for (const y of [640, 676]) {
+      await page.evaluate(y => { const b = window.__tomoyoChinese, row = document.querySelector('.tomoyo-cn-row'); row.textContent = '衣服破破烂烂，皮肤上满是擦伤，连续走了好几个小时的双腿已经开始失去知觉。'.repeat(2);
+        b.textPlace({ text: '今日は晴れ', client: [1280, 720], rects: [0, 1, 2, 3, 4].map(i => [100 + i * 32, y, 32, 32]) }); }, y); await frame();
+      const [, top, , h] = await box('.tomoyo-cn-row');
+      assert.ok(top >= y + 32, 'translation under the Japanese, never above it (y=' + y + ', top=' + top + ')');
+      if (y === 640) assert.ok(top + h <= 721, 'made smaller to fit inside the game (bottom ' + (top + h) + ')');
+    }
+    await page.evaluate(() => { document.querySelector('.tomoyo-cn-row').textContent = '今天是晴天'; window.__tomoyoChinese.textPlace({ fallback: true, text: '今日は晴れ' }); }); await frame();
     /* 2026-11-16 the reader's text differs a little from the placed line (doubled dash, repeated copy): still placed on
        the game's boxes, never at the reader's own place */
     await page.evaluate(() => window.__tomoyoChinese.textPlace({ text: '今日―晴れ', client: [1280, 720], rects: [[100, 500, 30, 32], [130, 500, 30, 32], [160, 500, 30, 32], [190, 500, 30, 32], [220, 500, 30, 32]] })); await frame();
