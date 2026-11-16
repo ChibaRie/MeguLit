@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-/* 2026-11-16 beta live-usage dashboard served by the relay (GET /dashboard, same-origin poll of /api/probe/stats).
-   Phone: https://cn-api.megulit.com/dashboard (mainland) / https://api.megulit.com/dashboard. Operator console (btop/htop/tmux idiom), black + red. */
+/* 2026-11-16 beta live-usage dashboard served by the relay (GET /dashboard). Polls /api/probe/stats on both relay nodes
+   (CORS open) every 15 s, shows the first answer and each node's latency. Phone: https://cn-api.megulit.com/dashboard.
+   Operator console (btop/htop/tmux idiom), black + red. */
 export const DASHBOARD_HTML=String.raw`<!doctype html>
 <html lang="zh">
 <head>
@@ -11,30 +12,28 @@ export const DASHBOARD_HTML=String.raw`<!doctype html>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Silkscreen&family=DotGothic16&display=swap">
 
 <style>
-/* operator console in the btop / htop / tmux idiom: titled hairline panes, aligned columns, bar meters, a sparkline,
+/* operator console in the btop / htop / tmux idiom: titled hairline panes, aligned columns, bar meters, sparklines,
    a request log with latency. Black and one red. Code mono for data, small pixel caps for labels, pixel CJK. */
-:root{--bg:#070707;--pane:#0b0b0b;--line:#262626;--line2:#1a1a1a;--fg:#cfcfcf;--hi:#f2f2f2;--dim:#626262;--dim2:#3a3a3a;--red:#e0303e;--red2:#7a1b23;
+:root{--bg:#070707;--pane:#0b0b0b;--line:#262626;--line2:#1a1a1a;--fg:#cfcfcf;--hi:#f2f2f2;--dim:#626262;--dim2:#3a3a3a;--red:#e0303e;--ok:#5b9a6b;
   --mono:"JetBrains Mono","DotGothic16",ui-monospace,Menlo,Consolas,monospace;--px:"Silkscreen",ui-monospace,monospace;color-scheme:dark}
 *{box-sizing:border-box}
 html,body{margin:0}
 body{background:var(--bg);color:var(--fg);font-family:var(--mono);font-size:13px;line-height:1.55;font-variant-numeric:tabular-nums;
   padding-left:max(12px,env(safe-area-inset-left,0px));padding-right:max(12px,env(safe-area-inset-right,0px));padding-block:0 28px;overflow-x:hidden}
-.r{color:var(--red)}.d{color:var(--dim)}.h{color:var(--hi)}.dd{color:var(--dim2)}
-.wrap{max-width:980px;margin:0 auto}
+.r{color:var(--red)}.d{color:var(--dim)}.h{color:var(--hi)}.dd{color:var(--dim2)}.g{color:var(--ok)}
+.wrap{max-width:1040px;margin:0 auto}
 
 /* tmux status line */
-.tmux{display:flex;align-items:center;gap:0;margin:10px 0 12px;background:#111;border:1px solid var(--line2);font-size:12px;white-space:nowrap;overflow:hidden}
+.tmux{display:flex;align-items:center;margin:10px 0 12px;background:#111;border:1px solid var(--line2);font-size:12px;white-space:nowrap;overflow:hidden}
 .tmux>span{padding:3px 10px}
-.tmux .sess{background:var(--red);color:#000;font-family:var(--px);font-size:10px;letter-spacing:.06em;padding:4px 10px;position:relative}
+.tmux .sess{background:var(--red);color:#000;font-family:var(--px);font-size:10px;letter-spacing:.06em;padding:4px 10px}
 .tmux .win{color:var(--dim)}.tmux .win.on{color:var(--hi);background:#1b1b1b}
-.tmux .sp{flex:1}
-.tmux .host{color:var(--dim)}
+.tmux .sp{flex:1}.tmux .host{color:var(--dim)}
 .tmux .clk{color:var(--hi);border-left:1px solid var(--line)}
-/* the name glitches now and then */
 .gl{position:relative;display:inline-block}
-.gl::before,.gl::after{content:attr(data-t);position:absolute;inset:0;padding:inherit;overflow:hidden;color:#000}
-.gl::before{animation:g1 3.1s steps(1) infinite;background:var(--red)}
-.gl::after{animation:g2 4.3s steps(1) infinite;color:var(--hi);background:transparent}
+.gl::before,.gl::after{content:attr(data-t);position:absolute;inset:0;padding:inherit;overflow:hidden}
+.gl::before{animation:g1 3.1s steps(1) infinite;background:var(--red);color:#000}
+.gl::after{animation:g2 4.3s steps(1) infinite;color:var(--hi)}
 @keyframes g1{0%,90%,100%{clip-path:inset(0 0 100% 0);transform:none}91%{clip-path:inset(0 0 50% 0);transform:translateX(-3px)}93%{clip-path:inset(55% 0 0 0);transform:translateX(2px)}95%{clip-path:inset(25% 0 45% 0);transform:translateX(-1px)}}
 @keyframes g2{0%,84%,100%{clip-path:inset(0 0 100% 0);transform:none}85%{clip-path:inset(35% 0 30% 0);transform:translateX(3px)}87%{clip-path:inset(70% 0 5% 0);transform:translateX(-2px)}}
 .gl.kick::before{animation:g1k .3s steps(1)}
@@ -56,45 +55,60 @@ body{background:var(--bg);color:var(--fg);font-family:var(--mono);font-size:13px
 @keyframes hit{0%{transform:translateX(-3px);color:var(--hi)}40%{transform:translateX(2px)}100%{transform:none}}
 .side{display:grid;grid-template-columns:auto auto;gap:0 12px;font-size:12px;align-content:end}
 .side .k{color:var(--dim)}
-.spark{margin-top:12px;color:var(--red);letter-spacing:0;white-space:pre;overflow:hidden;font-size:14px;line-height:1}
-.spark .dd{color:var(--dim2)}
+.spark{margin-top:12px;color:var(--red);white-space:pre;overflow:hidden;font-size:14px;line-height:1}
 .axis{display:flex;justify-content:space-between;color:var(--dim2);font-size:10px;margin-top:3px}
 .cap{color:var(--dim);font-size:12px;margin-top:8px}
 
 /* meters, htop style */
-.m{display:grid;grid-template-columns:7.5em 1fr auto;gap:10px;align-items:center;padding:2px 0}
-.m .k{color:var(--dim)}
+.m{display:grid;grid-template-columns:8em 1fr auto;gap:10px;align-items:center;padding:2px 0}
+.m .k{color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .m .bar{white-space:pre;overflow:hidden;color:var(--dim2)}
 .m .bar i{font-style:normal;color:var(--red)}
 .m .v{color:var(--hi);min-width:4ch;text-align:right}
 .sep{border-top:1px dashed var(--line);margin:8px 0}
 
+/* full dumps counters */
+.cnt{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:8px}
+.cnt>div{border:1px solid var(--line2);padding:6px 8px}
+.cnt .v{font-size:22px;line-height:1.1;color:var(--hi)}
+.cnt .v.r{color:var(--red)}
+.cnt .k{color:var(--dim);font-size:11px}
+.kv{display:grid;grid-template-columns:8em 1fr;gap:2px 10px;font-size:12px}
+.kv .k{color:var(--dim)}
+
 /* tables */
 table{width:100%;border-collapse:collapse;font-size:12px}
 th{font-family:var(--px);font-size:9px;letter-spacing:.06em;color:var(--dim);font-weight:400;text-align:left;padding:2px 6px 5px;border-bottom:1px solid var(--line)}
+th.rt,td.rt{text-align:right}
 td{padding:4px 6px;border-bottom:1px solid var(--line2);vertical-align:top}
-td.n{color:var(--dim);width:3ch}td.v{color:var(--red);text-align:right;white-space:nowrap}
+td.n{color:var(--dim);width:3ch}td.v{color:var(--red);white-space:nowrap}
 td.t{color:var(--hi);word-break:break-word}
+td.s{color:var(--dim);white-space:nowrap;font-size:11px}
+td.z{color:var(--fg);white-space:nowrap}
+tbody tr:hover td{background:#121212}
 .tag{color:#000;background:var(--red);font-size:10px;padding:0 4px;margin-left:6px}
+.st{display:inline-block;font-size:10px;padding:0 5px;border:1px solid var(--dim2);color:var(--dim)}
+.st.ready{border-color:var(--red);color:var(--red)}.st.uploading{border-color:var(--hi);color:var(--hi)}.st.done{border-color:var(--ok);color:var(--ok)}
 .empty{color:var(--dim);font-size:12px;padding:4px 0}
+@media(max-width:520px){.hide-s{display:none}}
 
 /* log */
 .log{font-size:12px;max-height:9.5em;overflow:hidden}
 .log div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.lv{display:inline-block;width:3.2ch}.lv.i{color:#5b9a6b}.lv.e{color:var(--red)}
+.lv{display:inline-block;width:3.2ch}.lv.i{color:var(--ok)}.lv.e{color:var(--red)}
 .ms{color:var(--dim)}
+.lat{color:var(--red);white-space:pre;font-size:12px;line-height:1;margin-bottom:6px;overflow:hidden}
 
 /* vim-ish footer */
-.vim{display:flex;gap:0;margin-top:14px;border:1px solid var(--line2);font-size:11px;white-space:nowrap;overflow:hidden;background:#0e0e0e}
+.vim{display:flex;margin-top:14px;border:1px solid var(--line2);font-size:11px;white-space:nowrap;overflow:hidden;background:#0e0e0e}
 .vim>span{padding:3px 9px}
 .vim .md{background:var(--hi);color:#000;font-family:var(--px);font-size:9px;padding:4px 9px}
 .vim .md.err{background:var(--red)}
 .vim .sp{flex:1}
 .vim .cur::after{content:"";display:inline-block;width:.55em;height:1em;background:var(--red);vertical-align:-2px;margin-left:4px;animation:bl 1s steps(1) infinite}
 @keyframes bl{50%{opacity:0}}
-
 #boot{position:fixed;inset:0;z-index:9;background:var(--bg);padding:16px max(14px,env(safe-area-inset-left,0px));font-size:13px;color:var(--fg)}
-#boot .ok{color:#5b9a6b}#boot.off{display:none}
+#boot .ok{color:var(--ok)}#boot.off{display:none}
 @media(max-width:520px){.tmux .win:not(.on),.tmux .host,.vim #ep{display:none}}
 @media(prefers-reduced-motion:reduce){*{animation:none!important}}
 </style>
@@ -134,42 +148,60 @@ td.t{color:var(--hi);word-break:break-word}
       <div class="m"><span class="k">active today</span><span class="bar" id="b2"></span><span class="v" id="v2">--</span></div>
       <div class="sep"></div>
       <div class="m"><span class="k">probed games</span><span class="bar" id="b3"></span><span class="v" id="v3">--</span></div>
-      <div class="m"><span class="k">reporters</span><span class="bar" id="b4"></span><span class="v" id="v4">--</span></div>
-      <div class="m"><span class="k">per game</span><span class="bar d" id="b5"></span><span class="v" id="v5">--</span></div>
+      <div class="m"><span class="k">reporters</span><span class="bar"></span><span class="v" id="v4">--</span></div>
+      <div class="m"><span class="k">per game</span><span class="bar"></span><span class="v" id="v5">--</span></div>
     </section>
 
     <section class="pane">
       <span class="ti">┤ <b>full dumps</b> ├</span><span class="tr">完整剧本上传</span>
-      <table><thead><tr><th>state</th><th>count</th><th></th></tr></thead><tbody>
-        <tr><td>ready</td><td class="v" id="fReady">--</td><td class="d">待适配</td></tr>
-        <tr><td>uploading</td><td class="v" id="fUp">--</td><td class="d">上传中</td></tr>
-        <tr><td>done</td><td class="v" id="fDone">--</td><td class="d">已适配</td></tr>
-      </tbody></table>
-      <div class="m" style="margin-top:8px"><span class="k">r2</span><span class="bar" id="bR2"></span><span class="v" id="vR2">--</span></div>
+      <div class="cnt">
+        <div><div class="v r" id="fReady">--</div><div class="k">ready 待适配</div></div>
+        <div><div class="v" id="fUp">--</div><div class="k">uploading 上传中</div></div>
+        <div><div class="v" id="fDone">--</div><div class="k">done 已适配</div></div>
+      </div>
+      <div class="m"><span class="k">r2</span><span class="bar" id="bR2"></span><span class="v" id="vR2">--</span></div>
+      <div class="kv" style="margin-top:6px">
+        <span class="k">stored</span><span id="fMB">--</span>
+        <span class="k">avg / dump</span><span id="fAvg">--</span>
+        <span class="k">last upload</span><span id="fLast">--</span>
+      </div>
     </section>
 
     <section class="pane">
+      <span class="ti">┤ <b>why</b> ├</span><span class="tr">读不好的原因</span>
+      <div id="steps"><div class="empty">-- no data</div></div>
+    </section>
+
+    <section class="pane wide">
       <span class="ti">┤ <b>targets</b> ├</span><span class="tr">多少人在读</span>
       <div id="top"><div class="empty">-- no rows</div></div>
     </section>
 
-    <section class="pane wide">
-      <span class="ti">┤ <b>relay.log</b> ├</span><span class="tr">tail -f</span>
+    <section class="pane">
+      <span class="ti">┤ <b>recent</b> ├</span><span class="tr">ls -lt full_dumps/</span>
+      <div id="recent"><div class="empty">-- no uploads yet</div></div>
+    </section>
+
+    <section class="pane">
+      <span class="ti">┤ <b>relay.log</b> ├</span><span class="tr" id="latT">latency</span>
+      <div class="lat" id="lat"></div>
       <div class="log" id="log"></div>
     </section>
   </div>
 
-  <div class="vim"><span class="md" id="mode">LINK</span><span id="ep">GET /api/probe/stats</span><span class="d" id="code">--</span><span class="sp"></span><span class="d" id="node">node --</span><span>poll <span id="count">15</span>s<span class="cur"></span></span></div>
+  <div class="vim"><span class="md" id="mode">LINK</span><span id="ep">GET /api/probe/stats</span><span class="d" id="code">--</span><span class="sp"></span><span class="d" id="node">--</span><span>poll <span id="count">15</span>s<span class="cur"></span></span></div>
 </div>
 
 <script>
 "use strict";
-var ENDPOINTS=["/api/probe/stats"];
+var NODES=[["cn-api","https://cn-api.megulit.com/api/probe/stats"],["api","https://api.megulit.com/api/probe/stats"]];
 var PERIOD=15,HIST=60;
 var $=function(id){return document.getElementById(id);};
 var reduce=matchMedia("(prefers-reduced-motion:reduce)").matches;
 function fmt(n){return (n==null||isNaN(n))?"--":String(n);}
 function esc(s){return String(s).replace(/[&<>]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;"}[c];});}
+function ago(sec){if(!sec)return "--";var s=Math.max(0,Math.floor(Date.now()/1000-sec));if(s<60)return s+"s ago";if(s<3600)return Math.floor(s/60)+"m ago";if(s<86400)return Math.floor(s/3600)+"h"+String(Math.floor(s%3600/60)).padStart(2,"0")+"m ago";return Math.floor(s/86400)+"d ago";}
+function mb(v){return v==null?"--":(v>=1024?(v/1024).toFixed(2)+" GB":v.toFixed(1)+" MB");}
 
 /* block digits */
 var B="█",DIG={"0":["###","# #","# #","# #","###"],"1":[" # ","## "," # "," # ","###"],"2":["###","  #","###","#  ","###"],"3":["###","  #","###","  #","###"],
@@ -183,49 +215,71 @@ function setBig(v){var t=fmt(v),el=$("big");el.setAttribute("aria-label",t+" onl
   var s="";for(var k=0;k<t.length;k++)s+=String(Math.floor(Math.random()*10));el.textContent=blocks(s);},45);}
 
 /* htop meter */
-function meter(id,v,max){var el=$(id),w=Math.max(8,Math.floor(el.clientWidth/7.9)-2),n=max>0?Math.round(Math.min(1,(v||0)/max)*w):0;
+function cols(el,cw){return Math.max(8,Math.floor(el.clientWidth/cw));}
+function meter(el,v,max){var w=cols(el,7.9)-2,n=max>0?Math.round(Math.min(1,(v||0)/max)*w):0;
  el.innerHTML="["+"<i>"+"|".repeat(n)+"</i>"+" ".repeat(Math.max(0,w-n))+"]";}
 
-/* sparkline from this viewer's own samples (kept per viewer) */
-var hist=[];try{hist=JSON.parse(localStorage.getItem("ml-online-hist")||"[]").filter(function(p){return Date.now()-p[0]<HIST*PERIOD*1000;});}catch(e){hist=[];}
+/* sparklines from this viewer's own samples */
+function load(k){try{return JSON.parse(localStorage.getItem(k)||"[]").filter(function(p){return Date.now()-p[0]<HIST*PERIOD*1000;});}catch(e){return [];}}
+function keep(k,a){try{localStorage.setItem(k,JSON.stringify(a));}catch(e){}}
+var hist=load("ml-online-hist"),lath=load("ml-lat-hist");
 var BARS=["▁","▂","▃","▄","▅","▆","▇","█"];
-function spark(){var el=$("spark"),w=Math.max(16,Math.floor(el.clientWidth/8.4)),vals=hist.slice(-w).map(function(p){return p[1];}),mx=Math.max(1,Math.max.apply(null,vals.concat([0])));
- var pad=w-vals.length,s='<span class="dd">'+"▁".repeat(Math.max(0,pad))+"</span>";
- s+=vals.map(function(v){return v<=0?'<span class="dd">▁</span>':BARS[Math.min(7,Math.max(1,Math.round(v/mx*7)))];}).join("");
- el.innerHTML=s;var mins=Math.round(w*PERIOD/60);$("ax0").textContent="-"+mins+"m";}
+function sparkStr(el,vals,cw){var w=cols(el,cw),v=vals.slice(-w),mx=Math.max(1,Math.max.apply(null,v.concat([0])));
+ return '<span class="dd">'+"▁".repeat(Math.max(0,w-v.length))+"</span>"+v.map(function(x){return x<=0?'<span class="dd">▁</span>':BARS[Math.min(7,Math.max(1,Math.round(x/mx*7)))];}).join("");}
+function spark(){var el=$("spark");el.innerHTML=sparkStr(el,hist.map(function(p){return p[1];}),8.4);$("ax0").textContent="-"+Math.round(cols(el,8.4)*PERIOD/60)+"m";
+ var l=$("lat");l.innerHTML=sparkStr(l,lath.map(function(p){return p[1];}),7.3);}
 
+var STEP_CN={"unknown-pack":"封包不认识","not-japanese":"不是日文","parse-failed":"解析失败","decrypt-failed":"解密失败","chinese-build":"汉化版","low-pairing":"中日配不上","timeout":"超时"};
+function renderSteps(list){var w=$("steps");
+ if(!list||!list.length){w.innerHTML='<div class="empty">-- no data</div>';return;}
+ var mx=Math.max.apply(null,list.map(function(s){return s.n;}));
+ w.innerHTML=list.map(function(s,i){return '<div class="m"><span class="k" title="'+esc(s.step)+'">'+esc(s.step)+'</span><span class="bar" id="sb'+i+'"></span><span class="v">'+s.n+'</span></div>';}).join("")+
+  '<div class="cap">'+list.map(function(s){return STEP_CN[s.step]?esc(s.step)+" = "+STEP_CN[s.step]:"";}).filter(Boolean).join(" · ")+'</div>';
+ list.forEach(function(s,i){meter($("sb"+i),s.n,mx);});}
+function stateTag(s){return '<span class="st '+esc(s)+'">'+esc(s||"-")+'</span>';}
 function renderTop(list){var w=$("top");
- if(!list||!list.length){w.innerHTML='<div class="empty">-- no rows · 完整剧本上传发版后列出每个游戏有多少人在读</div>';return;}
- w.innerHTML='<table><thead><tr><th>#</th><th>title</th><th style="text-align:right">ppl</th></tr></thead><tbody>'+list.map(function(g,i){
-  return '<tr><td class="n">'+(i+1)+'</td><td class="t">'+esc(g.title)+(g.full?'<span class="tag">full</span>':'')+(g.step?' <span class="d">'+esc(g.step)+'</span>':'')+'</td><td class="v">'+fmt(g.reporters)+'</td></tr>';}).join("")+'</tbody></table>';}
+ if(!list||!list.length){w.innerHTML='<div class="empty">-- no rows</div>';return;}
+ w.innerHTML='<table><thead><tr><th>#</th><th>title</th><th class="hide-s">why</th><th class="rt hide-s">size</th><th>state</th><th class="rt">ppl</th></tr></thead><tbody>'+list.map(function(g,i){
+  return '<tr><td class="n">'+(i+1)+'</td><td class="t">'+esc(g.title)+(g.full?'<span class="tag">full</span>':'')+'</td><td class="s hide-s">'+esc(g.step||"-")+'</td><td class="z rt hide-s">'+(g.mb!=null?mb(g.mb):"-")+'</td><td>'+stateTag(g.state)+'</td><td class="v rt">'+fmt(g.reporters)+'</td></tr>';}).join("")+'</tbody></table>';}
+function renderRecent(list){var w=$("recent");
+ if(!list||!list.length){w.innerHTML='<div class="empty">-- no uploads yet</div>';return;}
+ w.innerHTML='<table><tbody>'+list.map(function(g){return '<tr><td class="s">'+ago(g.at)+'</td><td>'+stateTag(g.state)+'</td><td class="z rt">'+mb(g.mb)+'</td><td class="t">'+esc(g.title)+'</td></tr>';}).join("")+'</tbody></table>';}
 
 var logs=[];
 function log(level,msg){logs.unshift('<div><span class="d">'+new Date().toTimeString().slice(0,8)+'</span> <span class="lv '+(level==="ERR"?"e":"i")+'">'+level+'</span> '+msg+'</div>');logs=logs.slice(0,6);$("log").innerHTML=logs.join("");}
 function kick(){if(reduce)return;var n=$("name");n.classList.remove("kick");void n.offsetWidth;n.classList.add("kick");}
 
-function raceStats(){var t0=performance.now();return Promise.any(ENDPOINTS.map(function(u){return fetch(u,{cache:"no-store"}).then(function(r){if(!r.ok)throw 0;return r.json().then(function(j){j.__src=u;j.__ms=Math.round(performance.now()-t0);j.__code=r.status;return j;});});}));}
+/* both relay nodes are hit every poll; the first good answer is shown, each node's latency is kept */
+var lat={};
+function poll(){var t0=performance.now();
+ var reqs=NODES.map(function(n){return fetch(n[1],{cache:"no-store"}).then(function(r){var ms=Math.round(performance.now()-t0);lat[n[0]]=r.ok?ms:-1;if(!r.ok)throw 0;
+  return r.json().then(function(j){j.__node=n[0];j.__ms=ms;j.__code=r.status;return j;});},function(e){lat[n[0]]=-1;throw e;});});
+ return {first:Promise.any(reqs),all:Promise.allSettled(reqs)};}
 var prev=null,peak=0,since=Date.now(),last=null;
 function apply(j){
- var on=j.online|0;hist.push([Date.now(),on]);hist=hist.slice(-HIST);try{localStorage.setItem("ml-online-hist",JSON.stringify(hist));}catch(e){}
- peak=Math.max(peak,on,Math.max.apply(null,hist.map(function(p){return p[1];})));
+ var on=j.online|0;hist.push([Date.now(),on]);hist=hist.slice(-HIST);keep("ml-online-hist",hist);
+ lath.push([Date.now(),j.__ms]);lath=lath.slice(-HIST);keep("ml-lat-hist",lath);
+ peak=Math.max(peak,Math.max.apply(null,hist.map(function(p){return p[1];})));
  if(prev!=null){var d=on-prev;$("delta").innerHTML=d>0?'<span class="r">+'+d+'</span>':d<0?'<span class="r">'+d+'</span>':'<span class="d">0</span>';if(d!==0){kick();since=Date.now();}}
  else $("delta").innerHTML='<span class="d">0</span>';
  prev=on;setBig(on);$("peak").textContent=peak;last=j;render(j);
- var node=(j.__src||"").indexOf("cn-")>=0?"cn-api":(j.__src?"api":"local");
- $("node").textContent="node "+node;$("host").textContent="relay ─ "+node;$("code").textContent=j.__code+" · "+j.__ms+"ms";$("mode").textContent="LINK";$("mode").className="md";
- log("INF",'GET /api/probe/stats <span class="h">'+j.__code+'</span> <span class="ms">'+j.__ms+'ms</span> online=<span class="r">'+on+'</span> 1h='+j.active1h+' games='+j.probedGames);}
+ $("host").textContent="relay ─ "+j.__node;$("code").textContent=j.__code+" · "+j.__ms+"ms";$("mode").textContent="LINK";$("mode").className="md";
+ log("INF",'GET /api/probe/stats <span class="h">'+j.__code+'</span> <span class="ms">'+j.__ms+'ms '+j.__node+'</span> online=<span class="r">'+on+'</span> 1h='+j.active1h+' ready='+((j.full||{}).ready|0));}
 function render(j){spark();
- var top=Math.max(j.today|0,1);
- meter("b1",j.active1h,top);$("v1").textContent=fmt(j.active1h);
- $("b2").innerHTML='<span class="d">'+(j.today?'1h/today '+Math.round((j.active1h|0)/j.today*100)+'%':'')+'</span>';$("v2").textContent=fmt(j.today);
- $("b3").textContent="";$("v3").textContent=fmt(j.probedGames);
- $("b4").textContent="";$("v4").textContent=fmt(j.reporters);
- var per=j.probedGames?(j.reporters/j.probedGames):0;$("b5").textContent="";$("v5").textContent=per?per.toFixed(2):"--";
- var f=j.full||{};$("fReady").textContent=fmt(f.ready);$("fUp").textContent=fmt(f.uploading);$("fDone").textContent=fmt(f.done);
- meter("bR2",f.storedMB||0,f.limitMB||8192);$("vR2").textContent=((f.storedMB||0)/((f.limitMB||8192))*100).toFixed(1)+"%";
- renderTop(j.top);}
-function tick(){raceStats().then(apply).catch(function(){$("mode").textContent="DOWN";$("mode").className="md err";$("code").textContent="timeout";log("ERR","GET /api/probe/stats failed · retry in "+PERIOD+"s");});}
-function ago(ms){var s=Math.floor(ms/1000);return s<60?s+"s":Math.floor(s/60)+"m"+String(s%60).padStart(2,"0")+"s";}
+ var today=Math.max(j.today|0,1);
+ meter($("b1"),j.active1h,today);$("v1").textContent=fmt(j.active1h);
+ $("b2").innerHTML='<span class="d">1h/today '+(j.today?Math.round((j.active1h|0)/j.today*100):0)+'%</span>';$("v2").textContent=fmt(j.today);
+ var f=j.full||{};
+ $("b3").innerHTML='<span class="d">'+(f.games|0)+' with full dump</span>';$("v3").textContent=fmt(j.probedGames);
+ $("v4").textContent=fmt(j.reporters);$("v5").textContent=j.probedGames?(j.reporters/j.probedGames).toFixed(2):"--";
+ $("fReady").textContent=fmt(f.ready);$("fUp").textContent=fmt(f.uploading);$("fDone").textContent=fmt(f.done);
+ meter($("bR2"),f.storedMB||0,f.limitMB||8192);$("vR2").textContent=((f.storedMB||0)/(f.limitMB||8192)*100).toFixed(1)+"%";
+ $("fMB").innerHTML=mb(f.storedMB||0)+' <span class="d">/ '+mb(f.limitMB||8192)+'</span>';
+ $("fAvg").textContent=f.ready?mb((f.storedMB||0)/f.ready):"--";$("fLast").textContent=ago(f.lastAt);
+ renderSteps(j.steps);renderTop(j.top);renderRecent(j.recent);}
+function nodesLine(){$("node").innerHTML=NODES.map(function(n){var v=lat[n[0]];return n[0]+" "+(v==null?"--":v<0?'<span class="r">down</span>':v+"ms");}).join(" · ");
+ var ok=NODES.filter(function(n){return lat[n[0]]>0;}).map(function(n){return lat[n[0]];});$("latT").textContent=ok.length?"latency "+Math.min.apply(null,ok)+"ms":"latency";}
+function tick(){var p=poll();p.first.then(apply).catch(function(){$("mode").textContent="DOWN";$("mode").className="md err";$("code").textContent="timeout";log("ERR","GET /api/probe/stats failed on every node · retry in "+PERIOD+"s");});p.all.then(nodesLine);}
 addEventListener("resize",function(){if(last)render(last);else spark();});
 
 var LINES=[['$ ssh op@relay.megulit.com',''],['  authenticated · ed25519','ok'],['$ tmux attach -t megulit',''],['  attached','ok']];
@@ -234,7 +288,8 @@ function boot(){var b=$("boot"),tw=$("tw");if(reduce){b.className="off";start();
   var t=LINES[li][0],cls=LINES[li][1];if(ci<=t.length){tw.innerHTML=done+'<div class="'+cls+'">'+esc(t.slice(0,ci))+'█</div>';ci++;setTimeout(step,ci===1?90:18);}
   else{done+='<div class="'+cls+'">'+esc(t)+'</div>';li++;ci=0;setTimeout(step,110);}})();}
 function start(){var left=PERIOD;
- setInterval(function(){$("clock").textContent=new Date().toTimeString().slice(0,8);$("since").textContent=ago(Date.now()-since);
+ setInterval(function(){$("clock").textContent=new Date().toTimeString().slice(0,8);$("since").textContent=Math.floor((Date.now()-since)/1000)+"s";
+  if(last)$("fLast").textContent=ago((last.full||{}).lastAt);
   if(--left<=0){left=PERIOD;tick();}$("count").textContent=left;},1000);
  setInterval(kick,6200);setBig("--");spark();log("INF","session attached");tick();}
 boot();
