@@ -120,7 +120,7 @@ body{background:var(--black);color:var(--paper);font-family:var(--mono);font-wei
 /* glitch: rgb split + slice, on hits only */
 .gl.hit2{animation:slice .34s steps(1) 1}
 @keyframes slice{0%{clip-path:inset(0);transform:none;filter:none}
- 25%{clip-path:inset(14% 0 56% 0);transform:translateX(-8px);filter:drop-shadow(3px 0 var(--red)) drop-shadow(-3px 0 #21e6ff)}
+ 25%{clip-path:inset(14% 0 56% 0);transform:translateX(-8px);filter:drop-shadow(4px 0 var(--red))}
  50%{clip-path:inset(52% 0 20% 0);transform:translateX(6px)}
  75%{clip-path:inset(30% 0 42% 0);transform:translateX(-3px)}
  100%{clip-path:inset(0);transform:none;filter:none}}
@@ -200,8 +200,9 @@ function sticker(cv,W,H,base,fillTop,fillH,ang){
   if(t===1){var edge=at(x+1,y)>1||at(x-1,y)>1||at(x,y+1)>1||at(x,y-1)>1;
    var s=Math.max(0,Math.min(1,(BY[y*W+x]-fillTop)/fillH));
    /* top: white with '/' hatching; lower part dithers down to black, like a 1-bit print */
-   col=(edge||(((x+y)%7)===0&&s>.35)||(s>.62&&BAY[(y&3)*4+(x&3)]<(s-.62)/.38*16))?INK:PAPER;}
-  else if(t===2)col=(((x+y)%6)===0)?PAPER:INK;
+   /* white body; the hatch and the dither toward the bottom are red dots, the outline stays black */
+   col=edge?INK:((((x+y)%7)===0&&s>.35)||(s>.62&&BAY[(y&3)*4+(x&3)]<(s-.62)/.38*16))?RED:PAPER;}
+  else if(t===2)col=(((x+y)%6)===0)?RED:INK;
   else if(t===3)col=RED;else if(t===4)col=INK;
   else col=null;
   out[y*W+x]=col;}
