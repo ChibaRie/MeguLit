@@ -68,6 +68,12 @@ class OverlayPlacement {
        only the line's new characters, with holes. The game types in reading order, so a character before a drawn one
        has been drawn; the characters after the last record are let in once the line is complete (no new record for
        DoneAfter ms: a typing engine sends one every few tens of ms). */
+    if (recorded.size) this.hideSeen = true;
+    /* 2026-11-16 (QQ group, WHITE ALBUM: 「…そうなんだよなあ」 twice, MeguLit's a few px off the game's own): no character of
+       any line has come back as hidden by the game, so nothing proves the game's line is gone. A guessed place (anchor
+       estimate, locator) would put MeguLit's Japanese next to the game's own: the line goes out as `visible` instead
+       (the reader keeps the translation and never draws its Japanese over the game's). Every engine. */
+    if (!this.hideSeen) { const vis = chars.filter(c => !/\s/.test(c)).join(''); if (this.current?.id === id) this.clear(); if (vis && vis !== this.visibleKey) { this.visibleKey = vis; this.send({ type: 'textPlace', visible: true, text: vis }); } return; }
     const typed = this.typed(table, chars.length, recorded), drawn = new Set(chars.map((c, i) => i).filter(i => i < typed));
     let first = -1, last = -1; for (let i = 0; i < rects.length; i++) if (rects[i]) { if (first < 0) first = i; last = i; }
     if (last >= 0) {
@@ -220,7 +226,7 @@ class OverlayPlacement {
     if (key === this.lastKey) return; this.lastKey = key; this.current = line;
     this.send({ type: 'textPlace', ...line });
   }
-  stop() { clearTimeout(this.doneTimer); this.typing = null; this.clear(); if (this.paged) { this.paged = false; this.pageKey = ''; this.send({ type: 'textPlacePage', awake: false, armed: false, lines: [] }); } if (this.extraKey && this.extraKey !== '[]') this.send({ type: 'textPlaceExtra', items: [] }); this.extraKey = ''; this.on = false; }
+  stop() { clearTimeout(this.doneTimer); this.typing = null; this.hideSeen = false; this.clear(); if (this.paged) { this.paged = false; this.pageKey = ''; this.send({ type: 'textPlacePage', awake: false, armed: false, lines: [] }); } if (this.extraKey && this.extraKey !== '[]') this.send({ type: 'textPlaceExtra', items: [] }); this.extraKey = ''; this.on = false; }
 }
 
 /* a typing engine sends a record every few tens of ms; this long without one, the line is complete */

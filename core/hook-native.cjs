@@ -74,7 +74,7 @@ class HookNative{
   /* E285 (user: Alt+H also switched off the translation the game draws itself): Alt+H hides MeguLit's own layers; the
      game keeps drawing the written-back translation until its own switch is turned off. */
   /* Text architecture: with 文字显示 = compositor the game's own drawing must turn into glyph dots, so replacement is on and the bridge is in dot mode (write-back streams included) */
-  /* E610: overlay placement keeps write-back on between calibrations because the engine reports glyph positions. 2026-11-15 (死に逝く君、館に芽吹く憎悪, 1.4.9/1.4.10: 「本次校准未完成」 every time): a calibration measures the game's own pixels, so while one runs (calibrating + preflight) the game must draw its original like any embed stream; placement kept the KiriKiri line invisible and the probe never saw it */const showOriginal=this.calibrating===true&&this.preflight===true;const enabled=(this.compositedFn?.()===true||this.ownTextFn?.()===true&&!this.gdilessSelected())&&state.bound===true&&!showOriginal||preferences.hookProfile!=='read'&&!this.preflight&&state.bound===true&&(state.coverEnabled!==false||preferences.embedTranslation===true&&preferences.translationBlur!==true);const route=enabled?(preferences.hookProfile==='embed'?'embed':'custom'):'read';if(this.process&&(enabled!==this.enabled||route!==this.route)){
+  /* E610: overlay placement keeps write-back on between calibrations because the engine reports glyph positions. 2026-11-15 (死に逝く君、館に芽吹く憎悪, 1.4.9/1.4.10: 「本次校准未完成」 every time): a calibration measures the game's own pixels, so while one runs (calibrating + preflight) the game must draw its original like any embed stream; placement kept the KiriKiri line invisible and the probe never saw it */const showOriginal=this.calibrating===true&&this.preflight===true;let enabled=(this.compositedFn?.()===true||this.ownTextFn?.()===true&&!this.gdilessSelected())&&state.bound===true&&!showOriginal||preferences.hookProfile!=='read'&&!this.preflight&&state.bound===true&&(state.coverEnabled!==false||preferences.embedTranslation===true&&preferences.translationBlur!==true);/* 2026-11-16 (QQ group, Fate/stay night with a Traditional Chinese patch: neither the game's text nor MeguLit's): the selected stream carries no Japanese the reader can draw, so hiding the game's own line leaves nothing on screen. Every engine: the game keeps its text until a Japanese line comes again (japaneseGuard). */if(this.noJapaneseSource===true&&this.noJapanesePid===pid)enabled=false;const route=enabled?(preferences.hookProfile==='embed'?'embed':'custom'):'read';if(this.process&&(enabled!==this.enabled||route!==this.route)){
    // Every engine toggles hiding in place (E215): the bridge only flips its replacement switch. Detaching and
    // re-injecting the same game process on each mode change (calibration, preflight) made the overlay flicker and
    // crashed CLANNAD HD (Siglus) without an error; it also dropped the first line after calibration.
@@ -241,6 +241,11 @@ class HookNative{
  static chineseProse(text){const t=String(text||'');if(!t||t.length>400||/[぀-ヿ｡-ﾟ]/.test(t))return false;const han=t.match(/[一-鿿]/g)||[];if(han.length<6)return false;
   if(!HookNative.sjis){const dec=new TextDecoder('shift_jis'),set=new Set();for(let a=0x81;a<=0xfc;a++)for(let b=0x40;b<=0xfc;b++){const c=dec.decode(Buffer.from([a,b]));if(c.length===1&&c!=='�')set.add(c);}HookNative.sjis=set;}
   return han.filter(c=>!HookNative.sjis.has(c)).length>=1&&!HookNative.sjisAsGbk(t);}
+ /* never "game hidden, nothing drawn" (2026-11-16): three story-length lines in a row on the selected stream without kana that the script cannot map back to Japanese → stop hiding; the first kana line turns hiding back on */
+ japaneseGuard(text){try{const t=String(text||'').replace(/%l[^;%]*;[^%]*%l;/g,'');const letters=(t.match(/[一-鿿㐀-䶿A-Za-zÀ-ɏ가-힯]/g)||[]).length;const kana=/[ぁ-ヺｦ-ﾝ]/.test(t);if(!kana&&letters<6)return;const before=this.noJapaneseSource===true&&this.noJapanesePid===this.pid;
+  if(kana||this.foreignJapanese(t)){this.kanalessRun=0;if(before){this.noJapaneseSource=false;this.trace('japanese line again: hiding allowed');this.reapplyConfig();}return;}
+  this.kanalessRun=(this.kanalessRun||0)+1;if(this.kanalessRun>=3&&!before){this.noJapaneseSource=true;this.noJapanesePid=this.pid;this.trace('selected stream has no Japanese: the game keeps its own text');this.reapplyConfig();}}catch{}}
+ reapplyConfig(){try{if(this.preferences&&this.windowState)this.configure(this.preferences,this.windowState);}catch{}}
  languageCheck(text){try{const t=String(text||'').replace(/%l[^;%]*;[^%]*%l;/g,'');if(!t.trim())return;
   /* 2026-11-13 (user: DDLC Plus in English showed nothing and said nothing): three story-length lines in a row with no
      Japanese and no Chinese, that the script could not map back to Japanese, raise a notice to switch the game to Japanese */
@@ -347,7 +352,7 @@ class HookNative{
   const extracted=require('./source-ruby.cjs').extractSourceRuby(m.text);let ruby=extracted.ruby;m={...m,text:extracted.text};
   /* 2026-11-14 a Japanese line that reached us decoded as GBK (no kana, decodes back to kana-rich Shift-JIS) is read as Japanese */
   if(typeof m.text==='string'&&!/[ぁ-ゖァ-ヺ]/.test(m.text)){const ja=HookNative.sjisAsGbk(m.text);if(ja){this.trace('Shift-JIS read as GBK, decoded again');m={...m,text:ja};}}
-  this.languageCheck(m.text);
+  this.languageCheck(m.text);this.japaneseGuard(m.text);
   /* a line still unreadable after that (mojibake, replacement characters) is never drawn; the game keeps its own text */
   /* 2026-11-15 (沙耶の唄: after such a line the reader kept the previous line's furigana and translation over a page that no longer
      had it): the line on screen is now one MeguLit cannot read, so the reader steps aside (hookLineUnreadable) until the next
