@@ -47,7 +47,7 @@ function read(file,entry,decrypt){
 function decodeText(buf){
  if(buf[0]===0xff&&buf[1]===0xfe)return {text:buf.toString('utf16le',2),encoding:'utf16le'};
  if(buf[0]===0xef&&buf[1]===0xbb&&buf[2]===0xbf)return {text:buf.toString('utf8',3),encoding:'utf8'};
- if(buf[0]===0xfe&&buf[1]===0xfe&&buf[2]<=2)return null; // KiriKiri's own scrambled text (mode 0-2): not handled
+ if(buf[0]===0xfe&&buf[1]===0xfe&&buf[2]<=2){const t=require('./kit.cjs').krkrScrambled(buf);return t===null?null:{text:t,encoding:'utf16le'};} // KiriKiri's own scrambled text (mode 0-2)
  return {buffer:buf,encoding:''};
 }
 // E297: the index's top-level chunk tags. An "Hxv4" chunk marks KiriKiri Z archives whose files only the game's cxdec v2
