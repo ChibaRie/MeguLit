@@ -4,6 +4,8 @@
    LINK_SECRET (HMAC key for download links), optional HASH_SALT and DIAG_TOKEN. Vars: GITHUB_REPO, LINK_DAYS,
    ALLOWED_ORIGINS. Nothing here trusts the client: every body is size-capped and validated (validate.js). */
 import {cleanupProbeFull} from './probe-full.js';
+import {pulse,probeStats,cleanupProbeStats} from './probe-stats.js';
+import {DASHBOARD_HTML} from './dashboard.js';
 import {LIMITS,validateLeaderboard,validateBoardQuery,validateAdaptationRecord,validateKeys,validateMeta,issueBody,validateHot,INSTALL_ID,HEX64} from './validate.js';
 /* E379 accounts (relay/ACCOUNTS.md) and community features (avatars, hot words) */
 import {handleAccounts,isAccountsPath,authenticate,ROTATED} from './accounts.js';
@@ -291,8 +293,12 @@ export async function handle(request,env,now=new Date(),ctx=null){
   else if(path.startsWith('/api/diagnostics/download/')&&request.method==='GET')response=await diagnosticsDownload(url,env,ip,now);
   /* 2026-11-15 adaptation contribution packages, consented in the app (relay/src/contrib.js) */
   else if(path.startsWith('/api/contrib/'))response=await contribRoute(request,env,ip,now,url,path,{json,fail,hit,readJSON})||fail('NOT_FOUND',404);
+  else if((path==='/dashboard'||path==='/probe/dashboard')&&request.method==='GET')response=new Response(DASHBOARD_HTML,{headers:{'content-type':'text/html; charset=utf-8','cache-control':'public, max-age=60','x-content-type-options':'nosniff'}});
+  else if(path==='/api/probe/stats'&&request.method==='GET')response=await probeStats(env,now,{json,fail});
   else if(path.startsWith('/api/adapters/')||path==='/api/probe'||path.startsWith('/api/probe/'))response=await adaptersRoute(request,env,ip,now,url,path,{json,fail,hit,readJSON})||fail('NOT_FOUND',404);
   else response=fail('NOT_FOUND',404);
+  /* 2026-11-16 live-usage pulse: a MeguLit client touched the relay (probe-stats.js); aggregate, no identity kept */
+  if(/MeguLit/.test(request.headers.get('user-agent')||'')&&path.startsWith('/api/')){const job=pulse(env,ip,now);if(ctx?.waitUntil)ctx.waitUntil(job);else job.catch(()=>{});}
  }catch(error){console.error('relay error',error?.message);response=fail('SERVER_ERROR',500);}
  if(response.status===429&&!response.headers.get('retry-after'))response.headers.set('retry-after',String(retryAfter()));
  for(const[k,v]of Object.entries(cors))response.headers.set(k,v);
@@ -302,7 +308,7 @@ export async function handle(request,env,now=new Date(),ctx=null){
 export async function scheduled(event,env,ctx){
  /* every 30 minutes: website feedback still waiting for its GitHub issue; the weekly cron settles hot words */
  if(event?.cron==='20 21 * * *'){const job=refreshDaily(env,new Date(event?.scheduledTime||Date.now())).catch(()=>0);if(ctx?.waitUntil)ctx.waitUntil(job);return job;}
- if(event?.cron==='*/30 * * * *'){const job=Promise.all([syncPendingFeedback(env).catch(()=>0),refreshRelease(env,'latest').catch(()=>null),cleanupForumImages(env,new Date(event?.scheduledTime||Date.now())).catch(()=>0),cleanupContrib(env,new Date(event?.scheduledTime||Date.now())).catch(()=>0),cleanupProbeFull(env,new Date(event?.scheduledTime||Date.now())).catch(()=>0)]);if(ctx?.waitUntil)ctx.waitUntil(job);return job;}
+ if(event?.cron==='*/30 * * * *'){const job=Promise.all([syncPendingFeedback(env).catch(()=>0),refreshRelease(env,'latest').catch(()=>null),cleanupForumImages(env,new Date(event?.scheduledTime||Date.now())).catch(()=>0),cleanupContrib(env,new Date(event?.scheduledTime||Date.now())).catch(()=>0),cleanupProbeFull(env,new Date(event?.scheduledTime||Date.now())).catch(()=>0),cleanupProbeStats(env,new Date(event?.scheduledTime||Date.now())).catch(()=>0)]);if(ctx?.waitUntil)ctx.waitUntil(job);return job;}
  const when=new Date(event?.scheduledTime||Date.now());const job=settleDue(env,when).then(async done=>{await cleanupAvatars(env,when).catch(()=>0);return done;});if(ctx?.waitUntil)ctx.waitUntil(job);return job;}
 /* a token rotated while answering any request goes back on that answer, whichever endpoint it was */
 export default {fetch:async(request,env,ctx)=>{const response=await handle(request,env,new Date(),ctx);const token=ROTATED.get(request);if(!token||response.headers.get('x-megulit-token'))return response;const copy=new Response(response.body,response);copy.headers.set('x-megulit-token',token);return copy;},scheduled};
