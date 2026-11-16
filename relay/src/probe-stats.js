@@ -98,10 +98,37 @@ async function wide(env,now){
   contrib,diagnostics:{total:dg.n|0,n7d:dg.n7d|0,mb:mb(dg.bytes),issues:dg.issues|0},bundles:{total:bd.n|0,n7d:bd.n7d|0,mb:mb(bd.bytes)},
   lookups:{week:String(wk.week_key||''),users:lk.users|0,terms:lk.terms|0,count:Number(lk.lookups)||0}};}
 
+/* ---- service quota: usage against the free plans the relay runs on (refreshed every 10 min) -------------------------
+   Without a token: D1 size (every D1 result carries meta.size_after) and GitHub's API budget (GITHUB_TOKEN, the
+   rate_limit call itself is free). With CF_API_TOKEN (Account Analytics: Read) + CF_ACCOUNT_ID (wrangler secrets):
+   Workers requests, D1 rows read / written, D1 and R2 storage, R2 class A / B operations, Workers AI neurons, from the
+   GraphQL Analytics API. Each dataset is its own query, so one unknown field only blanks its own row. */
+export const FREE={workersReq:100000,d1Read:5e6,d1Write:1e5,d1Bytes:5*1024**3,r2Bytes:10*1024**3,r2A:1e6,r2B:1e7,aiNeurons:1e4};
+const R2_CLASS_A=new Set(['ListBuckets','PutBucket','ListObjects','ListObjectsV2','PutObject','CopyObject','CompleteMultipartUpload','CreateMultipartUpload','UploadPart','UploadPartCopy','ListMultipartUploads','ListParts','PutBucketEncryption','PutBucketCors','PutBucketLifecycleConfiguration','LifecycleStorageTierTransition']);
+async function gql(env,query,variables){const r=await (env.fetch||fetch)('https://api.cloudflare.com/client/v4/graphql',{method:'POST',headers:{authorization:'Bearer '+env.CF_API_TOKEN,'content-type':'application/json'},body:JSON.stringify({query,variables})});
+ const j=await r.json().catch(()=>null);if(!j||(j.errors&&j.errors.length)||!j.data)throw new Error(String(j?.errors?.[0]?.message||'HTTP '+r.status).slice(0,90));return j.data.viewer?.accounts?.[0]?.x||[];}
+async function quota(env,now){
+ const out={at:Math.floor(now.getTime()/1000),token:!!(env.CF_API_TOKEN&&env.CF_ACCOUNT_ID),limits:FREE,items:{},errors:{}};
+ try{const r=await env.DB.prepare('SELECT 1').all();const z=Number(r?.meta?.size_after)||0;if(z)out.items.d1Bytes=z;}catch{}
+ if(out.token){const a=env.CF_ACCOUNT_ID,d=now.toISOString().slice(0,10),m=d.slice(0,8)+'01';
+  const q=(set,vars,decl)=>'query('+decl+'){viewer{accounts(filter:{accountTag:$a}){x:'+set+'}}}';
+  const run=async(key,query,vars,pick)=>{try{Object.assign(out.items,pick(await gql(env,query,vars)));}catch(e){out.errors[key]=String(e?.message||e).slice(0,90);}};
+  const sum=(rows,f)=>rows.reduce((n,r)=>n+(Number(f(r))||0),0);
+  await Promise.all([
+   run('workers',q('workersInvocationsAdaptive(limit:10000,filter:{date_geq:$d}){sum{requests errors subrequests}}',0,'$a:String!,$d:Date!'),{a,d},rows=>({workersReq:sum(rows,r=>r.sum.requests),workersErr:sum(rows,r=>r.sum.errors)})),
+   run('d1',q('d1AnalyticsAdaptiveGroups(limit:10000,filter:{date_geq:$d}){sum{readQueries writeQueries rowsRead rowsWritten}}',0,'$a:String!,$d:Date!'),{a,d},rows=>({d1Read:sum(rows,r=>r.sum.rowsRead),d1Write:sum(rows,r=>r.sum.rowsWritten),d1Queries:sum(rows,r=>r.sum.readQueries)+sum(rows,r=>r.sum.writeQueries)})),
+   run('d1size',q('d1StorageAdaptiveGroups(limit:100,filter:{date_geq:$d}){max{databaseSizeBytes}dimensions{databaseId}}',0,'$a:String!,$d:Date!'),{a,d},rows=>rows.length?{d1Bytes:sum(rows,r=>r.max.databaseSizeBytes)}:{}),
+   run('r2size',q('r2StorageAdaptiveGroups(limit:100,filter:{date_geq:$d}){max{payloadSize metadataSize objectCount}dimensions{bucketName}}',0,'$a:String!,$d:Date!'),{a,d},rows=>rows.length?{r2Bytes:sum(rows,r=>r.max.payloadSize)+sum(rows,r=>r.max.metadataSize),r2Objects:sum(rows,r=>r.max.objectCount)}:{}),
+   run('r2ops',q('r2OperationsAdaptiveGroups(limit:10000,filter:{date_geq:$m}){sum{requests}dimensions{actionType}}',0,'$a:String!,$m:Date!'),{a,m},rows=>({r2A:sum(rows.filter(r=>R2_CLASS_A.has(r.dimensions.actionType)),r=>r.sum.requests),r2B:sum(rows.filter(r=>!R2_CLASS_A.has(r.dimensions.actionType)),r=>r.sum.requests)})),
+   run('ai',q('aiInferenceAdaptiveGroups(limit:10000,filter:{date_geq:$d}){sum{totalNeurons}}',0,'$a:String!,$d:Date!'),{a,d},rows=>({aiNeurons:sum(rows,r=>r.sum.totalNeurons)}))]);}
+ if(env.GITHUB_TOKEN){try{const r=await (env.fetch||fetch)('https://api.github.com/rate_limit',{headers:{authorization:'Bearer '+env.GITHUB_TOKEN,accept:'application/vnd.github+json','user-agent':'megulit-relay'}});const c=(await r.json())?.resources?.core;
+  if(c){out.items.ghUsed=c.used|0;out.items.ghLimit=c.limit|0;out.items.ghReset=c.reset|0;}}catch(e){out.errors.github=String(e?.message||e).slice(0,90);}}
+ return out;}
+
 export async function probeStats(env,now,{json,fail}){
  if(!env.DB)return fail('NOT_CONFIGURED',503);
- const [base,ext]=await Promise.all([cached('live',10,()=>live(env,now)),cached('wide',300,()=>wide(env,now))]);
- return json({...base,ext},200,{'access-control-allow-origin':'*','cache-control':'public, max-age=10'});}
+ const [base,ext,q]=await Promise.all([cached('live',10,()=>live(env,now)),cached('wide',300,()=>wide(env,now)),cached('quota',600,()=>quota(env,now))]);
+ return json({...base,ext,quota:q},200,{'access-control-allow-origin':'*','cache-control':'public, max-age=10'});}
 
 export async function cleanupProbeStats(env,now=new Date()){if(!env.DB)return {removed:0};
  try{const r=await env.DB.prepare('DELETE FROM probe_pulse WHERE bucket<?').bind(nowBucket(now)-144).run();return {removed:r?.meta?.changes|0};}catch{return {removed:0};}}

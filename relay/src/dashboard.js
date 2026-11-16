@@ -82,6 +82,8 @@ body{background:var(--bg);color:var(--fg);font-family:var(--mono);font-size:13px
 .sep{border-top:1px dashed var(--line);margin:8px 0}
 .m.m4{grid-template-columns:8em 1fr auto 3.5ch}
 .m .pc{color:var(--dim);text-align:right;font-size:11px}
+.m.m5{grid-template-columns:7.6em minmax(0,1fr) 4.5ch 13ch;gap:6px}.m.m5 .pc{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.m.hot .v{color:var(--red)}.m.hot .k{color:var(--hi)}
 .sub{color:var(--dim);font-size:11px;margin-bottom:2px}
 
 /* full dumps counters */
@@ -144,7 +146,7 @@ tbody tr:hover td{background:#121212}
   </div>
 
   <div class="grid">
-    <section class="pane c4">
+    <section class="pane c3">
       <span class="ti">┤ <b>online</b> ├</span><span class="tr">last 10 min</span>
       <div class="on-row">
         <canvas class="big" id="big" role="img" aria-label="online"></canvas>
@@ -158,7 +160,7 @@ tbody tr:hover td{background:#121212}
       <div class="axis"><span id="ax0">-15m</span><span>now</span></div>
     </section>
 
-    <section class="pane c4">
+    <section class="pane c3">
       <span class="ti">┤ <b>stats</b> ├</span><span class="tr">/api/probe/stats</span>
       <div class="m"><span class="k">active 1h</span><span class="bar" id="b1"></span><span class="v" id="v1">--</span></div>
       <div class="m"><span class="k">active today</span><span class="bar" id="b2"></span><span class="v" id="v2">--</span></div>
@@ -168,11 +170,16 @@ tbody tr:hover td{background:#121212}
       <div class="m"><span class="k">per game</span><span class="bar"></span><span class="v" id="v5">--</span></div>
     </section>
 
-    <section class="pane c4">
+    <section class="pane c3">
       <span class="ti">┤ <b>activity</b> ├</span><span class="tr">online per hour · 24h</span>
       <div class="hist" id="hist"></div>
       <div class="axis"><span>-24h</span><span>-12h</span><span>now</span></div>
       <div class="kv" style="margin-top:8px"><span class="k">peak hour</span><span id="hPeak">--</span><span class="k">avg / hour</span><span id="hAvg">--</span><span class="k">quiet hours</span><span id="hZero">--</span></div>
+    </section>
+
+    <section class="pane c3">
+      <span class="ti">┤ <b>quota</b> ├</span><span class="tr">free plans · usage / limit</span>
+      <div id="quota"><div class="empty">-- loading</div></div>
     </section>
 
     <section class="pane c3">
@@ -368,6 +375,28 @@ function renderPlaying(list){var w=$("playing");
  if(!list||!list.length){w.innerHTML='<div class="empty">-- nobody on the board read this week</div>';return;}
  w.innerHTML='<table><thead><tr><th>seen</th><th>title</th><th class="rt">ppl</th><th class="rt">chars</th></tr></thead><tbody>'+list.map(function(g){
   return '<tr><td class="s">'+ago(g.at).replace(" ago","")+'</td><td class="t">'+esc(g.title)+'</td><td class="z rt">'+g.readers+'</td><td class="v rt">'+K(g.characters)+'</td></tr>';}).join("")+'</tbody></table>';}
+/* ---- quota: usage against the free plans, with reset times ---- */
+function bytes(b){b=Number(b)||0;return b>=1073741824?(b/1073741824).toFixed(2)+" GB":b>=1048576?(b/1048576).toFixed(1)+" MB":Math.round(b/1024)+" KB";}
+function renderQuota(j){var el=$("quota");if(!el)return;var q=j.quota||{},it=q.items||{},L=q.limits||{},f=j.full||{},x=j.ext||{};barQ=[];
+ var r2est=(((f.storedMB||0)+((x.bundles||{}).mb||0)+((x.diagnostics||{}).mb||0)+(x.contrib||[]).reduce(function(a,c){return a+(c.mb||0);},0))*1048576);
+ var rows=[
+  ["workers req","day",it.workersReq,L.workersReq,K],
+  ["d1 reads","day",it.d1Read,L.d1Read,K],
+  ["d1 writes","day",it.d1Write,L.d1Write,K],
+  ["d1 storage","",it.d1Bytes,L.d1Bytes,bytes],
+  ["r2 storage",it.r2Bytes!=null?"":"est",it.r2Bytes!=null?it.r2Bytes:r2est,L.r2Bytes,bytes],
+  ["r2 class a","mo",it.r2A,L.r2A,K],
+  ["r2 class b","mo",it.r2B,L.r2B,K],
+  ["ai neurons","day",it.aiNeurons,L.aiNeurons,K],
+  ["github api","hr",it.ghUsed,it.ghLimit||5000,K]];
+ var html=rows.map(function(r,i){var has=r[2]!=null&&!isNaN(r[2]),pct=has&&r[3]?r[2]/r[3]*100:0;if(has)barQ.push(["qb"+i,r[2],r[3]]);
+  return '<div class="m m5'+(pct>=80?' hot':'')+'"><span class="k" title="per '+(r[1]||'total')+'">'+r[0]+'</span><span class="bar" id="qb'+i+'"></span>'+
+   '<span class="v">'+(has?(pct<10?pct.toFixed(1):Math.round(pct))+'%':'--')+'</span><span class="pc">'+(has?r[4](r[2])+'/'+r[4](r[3]):'')+'</span></div>';}).join("");
+ var now=new Date(),utc0=new Date(Date.UTC(now.getUTCFullYear(),now.getUTCMonth(),now.getUTCDate()+1)),left=Math.max(0,Math.round((utc0-now)/60000));
+ html+='<div class="sub" style="margin-top:6px">workers / d1 / ai per day · r2 ops per month · github per hour</div><div class="sub">day resets in '+Math.floor(left/60)+'h'+String(left%60).padStart(2,"0")+'m · 00:00 UTC'+(it.ghReset?' · github '+Math.max(0,Math.round((it.ghReset*1000-now)/60000))+'m':'')+'</div>';
+ if(!q.token)html+='<div class="sub"><span class="r">cloudflare usage offline</span> · set CF_API_TOKEN (account analytics: read)</div>';
+ var errs=Object.keys(q.errors||{});if(errs.length)html+='<div class="sub">'+errs.map(function(k){return '<span class="r">'+esc(k)+'</span> '+esc(q.errors[k]);}).join(" · ")+'</div>';
+ el.innerHTML=html;flushBars();}
 function stateTag(s){return '<span class="st '+esc(s)+'">'+esc(s||"-")+'</span>';}
 function renderTop(list){var w=$("top");
  if(!list||!list.length){w.innerHTML='<div class="empty">-- no rows</div>';return;}
@@ -408,7 +437,7 @@ function render(j){spark();
  meter($("bR2"),f.storedMB||0,f.limitMB||8192);$("vR2").textContent=((f.storedMB||0)/(f.limitMB||8192)*100).toFixed(1)+"%";
  $("fMB").innerHTML=mb(f.storedMB||0)+' <span class="d">/ '+mb(f.limitMB||8192)+'</span>';
  $("fAvg").textContent=f.ready?mb((f.storedMB||0)/f.ready):"--";$("fLast").textContent=ago(f.lastAt);
- renderSteps(j.steps,j);renderTop(j.top);renderPlaying(j.playing);renderExt(j.ext);renderFullMore(j);}
+ renderSteps(j.steps,j);renderTop(j.top);renderPlaying(j.playing);renderExt(j.ext);renderFullMore(j);renderQuota(j);}
 function nodesLine(){$("node").innerHTML=NODES.map(function(n){var v=lat[n[0]];return n[0]+" "+(v==null?"--":v<0?'<span class="r">down</span>':v+"ms");}).join(" · ");
  var ok=NODES.filter(function(n){return lat[n[0]]>0;}).map(function(n){return lat[n[0]];});$("latT").textContent=ok.length?"latency "+Math.min.apply(null,ok)+"ms":"latency";}
 function tick(){var p=poll();p.first.then(apply).catch(function(){$("mode").textContent="DOWN";$("mode").className="md err";$("code").textContent="timeout";log("ERR","GET /api/probe/stats failed on every node · retry in "+PERIOD+"s");});p.all.then(nodesLine);}
