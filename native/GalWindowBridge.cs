@@ -127,6 +127,28 @@ public class GalWindowBridge {
         if(DateTime.UtcNow<NextPlacementCheck)return;NextPlacementCheck=DateTime.UtcNow.AddSeconds(1);
         if(!IsWindowVisible(Overlay)||IsIconic(Overlay))return;string text=PlacementText();
         if(text!=""&&text!=LastPlacement){LastPlacement=text;try{Directory.CreateDirectory(Path.GetDirectoryName(PlacementFile));File.WriteAllText(PlacementFile,text);}catch{}}}
+    /* 2026-11-16 (user: 启动游戏后很久才自动绑定窗口): a game started in the Japanese environment or through a non-ASCII
+       folder runs from MeguLit's junction (cache\game-launch\<hash>\game.exe), so its image path never equalled the
+       remembered executable and the auto-bind loop matched nothing; only the late bindProcess after the launch wait bound it.
+       Two paths name the same program when they open the same file (volume serial + file index): junctions, symlinks,
+       hard links and 8.3 names all agree. Identities are cached per path. */
+    [DllImport("kernel32.dll",CharSet=CharSet.Unicode,EntryPoint="CreateFileW",SetLastError=true)]static extern IntPtr OpenForIdentity(string name,uint access,uint share,IntPtr security,uint disposition,uint flags,IntPtr template);
+    [StructLayout(LayoutKind.Sequential,Pack=4)]struct FileIdentityInfo{public uint Attributes;public long Created,Accessed,Written;public uint Volume,SizeHigh,SizeLow,Links,IndexHigh,IndexLow;}
+    [DllImport("kernel32.dll",EntryPoint="GetFileInformationByHandle")]static extern bool FileIdentity(IntPtr file,out FileIdentityInfo info);
+    static readonly Dictionary<string,string> ImageIdentities=new Dictionary<string,string>(StringComparer.OrdinalIgnoreCase);
+    static string ImageIdentity(string file){if(String.IsNullOrEmpty(file))return "";string known;if(ImageIdentities.TryGetValue(file,out known))return known;string id="";
+        IntPtr h=OpenForIdentity(file,0,7,IntPtr.Zero,3,0x02000000,IntPtr.Zero);
+        if(h!=IntPtr.Zero&&h!=new IntPtr(-1)){try{FileIdentityInfo info;if(FileIdentity(h,out info))id=info.Volume.ToString("x")+":"+info.IndexHigh.ToString("x")+":"+info.IndexLow.ToString("x");}finally{CloseHandle(h);}}
+        if(ImageIdentities.Count>256)ImageIdentities.Clear();ImageIdentities[file]=id;return id;}
+    public static bool SameImage(string a,string b){if(String.IsNullOrEmpty(a)||String.IsNullOrEmpty(b))return false;if(String.Equals(a,b,StringComparison.OrdinalIgnoreCase))return true;string x=ImageIdentity(a);return x!=""&&x==ImageIdentity(b);}
+    /* A top-level window of any process was shown (EVENT_OBJECT_SHOW, out of context, delivered in this thread's
+       PeekMessage): while a game is expected and nothing is bound, scan at once instead of waiting for the 1 s poll. */
+    delegate void ShowEventProc(IntPtr hook,uint ev,IntPtr hwnd,int obj,int child,uint thread,uint time);
+    [DllImport("user32.dll",EntryPoint="SetWinEventHook")]static extern IntPtr SetShowEventHook(uint min,uint max,IntPtr module,ShowEventProc proc,uint pid,uint thread,uint flags);
+    [DllImport("user32.dll",EntryPoint="UnhookWinEvent")]static extern bool UnhookShowEvent(IntPtr hook);
+    static ShowEventProc ShowEventKeep;static IntPtr ShowEventHook=IntPtr.Zero;static bool AutoBindKick;static DateTime LastAutoScan=DateTime.MinValue;
+    static void InstallShowWatch(){ShowEventKeep=(hook,ev,h,obj,child,thread,time)=>{if(obj==0&&child==0&&h!=IntPtr.Zero&&Target==IntPtr.Zero&&WantedProcess!=""&&GetAncestor(h,2)==h)AutoBindKick=true;};ShowEventHook=SetShowEventHook(0x8002,0x8002,IntPtr.Zero,ShowEventKeep,0,0,0);}
+    static void UninstallShowWatch(){if(ShowEventHook!=IntPtr.Zero)UnhookShowEvent(ShowEventHook);ShowEventHook=IntPtr.Zero;}
     static DateTime NextAutoBind=DateTime.MinValue;
     static DateTime LastModeToggle=DateTime.MinValue;
     static DateTime LastCoverToggle=DateTime.MinValue;
@@ -440,7 +462,7 @@ public class GalWindowBridge {
         else if(type=="source"){if(TextMask!=null)TextMask.SetSource(Str(d,"text"));if(WaitMarker!=null)WaitMarker.SetSource(Str(d,"text"));}
         else if(type=="toggleCover")ToggleCover();
         else if(type=="toggleMode")PageToggleMode();
-        else if(type=="enterGame")EnterGamePending=true;
+        else if(type=="enterGame")EnterGamePending=!Bool(d,"cancel");
         else if(type=="expectExecutable"){WantedExecutable=Str(d,"path");NextAutoBind=DateTime.MinValue;}
         // MeguLit launched this process and saw its window come up: bind to its largest visible window right away.
         // If none is usable yet, remember the process (name + exact image) so the auto-bind loop picks it up.
@@ -573,11 +595,11 @@ public class GalWindowBridge {
         // A closed or restarted game must be noticed in every mode; this check used to run only in translation mode,
         // so after a game restart in normal mode the hook kept targeting the dead process and never rebound.
         if(Target!=IntPtr.Zero&&!IsWindow(Target)){Target=IntPtr.Zero;Restore();Emit(new{type="bound",bound=false,message="游戏窗口已关闭，等待再次启动"});}
-        if(Target==IntPtr.Zero&&WantedProcess!=""&&DateTime.UtcNow>=NextAutoBind){
-            NextAutoBind=DateTime.UtcNow.AddSeconds(1);
+        if(Target==IntPtr.Zero&&WantedProcess!=""&&(DateTime.UtcNow>=NextAutoBind||AutoBindKick&&DateTime.UtcNow>=LastAutoScan.AddMilliseconds(150))){
+            AutoBindKick=false;LastAutoScan=DateTime.UtcNow;NextAutoBind=DateTime.UtcNow.AddSeconds(1);
             // Never enumerate the names of every desktop process 10 times a second while a game is minimised.
             // Resolve the remembered process once, then inspect only its windows without activating/restoring them.
-            var pids=new HashSet<uint>();foreach(var process in Process.GetProcessesByName(WantedProcess))using(process){try{if(WantedExecutable==""||String.Equals(ProcessImage((uint)process.Id),WantedExecutable,StringComparison.OrdinalIgnoreCase))pids.Add((uint)process.Id);}catch{}}
+            var pids=new HashSet<uint>();foreach(var process in Process.GetProcessesByName(WantedProcess))using(process){try{if(WantedExecutable==""||SameImage(ProcessImage((uint)process.Id),WantedExecutable))pids.Add((uint)process.Id);}catch{}}
             IntPtr bestWindow=IntPtr.Zero;long bestArea=0;
             if(pids.Count>0)EnumWindows(delegate(IntPtr candidate,IntPtr unused){uint pid;GetWindowThreadProcessId(candidate,out pid);Rect r;
                 if(pids.Contains(pid)&&IsWindowVisible(candidate)&&!IsIconic(candidate)&&GetClientRect(candidate,out r)){long candidateArea=(long)r.Right*r.Bottom;if(candidateArea>bestArea){bestArea=candidateArea;bestWindow=candidate;}}return true;},IntPtr.Zero);
@@ -659,6 +681,7 @@ public class GalWindowBridge {
         Console.InputEncoding=new UTF8Encoding(false);Console.OutputEncoding=new UTF8Encoding(false);
         /* Its glass and mask layers sit over the game: a stalled moment must never turn them into blue-captioned ghosts. */
         NoGhostWindows();
+        if(args.Length==3&&args[0]=="--same-image"){Emit(new{type="sameImage",same=SameImage(args[1],args[2]),a=ImageIdentity(args[1]),b=ImageIdentity(args[2])});return 0;}
         if(args.Length>0&&args[0]=="--topmost-guard-self-test")return TopmostGuardSelfTest();
         if(args.Length>0&&args[0]=="--host-frame-self-test"){
             int original=0x16cf0000,hosted=HostedStyle(original);
@@ -684,7 +707,7 @@ if(args.Length==2&&args[0]=="--art-scan-file"){Console.OutputEncoding=Encoding.U
         if(args.Length==2&&args[0]=="--process-status"){
             string wanted=Path.GetFullPath(args[1]);var matches=new List<object>();
             foreach(var process in Process.GetProcessesByName(Path.GetFileNameWithoutExtension(wanted)))using(process){try{
-                if(String.Equals(ProcessImage((uint)process.Id),wanted,StringComparison.OrdinalIgnoreCase))matches.Add(new{pid=process.Id,visible=HasVisibleWindow((uint)process.Id),started=process.StartTime.ToUniversalTime().Ticks.ToString()});
+                if(SameImage(ProcessImage((uint)process.Id),wanted))matches.Add(new{pid=process.Id,visible=HasVisibleWindow((uint)process.Id),started=process.StartTime.ToUniversalTime().Ticks.ToString()});
             }catch{}}
             Emit(new{type="gameProcesses",processes=matches});return 0;
         }
@@ -722,6 +745,7 @@ if(args.Length==2&&args[0]=="--art-scan-file"){Console.OutputEncoding=Encoding.U
         try{SetProcessDpiAwarenessContext(new IntPtr(-4));}catch{}
         PointerGate=new ReaderPointerGate(Emit);
         TopmostGuard.Install((ev,h)=>GuardLayers(ev));
+        InstallShowWatch();
         bool hotkey=RegisterHotKey(IntPtr.Zero,0x541,0x4001,0x54),coverHotkey=RegisterHotKey(IntPtr.Zero,0x542,0x4001,0x48),modeHotkey=RegisterHotKey(IntPtr.Zero,0x543,0x4001,0x4d);
         /* E476: a helper left running by another MeguLit folder (an older download) holds Alt+T: end it and take the keys */
         /* E540: side-by-side test copies (MEGULIT_SIDE_BY_SIDE=1, E530) share the PC with other MeguLit folders on purpose;
@@ -735,6 +759,6 @@ if(args.Length==2&&args[0]=="--art-scan-file"){Console.OutputEncoding=Encoding.U
           /* E476: keys another program held are taken as soon as it lets go, so "not ready" heals by itself */
           if((!hotkey||!coverHotkey||!modeHotkey)&&DateTime.UtcNow>=nextHotkeyTry){nextHotkeyTry=DateTime.UtcNow.AddSeconds(2);bool was=hotkey&&coverHotkey&&modeHotkey;if(!hotkey)hotkey=RegisterHotKey(IntPtr.Zero,0x541,0x4001,0x54);if(!coverHotkey)coverHotkey=RegisterHotKey(IntPtr.Zero,0x542,0x4001,0x48);if(!modeHotkey)modeHotkey=RegisterHotKey(IntPtr.Zero,0x543,0x4001,0x4d);if(hotkey||coverHotkey||modeHotkey)Emit(new{type="hotkeyState",hotkey=hotkey,coverHotkey=coverHotkey,modeHotkey=modeHotkey});}
           try{Glass.Follow(Overlay,TranslationMode&&Target!=IntPtr.Zero&&LayersMayFloat&&IsShown&&Overlay!=IntPtr.Zero&&IsWindowVisible(Overlay)&&!IsIconic(Overlay)&&!IsIconic(Target));}catch{}Thread.Sleep(Dragging?8:Target==IntPtr.Zero?100:16);}}
-        finally{RevealGame(Target);TopmostGuard.Uninstall();ForgetGame();if(HookVerifier!=null)HookVerifier.Dispose();Restore();TextMask.Dispose();WaitMarker.Dispose();MaskLayer.Dispose();Glass.Dispose();if(hotkey)UnregisterHotKey(IntPtr.Zero,0x541);if(coverHotkey)UnregisterHotKey(IntPtr.Zero,0x542);if(modeHotkey)UnregisterHotKey(IntPtr.Zero,0x543);}return 0;
+        finally{RevealGame(Target);TopmostGuard.Uninstall();UninstallShowWatch();ForgetGame();if(HookVerifier!=null)HookVerifier.Dispose();Restore();TextMask.Dispose();WaitMarker.Dispose();MaskLayer.Dispose();Glass.Dispose();if(hotkey)UnregisterHotKey(IntPtr.Zero,0x541);if(coverHotkey)UnregisterHotKey(IntPtr.Zero,0x542);if(modeHotkey)UnregisterHotKey(IntPtr.Zero,0x543);}return 0;
     }
 }

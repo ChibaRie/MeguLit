@@ -86,7 +86,12 @@ class LocaleEmulator{
   }finally{try{fs.rmSync(part,{force:true});}catch{}if(path.dirname(stage)===path.dirname(this.dir)&&stage.startsWith(this.dir+'.stage-'))try{fs.rmSync(stage,{recursive:true,force:true});}catch{}}
  }
  async processes(exe){const output=await new Promise((resolve,reject)=>execFile(path.join(this.root,'native','GalWindowBridge.exe'),['--process-status',exe],{windowsHide:true,timeout:2500,encoding:'utf8'},(error,out)=>error?reject(Error('LE_PROCESS_CHECK_FAILED')):resolve(out)));const result=JSON.parse(output.trim());if(result.type!=='gameProcesses'||!Array.isArray(result.processes))throw Error('LE_PROCESS_CHECK_FAILED');return result.processes;}
- async launch(exe,{trace=()=>{}}={}){
+ async launch(exe,{trace=()=>{},alsoExe=''}={}){
+  /* 2026-11-16 (user: 启动游戏后很久才绑定窗口): a DRM/launcher program started in the Japanese environment may never show a
+     window of its own (2DJGAME 打开游戏.exe starts the engine and idles hidden), so waiting for the launcher alone sat out
+     the whole 15 s timeout before MeguLit even looked for the game. With alsoExe the game program's visible window counts too. */
+  const also=alsoExe&&alsoExe.toLowerCase()!==exe.toLowerCase()?alsoExe:'';
+  const withAlso=async found=>{if(!also)return found;const game=await this.processes(also).catch(()=>[]);return game.some(p=>p.visible)?game:found.length?found:game;};
   if(!x86(exe))throw Error('LE_X86_ONLY');
   const s=await this.status();if(!s.installed)return {needLocaleEmulator:true,...s};
   const launchExe=require('../services/launch-path.cjs').compatiblePath(this.root,exe);
@@ -100,7 +105,7 @@ class LocaleEmulator{
   /* ③ dot font rides along the same launcher (MEGULIT_LAUNCH_EXTRA, crash canary keyed on the launched program) */
   const fontDot=early?require('./text-paths-launch.cjs').fontDot(this.root,launchExe,early,trace):null;
   if(early){try{const child=await startProcess(early.file,early.args,path.dirname(launchExe),'LE_SPAWN_FAILED',spawn,early.env);trace('locale-early-started',{pid:child.pid});
-    result=await waitForVisibleGame(async()=>{const matches=await this.processes(launchExe);return matches.length||launchExe===exe?matches:this.processes(exe);},{exit:()=>child.exit,helper:true,trace});
+    result=await waitForVisibleGame(async()=>{const matches=await this.processes(launchExe);return withAlso(matches.length||launchExe===exe?matches:await this.processes(exe));},{exit:()=>child.exit,helper:true,trace});
     if(fontDot)fontDot.watch(result.pid);
     return {localeJapanese:true,localePath:s.path,gamePid:result.pid,early:true};}
    catch(error){trace('locale-early-failed',{error:error.message});if(fontDot)fontDot.canary.exited('fontdot',0);}}
@@ -109,7 +114,7 @@ class LocaleEmulator{
    trace('locale-helper-started',{pid:child.pid,alias:launchExe!==exe,...(attempt?{retry:attempt}:{})});
    try{result=await waitForVisibleGame(async()=>{
      const matches=await this.processes(launchExe);
-     return matches.length||launchExe===exe?matches:this.processes(exe);
+     return withAlso(matches.length||launchExe===exe?matches:await this.processes(exe));
     },{exit:()=>child.exit,helper:true,trace});break;}
    catch(error){const code=child.exit?.code;if(error.message!=='LE_HELPER_FAILED'||attempt>=2||!(code===3221225477||code===-1073741819))throw error;
     trace('locale-helper-retry',{code,attempt:attempt+1});await new Promise(r=>setTimeout(r,400));}

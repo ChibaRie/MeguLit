@@ -82,7 +82,11 @@ async function launch(db,id,runtime=null,windowsLaunch=false,{retried=false,redi
       Object.assign(profile,original.library);trace('drm-corrected',{from:path.basename(before),executable:path.basename(plan.executable),launcher:path.basename(plan.launchVia||'')});}
      launchVia=plan.launchVia||'';}}}
   const elevation=require('./locale-launch.cjs').requiresAdministrator(game.executable);
-  runtime?.prepareGame(game.executable,{enter:false});
+  /* 2026-11-16 (user: 启动游戏后很久才自动绑定窗口): the reader entered the game only after the launch wait below said the
+     window was ready (4 stable samples, and a launcher started in the Japanese environment waited out 15 s for a launcher
+     window that never showed). enterGame is now pending from the start: the bridge binds and enters the moment the game's
+     window is shown (EVENT_OBJECT_SHOW), and a failed launch cancels it in the catch below. */
+  runtime?.prepareGame(game.executable,{enter:true});
   /* E370: a first launch with nothing saved here starts from a matching shared adaptation record (stream memory before the Hook starts, locale mode for this launch) */
   try{const before=profile.localeMode,shared=require('./shared-adaptation.cjs');shared.importFor(root,{executable:game.executable,engine:profile.engine||'',library:profile,styleSync:runtime?.reader?.gal?.styleSync});if(profile.localeMode!==before){original.library=profile;db.prepare('UPDATE games SET original=? WHERE id=?').run(JSON.stringify(original),id);}}catch{}
   /* E590 automatic Japanese: self-check an earlier automatic switch, then switch a localized build once */
@@ -124,7 +128,7 @@ async function launch(db,id,runtime=null,windowsLaunch=false,{retried=false,redi
    let child={exit:null};
    if(profile.localeMode==='japanese'&&require('../core/locale-emulator.cjs').x86(launchVia)){
     const lib=runtime?.library?.()||new(require('../core/library.cjs').Library)(require('../core/layout.cjs'));
-    try{const result=await lib.locale.launch(launchVia,{trace});if(result.needLocaleEmulator){await lib.locale.ensure();await lib.locale.launch(launchVia,{trace});}}catch(error){trace('launcher-locale-wait',{error:error.message});}
+    try{const result=await lib.locale.launch(launchVia,{trace,alsoExe:game.executable});if(result.needLocaleEmulator){await lib.locale.ensure();await lib.locale.launch(launchVia,{trace,alsoExe:game.executable});}}catch(error){trace('launcher-locale-wait',{error:error.message});}
    }else if(require('./locale-launch.cjs').requiresAdministrator(launchVia))await require('./game-process.cjs').shellOpen(root,launchVia);
    else child=await startProcess(launchVia,[],path.dirname(launchVia),'GAME_LAUNCH_FAILED');
    trace('launcher-started',{launcher:path.basename(launchVia),pid:child.pid});
@@ -213,7 +217,7 @@ async function launch(db,id,runtime=null,windowsLaunch=false,{retried=false,redi
   {const watch=featureWatch;featureWatch=null;setTimeout(()=>watch.stop(),30000).unref?.();}
   db.prepare('UPDATE games SET last_launched_at=? WHERE id=?').run(Math.floor(Date.now()/1000),id);
   runtime?.prepareGame(game.executable);runtime?.bindLaunched?.(state?.pid);return {action:'launched',connected:false};
-  }catch(error){if(launcherRun)try{await require('./launcher-cleanup.cjs').endHidden({...launcherRun,gameExe:game.executable,list:exe=>require('./game-process.cjs').gameProcesses(root,exe),trace});}catch{}
+  }catch(error){if(launcherRun)try{await require('./launcher-cleanup.cjs').endHidden({...launcherRun,gameExe:game.executable,list:exe=>require('./game-process.cjs').gameProcesses(root,exe),trace});}catch{}try{runtime?.reader?.gal?.send({type:'enterGame',cancel:true});}catch{}
    /* a game that quit after asking Windows for a feature: DirectPlay is placed now, so try once more; anything else is
       offered as an install (no restart) */
    if(featureWatch){featureWatch.stop();const asked=featureWatch.found;featureWatch=null;
