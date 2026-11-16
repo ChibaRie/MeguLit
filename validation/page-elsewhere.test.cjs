@@ -40,14 +40,14 @@ const html = `<!doctype html><html><head><meta charset="utf-8"><style>.sentence-
     const bg = () => page.evaluate(() => getComputedStyle(document.querySelector('.sentence-window')).backgroundColor);
     await page.evaluate(() => window.__tomoyoChinese.textPlaceMode({ on: true })); await frame();
     /* unarmed page, nothing else hides the line = the game draws it: the reader is not placed over it, it goes back to its
-       no plate, the game keeps its Japanese and only the translation is added */
+       own window bilingual (Japanese on top, clickable), never on a plate */
     await page.evaluate(() => window.__tomoyoChinese.textPlacePage({ type: 'textPlacePage', awake: true, armed: false, lines: [], client: [1280, 720] })); await frame();
-    assert.strictEqual(await jp(), 'hidden', 'game draws its own line: the game keeps its Japanese'); assert.strictEqual(await cn(), 'visible', 'translation added'); assert.strictEqual(await bg(), 'rgba(0, 0, 0, 0)', 'never a plate');
+    assert.strictEqual(await jp(), 'visible', 'game draws its own line: Japanese stays clickable in the reader window'); assert.strictEqual(await cn(), 'visible', 'translation under it'); assert.strictEqual(await bg(), 'rgba(0, 0, 0, 0)', 'never a plate');
     assert.strictEqual(await page.evaluate(() => document.body.classList.contains('megulit-placed')), false, 'not placed over the game line');
     /* the same for a ③ line the source says the game still draws */
     await page.evaluate(() => window.__tomoyoChinese.textPlacePage(null)); await page.evaluate(() => window.__tomoyoChinese.textPlace({ visible: true, text: '紙から' })); await frame();
     assert.strictEqual(await page.evaluate(() => document.body.classList.contains('megulit-place-game-drawn')), true);
-    assert.strictEqual(await jp(), 'hidden', 'visible note: the game keeps its Japanese'); assert.strictEqual(await cn(), 'visible'); assert.strictEqual(await bg(), 'rgba(0, 0, 0, 0)', 'never a plate');
+    assert.strictEqual(await jp(), 'visible', 'visible note: Japanese stays clickable'); assert.strictEqual(await cn(), 'visible'); assert.strictEqual(await bg(), 'rgba(0, 0, 0, 0)', 'never a plate');
     /* the fix: the line is hidden by write-back, the page only says the window is open */
     await page.evaluate(() => window.__tomoyoChinese.textPlacePage({ type: 'textPlacePage', awake: true, armed: false, elsewhere: true, lines: [], client: [1280, 720] })); await frame();
     assert.strictEqual(await jp(), 'visible', 'Japanese stays when the game line is hidden elsewhere'); assert.strictEqual(await cn(), 'visible', 'translation stays under it');

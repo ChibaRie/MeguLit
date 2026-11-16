@@ -107,7 +107,7 @@ test('the front end never sends a garbled translation to be written into a game'
   assert.match(read('web/reader/host-surface.css'), /body\.megulit-line-unreadable #reader-host,/);
 });
 
-test('reader DOM: a game-drawn line keeps the game Japanese, translation added without a plate; a placed line shows everything', async t => {
+test('reader DOM: a game-drawn line goes back to the reader window, bilingual, without a plate; a placed line shows everything', async t => {
   let chromium;
   try { ({ chromium } = require(process.env.MEGULIT_PLAYWRIGHT || 'H:/MeguLit-Work/pw/node_modules/playwright-core')); } catch { t.skip('no playwright-core'); return; }
   const code = read('web/reader/modules/text-place.js');
@@ -125,8 +125,8 @@ test('reader DOM: a game-drawn line keeps the game Japanese, translation added w
     assert.deepEqual(await vis(), ['visible', 'visible', 'visible'], 'nothing known yet: unchanged');
     await page.evaluate(`${b}.textPlace({ visible: true, text: '肉塊が、暗く' })`); await frame();
     /* 2026-11-15 (1.4.10 user group: 「只有翻译了，要替换的原文没了」) the Japanese is never dropped: not placed over the
-       game's line, the reader goes back to its own window with its plate, Japanese on top and the translation under it */
-    assert.deepEqual(await vis(), ['hidden', 'hidden', 'visible'], 'game draws it: the game keeps its Japanese, translation added');
+       game's line, the reader goes back to its own window (no plate, 2026-11-16), Japanese on top and the translation under it */
+    assert.deepEqual(await vis(), ['visible', 'visible', 'visible'], 'game draws it: reader window bilingual, Japanese clickable');
 assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('.sentence-window')).backgroundColor), 'rgba(0, 0, 0, 0)', 'never a plate');
     assert.deepEqual(await page.evaluate(() => [document.body.classList.contains('megulit-placed'), document.body.classList.contains('megulit-place-fallback')]), [false, false], 'not placed over it');
     /* a stale placement of the previous line does not bring the plateless Japanese back */
