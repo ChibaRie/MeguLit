@@ -35,6 +35,8 @@ const runtimeAt=(root,id)=>{try{return require('./runtime-harvest.cjs').load(roo
 function logEntry(s,entry){s.log=[{at:Date.now(),...entry},...s.log.filter(x=>!(x.gameId===entry.gameId&&x.identity===entry.identity))].slice(0,LOG_MAX);}
 
 /* one game: → 'known' | 'sent' | 'duplicate' | 'nothing' | 'failed' | 'offline' | 'skipped' */
+/* transport-level failures worth one try on the other built-in relay */
+const RELAY_RETRY=/^(NETWORK|TIMEOUT|HTTP_5\d\d|HTTP_4(?:03|08|13|29)|RATE_LIMITED)$/;
 async function one(root,db,game,result,s,{fetcher,endpoint,hasEndpoint,sampler,now=Date.now()}){
  const sample=require('./adapter-sample.cjs'),pi=require('./probe-identity.cjs');
  const rec=s.games[game.id]||{};if(rec.nextAt&&rec.nextAt>now)return 'skipped';
@@ -47,10 +49,12 @@ async function one(root,db,game,result,s,{fetcher,endpoint,hasEndpoint,sampler,n
  const seen={seen:true};
  if(remote.state==='complete'){s.games[game.id]={identity:ident.id,state:'known',items:remote.items,at:now,runtimeAt:rtAt,...seen};return 'known';}
  const prep=await sample.prepare(root,db,{ids:[game.id],sampler});
- if(!prep?.hash){s.games[game.id]={identity:ident.id,state:prep?.empty?'nothing':'failed',at:now,runtimeAt:rtAt,...seen,...(prep?.empty?{}:{attempts:(rec.attempts|0)+1,nextAt:now+RETRY_MAX})};return prep?.empty?'nothing':'failed';}
+ if(!prep?.hash){s.games[game.id]={identity:ident.id,state:prep?.empty?'nothing':'failed',at:now,runtimeAt:rtAt,...seen,...(prep?.empty?{}:{error:String(prep?.error||'PREPARE').slice(0,40),attempts:(rec.attempts|0)+1,nextAt:now+RETRY_MAX})};return prep?.empty?'nothing':'failed';}
  const g=prep.manifest[0]||{},items=g.probeItems|0,state=g.probeState||'partial';
  if(covered(remote,items)){s.games[game.id]={identity:ident.id,state:'known',items,at:now,runtimeAt:rtAt,...seen};return 'known';}
- const u=await sample.upload(root,{hash:prep.hash,fetcher,endpoint,identity:{id:ident.id,items,state,vndb:ident.vndb}});
+ /* 2026-11-16 (QQ group, Fate/stay night REMASTERED: 上传失败 again and again, the relay never saw a part): a transport failure on one built-in relay (cn-api through EdgeOne, or api.megulit.com) is tried once on the other; an address from Settings stays the only one */
+ const urls=endpoint?[endpoint]:(()=>{try{return require('./relay-config.cjs').endpoints(root,'/api/probe');}catch{return [];}})();
+ let u={state:'not-configured'};for(const url of urls.length?urls:[undefined]){u=await sample.upload(root,{hash:prep.hash,fetcher,endpoint:url,identity:{id:ident.id,items,state,vndb:ident.vndb}});if(!RELAY_RETRY.test(String(u.error||'')))break;}
  if(u.state==='uploaded'||u.state==='duplicate'){s.games[game.id]={identity:ident.id,state:u.state==='uploaded'?'sent':'duplicate',items,hash:prep.hash,at:now,runtimeAt:rtAt,...seen};
   logEntry(s,{gameId:game.id,title:game.title,identity:ident.id,hash:prep.hash,bytes:prep.bytes,state:u.state==='uploaded'?'sent':'duplicate'});return u.state==='uploaded'?'sent':'duplicate';}
  if(u.state==='not-configured')return 'offline';
@@ -87,11 +91,12 @@ async function run(root,db,{ids=null,fetcher=globalThis.fetch,endpoint,hasEndpoi
   if(probeFirst&&!ids&&Date.now()-s.probedAt>PROBE_EVERY&&probe.status(root).state!=='running'){
    s.probedAt=Date.now();save(root,s);probe.start(root,db,{reason:'auto'});
    for(let i=0;i<2400&&probe.status(root).state==='running';i++)await wait(1000);}
-  const results=probe.results(root),games=probe.libraryGames(db),want=ids?new Set(ids.map(String)):null,out={},full={},contrib=require('./adapter-contrib.cjs'),contribOut={};
+  const results=probe.results(root),games=probe.libraryGames(db),want=ids?new Set(ids.map(String)):null,out={},errors={},full={},contrib=require('./adapter-contrib.cjs'),contribOut={};
   /* rule 3 (adapter-contrib.cjs): local packages never stay longer than KEEP_DAYS, nor at all once the switch is off */
   contrib.purgeOutbox(root,contrib.enabled(root)?{olderThan:contrib.KEEP_DAYS*86400000}:{});
   for(const p of probe.problems(root)){if(want&&!want.has(p.id))continue;const g=games.find(x=>x.id===p.id);if(!g||!results[p.id])continue;
-   const keep=s.games[p.id]?.full;let o;try{o=await one(root,db,g,results[p.id],s,{fetcher,endpoint,hasEndpoint,sampler});}catch{o='failed';}
+   const keep=s.games[p.id]?.full;let o;try{o=await one(root,db,g,results[p.id],s,{fetcher,endpoint,hasEndpoint,sampler});}catch(e){o='failed';/* an exception used to leave no record (no error code, no backoff): the dialog said 上传失败 with nothing to go on */const rec=s.games[p.id]||{},attempts=(rec.attempts|0)+1;s.games[p.id]={...rec,state:'failed',error:('EXC '+String(e?.message||e)).replace(/[^ -~]/g,'?').slice(0,40),at:Date.now(),attempts,nextAt:Date.now()+Math.min(RETRY_MAX,RETRY_MIN*2**Math.min(6,attempts-1))};}
+   if(o==='failed')errors[p.id]=String(s.games[p.id]?.error||'');
    if(keep&&s.games[p.id]&&!s.games[p.id].full)s.games[p.id].full=keep;
    out[p.id]=o;save(root,s);if(o==='offline')break;
    /* 2026-11-16 informed consent (adapter-contrib.cjs consentState): the contribution and the full script + exe upload
@@ -101,7 +106,7 @@ async function run(root,db,{ids=null,fetcher=globalThis.fetch,endpoint,hasEndpoi
     let fo;try{fo=await fullOne(root,db,g,results[p.id],s,{fetcher,fullBase,fuller});}catch{fo='failed';}
     full[p.id]=fo;save(root,s);if(fo==='offline')break;if(fo!=='skipped')await wait(1500);}
    await wait(o==='skipped'?0:1500);}
-  save(root,s);return {state:'done',results:out,contrib:contribOut,full};})();
+  save(root,s);return {state:'done',results:out,errors,contrib:contribOut,full};})();
  try{return await busy;}finally{busy=null;}}
 
 /* status(root) → {enabled, busy, games, log} (the probe dialog shows log + each bundle's manifest as the record) */
