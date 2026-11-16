@@ -45,7 +45,12 @@ body{background:var(--ink);color:var(--paper);font-family:var(--mono);
   clip-path:polygon(0 0,100% 0,calc(100% - 14px) 100%,0 100%)}
 .slab .word{font-family:var(--big);font-size:clamp(30px,8.5vw,52px);line-height:1;letter-spacing:.01em;position:relative;white-space:nowrap}
 .slab .word i{font-style:normal;color:var(--red)}
-.skull{width:clamp(46px,12vw,64px);height:auto;flex:0 0 auto;margin:-4px 0 -6px}
+.mark{position:relative;flex:0 0 auto;width:clamp(40px,10.5vw,54px);aspect-ratio:1;background:#000;display:grid;place-items:center;overflow:hidden;
+  box-shadow:3px 3px 0 var(--red)}
+.mark b{font-family:var(--big);font-weight:400;font-size:clamp(34px,9vw,46px);line-height:1;color:var(--paper);margin-top:3px;
+  text-shadow:2px 0 0 var(--red),-2px 0 0 rgba(33,230,255,.7)}
+.mark::after{content:"";position:absolute;left:-20%;right:-20%;top:56%;height:5px;background:var(--red);transform:rotate(-24deg)}
+.mark::before{content:"";position:absolute;inset:auto 0 0 0;height:4px;background:repeating-linear-gradient(90deg,var(--paper) 0 3px,transparent 3px 6px);opacity:.7}
 .clock{font-family:var(--pix);font-size:11px;color:var(--paper);text-align:right;padding:4px 0 0 12px;line-height:1.5;white-space:nowrap}
 .clock b{display:block;font-family:var(--big);font-size:22px;font-weight:400;color:var(--red);letter-spacing:.02em}
 .sub{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 0}
@@ -131,18 +136,7 @@ body{background:var(--ink);color:var(--paper);font-family:var(--mono);
 <div class="wrap">
   <header class="top gl" id="hdr">
     <div class="slab">
-      <svg class="skull" viewBox="0 0 48 48" aria-hidden="true">
-        <defs>
-          <path id="sk" d="M24 3C12.5 3 5 10.5 5 21c0 6.2 3.1 10.6 8 12.8V41h22v-7.2c4.9-2.2 8-6.6 8-12.8C43 10.5 35.5 3 24 3Z"/>
-        </defs>
-        <use href="#sk" fill="#21e6ff" opacity=".55" transform="translate(1.6 .8)"/>
-        <use href="#sk" fill="#ff1a40" transform="translate(-2.2 0)"/>
-        <use href="#sk" fill="#000"/>
-        <path fill="#ff1a40" d="M10.5 19.5 21 22l-2.3 7.2-7-1.4ZM37.5 19.5 27 22l2.3 7.2 7-1.4Z"/>
-        <path fill="#f1efe9" d="M24 28.5 21.2 34h5.6Z"/>
-        <path fill="#f1efe9" d="M17.4 36h1.3v5h-1.3zM21.9 36h1.3v5h-1.3zM24.8 36h1.3v5h-1.3zM29.3 36h1.3v5h-1.3z"/>
-        <path fill="none" stroke="#f1efe9" stroke-width="1.3" stroke-linejoin="bevel" d="M28 3.5 25.6 10l3.2 2.4-3.4 5.2"/>
-      </svg>
+      <span class="mark" aria-hidden="true"><b>M</b></span>
       <div class="word">MEGU<i>LIT</i>/LIVE</div>
     </div>
     <div class="clock"><b id="clock">--:--</b><span id="date">----.--.--</span></div>

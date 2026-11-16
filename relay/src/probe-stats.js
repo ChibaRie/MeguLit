@@ -17,7 +17,9 @@ const one=async(env,sql,...args)=>{try{return (await env.DB.prepare(sql).bind(..
 
 export async function probeStats(env,now,{json,fail}){
  if(!env.DB)return fail('NOT_CONFIGURED',503);
- const b=nowBucket(now),todayBucket=Math.floor(new Date(now.getTime()).setHours(0,0,0,0)/1000/BUCKET);
+ /* "today" is the players' day (Beijing time, UTC+8), not the Worker's UTC day */
+ const t=Math.floor(now.getTime()/1000),dayStart=Math.floor((t+8*3600)/86400)*86400-8*3600;
+ const b=nowBucket(now),todayBucket=Math.floor(dayStart/BUCKET);
  const online=(await one(env,'SELECT COUNT(DISTINCT ip_hash) n FROM probe_pulse WHERE bucket>=?',b-1)).n|0;
  const active1h=(await one(env,'SELECT COUNT(DISTINCT ip_hash) n FROM probe_pulse WHERE bucket>=?',b-6)).n|0;
  const today=(await one(env,'SELECT COUNT(DISTINCT ip_hash) n FROM probe_pulse WHERE bucket>=?',todayBucket)).n|0;
