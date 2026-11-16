@@ -18,6 +18,14 @@ export const DASHBOARD_HTML=String.raw`<!doctype html>
   --mono:"JetBrains Mono","DotGothic16",ui-monospace,Menlo,Consolas,monospace;--px:"Silkscreen",ui-monospace,monospace;color-scheme:dark}
 *{box-sizing:border-box}
 html,body{margin:0}
+/* hairline red scrollbar on a clear track */
+/* Chrome drops ::-webkit-scrollbar once scrollbar-width is set, so the standard props are for Firefox only */
+@-moz-document url-prefix(){html{scrollbar-width:thin;scrollbar-color:var(--red) transparent}}
+::-webkit-scrollbar{width:2px;height:2px;background:transparent}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--red);border-radius:0}
+::-webkit-scrollbar-button{display:none;width:0;height:0}
+::-webkit-scrollbar-corner{background:transparent}
 body{background:var(--bg);color:var(--fg);font-family:var(--mono);font-size:13px;line-height:1.55;font-variant-numeric:tabular-nums;
   padding-left:max(12px,env(safe-area-inset-left,0px));padding-right:max(12px,env(safe-area-inset-right,0px));padding-block:0 28px;overflow-x:hidden}
 .r{color:var(--red)}.d{color:var(--dim)}.h{color:var(--hi)}.dd{color:var(--dim2)}.g{color:var(--ok)}
