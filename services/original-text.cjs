@@ -420,7 +420,8 @@ function fillStore(root,id,sha){const file=fillFile(root,id,sha);if(!fillStores.
 function openFill(file){let map=new Map(),timer=null;
  try{const v=JSON.parse(fs.readFileSync(file,'utf8'));if(v.schema===SCHEMA&&v.lines)map=new Map(Object.entries(v.lines));}catch{}
  const save=()=>{timer=null;try{fs.mkdirSync(path.dirname(file),{recursive:true});fs.writeFileSync(file+'.tmp',JSON.stringify({schema:SCHEMA,lines:Object.fromEntries(map)}));fs.renameSync(file+'.tmp',file);}catch{}};
- return {get:text=>map.get(norm(text)),has:text=>map.has(norm(text)),set(text,value){map.set(norm(text),String(value));if(!timer)timer=setTimeout(save,2000);timer.unref?.();},flush(){if(timer){clearTimeout(timer);save();}},size:()=>map.size};
+ /* 2026-11-16 a stored line kept from before engine tags were stripped is read without them */const clean=v=>v==null?v:require('../core/language-tracks.cjs').engineMarkup(v);
+ return {get:text=>clean(map.get(norm(text))),has:text=>map.has(norm(text)),set(text,value){map.set(norm(text),clean(String(value)));if(!timer)timer=setTimeout(save,2000);timer.unref?.();},flush(){if(timer){clearTimeout(timer);save();}},size:()=>map.size};
 }
 // E293/E296 scripts the game hands over while it runs (kirikiri-dump: KiriKiri Z scene files with the game's own Chinese;
 // kirikiri-ks: a packed Chinese build's scripts, with the Japanese ones as the original): the provider rebuilds the
@@ -580,4 +581,4 @@ async function discover(root,db,id,options={}){
  writeState(root,id,{status:state.original?.index?(state.alignment?.reliable?'ready':'unreliable'):status,lastSearch:{at:Date.now(),found:search.found.length,complete:search.complete,searched:search.searched,checked}});
  return {notFound:true,search:{found:search.found.length,complete:search.complete,searched:search.searched,checked}};
 }
-module.exports={providerKey,foreignKey,foreignNear,foreignSeq,scriptPairs,brief,autoPatchLater,autoPatch,buildPatch,collect,nearbyPatchSources,patchHint,importPatch,clearPatch,locate,readScript,ADAPTERS,readAin,_ain:{mtXor,inflateAin},align,Matcher,importOriginal,status,setMode,provider,scanRunning,japaneseLine,chineseOnly,norm,discover,findCandidates};
+module.exports={_fillStore:fillStore,providerKey,foreignKey,foreignNear,foreignSeq,scriptPairs,brief,autoPatchLater,autoPatch,buildPatch,collect,nearbyPatchSources,patchHint,importPatch,clearPatch,locate,readScript,ADAPTERS,readAin,_ain:{mtXor,inflateAin},align,Matcher,importOriginal,status,setMode,provider,scanRunning,japaneseLine,chineseOnly,norm,discover,findCandidates};
