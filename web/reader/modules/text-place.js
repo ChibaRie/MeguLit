@@ -30,7 +30,7 @@
        own window, Japanese on top (clickable for lookups) and the translation under it, but never on a plate (2026-11-16 user:
        no plate behind any MeguLit text). Only a placed page whose places do not hold the line yet hides its Japanese. */
     /* 2026-11-16 (1.4.16 live: the game's own line and MeguLit's 20 px above it while the game was not hidden yet): whenever the game draws its line itself, MeguLit draws only the translation, placed or not */
-    'body.megulit-place-game-drawn .sentence-window.tomoyo-hook-reader .sentence-text:not(.megulit-old-line){visibility:hidden!important}',
+    'body.megulit-place-game-drawn.megulit-anchored .sentence-window.tomoyo-hook-reader .sentence-text:not(.megulit-old-line),body.megulit-place-game-drawn.megulit-placed .sentence-window.tomoyo-hook-reader .sentence-text:not(.megulit-old-line){visibility:hidden!important}',
     'body.megulit-place-game-drawn .sentence-window.tomoyo-hook-reader .tomoyo-cn-row{visibility:visible!important}',
     /* layer 4 page model: older lines of the page (their own .sentence-text, placed like the current one) */
     'body.megulit-place-asleep .sentence-window.tomoyo-hook-reader{visibility:hidden!important}',

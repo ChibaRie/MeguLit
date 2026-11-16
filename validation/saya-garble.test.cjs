@@ -121,7 +121,7 @@ test('reader DOM: a game-drawn line goes back to the reader window, bilingual, w
     const frame = () => page.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
     const vis = () => page.evaluate(() => ['.char-token', '.megulit-ruby-base', '.tomoyo-cn-row'].map(s => getComputedStyle(document.querySelector(s)).visibility));
     const b = 'window.__tomoyoChinese';
-    await page.evaluate(`${b}.textPlaceMode({ on: true })`); await frame();
+    await page.evaluate(`${b}.textPlaceAnchor?.(false); ${b}.textPlaceMode({ on: true })`); await frame();
     assert.deepEqual(await vis(), ['visible', 'visible', 'visible'], 'nothing known yet: unchanged');
     await page.evaluate(`${b}.textPlace({ visible: true, text: '肉塊が、暗く' })`); await frame();
     /* 2026-11-15 (1.4.10 user group: 「只有翻译了，要替换的原文没了」) the Japanese is never dropped: not placed over the
