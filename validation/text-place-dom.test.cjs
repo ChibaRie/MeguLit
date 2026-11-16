@@ -86,6 +86,25 @@ const html = `<!doctype html><html><head><meta charset="utf-8"><style>
     assert.deepStrictEqual(await page.evaluate(() => window.__tomoyoChinese.textPlaceAlign([...'晴れ。晴れ。'], [...'晴れ。'])), [0, 1, 2, null, null, null], 'a repeated copy is not drawn twice');
     assert.strictEqual(await page.evaluate(() => window.__tomoyoChinese.textPlaceAlign([...'あいう'], [...'かきく'])), null, 'another line');
     await page.evaluate(() => window.__tomoyoChinese.textPlace({ fallback: true, text: '今日は晴れ' })); await frame();
+    /* 2026-11-16 (user recording, 死に逝く君、館に芽吹く憎悪): the translation keeps one size for the box (no small-then-large),
+       stays inside the text box (never over the game's UI bar under it) and is not shown while the line is still typing */
+    { const rowFs = () => page.evaluate(() => parseFloat(getComputedStyle(document.querySelector('.tomoyo-cn-row')).fontSize));
+      const put = (rows, zh) => page.evaluate(([rows, zh]) => { document.querySelector('.tomoyo-cn-row').textContent = zh; const rects = [];
+        for (let r = 0; r < rows; r++) for (let i = 0; i < 5; i++) rects.push([100 + i * 32, 400 + r * 40, 32, 32]);
+        window.__tomoyoChinese.textPlace({ text: '今日は晴れ明日は雨だね夜は雪'.slice(0, rows * 5), client: [1280, 720], rects }); }, [rows, zh]);
+      await page.evaluate(() => { const s = document.querySelector('.sentence-text'); s.dataset.keep = s.innerHTML; s.innerHTML = [...'今日は晴れ明日は雨だね夜は雪'].map(c => '<span class="char-token">' + c + '</span>').join(''); });
+      await page.evaluate(() => { window.__tomoyoChinese.textPlaceMode({ on: false }); window.__tomoyoChinese.textPlaceMode({ on: true }); });
+      await put(3, '短'); await frame(); const big = await rowFs();
+      await put(1, '今天是晴天'); await frame(); const one = await rowFs();
+      assert.ok(one <= 32 && one >= 20, 'size from the Japanese glyphs, not the stylesheet (' + one + ')');
+      await put(3, '衣服破破烂烂，皮肤上满是擦伤，连续走了好几个小时的双腿已经开始失去知觉。'.repeat(3)); await frame();
+      const [, t3, , h3] = await box('.tomoyo-cn-row'); assert.ok(await rowFs() <= one, 'a long translation is only ever made smaller');
+      assert.ok(t3 + h3 <= 512 + 32 * 1.25 + 2, 'inside the text box, not over the UI under it (bottom ' + (t3 + h3) + ')');
+      await put(1, '今天是晴天'); await frame(); assert.strictEqual(await rowFs(), one, 'the next short line has the same size again');
+      assert.ok(big >= one, 'size never grows past the box size');
+      await page.evaluate(() => window.__tomoyoChinese.textPlace({ text: '今日は晴れ', client: [1280, 720], rects: [[100, 400, 32, 32], [132, 400, 32, 32], null, null, null] })); await frame();
+      assert.strictEqual(await page.evaluate(() => getComputedStyle(document.querySelector('.tomoyo-cn-row')).visibility), 'hidden', 'typing: translation waits for the whole line');
+      await page.evaluate(() => { const s = document.querySelector('.sentence-text'); s.innerHTML = s.dataset.keep; document.querySelector('.tomoyo-cn-row').textContent = '今天是晴天'; window.__tomoyoChinese.textPlace({ fallback: true, text: '今日は晴れ' }); }); await frame(); }
     /* name plate and a choice drawn on their boxes, click-through */
     await page.evaluate(() => window.__tomoyoChinese.textPlaceExtra({ client: [1280, 720], items: [{ id: 1, kind: 'n', text: '朋也', rects: [[80, 450, 28, 30], [108, 450, 28, 30]] }, { id: 2, kind: 'o', text: 'はい', rects: [[600, 200, 32, 34], [632, 200, 32, 34]] }] })); await frame();
     assert.deepStrictEqual(await box('.megulit-place-name span:nth-child(2)'), [108, 450, 28, 30], 'name plate on its boxes');

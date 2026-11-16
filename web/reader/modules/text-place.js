@@ -11,7 +11,7 @@
   const b = window.__tomoyoChinese;
   if (!b || !document.body) { document.addEventListener('DOMContentLoaded', install, { once: true }); return; }
   if (b.textPlace) return;
-  let on = false, line = null, frame = 0, lastGeom = '', drawnByGame = '', page = null; const clones = new Map();
+  let on = false, line = null, frame = 0, lastGeom = '', boxBottom = 0, boxKey = '', drawnByGame = '', page = null; const clones = new Map();
   const style = document.createElement('style');
   style.textContent = [
     'body.megulit-placed .sentence-window.megulit-place-window{left:0!important;top:0!important;right:auto!important;bottom:auto!important;width:100vw!important;height:100vh!important;max-height:none!important;margin:0!important;padding:0!important;background:none!important;border:0!important;box-shadow:none!important;outline:0!important;backdrop-filter:none!important;overflow:visible!important;transform:none!important;pointer-events:none}',
@@ -325,20 +325,34 @@
       const only = document.body.classList.contains('tomoyo-gal-zh-only');
       const [L, T, R, B] = map.bounds, width = Math.max(1, Math.min(R - x0, Math.max(x1 - x0, Math.min(R - x0 - 8, size * 20))));
       set(row, 'left', Math.min(Math.max(x0, L), Math.max(L, R - width)) + 'px'); set(row, 'width', width + 'px');
-      if (only) set(row, 'font-size', size + 'px'); else row.style.removeProperty('font-size');
-      row.style.removeProperty('line-height');
+      /* 2026-11-16 (user recording: the translation was small, then suddenly large and over the game's SAVE/LOAD bar, its
+         last row out of the window): its size came from the stylesheet and was only made smaller when there was room, so a
+         line that filled the text box got the full stylesheet size. The size is now always derived from the Japanese
+         glyphs (one size for every line of the box) and only ever made smaller to fit. */
+      const base = Math.max(10, Math.round((only ? 1 : .8) * size));
+      set(row, 'font-size', base + 'px'); set(row, 'line-height', '1.25');
+      /* not before the line is complete: during the game's typewriter only part of it is placed, and a translation of the
+         whole line next to half a Japanese line does not match it */
+      row.style.visibility = shown.some(t => t.classList.contains('megulit-unplaced')) ? 'hidden' : '';
       /* 2026-11-16 (死に逝く君、館に芽吹く憎悪: the translation jumped above the Japanese on lines near the bottom of the text
          box): the rule is Japanese on top, the translation right under it. A row that did not fit under the line went
          above it, and its height was measured before its width was set (the previous line's width: more wrapped rows,
          taller than it is). Width first, then the height; a row that does not fit under the line is made smaller (line
          height, then font size) and, if it still does not fit, may run past the game's bottom edge: never above. */
-      const below = y1 + size * .25, room = B - (only ? y0 : below);
-      let rh = row.offsetHeight || size * 1.6;
-      if (rh > room && room > 0) {
-        const fs = parseFloat(getComputedStyle(row).fontSize) || size;
-        set(row, 'line-height', '1.2'); rh = row.offsetHeight || rh;
-        if (rh > room) { set(row, 'font-size', Math.max(10, Math.floor(fs * room / rh)) + 'px'); rh = row.offsetHeight || rh; }
-      }
+      /* the text box ends where its lowest line ended (the game's own UI, e.g. a SAVE/LOAD bar, is below it); before a full
+         box was seen, one translation row under the line is taken as the box */
+      const boxOf = map.bounds.map(Math.round).join(','); if (boxOf !== boxKey) { boxKey = boxOf; boxBottom = 0; }
+      boxBottom = Math.max(boxBottom, y1);
+      const limit = Math.min(B, Math.max(boxBottom + size * .35, y1 + size * 1.25));
+      const below = y1 + size * .2, room = limit - (only ? y0 : below);
+      let rh = row.offsetHeight || base * 1.25;
+      row.style.removeProperty('max-height'); row.style.removeProperty('overflow');
+      if (rh > room) { set(row, 'line-height', '1.1'); rh = row.offsetHeight || rh; }
+      /* wider first (fewer rows), as far as the game's right edge */
+      if (rh > room && R - x0 - 8 > width) { set(row, 'width', (R - x0 - 8) + 'px'); rh = row.offsetHeight || rh; }
+      for (let fs = base; rh > room && fs > 10;) { fs = Math.max(10, Math.floor(fs * Math.max(.5, room / rh))); set(row, 'font-size', fs + 'px'); rh = row.offsetHeight || rh; }
+      /* still too long at the smallest size: cut at the box, never over the game's UI */
+      if (rh > room && room > 10) { set(row, 'max-height', room + 'px'); set(row, 'overflow', 'hidden'); }
       const top = only ? (rh > room ? Math.max(T, B - rh) : y0) : below;
       set(row, 'top', Math.max(T, top) + 'px');
     }
@@ -352,7 +366,7 @@
      line (write-back, glyph layer); the page says nothing about the line, so the reader places it as without a page */
   b.textPlacePage = m => { const had = !!page; if (m?.elsewhere === true) { page = null; drawnByGame = ''; if (had) { pageGone(); dropOld(null); document.getElementById('megulit-page-ahead')?.replaceChildren(); document.body.classList.remove('megulit-place-game-drawn'); } schedule(); return; } page = m && Array.isArray(m.lines) ? { awake: m.awake === true, armed: m.armed === true, lines: m.lines.filter(l => l && typeof l.text === 'string' && Array.isArray(l.rects)), client: Array.isArray(m.client) ? m.client : [innerWidth, innerHeight] } : null; if (page) { line = null; drawnByGame = ''; } else if (had) pageGone(); schedule(); };
   b.textPlaceExtra = m => { extras = { items: Array.isArray(m?.items) ? m.items.filter(i => i && typeof i.text === 'string' && Array.isArray(i.rects)) : [], client: Array.isArray(m?.client) ? m.client : null }; schedule(); };
-  b.textPlaceMode = m => { on = m?.on === true; if (!on) { line = null; drawnByGame = ''; if (page) { page = null; pageGone(); } } schedule(); };
+  b.textPlaceMode = m => { on = m?.on === true; if (!on) { line = null; drawnByGame = ''; boxBottom = 0; boxKey = ''; if (page) { page = null; pageGone(); } } schedule(); };
   b.textPlaceStatus = () => ({ on, line: line ? { text: line.text, n: line.rects?.length || 0, fallback: !!line.fallback } : null, placed: document.body.classList.contains('megulit-placed'), geom: lastGeom.split(';').length });
   let busy = false;
   new MutationObserver(records => { if (on && (line || drawnByGame || page) && records.some(r => !(r.target.closest?.('.tomoyo-cn-dialog,#megulit-place-extras,#megulit-page-ahead,.megulit-old-line')) && !r.target.classList?.contains('megulit-old-line'))) { /* page mode: at once, before the next paint, so a line that just stopped being the reader's own never misses a frame */ if (page && !busy) { busy = true; try { apply(); } finally { busy = false; } } else schedule(); } }).observe(document.documentElement, { subtree: true, childList: true, characterData: true });
