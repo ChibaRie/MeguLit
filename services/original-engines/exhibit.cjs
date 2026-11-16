@@ -40,8 +40,8 @@ function key0(seed){const k0=initKey(seed,0),k1=initKey(seed,1),k2=initKey(seed,
 function seedsFromExe(exe,script){if(script.length<0x14||script.readUInt32LE(8)!==0x10)return [];const enc=script.readUInt32LE(0x10),out=[];
  for(let i=0;i+4<=exe.length;i++){const sd=exe.readUInt32LE(i);if(!sd||sd===0xffffffff)continue;const w=(enc^key0(sd))>>>0;
   if((w&0xffff)<0x200&&((w>>>16)&0xff)<=16&&((w>>>24)&0xf)<=10&&(w>>>28)===0)out.push(sd);}return out;}
-const exeCache=new Map();
-function exeSeeds(dir,script){const fs=require('node:fs'),path=require('node:path'),out=new Set();let names=[];try{names=fs.readdirSync(dir).filter(n=>/.exe$/i.test(n));}catch{}
+const exeTried=new Map();/* dir -> failed searches: an exe scan costs seconds, so a folder whose seed is not in its exe is searched twice at most */
+function exeSeeds(dir,script){const tried=exeTried.get(dir)||0;if(tried>=3)return [];exeTried.set(dir,tried+1);const fs=require('node:fs'),path=require('node:path'),out=new Set();let names=[];try{names=fs.readdirSync(dir).filter(n=>/.exe$/i.test(n));}catch{}
  for(const n of names){let b;try{const f=path.join(dir,n);if(fs.statSync(f).size>96<<20)continue;b=fs.readFileSync(f);}catch{continue;}for(const sd of seedsFromExe(b,script))out.add(sd);}return [...out];}
 /* [{op, ints, strs:[Buffer]}] when the whole file parses as the declared instruction count, else null */
 function walk(b){if(b.length<0x14||b.toString('latin1',1,4)!=='DLR')return null;const first=b.readUInt32LE(8),count=b.readUInt32LE(12);if(first<0x10||first>b.length||!count||count>5e6)return null;
