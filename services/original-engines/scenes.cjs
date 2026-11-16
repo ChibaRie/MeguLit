@@ -264,6 +264,15 @@ function cxDocs(file){
  }
  return null;
 }
+/* 2026-11-16 probe (#184 #194 #275 #276 #291): the probe worker returns before the background cx build ends (the worker is
+   unref'd), so a first probe of a cx game always read 0 lines and "decrypt-failed encrypted-archive". cxPrepareSync builds
+   the missing caches in this thread, within a deadline; the probe calls it before reading. */
+function cxPrepareSync(dir,{deadline=Infinity}={}){let built=0;
+ const size=f=>{try{return fs.statSync(f).size;}catch{return 0;}},order=cxArchives(dir).sort((a,b)=>(/^scn/i.test(path.basename(b))-/^scn/i.test(path.basename(a)))||size(a)-size(b));
+ for(const file of order){if(Date.now()>deadline)break;let out;try{out=cxCache(file);}catch{continue;}if(fs.existsSync(out))continue;
+  let list;try{list=xp3.list(file);}catch{list=null;}if(!list||!list.files.some(e=>e.encrypted||/\.scn$/i.test(e.name)))continue;
+  try{const r=require('./cx-worker.cjs').build(file);fs.mkdirSync(path.dirname(out),{recursive:true});fs.writeFileSync(out+'.tmp',JSON.stringify({schema:1,file,...r}));fs.renameSync(out+'.tmp',out);built++;}catch{}}
+ return built;}
 function cxNext(){
  if(cxRunning||!cxQueue.length)return;const {file,out}=cxQueue.shift();cxRunning=true;
  const {Worker}=require('node:worker_threads');let w;try{w=new Worker(path.join(__dirname,'cx-worker.cjs'),{workerData:{file,out}});}catch{cxRunning=false;cxBuilds.delete(out);return cxNext();}
@@ -531,4 +540,4 @@ function preparing(dir){
 }
 /* E375 why a recognised game cannot be read (an engine's own check, e.g. encrypted WOLF archives), or null. */
 function unsupportedReason(dir){for(const e of Object.values(ENGINES)){if(typeof e.unsupported!=='function')continue;let code='';try{code=e.unsupported(dir);}catch{}if(code)return {engine:e.id,code,detail:e.REASONS?.[code]||''};}return null;}
-module.exports={unquoteSlot,unsupportedReason,preparing,cxBuilds,chineseColumn,ENGINES,detect,readable,read,fingerprint,parseKs,parseAst,parseRpy,pfsList,pfsRead,tlPairs,decode};
+module.exports={cxPrepareSync,unquoteSlot,unsupportedReason,preparing,cxBuilds,chineseColumn,ENGINES,detect,readable,read,fingerprint,parseKs,parseAst,parseRpy,pfsList,pfsRead,tlPairs,decode};
