@@ -48,6 +48,7 @@ test('begin-before-source and source-before-begin both pair their own colour',t=
  f.draw(1,'#ffff00','end');
  f.source('描画より先に届いた未読の文章です。');f.draw(2,'#eeeeee');assert.equal(f.color(),'#eeeeee');
  f.draw(2,'#ffffff','end');assert.equal(f.color(),'#ffffff','final glyph sample refines this sentence');
+ f.draw(2,undefined,'end');assert.equal(f.color(),'#ffffff','an absent end sample retains evidence from the same draw');
  f.draw(3,'#aabbcc');f.draw(3,'#abcdef','end');f.source('始めも終わりも先に届いた文章です。');assert.equal(f.color(),'#abcdef');
 });
 

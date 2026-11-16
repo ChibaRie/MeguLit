@@ -72,7 +72,7 @@
   if(!same){latestDraw={engine:m.engine,line:m.line};colorDraw={...latestDraw,pending:!waitingDraw,color:''};waitingDraw=false;}
   // A late end for the previous source cannot recolour a sentence waiting for its own begin.
   if(!colorDraw||colorDraw.engine!==m.engine||colorDraw.line!==m.line)return;
-  colorDraw.color=typeof m.color==='string'&&/^#[0-9a-f]{6}$/i.test(m.color)?m.color:'';
+  if(typeof m.color==='string'&&/^#[0-9a-f]{6}$/i.test(m.color))colorDraw.color=m.color;
   paintLine(colorDraw.color,colorSource);
  };
  b.textPosition=(m,refresh=false)=>{m=cs2Canvas(m);
