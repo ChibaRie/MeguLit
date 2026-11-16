@@ -33,3 +33,10 @@ test('CMVS CPZ7: Aoi Tori scripts read as text',{skip:!real},()=>{
  const list=cmvs.engine.scenes(STEAM);assert.ok(list.length>20);
  const n=list.reduce((s,x)=>s+cmvs.parse(x.read()).lines.length,0);assert.ok(n>100);
 });
+
+test('CMVS: a CPZ in data/pack alone (no cmvs32.exe) identifies the engine; unknown-scheme CPZ is reported',()=>{
+ const game=fs.mkdtempSync(path.join(os.tmpdir(),'cmvs-det-'));const h=Buffer.alloc(0x48);h.write('CPZ6','latin1');
+ F.writeTree(game,{'data/pack/script.cpz':h});
+ assert.equal(require('../services/original-engines/registry.cjs').engineOf(game)?.name,'CMVS (Purple Software)');
+ assert.equal(cmvs.engine.unsupported(game),'CMVS_CPZ7');
+});

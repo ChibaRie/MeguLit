@@ -132,9 +132,11 @@ function parse(buf){const d=unpackPs2(buf);if(!d)return {lines:[],anchors:[]};co
 const PS=/\.ps[23]$/i;
 /* Steam / retail layouts keep the archives in data/pack and the loose scripts in data/code (cmvs.cfg SCRIPT_INIT_PATH) */
 const ARC_SUBS=['','data/pack','pack','data','Pk'],PS_SUBS=['','data/code','script','patch','data/update','data'];
-const cpz7=dir=>{const all=kit.files(dir,{name:/\.cpz$/i,subs:ARC_SUBS});return all.some(f=>kit.head(f,4).toString('latin1')==='CPZ7'&&!open(f))&&!all.some(f=>list(f)?.some(e=>PS.test(e.name)))&&!kit.files(dir,{name:PS,subs:PS_SUBS,max:1}).length;};
+const cpz7=dir=>{const all=kit.files(dir,{name:/\.cpz$/i,subs:ARC_SUBS});return all.some(f=>/^CPZ[567]$/.test(kit.head(f,4).toString('latin1'))&&!open(f))&&!all.some(f=>list(f)?.some(e=>PS.test(e.name)))&&!kit.files(dir,{name:PS,subs:PS_SUBS,max:1}).length;};
+/* a CPZ5-7 archive in the usual pack folders (Steam / retail keep them in data/pack, not beside the exe) */
+const packed=dir=>kit.files(dir,{name:/\.cpz$/i,subs:['data/pack','pack'],max:4}).some(f=>/^CPZ[567]/.test(kit.head(f,4).toString('latin1')));
 const engine=kit.engine({id:'cmvs',hint:'*.cpz（*.ps3）',
  archives:{name:/\.cpz$/i,magic:'CPZ',subs:ARC_SUBS,list:f=>{const l=list(f);return l&&l.some(e=>PS.test(e.name))?l:null;},read,entry:PS},
  loose:{name:PS,subs:PS_SUBS},parse,
- extra:{unsupported:dir=>cpz7(dir)?'CMVS_CPZ7':'',REASONS:{CMVS_CPZ7:'这部 CMVS 作品用的是 CPZ7 归档，但它的密钥参数不在已知方案里（各作品的常量不同，需要从它的 cmvs32.exe 读出来），暂时读不了剧本'}}});
-module.exports={engine,parse,header,open,list,read,unpackPs2,pushed,md5Words,table,stage1,dirCipher,entryCipher,scheme,DEFAULT,rotl,rotr};
+ extra:{unsupported:dir=>cpz7(dir)?'CMVS_CPZ7':'',REASONS:{CMVS_CPZ7:'这部 CMVS 作品用的是 CPZ 归档（CPZ5/6/7），但它的密钥参数不在已知方案里（各作品的常量不同，需要从它的 cmvs32.exe 读出来），暂时读不了剧本'}}});
+module.exports={engine,packed,parse,header,open,list,read,unpackPs2,pushed,md5Words,table,stage1,dirCipher,entryCipher,scheme,DEFAULT,rotl,rotr};
