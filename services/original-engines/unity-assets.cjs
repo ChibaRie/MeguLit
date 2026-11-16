@@ -14,18 +14,19 @@ const ufs=require('./unityfs.cjs'),ser=require('./unity-serialized.cjs');
 const {stat}=require('./file-key.cjs');
 const CJK=/[぀-ヿ㐀-鿿]/,KANA=/[ぁ-ゖァ-ヺ]/;
 const BUNDLE_SKIP=/(video|movie|voice|vo_|music|bgm|sound|audio|shader|texture|sprite|image|font|bg_|bgs_|cg|portrait|anim|effect)/i;
+const LOOSE=/\.(json|csv|tsv|txt|bytes|xml|lua|yaml|yml|asset)$/i,NOT_BUNDLE=/\.(dll|resS|resource|assets|png|jpe?g|bmp|tga|gif|webp|psd|mp4|webm|ogg|wav|mp3|flac|m4a|ttf|otf|mdb|pdb|exe|so|dylib|meta|manifest|info|config|ini|log|bat|html?|pdf|ico|cfg|vdf|json|csv|txt|xml)$/i;
 const MAX_BUNDLE=256*1024*1024,MAX_NODE=96*1024*1024;
 
 function dataDirs(dir){let names;try{names=fs.readdirSync(dir,{withFileTypes:true});}catch{return [];}return names.filter(e=>e.isDirectory()&&/_Data$/i.test(e.name)).map(e=>path.join(dir,e.name));}
 function walk(d,depth,out){let es;try{es=fs.readdirSync(d,{withFileTypes:true});}catch{return;}
  for(const e of es){const f=path.join(d,e.name);if(e.isDirectory()){if(depth>0&&!/^(Managed|Mono|il2cpp_data|Plugins|MonoBleedingEdge|Resources)$/i.test(e.name))walk(f,depth-1,out);}else out.push(f);}}
 /* serialized files of the player and bundle files, in a fixed order */
-function sources(dir){const players=[],bundles=[];
+function sources(dir){const players=[],bundles=[],loose=[];
  for(const d of dataDirs(dir)){let names;try{names=fs.readdirSync(d);}catch{continue;}
   for(const n of names)if(/^(?:resources\.assets|sharedassets\d+\.assets|globalgamemanagers\.assets|level\d+)$/i.test(n))players.push(d+path.sep+n);
-  const all=[];walk(d,5,all);for(const f of all)if(/\.(bundle|unity3d|ab|assetbundle|bytes|dat|bin|data)$/i.test(f)&&!BUNDLE_SKIP.test(path.basename(f)))bundles.push(f);}
+  const all=[];walk(d,5,all);for(const f of all){const b=path.basename(f);if(LOOSE.test(b)&&/StreamingAssets|Resources|[\/]data[\/]/i.test(f))loose.push(f);else if(!NOT_BUNDLE.test(b)&&!BUNDLE_SKIP.test(b))bundles.push(f);}}
  for(const f of bundles.slice()){let sz;try{sz=fs.statSync(f).size;}catch{sz=0;}if(sz<64||sz>MAX_BUNDLE*8||ufs.start(require('./kit.cjs').head(f,65536))<0)bundles.splice(bundles.indexOf(f),1);}
- return {players:players.sort(),bundles:bundles.sort()};}
+ return {players:players.sort(),bundles:bundles.sort(),loose:loose.sort()};}
 
 function noise(s){return !CJK.test(s)||/^(Assets|Packages)\/|^[\w.\-/\\ ]+\.\w{2,5}$/.test(s)||/^\d+_[A-Za-z]/.test(s);}
 /* one serialized buffer → entries { name, kind, bytes } */
@@ -37,7 +38,7 @@ function entriesOf(buf,label){const r=ser.parse(buf);if(!r)return [];const out=[
  return out;}
 
 const memo=new Map();
-function index(dir){const key=dir;const src=sources(dir);const sig=[...src.players,...src.bundles].map(f=>f+'|'+stat(f)).join('\n');
+function index(dir){const key=dir;const src=sources(dir);const sig=[...src.players,...src.bundles,...src.loose].map(f=>f+'|'+stat(f)).join('\n');
  const hit=memo.get(key);if(hit&&hit.sig===sig)return hit.scenes;
  const scenes=new Map();const add=(e,from)=>{let k=e.name.toLowerCase(),n=1,base=k;while(scenes.has(k))k=base+'~'+(++n);scenes.set(k,{name:e.name,read:()=>e.bytes,from});};
  for(const f of src.players){let sz=0;try{sz=fs.statSync(f).size;}catch{}if(sz>MAX_NODE*4||!sz)continue;let buf;try{buf=fs.readFileSync(f);}catch{continue;}
@@ -45,6 +46,7 @@ function index(dir){const key=dir;const src=sources(dir);const sig=[...src.playe
  for(const f of src.bundles){let nodes;try{nodes=ufs.list(f);}catch{nodes=null;}if(!nodes)continue;
   for(const n of nodes){if(/\.(resS|resource|ress)$/i.test(n.name)||n.size>MAX_NODE||n.size<64)continue;let node;try{node=ufs.readNode(f,n.index,MAX_NODE);}catch{continue;}if(!node)continue;
    try{for(const e of entriesOf(node.data,path.basename(f).replace(/_[0-9a-f]{32}\.bundle$/i,'')))add(e,f);}catch{}}}
+ for(const f of src.loose){let sz=0;try{sz=fs.statSync(f).size;}catch{}if(sz<8||sz>16<<20)continue;let buf;try{buf=fs.readFileSync(f);}catch{continue;}if(CJK.test(buf.toString('utf8',0,Math.min(buf.length,400000))))add({name:path.basename(f).replace(/\.[^.]+$/,''),bytes:buf},f);}
  const list=[...scenes.values()].sort((a,b)=>a.name.localeCompare(b.name));memo.set(key,{sig,scenes:list});if(memo.size>6)memo.delete(memo.keys().next().value);return list;}
 
 /* ---- text → lines ------------------------------------------------------------------------------------------------ */
@@ -81,5 +83,5 @@ function parse(buf){
  for(const r of rows||[]){const t=clean(r.text);if(!t||!CJK.test(t))continue;const sp=(r.speaker||'').replace(/^\d+_(?:[A-Za-z ]+_)?/,'');lines.push(sp?sp+'：'+t:t);speakers.push(sp);}
  return {lines,anchors:[],speakers};}
 module.exports={id:'unity-assets',hint:'<游戏>_Data（TextAsset / MonoBehaviour / AssetBundle）',
- scenes:dir=>index(dir),archives:()=>[],sources:dir=>{const s=sources(dir);return [...s.players,...s.bundles].filter(f=>/_Data/i.test(f));},
+ scenes:dir=>index(dir),archives:()=>[],sources:dir=>{const s=sources(dir);return [...s.players,...s.bundles,...s.loose].filter(f=>/_Data/i.test(f));},
  parse,test:()=>false,_internal:{entriesOf,jsonLines,csvLines,sources,KANA}};
