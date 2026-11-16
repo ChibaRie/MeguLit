@@ -133,7 +133,7 @@ async function quota(env,now){
 
 export async function probeStats(env,now,{json,fail}){
  if(!env.DB)return fail('NOT_CONFIGURED',503);
- const [base,ext,q]=await Promise.all([cached('live',10,()=>live(env,now)),cached('wide',300,()=>wide(env,now)),cached('quota',600,()=>quota(env,now))]);
+ const [base,ext,q]=await Promise.all([cached('live',10,()=>live(env,now)),cached('wide',300,()=>wide(env,now)),cached('quota-v2',600,()=>quota(env,now))]);
  return json({...base,ext,quota:q},200,{'access-control-allow-origin':'*','cache-control':'public, max-age=10'});}
 
 export async function cleanupProbeStats(env,now=new Date()){if(!env.DB)return {removed:0};
