@@ -46,7 +46,7 @@ test('HookBridge loads the layer, arms it for glyph-fallback streams and treats 
  assert.match(b,/public static partial class HookBridge/);
  assert.match(b,/GpuHide\(bit,loader,args\);/);
  /* while the skip key is held no line arms the layer (the game shows its own fast-forward); otherwise the line goes to GpuLine */
- assert.match(b,/static void GlyphLine\(string text\)\{FlushFit\(\);if\(SkipHeld\)\{GlyphOff\(\);return;\}(\/\*[^*]*\*\/[^\n]*?GlyphOff\(\);return;\})?GpuLine\(text\);/);
+ assert.match(b,/static void GlyphLine\(string text\)\{FlushFit\(\);[^\n]*?if\(HookTarget\.ChineseText\)\{GlyphOff\(\);return;\}if\(SkipHeld\)\{GlyphOff\(\);return;\}(\/\*[^*]*\*\/[^\n]*?GlyphOff\(\);return;\})?GpuLine\(text\);/);
  assert.match(b,/static void GlyphOff\(\)\{GpuDisarm\(\);/);
  assert.match(s,/'GpuHideLayer\.cs'/);
  assert.match(i,/"MeguLitGpu64\.dll"/);assert.match(i,/"MeguLitGpu32\.dll"/);

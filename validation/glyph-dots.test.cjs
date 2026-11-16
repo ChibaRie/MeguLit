@@ -16,10 +16,9 @@ test('spec: docs/text-architecture.md publishes the dot geometry, records, event
 test('DLL: dot mode keeps metrics, draws one square per character, reports every dot; blank mode unchanged',()=>{
  const c=read('native/fontprobe/FontProbe.cpp');
  assert.match(c,/#define MEGULIT_FONT_VERSION 3/);assert.ok(c.includes('MeguLitFontVersionTag[] = "MeguLitFont version=3"'));
- assert.ok(c.includes('bool report = true, paint = l.rfind("MODE dot", 0) == 0, blind = l.size() > 6 && l.compare(l.size() - 6, 6, "-blind") == 0;')&&c.includes('Hide.StopOnCache = !report;'),'MODE command (dot, blank = place, blind variants); every mode reports');
+ assert.ok(c.includes('bool report = true, paint = l.rfind("MODE dot", 0) == 0;')&&c.includes('Hide.StopOnCache = !report;'),'MODE command (dot, blank = place, blind variants); every mode reports');
  assert.ok(c.includes('" modes=blank,dot,place records=4"'),'ready answers the modes and the record version');
  assert.ok(c.includes('bool DotsBlocked() { return DotMode && PaintDots && !DotsLive(); }'),'the heartbeat gate is for dots only');
- assert.ok(c.includes('bool BlindAllowed() { return PaintDots || CtlConnected || GetTickCount64() - LoadedAt <= BeatGrace; }'),'blind blanks need HookBridge (or the early grace)');
  assert.ok(c.includes('if (win && GetDCOrgEx(dc, &org))')&&c.includes('ScreenToClient(root, &s)')&&c.includes('sprintf_s(w.sp, "m%dx%d"'),'GDI cell origin: window DC to top-level client, memory DC with its size');
  assert.ok(c.includes('PlaceLogical(dc, pen, top - rise)')&&c.includes('PlaceTarget(rt, pen + ox, at.y - asc - oy)')&&c.includes('__uuidof(ID2D1HwndRenderTarget)'),'positions for ExtTextOut (lpDx) and DrawGlyphRun');
  assert.ok(c.includes('int DotSide(int cellHeight) { return cellHeight < 12 ? 2 : (std::max)(3, (cellHeight + 5) / 10); }'),'dot side as in the spec (2)');
@@ -30,7 +29,7 @@ test('DLL: dot mode keeps metrics, draws one square per character, reports every
  assert.ok(c.includes('if (lf.lfEscapement || lf.lfOrientation || lf.lfFaceName[0] == L\'@\''),'vertical fonts fall back to blank');
  assert.ok(c.includes('run = HookAt(vt[29], (void *)&HDrawGlyphRun, (void **)&ODrawGlyphRun);'),'ID2D1RenderTarget::DrawGlyphRun hooked');
  assert.ok(c.includes('if (paint) Gp.SetSmoothing(g, 3 /* SmoothingModeNone */);'),'GDI+ dots are crisp squares');
- assert.ok(c.includes('l == "MODE dot-blind"')&&c.includes('if (!r && BlindMode && BlindChar(ch) && (ch || index) && Hide.BlindKey(KeyOf(f)) && BlindAllowed()) { r = true; if (sv) *sv = GlyphHide::Served{-1, \'b\'}; }'),'blind dots: dialogue font only, kind b');
+ assert.ok(c.includes('l == "MODE dot-blind"'));assert.doesNotMatch(c,/if \(!r && BlindMode/,'font/pipe proof never hides unpushed title or menu text');
  assert.ok(c.includes('rt->SetAntialiasMode(D2D1_ANTIALIAS_MODE_ALIASED);'),'Direct2D dots are crisp squares');
  assert.match(c,/Send\("ToMe_GLYPHDOT line seq=" \+ std::to_string\(seq\) \+ " text=" \+ Utf8\(text\)\)/);
  assert.match(c,/Send\("ToMe_GLYPHDOT dots seq=" \+ std::to_string\(DotSeq\) \+ " path=" \+ DotPath \+ " list=" \+ DotBuf\)/);
@@ -43,9 +42,9 @@ test('DLL: dot mode keeps metrics, draws one square per character, reports every
  const m=read('native/fontprobe/selftest/match.cpp');
  for(const s of ['dots: per-glyph walk serves index i, kind d','dots: a whole string maps each character to its index in the line','dots: a glyph cache is reported (ToMe_GLYPHDOT cache) and dots go on'])assert.ok(m.includes(s),s);
  const h=read('native/fontprobe/selftest/dothost.cpp');
- for(const s of ['"ggo-gray8"','"ggo-native"','"ggo-bezier"','"ggo-mono"','Dots("textouta-sjis"','Dots("exttextoutw-glyphindex"','Dots("drawtextw"','Dots("gdip-drawstring"','Dots("gdip-drawdriverstring"','Dots("d2d-drawtext"','Dots("d2d-drawtextlayout"','Dots("d2d-drawglyphrun"','dot glyph keeps the original metrics and buffer size','nothing else','every index once','Dots("blind-ggo"','blind: the same text in another size is drawn normally'])assert.ok(h.includes(s),s);
+ for(const s of ['"ggo-gray8"','"ggo-native"','"ggo-bezier"','"ggo-mono"','Dots("textouta-sjis"','Dots("exttextoutw-glyphindex"','Dots("drawtextw"','Dots("gdip-drawstring"','Dots("gdip-drawdriverstring"','Dots("d2d-drawtext"','Dots("d2d-drawtextlayout"','Dots("d2d-drawglyphrun"','dot glyph keeps the original metrics and buffer size','nothing else','every index once','unmatched glyphs under the dialogue font stay real in blind mode','blind: the same text in another size is drawn normally'])assert.ok(h.includes(s),s);
  assert.doesNotMatch(h,/ShowWindow|SW_SHOW/,'self-test never shows a window');assert.ok(h.includes('WS_POPUP, -32000, -32000'),'the placement window stays hidden and off screen');
- for(const s of ['"place textoutw: no ink (blank glyphs)"','"place exttextoutw lpDx: no ink"','"place d2d drawglyphrun: no ink"','"place-blind ggo: no ink"','cells(l, 50 + X0, 30 + Y0, NULL), "c"'])assert.ok(h.includes(s),s);
+ for(const s of ['"place textoutw: no ink (blank glyphs)"','"place exttextoutw lpDx: no ink"','"place d2d drawglyphrun: no ink"','"place-blind: unmatched title/menu text keeps its ink"','cells(l, 50 + X0, 30 + Y0, NULL), "c"'])assert.ok(h.includes(s),s);
  assert.ok(c.includes('L"Local\\\\MeguLitCompositorBeat-%lu"')&&c.includes('BeatGrace = 20000, BeatFresh = 1000')&&c.includes('if (DotsBlocked()) return false;')&&c.includes('ToMe_GLYPHDOT status needs-relaunch served='),'heartbeat gate: grace, freshness, real glyphs on lapse, relaunch notice');
  assert.ok(read('native/fontprobe/selftest/dothost.cpp').includes('heartbeat presenting=0: real glyph at once'));
  const l=read('native/fontprobe/Launch.cpp');assert.ok(l.includes('CREATE_SUSPENDED')&&l.includes('MeguLitFontReady-%lu')&&l.includes('ResumeThread(pi.hThread);'),'launcher: suspended start, waits for hooks, always resumes');

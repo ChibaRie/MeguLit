@@ -16,7 +16,7 @@ public static partial class HookBridge {
  public static string[] GpuCapabilities(){lock(GpuGate){return GpuLoaded&&GpuApis.Length>0?GpuApis.Split(','):new string[0];}}
  /// <summary>Hide the given line of the given stream from now on (60 s, renewed by every call). The DLL learns first and
  /// hides only after it found the line's glyphs; nothing is hidden when it is unsure.</summary>
- public static void GpuArm(string streamId,string line){lock(GpuGate){GpuStream=streamId??"";GpuSent=true;}GpuSend("LINE "+System.Text.RegularExpressions.Regex.Replace(line??"",@"[\r\n  ]+"," "));}
+ public static void GpuArm(string streamId,string line){if(HookTarget.ChineseText){GpuDisarm();return;}lock(GpuGate){GpuStream=streamId??"";GpuSent=true;}GpuSend("LINE "+System.Text.RegularExpressions.Regex.Replace(line??"",@"[\r\n  ]+"," "));}
  /// <summary>Stop hiding at once.</summary>
  public static void GpuDisarm(){bool was;lock(GpuGate){was=GpuSent;GpuSent=false;}if(was)GpuSend("OFF");}
  /// <summary>Read-only: learn and report character rectangles, never hide.</summary>
@@ -25,7 +25,7 @@ public static partial class HookBridge {
  public static event Action<string,int,int,int> GpuHit;
  static void GpuSend(string line){lock(GpuGate){if(GpuCtlPipe==null)return;try{GpuCtlPipe.WriteLine(line);}catch{GpuCtlPipe=null;}}}
  // The same streams the glyph hide (E667) serves: the selected stream without write-back, with replacement on or probing.
- static bool GpuWanted(){lock(Gate){Candidate c;bool blank=GlyphMode=="blank";return Enabled&&(ReplacementEnabled||ProbeWanted||blank)&&Selected!=""&&Candidates.TryGetValue(Selected,out c)&&(c.gdiProbe||RememberedHide(c)||blank&&GdiProbeable(c)||GlyphMode=="dot"&&GlyphAll);}} /* 2026-11-15 (沙耶の唄 with in-place drawing on: nothing was hidden): 文字显示 in place sends glyph mode blank, which means the line must vanish;
+ static bool GpuWanted(){lock(Gate){Candidate c;bool blank=GlyphMode=="blank";return !HookTarget.ChineseText&&Enabled&&(ReplacementEnabled||ProbeWanted||blank)&&Selected!=""&&Candidates.TryGetValue(Selected,out c)&&(c.gdiProbe||RememberedHide(c)||blank&&GdiProbeable(c)||GlyphMode=="dot"&&GlyphAll);}} /* 2026-11-15 (沙耶の唄 with in-place drawing on: nothing was hidden): 文字显示 in place sends glyph mode blank, which means the line must vanish;
     a game whose glyphs the font layer cannot blank (rasterised once and reused) is hidden here instead, also without replacement or probe. */ /* text-arch: in ①'s dot mode (compositor) the GDI probe is never switched on, the stream is still the dialogue */
  static int GpuWantLog=-1;static string GpuPageLog="";static volatile bool GpuPageOn;
  static void GpuLine(string text){bool w=GpuWanted();if((w?1:0)!=GpuWantLog){GpuWantLog=w?1:0;string why;lock(Gate){Candidate c;Candidates.TryGetValue(Selected??"",out c);why="enabled="+Enabled+" replace="+ReplacementEnabled+" probe="+ProbeWanted+" mode="+GlyphMode+" gdiProbe="+(c!=null&&c.gdiProbe)+" embed="+(c!=null&&c.embed)+" probeable="+(c!=null&&GdiProbeable(c));}Diagnostic("gpu hide wanted="+w+" ("+why+")");}if(w){string s;lock(Gate){s=Selected;}GpuArm(s,text);}else GpuDisarm();}

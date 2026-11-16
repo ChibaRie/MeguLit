@@ -24,7 +24,7 @@ LR"MGLT((function(){
      KiriKiri builds; typeof does not */
   var st=(typeof global.__megulitKrkrState=='Object')?global.__megulitKrkrState:void;
   if(st===void) {
-   st=%['skipped'=>0,'charsSent'=>0,'charsErr'=>'','trWrapped'=>0,'trLine'=>0,'trText'=>'','trKey'=>'','trOp'=>void,'trT'=>void,'trRec'=>void,'skippedCls'=>'','lastFont'=>'','pfontName'=>void,'art'=>0,'artText'=>'','artSeen'=>[],'calls'=>0,'hid'=>0,'wrapped'=>[],'recs'=>[],'active'=>void,'lastVis'=>-1,'timer'=>void,'line'=>0,'report'=>global.__megulitKrkrReport,'kag'=>k,'hooked'=>0,'oldLB'=>void,'oldPB'=>void,'oldPBC'=>void];
+   st=%['skipped'=>0,'charsSent'=>0,'charsErr'=>'','trWrapped'=>0,'trLine'=>0,'trText'=>'','trKey'=>'','trOp'=>void,'trT'=>void,'trOwner'=>void,'trRec'=>void,'skippedCls'=>'','lastFont'=>'','pfontName'=>void,'art'=>0,'artText'=>'','artSeen'=>[],'calls'=>0,'hid'=>0,'wrapped'=>[],'recs'=>[],'active'=>void,'lastVis'=>-1,'timer'=>void,'line'=>0,'report'=>global.__megulitKrkrReport,'kag'=>k,'hooked'=>0,'oldLB'=>void,'oldPB'=>void,'oldPBC'=>void];
    st.screen=function(){
     var sw=+this.kag.scWidth,sh=+this.kag.scHeight;
     if(!(sw>0) || !(sh>0)) {sw=+this.kag.primaryLayer.width;sh=+this.kag.primaryLayer.height;}
@@ -212,11 +212,21 @@ LR"MGLT((function(){
     } catch(e) {}
     return void;
    } incontextof st;
+   st.trOwn=function(inst,L){
+    try {return inst===L.textLayer || (typeof inst.textLayer=='Object' && inst.textLayer!==void && inst.textLayer===L.textLayer);} catch(e) {return false;}
+   } incontextof st;
+   st.trRestore=function(){
+    try {if(this.trOp!==void && isvalid this.trT) {if(this.trT.opacity==0) this.trT.opacity=this.trOp;}} catch(e) {}
+    this.trOp=void;this.trT=void;
+   } incontextof st;
    st.trHide=function(){
     try {
-     var L=this.trLayer();if(L===void) return;var T=L.textLayer,on=this.hideOn();
+     var L=this.trLayer();
+     if(L===void || this.trOwner!==L || this.trRec===void) {this.trRestore();return;}
+     var T=L.textLayer,on=this.hideOn();
+     if(this.trT!==void && this.trT!==T) this.trRestore();
      if(on) {if(this.trOp===void || this.trT!==T) {this.trT=T;this.trOp=T.opacity;}if(T.opacity!=0) T.opacity=0;}
-     else if(this.trOp!==void && isvalid this.trT) {if(this.trT.opacity==0) this.trT.opacity=this.trOp;this.trOp=void;}
+     else this.trRestore();
      /* the line on screen changes its hidden state without a new render: send its record again */
      var h=(on && T.opacity==0)?1:0;
      if(this.trRec!==void && h!=this.trRec[0]) {this.trRec[0]=h;var r=this.trRec;this.trKey='';this.report('ToMe_CHARS engine=krkr line='+r[1]+' hidden='+h+r[2]);}
@@ -224,8 +234,8 @@ LR"MGLT((function(){
    } incontextof st;
    st.trDone=function(inst){
     try {
-     var L=this.trLayer();if(L===void) return;
-     this.trHide();
+     var L=this.trLayer();if(L===void || !this.trOwn(inst,L)) return;
+     var scr=this.screen();if(!(scr[1]>0) || L.height<scr[1]*0.2 || !this.shown(L)) return;
      var cs=(inst.getCharacters incontextof inst)(0,100000);if(typeof cs!='Object' || cs===null || cs.count==0) return;
      var a=this.abs(L),ox=a[0]+(+L.marginL),oy=a[1]+(+L.marginT),pad=0;
      try {var pf=L.textLayer._preRenderFontEx;if(typeof pf=='Object' && pf!==void && typeof pf.resizePadding=='Integer') pad=pf.resizePadding;} catch(e) {}
@@ -236,6 +246,7 @@ LR"MGLT((function(){
       rs+=(n>0?';':'')+int(ox+(+c.x))+','+int(oy+y+pad)+','+int(+c.cw)+','+int(+c.size);n++;
      }
      if(n==0) return;
+     if(this.trOwner!==L) {this.trRestore();this.trRec=void;this.trOwner=L;this.trText='';this.trKey='';}
      var flat=t.replace(/\n/g,'');
      if(!(this.trText!='' && (flat.indexOf(this.trText)==0 || this.trText.indexOf(flat)==0))) this.trLine++;
      var T=L.textLayer,h=(this.hideOn() && T.opacity==0)?1:0,scr=this.screen();
@@ -243,6 +254,7 @@ LR"MGLT((function(){
      var tail=' sw='+int(scr[0])+' sh='+int(scr[1])+' vx=0 vy=0 vw=0 vh=0 n='+n+' rects='+rs+' text='+t;
      this.trRec=[h,100000+this.trLine,tail];
      this.report('ToMe_CHARS engine=krkr line='+(100000+this.trLine)+' hidden='+h+tail);
+     this.trHide();
     } catch(e) {this.charsErr='tr '+e.message;}
    } incontextof st;
    st.trWrap=function(){

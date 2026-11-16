@@ -131,7 +131,7 @@ struct GlyphLearner {
   if (ppos.size() >= 4096) { ppos.clear(); pkey.clear(); for (auto &l : plines) l.claimed = 0; }
   ppos.push_back(PPos{ r, now, frameNo, frameNo, -1, true }); pkey[k] = (int)ppos.size() - 1; return (int)ppos.size() - 1;
  }
- bool PageHidden(const PPos &p) const { if (!pageArmed || readOnly) return false; if (p.line == -2) return false; if (p.line == -1) return p.opt; return true; }
+ bool PageHidden(const PPos &p) const { if (!pageArmed || readOnly) return false; return p.line >= 0; }
  bool PageAnyClaim() const { if (!pageArmed || readOnly) return false; for (auto &l : plines) if (l.claimed) return true; return false; }
  // a page quad: handled here (true) with *leave = leave it out
  bool PageQuad(const Quad &x, void *tex, unsigned tw, unsigned th, void *rt, unsigned rtW, unsigned rtH, unsigned now, bool *leave) {
@@ -142,7 +142,7 @@ struct GlyphLearner {
    if (!pageRtW) { pageRt = rt; pageRtW = rtW; pageRtH = rtH; }
    sheetNow.insert(tex);
    // the page drawn again into a buffer of another size (effects): follows the page as a whole
-   if (rtW != pageRtW || rtH != pageRtH) { *leave = PageAnyClaim(); return true; }
+   if (rtW != pageRtW || rtH != pageRtH) return false;
    int i = PageFind(Rect{ x.x0, x.y0, x.x1, x.y1 }, now); PPos &p = ppos[i];
    p.lastFrame = frameNo; if (p.r.x1 - p.r.x0 < x.x1 - x.x0 - 0.5f && std::fabs(p.r.x0 - x.x0) < 1.5f) p.r = Rect{ x.x0, x.y0, x.x1, x.y1 };
    *leave = PageHidden(p); return true;
@@ -152,7 +152,7 @@ struct GlyphLearner {
   if (!pageArmed || readOnly) return true;
   float cx = (x.x0 + x.x1) / 2; const PPos *best = nullptr; float bd = 1e30f;
   for (auto &p : ppos) { if (p.lastFrame + 2 < frameNo) continue; if (cx < p.r.x0 - pageH || cx > p.r.x1 + pageH) continue; float d = std::fabs((p.r.y0 + p.r.y1) / 2 - (x.y0 + x.y1) / 2) + std::fabs((p.r.x0 + p.r.x1) / 2 - cx) * 0.25f; if (d < bd) { bd = d; best = &p; } }
-  *leave = best && bd < pageH * 1.6f ? PageHidden(*best) : PageAnyClaim();
+  *leave = best && bd < pageH * 1.6f && PageHidden(*best);
   return true;
  }
  /* The line's places in reading order: rows top to bottom (a place within half a height of the row's first place), left

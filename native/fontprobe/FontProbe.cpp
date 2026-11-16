@@ -93,8 +93,7 @@ Face FaceOf(HDC dc) {
 // DotMode: per-character records are reported (every MODE since spec 3). PaintDots: matched glyphs become dots (MODE dot*);
 // otherwise (MODE blank*, alias place*) blank glyphs (same metrics, no coverage) plus records with the cell origin on
 // screen, for the reader overlay that draws MeguLit's text where the game's would be (docs/text-architecture.md, "Placement").
-SRWLOCK HideLock = SRWLOCK_INIT; GlyphHide::Matcher Hide; GlyphHide::RasterVerdict Raster; volatile LONG MarkArmed = 0; volatile LONG HideOn = 0, DotMode = 0, BlindMode = 0, PaintDots = 0, CtlConnected = 0, MarkOn = 0; long MarkLast = 0;
-bool BlindAllowed();
+SRWLOCK HideLock = SRWLOCK_INIT; GlyphHide::Matcher Hide; GlyphHide::RasterVerdict Raster; volatile LONG MarkArmed = 0; volatile LONG HideOn = 0, DotMode = 0, PaintDots = 0, CtlConnected = 0, MarkOn = 0; long MarkLast = 0;
 struct IndexMap { HFONT font = NULL; long seq = -1; std::map<WORD, wchar_t> map; } Indexes;
 GlyphHide::Key KeyOf(const Face &f) { GlyphHide::Key k; k.face = f.name; k.size = f.size; return k; }
 void AnnounceLine(long seq, const std::wstring &text);
@@ -124,8 +123,8 @@ void Command(std::string l) {
  if (l.rfind("LINE ", 0) == 0) { long before = Hide.Sequence(); Hide.SetLine(Wide(l.substr(5)), GetTickCount()); if (Hide.Sequence() != before) Raster.NextLine(Hide.Current()); InterlockedExchange(&HideOn, Hide.Cached() ? 0 : 1); if (DotMode && Hide.Sequence() != before) { announce = Hide.Sequence(); text = Hide.Current(); } }
  else if (l == "OFF") { Hide.Off(); Extras.clear(); InterlockedExchange(&HideOn, 0); }
  else if (l == "MODE dot" || l == "MODE blank" || l == "MODE dot-blind" || l == "MODE blank-blind" || l == "MODE place" || l == "MODE place-blind") {
-  bool report = true, paint = l.rfind("MODE dot", 0) == 0, blind = l.size() > 6 && l.compare(l.size() - 6, 6, "-blind") == 0;
-  Hide.StopOnCache = !report; InterlockedExchange(&PaintDots, paint ? 1 : 0); InterlockedExchange(&DotMode, report ? 1 : 0); InterlockedExchange(&BlindMode, blind ? 1 : 0); if (blind) InterlockedExchange(&HideOn, 1); }
+  bool report = true, paint = l.rfind("MODE dot", 0) == 0;
+  Hide.StopOnCache = !report; InterlockedExchange(&PaintDots, paint ? 1 : 0); InterlockedExchange(&DotMode, report ? 1 : 0); }
  else if ((l.rfind("EXTRA n ", 0) == 0 || l.rfind("EXTRA o ", 0) == 0) && l.size() > 8) { char k = l[6]; std::wstring t = Stripped(Wide(l.substr(8)));
   if (!t.empty() && t.size() <= 200) { if (k == 'n') Extras.erase(std::remove_if(Extras.begin(), Extras.end(), [](const Extra &e) { return e.kind == 'n'; }), Extras.end());
    if (Extras.size() >= 16) Extras.erase(Extras.begin()); Extras.push_back(Extra{++ExtraSeq, k, t, GetTickCount()}); extra = "ToMe_GLYPHDOT extra id=" + std::to_string(ExtraSeq) + " kind=" + std::string(1, k) + " text=" + Utf8(t); } }
@@ -158,10 +157,7 @@ wchar_t FromIndex(HDC dc, UINT g) {
  auto it = Indexes.map.find((WORD)g); return it == Indexes.map.end() ? 0 : it->second;
 }
 void AfterDecision() { if (Hide.Cached()) InterlockedExchange(&HideOn, 0); }
-// Blind dots (MODE dot-blind, for streams whose text arrives after the glyphs are drawn): any CJK/kana glyph (or an
-// unmapped glyph index) under the dialogue font (learned, seeded with FONT, or the probe's leading font) becomes a dot
-// without waiting for the line; kind 'b', index -1. MeguLit maps them to the line by reading order when it arrives.
-bool BlindChar(wchar_t c) { return c == 0 || (c >= 0x3000 && !GlyphHide::Blank(c)) || (c >= 0xff01 && c <= 0xff5e); }
+// Legacy blind-mode spellings are accepted, but every hidden glyph must match the pushed dialogue line.
 // One glyph; dc may be NULL when c is already a character. sv/seq/ch (optional): what was served, for the dot report.
 bool DotsBlocked();
 bool HideGlyph(HDC dc, UINT c, bool index, const Face &f, bool render, GlyphHide::Served *sv = NULL, long *seq = NULL, wchar_t *chOut = NULL) {
@@ -169,7 +165,7 @@ bool HideGlyph(HDC dc, UINT c, bool index, const Face &f, bool render, GlyphHide
  AcquireSRWLockExclusive(&HideLock);
  wchar_t ch = index ? FromIndex(dc, c) : (wchar_t)c;
  bool r = ch && Hide.Glyph(ch, KeyOf(f), GetTickCount(), render, "ggo", sv); AfterDecision();
- if (!r && BlindMode && BlindChar(ch) && (ch || index) && Hide.BlindKey(KeyOf(f)) && BlindAllowed()) { r = true; if (sv) *sv = GlyphHide::Served{-1, 'b'}; }
+ // A font seed or a live pipe cannot identify dialogue: unmatched title/menu glyphs keep their pixels.
  if (seq) *seq = Hide.Sequence(); if (chOut) *chOut = ch;
  ReleaseSRWLockExclusive(&HideLock); return r;
 }
@@ -177,7 +173,7 @@ bool HideText(const std::wstring &s, const Face &f, const char *path, std::vecto
  if (s.empty() || DotsBlocked()) return false;
  AcquireSRWLockExclusive(&HideLock); bool r = Hide.Text(s, KeyOf(f), GetTickCount(), path, sv); AfterDecision(); long xid = 0;
  if (!r && DotMode && !Extras.empty() && ExtraMatch(s, sv, &xid)) { if (seq) *seq = xid; ReleaseSRWLockExclusive(&HideLock); return true; }
- if (!r && BlindMode && Hide.BlindKey(KeyOf(f)) && BlindAllowed()) { bool any = false; for (wchar_t c : s) any = any || (c && BlindChar(c)); if (any) { r = true; if (sv) { sv->assign(s.size(), GlyphHide::Served{}); for (size_t i = 0; i < s.size(); i++) if (s[i] && BlindChar(s[i])) (*sv)[i] = GlyphHide::Served{-1, 'b'}; } } } if (seq) *seq = Hide.Sequence(); ReleaseSRWLockExclusive(&HideLock); return r;
+ if (seq) *seq = Hide.Sequence(); ReleaseSRWLockExclusive(&HideLock); return r;
 }
 std::wstring FromIndices(HDC dc, const WORD *g, UINT n) {
  std::wstring w; if (!g || !n || n > 4096) return w;
@@ -276,9 +272,6 @@ bool DotsLive() {
 }
 // Dot mode answers "not matched" while the heartbeat says the player would see the marks.
 bool DotsBlocked() { return DotMode && PaintDots && !DotsLive(); }
-// Placement (blank glyphs): blind blanks only while HookBridge is connected, or in the first 20 s after load (early
-// injection runs before HookBridge connects); a game left alone never keeps hidden text.
-bool BlindAllowed() { return PaintDots || CtlConnected || GetTickCount64() - LoadedAt <= BeatGrace; }
 DWORD WINAPI BeatWatch(void *) {
  for (;;) { Sleep(250); if (!DotMode || !PaintDots) continue; bool live = DotsLive();
   if (!live && !InterlockedExchange(&BeatLapsed, 1)) { if (DotsServedCount) Send("ToMe_GLYPHDOT status needs-relaunch served=" + std::to_string(DotsServedCount)); else Send("ToMe_GLYPHDOT status paused"); }
