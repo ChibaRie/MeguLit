@@ -80,6 +80,8 @@ function probeGame({dir,executable},{budgetMs=60000}={}){
  const t=Date.now(),deadline=t+budgetMs;let fingerprint=null;
  try{if(executable)fingerprint=require('./shared-adaptation.cjs').fingerprint(executable);}catch{}
  const inv=inventory(dir);let unsupported=null,preparing=null;
+ /* cx archives are decrypted here, not by a background worker the probe would not wait for */
+ try{require('./original-engines/scenes.cjs').cxPrepareSync(dir,{deadline:t+budgetMs/2});}catch{}
  try{const scenes=require('./original-engines/scenes.cjs');unsupported=scenes.unsupportedReason(dir);preparing=scenes.preparing(dir)?.kind||null;}catch{}
  const engines=[...nativeEngines(dir,executable),...runEngines(dir,{deadline})];
  const c=classify({engines,inventory:inv,unsupported,preparing});const best=engines.find(e=>e.id===c.detected);
