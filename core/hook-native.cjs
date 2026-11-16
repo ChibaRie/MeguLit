@@ -435,6 +435,12 @@ class HookNative{
     here takes the engine from the report (PAGE_ENGINES), positions go out as <engine>_screen_v1. */
  pageReset(){if(this.pageState)clearTimeout(this.pageState.timer);this.pageState=null;this.pageMode=null;this.flowMarkerAt=null;}
  pageNvl(){return this.pageMode?.mode==='nvl'&&this.now()-this.pageMode.at<120000;}
+ drawSourceToken(raw){
+  let text=require('./language-tracks.cjs').japaneseTrack(scriptSource(cleanSource(String(raw||''))));if(!text.trim())return null;
+  // Match the same script-language resolution and speaker split as the source route, without publishing a second line.
+  if(this.originalText&&this.originalText.kind!=='patch'){try{const r=this.resolveSource(text);if((r?.status==='exact'||r?.status==='high')&&r.japanese&&!r.alreadyJapanese)text=r.japanese;}catch{}}
+  text=splitSpeaker(text,this.knownSpeakers).text;return text.trim()?IslandSource.token(text):null;
+ }
  pageLine(m){
   // E320: a flow page (WoH) is laid out by the reader from the text box; the screen OCR locator placed the same lines again (doubles, jumps).
   if(this.flowPage&&m.engine==='ocr')return;
@@ -443,7 +449,7 @@ class HookNative{
   if(!m.nvl){if(this.pageMode?.mode==='nvl')this.trace(engine+' page mode off');this.pageMode={mode:'adv',engine,at:now};this.releasePageHeld();
    /* E550 ADV sentence: where the engine draws it (canvas pixels, with the canvas size) and its colour, so the reader places and
       paints each line like the game without calibration (web text-position.js, <engine>_adv_v1). */
-   if(engine!=='ocr'&&m.sw>0&&m.sh>0)this.emit({type:'hookTextPos',engine:engine+'_adv_v1',line:m.line,token:m.line,phase:m.phase,x0:m.x0,y0:m.y0,x1:m.x1,y1:m.y1,size:m.size,sw:m.sw,sh:m.sh,count:m.count,...(typeof m.color==='string'&&/^#[0-9a-f]{6}$/i.test(m.color)?{color:m.color}:{}),at:now});
+   if(engine!=='ocr'&&m.sw>0&&m.sh>0){const sourceToken=m.phase==='end'?this.drawSourceToken(m.text):null;this.emit({type:'hookTextPos',engine:engine+'_adv_v1',line:m.line,token:m.line,phase:m.phase,x0:m.x0,y0:m.y0,x1:m.x1,y1:m.y1,size:m.size,sw:m.sw,sh:m.sh,count:m.count,...(sourceToken!==null?{sourceToken}:{}),...(typeof m.color==='string'&&/^#[0-9a-f]{6}$/i.test(m.color)?{color:m.color}:{}),at:now});}
    /* 2026-11-13 (adapt/krkr-bgi, live 女王蜂の王房 めのう編): the engine line carries the whole sentence it drew, but the text stream
       the hook picked (a name-entry label) said nothing for it, so the reader stayed on 「めのう輝夜」. When no hook source arrived
       while this line was drawn, its drawn text is the line (same-text dedupe in emitSource keeps a late hook copy out). */

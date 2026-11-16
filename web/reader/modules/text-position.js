@@ -34,7 +34,7 @@
    if(!plausibleMap(next))return;map=next;if(options.persist!==false)send({type:'textPosMapSave',map:next,key:b.gameProfileKey?.()});repaint();return next;}
  };
  window.__tomeTextPosition=api;
- const priorStatus=b.galStatus;b.galStatus=m=>{if(m.type==='gameClosed'){api.resetSession('');}else if(typeof m.hookSource==='string'&&m.hookSource.trim())b.lineColorFor?.(m.hookSource,m.hookSequence);else if(m.gameStarted||m.gameProcessId){const old=identity.split('|'),next=String(m.gameProcessId||old[0]||'')+'|'+String(m.gameStarted||old[1]||'');if(identity&&next!==identity)api.resetSession(next);identity=next;}return priorStatus?.(m);};
+ const priorStatus=b.galStatus;b.galStatus=m=>{if(m.type==='gameClosed'){api.resetSession('');}else if(m.hookSource===null||typeof m.hookSource==='string'&&!m.hookSource.trim())b.lineColorReset?.();else if(typeof m.hookSource==='string')b.lineColorFor?.(m.hookSource,m.hookSequence);else if(m.gameStarted||m.gameProcessId){const old=identity.split('|'),next=String(m.gameProcessId||old[0]||'')+'|'+String(m.gameStarted||old[1]||'');if(identity&&next!==identity)api.resetSession(next);identity=next;}return priorStatus?.(m);};
  // ISLAND (CS2) reports dialogue in its message texture: pages sit in 720-high slots of a tall texture (y 4364-4837
  // seen for one on-screen page), and the message layer is drawn about 63 px right and 8 px down on the 1280x720
  // canvas (measured against the game's own screenshots). Normalized coordinates are reported as cs2_screen_v3, so
@@ -55,25 +55,28 @@
     colour learned for its kind (speech in 「」 or narration) at calibration, else the text colour. */
  // A colour belongs to a draw transaction, never to a wall-clock cache. Source can arrive on either side of begin.
  let colorSource='',colorSequence=null,colorDraw=null,latestDraw=null,waitingDraw=false;
+ const sourceToken=text=>text?window.TomeIslandSource?.token(text)??null:null;
  const paintLine=(color,text)=>{const gs=window.TomoyoGameStyle,p=b.galPreferences?.()||{},c=gs?.lineColor?gs.lineColor(p,text||'',color):'',root=document.documentElement.style;
   const on=!!c;document.body.classList.toggle('tome-line-color',on);if(on)root.setProperty('--tomoyo-gal-line-color',c);else root.removeProperty('--tomoyo-gal-line-color');};
  api.paintLine=paintLine;
  b.lineColorReset=()=>{colorSource='';colorSequence=null;colorDraw=latestDraw=null;waitingDraw=false;paintLine('','');};
  b.lineColorFor=(text,sequence)=>{const next=String(text||''),seq=Number.isSafeInteger(sequence)?sequence:null;
   if(next===colorSource&&(seq===null||seq===colorSequence))return;colorSource=next;colorSequence=seq;
-  if(colorDraw?.pending){colorDraw.pending=false;paintLine(colorDraw.color,next);return;}
+  if(colorDraw&&!colorDraw.claimed&&colorDraw.sourceToken!=null&&colorDraw.sourceToken===sourceToken(next)){colorDraw.claimed=true;waitingDraw=false;paintLine(colorDraw.color,next);return;}
   colorDraw=null;waitingDraw=true;paintLine('',next);
  };
  const lineColor=m=>{
   if(!/_adv_v1$/.test(String(m.engine||''))||!Number.isSafeInteger(m.line))return;
   if(latestDraw?.engine===m.engine&&m.line<latestDraw.line)return;
   const same=latestDraw?.engine===m.engine&&latestDraw.line===m.line;
-  if(m.phase==='end'&&!same)return;
-  if(!same){latestDraw={engine:m.engine,line:m.line};colorDraw={...latestDraw,pending:!waitingDraw,color:''};waitingDraw=false;}
+  const matches=Number.isSafeInteger(m.sourceToken)&&m.sourceToken===sourceToken(colorSource);
+  if(m.phase==='end'&&!same&&!Number.isSafeInteger(m.sourceToken))return;
+  if(!same||!colorDraw&&matches){latestDraw={engine:m.engine,line:m.line};colorDraw={...latestDraw,claimed:waitingDraw,color:'',sourceToken:null};waitingDraw=false;}
   // A late end for the previous source cannot recolour a sentence waiting for its own begin.
   if(!colorDraw||colorDraw.engine!==m.engine||colorDraw.line!==m.line)return;
   if(typeof m.color==='string'&&/^#[0-9a-f]{6}$/i.test(m.color))colorDraw.color=m.color;
-  paintLine(colorDraw.color,colorSource);
+  if(Number.isSafeInteger(m.sourceToken)){colorDraw.sourceToken=m.sourceToken;colorDraw.claimed=matches;}
+  if(colorDraw.claimed)paintLine(colorDraw.color,colorSource);
  };
  b.textPosition=(m,refresh=false)=>{m=cs2Canvas(m);
   if(!m||![m.x0,m.y0,m.x1,m.y1].every(unit)||m.x1<m.x0||m.y1<m.y0||!Number.isFinite(m.size)||m.size<=0||m.size>256)return;const firstSource=!last;last=m;lastAt=Date.now();

@@ -16,7 +16,7 @@ function fixture(t,prefs={}){
  const ctx={window,document,MutationObserver:class{observe(){}},getComputedStyle:()=>({getPropertyValue:()=>'',fontSize:'28px'}),Date,setTimeout,clearTimeout};
  vm.createContext(ctx);
  vm.runInContext(read('web/reader/modules/game-style.js'),ctx);window.TomoyoGameStyle=ctx.TomoyoGameStyle;
- for(const f of ['text-position','hook-reader'])vm.runInContext(read('web/reader/modules/'+f+'.js'),ctx);
+ for(const f of ['island-source','hook-reader','text-position'])vm.runInContext(read('web/reader/modules/'+f+'.js'),ctx);
  let now=100000;const events=[];
  const route=m=>{events.push(m);if(m.type==='hookTextPos')b.textPosition(m);else b.galStatus(m);};
  const hook=new HookNative({native:__dirname,hook:__dirname,logs:'Z:/no-color-fixture-log'},route,()=>{},()=>now);
@@ -24,7 +24,7 @@ function fixture(t,prefs={}){
  const box={nvl:false,same:false,x0:120,y0:540,x1:1000,y1:540,size:28,sw:1280,sh:720,count:0};
  return {b,hook,window,preferences,events,classes,
   source(text){now+=1000;hook.source({text,sourceName:'KiriKiriZ',origin:'live'},'');},
-  draw(line,color,phase='begin',engine='krkr'){hook.pageLine({type:'hookEngineLine',engine,line,phase,...box,...(color?{color}:{}),text:''});},
+  draw(line,color,phase='begin',engine='krkr',text=''){hook.pageLine({type:'hookEngineLine',engine,line,phase,...box,...(color?{color}:{}),text});},
   status:m=>b.galStatus(m),color:()=>vars.get('--tomoyo-gal-line-color'),
   tick(ms){now+=ms;t.mock.timers.tick(ms);}};
 }
@@ -44,12 +44,12 @@ test('real hook source / draw route changes read yellow to unread white within o
 
 test('begin-before-source and source-before-begin both pair their own colour',t=>{
  const f=fixture(t);
- f.draw(1,'#ffff00');f.source('描画の後から届いた既読の文章です。');assert.equal(f.color(),'#ffff00');
- f.draw(1,'#ffff00','end');
+ f.draw(1,'#ffff00');f.source('描画の後から届いた既読の文章です。');assert.equal(f.color(),undefined,'an early begin alone does not identify its source');
+ f.draw(1,'#ffff00','end','krkr','描画の後から届いた既読の文章です。');assert.equal(f.color(),'#ffff00');
  f.source('描画より先に届いた未読の文章です。');f.draw(2,'#eeeeee');assert.equal(f.color(),'#eeeeee');
  f.draw(2,'#ffffff','end');assert.equal(f.color(),'#ffffff','final glyph sample refines this sentence');
  f.draw(2,undefined,'end');assert.equal(f.color(),'#ffffff','an absent end sample retains evidence from the same draw');
- f.draw(3,'#aabbcc');f.draw(3,'#abcdef','end');f.source('始めも終わりも先に届いた文章です。');assert.equal(f.color(),'#abcdef');
+ f.draw(3,'#aabbcc');f.draw(3,'#abcdef','end','krkr','始めも終わりも先に届いた文章です。');f.source('始めも終わりも先に届いた文章です。');assert.equal(f.color(),'#abcdef');
 });
 
 test('late previous end, layout refresh and late previous begin cannot recolour the next sentence',t=>{
@@ -83,7 +83,48 @@ test('session reset discards colour transactions and accepts restarted draw IDs'
  const f=fixture(t);
  f.source('再起動より前に描いた文章です。');f.draw(50,'#ffff00');
  f.status({type:'gameClosed'});assert.equal(f.color(),undefined);
- f.draw(1,'#ffffff');f.source('再起動した後に描いた文章です。');assert.equal(f.color(),'#ffffff');
+ f.draw(1,'#ffffff');f.source('再起動した後に描いた文章です。');f.draw(1,'#ffffff','end','krkr','再起動した後に描いた文章です。');assert.equal(f.color(),'#ffffff');
+ f.status({hookSource:null});assert.equal(f.color(),undefined,'clearing the source also clears colour ownership');
+});
+
+test('a confirmed end can colour the current sentence when attach missed its begin',t=>{
+ const f=fixture(t),text='途中から接続しても今の文章を確かめます。';
+ f.source(text);f.draw(9,'#ffffff','end','krkr',text);assert.equal(f.color(),'#ffffff');
+ assert.equal(f.events.find(m=>m.type==='hookTextPos').sourceToken,require('../core/island-source.js').token(text));
+ f.draw(8,'#ffff00','end','krkr','前に表示していた文章です。');assert.equal(f.color(),'#ffffff');
+ f.draw(10,'#aabbcc','end','krkr','原文より先に終わりが届いた文章です。');assert.equal(f.color(),'#ffffff');
+ f.source('原文より先に終わりが届いた文章です。');assert.equal(f.color(),'#aabbcc');
+});
+
+test('duplicate source and extra flush draws cannot leave a previous sentence pending for the next',t=>{
+ const f=fixture(t),a='繰り返して描かれた既読の文章です。',b='次に進んでまだ描かれていない文章です。';
+ f.source(a);f.draw(1,'#ffff00');f.draw(1,'#ffff00','end','krkr',a);
+ f.draw(2,'#ffff00');f.draw(2,'#ffff00','end','krkr',a);
+ f.source(a);f.source(b);assert.equal(f.color(),undefined,'old confirmed text cannot pair with a different source');
+ f.draw(3,'#ffffff');assert.equal(f.color(),'#ffffff');
+});
+
+test('an unidentified early draw never lends its colour to the next source',t=>{
+ const f=fixture(t);
+ f.source('既読の日本語の文章です。');f.draw(1,'#ffff00');
+ f.draw(2,'#ffff00');f.draw(2,'#ffff00','end');
+ f.source('未読の日本語の文章です。');assert.equal(f.color(),undefined);
+});
+
+test('a repeated sentence with a new source sequence needs new draw evidence even when its token is identical',t=>{
+ const f=fixture(t),text='同じ文章でも別の表示なら新しい色を確かめます。';
+ f.status({hookSource:text,hookSequence:1});f.draw(1,'#ffff00');f.draw(1,'#ffff00','end','krkr',text);assert.equal(f.color(),'#ffff00');
+ f.status({hookSource:text,hookSequence:2});assert.equal(f.color(),undefined);
+ f.draw(2,'#ffffff');assert.equal(f.color(),'#ffffff');
+});
+
+test('draw identity uses source markup, speaker and original-language normalization',t=>{
+ const f=fixture(t),japanese='「まだ読んでいない日本語の文章です。」';
+ f.source('【時雨】'+japanese);
+ f.draw(1,'#ffffff','end','krkr','%p-1;%fMS ゴシック;【時雨】'+japanese);assert.equal(f.color(),'#ffffff');
+ f.source('翻訳された文章の日本語です。');
+ f.hook.originalText={kind:'original',resolve:raw=>raw==='这是一句中文。'?{status:'exact',japanese:'翻訳された文章の日本語です。',alreadyJapanese:false}:{status:'none'}};
+ f.draw(2,'#aabbcc','end','krkr','这是一句中文。');assert.equal(f.color(),'#aabbcc');
 });
 
 test('core and web automatic palettes prefer current draws over learned read tints and gradients',()=>{

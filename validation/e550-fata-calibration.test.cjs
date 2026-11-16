@@ -64,11 +64,13 @@ test('reader maps ADV canvas coordinates to the client and paints the line colou
  assert.equal(map.s,1600/800>1000/600?1000/600:2);assert.ok(Math.abs(map.bx-(1600-map.s*800)/2)<1e-9);assert.equal(map.by,0);assert.equal(map.dx,10);
  assert.equal(api.canvasMap({engine:'krkr_screen_v1',sw:800,sh:600},{clientWidth:1600,clientHeight:1000}),null,'page engines keep their own path');
  assert.equal(api.state().calibrated,false);
+ b.galStatus({hookSource:'地の文です。',hookSequence:1});
  b.textPosition({type:'hookTextPos',engine:'krkr_adv_v1',line:1,token:1,x0:312,y0:487,x1:740,y1:487,size:22,sw:800,sh:600,color:'#9d9d9d'});
  assert.equal(api.state().calibrated,true,'canvas-size engines count as calibrated');
  assert.equal(b.previewed.length,1,'box follows the line without a calibration map');const s=1000/600;
  assert.ok(Math.abs(b.previewed[0].x-Math.round(((s*312+(1600-s*800)/2)*100/1600)*10)/10)<0.11);
  assert.equal(doc.body.classes.has('tome-line-color'),true);assert.equal(doc.vars['--tomoyo-gal-line-color'],'#9d9d9d');
+ b.galStatus({hookSource:'「会話です。」',hookSequence:2});
  b.textPosition({type:'hookTextPos',engine:'krkr_adv_v1',line:2,token:2,x0:60,y0:487,x1:740,y1:487,size:22,sw:800,sh:600,color:'#ffffff'});
  assert.equal(doc.body.classes.has('tome-line-color'),true,'an engine colour also overrides a stale read tint when equal to the base');
  assert.equal(doc.vars['--tomoyo-gal-line-color'],'#ffffff');
