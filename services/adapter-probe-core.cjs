@@ -94,6 +94,8 @@ function judgeLanguage({lines=0,japaneseLines=0,dialogueLines,chineseLines,title
  if(knownChinese&&chineseLines>=base*.5&&chineseLines>=jp*2)return 'chinese-build';
  if(!knownChinese&&jp<base*.1&&chineseTitle(title))return 'chinese-build';/* old probe: the title says Chinese build, and kana lines are a sliver */
  if(jp>=1000||jp>=base*.3)return 'japanese';
+ /* an English (Latin-script) release read correctly: dialogue lines that are neither kana nor Han are Latin text, so the script was decoded fine and the build just is not Japanese */
+ if(dialogueLines>0){const latin=Math.max(0,dialogueLines-jp-(chineseLines||0));if(latin>=base*.5&&latin>=jp*2&&latin>=100)return 'not-japanese';}
  if(jp<Math.max(10,lines*.001)&&lines>=100)return 'decode-suspect';
  return jp>=Math.min(300,base*.05)?'japanese':'not-japanese';}
 

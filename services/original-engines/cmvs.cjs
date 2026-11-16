@@ -125,8 +125,11 @@ function pushed(d){const count=d.readUInt32LE(0x10),code=0x30,codeLen=d.readUInt
  for(let p=code;p+12<=text;p++){if(d[p]!==1||!d.subarray(p,p+4).equals(PUSH)||!d.subarray(p+8,p+12).equals(PUSH_END))continue;const s=kit.cstr(d,text+d.readUInt32LE(p+4),text+textLen);if(s&&s.length)out.push(s);p+=11;}
  return out;}
 const clean=t=>kit.trimBoth(t.replace(/\\n/g,'\n'));
+/* an English (or other Latin-script) release keeps its dialogue as plain ASCII pushes: a string with letters and a space, sentence punctuation or a
+   Capitalised word is text; resource ids, control codes (\wc) and lower-case identifiers stay anchors */
+const prose=t=>/[A-Za-z]/.test(t)&&(/\s/.test(t)||/[,.!?"'\u2026]/.test(t)||/^[A-Z][a-z]+$/.test(t));
 function parse(buf){const d=unpackPs2(buf);if(!d)return {lines:[],anchors:[]};const list=pushed(d),dec=kit.decoder(list),lines=[],anchors=[];
- for(const s of list){const t=s.some(c=>c>=0x80)?clean(dec.decode(s)):s.toString('latin1');if(!t)continue;if(kit.ascii(t)||RESOURCE.test(t))anchors.push(t);else lines.push(t);}
+ for(const s of list){const t=s.some(c=>c>=0x80)?clean(dec.decode(s)):s.toString('latin1');if(!t)continue;if(RESOURCE.test(t)||(kit.ascii(t)&&!prose(t)))anchors.push(t);else lines.push(kit.ascii(t)?clean(t):t);}
  return {lines,anchors};}
 
 const PS=/\.ps[23]$/i;

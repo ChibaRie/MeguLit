@@ -40,3 +40,13 @@ test('CMVS: a CPZ in data/pack alone (no cmvs32.exe) identifies the engine; unkn
  assert.equal(require('../services/original-engines/registry.cjs').engineOf(game)?.name,'CMVS (Purple Software)');
  assert.equal(cmvs.engine.unsupported(game),'CMVS_CPZ7');
 });
+
+test('CMVS: an English release keeps its ASCII dialogue as lines, resource ids and control codes stay anchors',()=>{
+ const r=cmvs.parse(F.ps2a(['\wc','message01.pb3','ev_etc24a','Girl','"Say..."','I look over to the lit fireplace.','???',{push:'bgm01.ogg'}]));
+ assert.deepEqual(r.lines,['Girl','"Say..."','I look over to the lit fireplace.']);assert.ok(r.anchors.includes('message01.pb3')&&r.anchors.includes('\wc')&&r.anchors.includes('ev_etc24a'));
+});
+test('probe: a correctly read English build is not-japanese, not decode-suspect',()=>{
+ const {judgeLanguage}=require('../services/adapter-probe-core.cjs');
+ assert.equal(judgeLanguage({lines:17856,japaneseLines:1,dialogueLines:17000,chineseLines:0,title:'Aoi Tori'}),'not-japanese');
+ assert.equal(judgeLanguage({lines:5000,japaneseLines:1,dialogueLines:40,chineseLines:0,title:'x'}),'decode-suspect');
+});
