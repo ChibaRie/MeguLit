@@ -28,6 +28,21 @@ function keyTable(seed){seed>>>=0;const keys=new Array(0x270);let st=seed;
 function crypt(buf,seed){const b=Buffer.from(buf),t=keyTable(seed);let n=Math.min(b.length,0xffcf);n-=n%4;
  for(let off=0x10,k=0;off<n;off+=4,k++)b.writeUInt32LE((b.readUInt32LE(off)^t[k&0xff])>>>0,off);return b;}
 
+/* The seed is a constant of the game's exe. key0 (the key of the first dword) depends only on initial keys 0, 1 and 0x18d, which
+   the LCG gives in closed form (state_j = A^j * seed + S_j), so every 4-byte window of the exe is tried against the first
+   instruction word of a script cheaply; survivors are confirmed by parsing the whole file. */
+const LA=0x1c587629,LC=0x10dce,LP=new Uint32Array(0x18e),LS=new Uint32Array(0x18e);
+{let p=1,s=0;for(let j=0;j<0x18e;j++){LP[j]=p;LS[j]=s;s=(Math.imul(s,LA)+LC)>>>0;p=Math.imul(p,LA)>>>0;}}
+const initKey=(seed,j)=>{const st=(Math.imul(LP[j],seed)+LS[j])>>>0,prod=Math.imul(st,0x10dcd)>>>0;return ((st&0xffff0000)|(((prod+1)>>>0)>>>16))>>>0;};
+function key0(seed){const k0=initKey(seed,0),k1=initKey(seed,1),k2=initKey(seed,0x18d);let m=((k1^k0)&0x7fffffff)^k0;const c=m&1;m=m>>>1;if(c)m^=0x9908b0df;m=(m^k2)>>>0;
+ m=(m^(m>>>11))>>>0;m=(m^((m&0xff3a58ad)<<7))>>>0;m=(m^((m&0xffffdf8c)<<15))>>>0;return ((((m>>>18)^m)>>>0)^seed)>>>0;}
+/* seeds hiding in an exe: every offset whose key0 turns the script's first instruction word into a plausible one */
+function seedsFromExe(exe,script){if(script.length<0x14||script.readUInt32LE(8)!==0x10)return [];const enc=script.readUInt32LE(0x10),out=[];
+ for(let i=0;i+4<=exe.length;i++){const sd=exe.readUInt32LE(i);if(!sd||sd===0xffffffff)continue;const w=(enc^key0(sd))>>>0;
+  if((w&0xffff)<0x200&&((w>>>16)&0xff)<=16&&((w>>>24)&0xf)<=10&&(w>>>28)===0)out.push(sd);}return out;}
+const exeCache=new Map();
+function exeSeeds(dir,script){const fs=require('node:fs'),path=require('node:path'),out=new Set();let names=[];try{names=fs.readdirSync(dir).filter(n=>/.exe$/i.test(n));}catch{}
+ for(const n of names){let b;try{const f=path.join(dir,n);if(fs.statSync(f).size>96<<20)continue;b=fs.readFileSync(f);}catch{continue;}for(const sd of seedsFromExe(b,script))out.add(sd);}return [...out];}
 /* [{op, ints, strs:[Buffer]}] when the whole file parses as the declared instruction count, else null */
 function walk(b){if(b.length<0x14||b.toString('latin1',1,4)!=='DLR')return null;const first=b.readUInt32LE(8),count=b.readUInt32LE(12);if(first<0x10||first>b.length||!count||count>5e6)return null;
  const out=[];let p=first;
@@ -38,11 +53,14 @@ function walk(b){if(b.length<0x14||b.toString('latin1',1,4)!=='DLR')return null;
  return p===b.length?out:null;}
 let lastSeed=null;
 /* the plain script bytes and its instructions: plain first, then the seed that worked last, then every known seed */
-function open(buf){const tries=[null,lastSeed,...SEEDS].filter((s,i,a)=>(s!==null||i===0)&&a.indexOf(s)===i);
- for(const s of tries){const b=s===null?buf:crypt(buf,s),w=walk(b);if(w){if(s!==null)lastSeed=s;return {bytes:b,ins:w};}}return null;}
+function open(buf,dir){const tries=[null,lastSeed,...SEEDS].filter((s,i,a)=>(s!==null||i===0)&&a.indexOf(s)===i);
+ for(const s of tries){const b=s===null?buf:crypt(buf,s),w=walk(b);if(w){if(s!==null)lastSeed=s;return {bytes:b,ins:w};}}
+ if(dir&&looksRld(buf))for(const s of exeSeeds(dir,buf)){const b=crypt(buf,s),w=walk(b);if(w){lastSeed=s;return {bytes:b,ins:w};}}
+ return null;}
 const skip=t=>!t||t==='*'||t==='$noname$';
 const rubyless=t=>t.replace(/《([^:》]*):[^》]*》/g,'$1');
-function parse(buf){const o=open(Buffer.isBuffer(buf)?buf:Buffer.from(buf));if(!o)return {lines:[],anchors:[]};
+let gameDir=null;
+function parse(buf){const o=open(Buffer.isBuffer(buf)?buf:Buffer.from(buf),gameDir);if(!o)return {lines:[],anchors:[]};
  const items=[];for(const i of o.ins){if(i.op===0x1c&&i.strs.length>=2)items.push({k:'say',label:i.strs[0],text:i.strs[1]});else if(i.op===0x15)for(const s of i.strs)items.push({k:'choice',text:s});}
  const dec=kit.decoder(items.flatMap(x=>[x.label,x.text].filter(Boolean))),lines=[];
  for(const x of items){const t=dec.decode(x.text);if(skip(t))continue;
@@ -50,8 +68,9 @@ function parse(buf){const o=open(Buffer.isBuffer(buf)?buf:Buffer.from(buf));if(!
   const s=kit.trimBoth(rubyless(t).replace(/\r\n|\r/g,'\n'));if(s)lines.push(s);}
  return {lines,anchors:[]};}
 /* titles that encrypt their scripts with a seed not in the table: say so */
-const looksRld=buf=>buf.length>=0x14&&buf.toString('latin1',1,4)==='DLR';
+function looksRld(buf){return buf.length>=0x14&&buf.toString('latin1',1,4)==='DLR';}
 const engine=kit.engine({id:'exhibit',hint:'rld\*.rld',loose:{name:/\.rld$/i,subs:['','rld','dat']},parse,test:n=>/\.rld$/i.test(n)});
-engine.unsupported=dir=>{let seen=false;for(const s of engine.scenes(dir).slice(0,40)){let b;try{b=s.read();}catch{continue;}if(!looksRld(b))continue;seen=true;if(open(b))return '';}return seen?'EXHIBIT_SEED':'';};
+const baseScenes=engine.scenes;engine.scenes=dir=>{gameDir=dir;return baseScenes(dir);};
+engine.unsupported=dir=>{let seen=false;for(const s of engine.scenes(dir).slice(0,40)){let b;try{b=s.read();}catch{continue;}if(!looksRld(b))continue;seen=true;if(open(b,dir))return '';}return seen?'EXHIBIT_SEED':'';};
 engine.REASONS={EXHIBIT_SEED:'这个 ExHIBIT 游戏的 rld 脚本用了按作品不同的种子加密，种子不在已知表里，暂时读不了'};
-module.exports={engine,parse,keyTable,crypt,walk,open};
+module.exports={engine,parse,keyTable,crypt,walk,open,key0,seedsFromExe};

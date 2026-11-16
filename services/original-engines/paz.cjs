@@ -73,8 +73,13 @@ const engine=kit.engine({id:'paz',hint:'scr.dat 或 scr.paz',overlay:false,
  archives:{find:dir=>scrDat(dir),list,entry:/\.sc$/i,keepPath:true,sort:false},parse,test:n=>/\.sc$/i.test(n),extra:{
  /* E452 the scenario opens but holds no Japanese (English Steam build, Chinese patch over scr.paz) */
  unsupported(dir){const f=scrDat(dir);if(!f)return '';const sc=(list(f)||[]).filter(e=>/\.sc$/i.test(e.name));if(!sc.length)return '';
-  for(const e of sc){try{if(kit.SJIS.decode(e.read()).split(/\r?\n/).some(r=>r.startsWith('.message')&&KANA.test(r)))return '';}catch{}}return 'PAZ_NO_JAPANESE';},
- REASONS:{PAZ_NO_JAPANESE:'这个版本的剧本里没有日文原文（英文版或装了汉化补丁），需要日文版的 scr 文件'},
+  /* the language the scenario is in, so the answer is exact: minori's Steam eden* ships Chinese (eden_cn.dll) or English only, never the Japanese text;
+     GBK bytes read as Shift-JIS are never plain ASCII, so a row that is not ASCII counts as Chinese */
+  let han=0,ascii=0;
+  for(const e of sc){try{const rows=kit.SJIS.decode(e.read()).split(/\r?\n/).filter(r=>r.startsWith('.message'));if(rows.some(r=>KANA.test(r)))return '';
+   for(const r of rows){if(/^[\x00-\x7f]*$/.test(r))ascii++;else han++;}}catch{}}
+  return han>ascii?'PAZ_CHINESE_ONLY':ascii?'PAZ_ENGLISH_ONLY':'PAZ_NO_JAPANESE';},
+ REASONS:{PAZ_CHINESE_ONLY:'这个版本的剧本是中文（Steam 中文版或汉化补丁），里面没有日文原文，需要日文版的 scr 文件',PAZ_ENGLISH_ONLY:'这个版本的剧本是英文（Steam 英文版），里面没有日文原文，需要日文版的 scr 文件',PAZ_NO_JAPANESE:'这个版本的剧本里没有日文原文（英文版或装了汉化补丁），需要日文版的 scr 文件'},
 }});
 // E450 the clips of voice.dat, for game-voice.cjs.
 function audio(file){if(!/[\\/](?:pm)?voice\.(?:dat|paz)$/i.test(file))return null;const l=list(file);return l?l.map(e=>({name:/\.\w{2,4}$/.test(e.name)?e.name:e.name+'.ogg',read:e.read})):null;}
