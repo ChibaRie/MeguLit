@@ -32,14 +32,15 @@ library ──probe (idle worker)──► results ──problems──► desen
 
 `probeGame()` runs every engine of `services/original-engines/scenes.cjs` plus System4/BGI against the folder and
 records, per game: the anonymous fingerprint key, an inventory (file counts, extensions, archive names with every non-ASCII
-character masked, the first 8 bytes of each archive as hex with bytes ≥ 0x80 masked, the recognised format), every
+character masked, the first 8 raw bytes of each archive as hex (never masked: a header is not text), the recognised format), every
 engine that recognised something (scenes, lines, Japanese lines, error code, time), the detected engine, line counts,
 lines per scene, and the step that failed:
 
 | step | meaning |
 |---|---|
 | `ok` | a reader read Japanese lines |
-| `unknown-pack` | archives no reader opens |
+| `unknown-pack` | archives no reader opens and no engine fingerprint matches |
+| `unsupported-engine` | no reader opens the archives, but `services/engine-fingerprint.cjs` names the engine (detail = engine id: `unity`, `leaf`, `age`, …) from GARbro-style magics, file names and folder markers; resource-only files (Unity `.resS`/`.resource`, FSB5) never count as script archives |
 | `decrypt-failed` | an engine knows the format but not the key (unsupported code, cx capture, decrypt errors) |
 | `parse-failed` | a reader opened scenes but found no lines, or loose scripts nobody reads |
 | `low-pairing` | read fine, but the Chinese script pairs below 98 % |

@@ -29,7 +29,7 @@
 const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto'),{fork,spawn}=require('node:child_process'),os=require('node:os');
 const d=require('./desensitize.cjs');
 const SCHEMA='megulit.runtime-findings',VERSION=1;
-const PROBLEM=['decrypt-failed','unknown-pack','parse-failed','timeout'];
+const PROBLEM=['decrypt-failed','unknown-pack','unsupported-engine','parse-failed','timeout'];
 const DEFAULTS={budgetMs:90000,budgetMb:768,delayMs:4*60000,freshDays:7};
 
 /* ---- settings ------------------------------------------------------------------------------------------------------- */

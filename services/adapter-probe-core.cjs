@@ -10,7 +10,7 @@
      inventory:{files,bytes,ext:{'.xp3':3,...},archives:[{name,size,magic,format}]}   names desensitized
      engines:[{id,scenes,lines,error,ms}]               every reader that recognised something (or failed trying)
      detected:'<engine id>'|null, lines, japaneseLines, sizes:[lines per scene]
-     step:'ok'|'unknown-pack'|'decrypt-failed'|'parse-failed'|'not-japanese'|'chinese-build'|'decode-suspect'|'no-script'|'low-pairing'|'timeout',
+     step:'ok'|'unknown-pack'|'unsupported-engine'|'decrypt-failed'|'parse-failed'|'not-japanese'|'chinese-build'|'decode-suspect'|'no-script'|'low-pairing'|'timeout',
      detail:'<code>', unsupported:{engine,code}|null, preparing:'unpack'|'capture'|null }
    No line of text leaves this function: only counts. The pairing part (low-pairing) is added by adapter-probe.cjs from
    the zero-latency state. */
@@ -33,16 +33,17 @@ let stampMemo=null;const reader=()=>stampMemo??=readerStamp();
 
 const head=(file,n=16)=>require('./original-engines/kit.cjs').head(file,n);/* E580 */
 function format(h){const hex=h.toString('hex');for(const [name,m] of MAGICS)if(m.length>=6&&hex.startsWith(m))return name;return '';}
-/* the magic of an archive as safe hex: printable ASCII and control bytes stay, every byte >= 0x80 is masked (it could be
-   the first character of a Japanese file name or text) */
-const magicHex=h=>Buffer.from(h.subarray(0,8).map(b=>b>=0x80?0x3f:b)).toString('hex');
+/* the magic of an archive: its first 8 raw bytes as hex. Never masked (E-probe 2026-11-16): masking bytes >= 0x80 to '?'
+   erased the fingerprint of every binary header (âge rio, Unity .resS), and 8 header bytes carry no readable text */
+const magicHex=h=>Buffer.from(h.subarray(0,8)).toString('hex');
+const fp=require('./engine-fingerprint.cjs');
 function inventory(dir,{depth=2,limit=6000}={}){
- const inv={files:0,bytes:0,ext:{},archives:[],scripts:0};const walk=(d,level)=>{let list;try{list=fs.readdirSync(d,{withFileTypes:true});}catch{return;}
+ const inv={files:0,bytes:0,ext:{},archives:[],scripts:0,markers:[]};const mark=n=>{const m=fp.markerOf(n);if(m&&!inv.markers.includes(m)&&inv.markers.length<8)inv.markers.push(m);};const walk=(d,level)=>{let list;try{list=fs.readdirSync(d,{withFileTypes:true});}catch{return;}
   for(const e of list){if(inv.files>=limit)return;const full=path.join(d,e.name);
-   if(e.isDirectory()){if(level<depth&&!SKIP_DIR.test(e.name))walk(full,level+1);continue;}if(!e.isFile())continue;
+   mark(e.name);if(e.isDirectory()){if(level<depth&&!SKIP_DIR.test(e.name))walk(full,level+1);continue;}if(!e.isFile())continue;
    let size=0;try{size=fs.statSync(full).size;}catch{}inv.files++;inv.bytes+=size;const ext=(path.extname(e.name).toLowerCase()||'(none)').slice(0,12);inv.ext[ext]=(inv.ext[ext]||0)+1;
    if(SCRIPTISH.test(e.name))inv.scripts++;
-   if((ARCHIVE.test(e.name)&&size>=4096||!NOT_ARCHIVE.test(e.name)&&size>=512&&level<=1)&&inv.archives.length<48){const h=head(full);inv.archives.push({name:maskString(path.relative(dir,full).replace(/\\/g,'/')).slice(0,120),size,magic:magicHex(h),format:format(h),_path:full});}}};
+   if((ARCHIVE.test(e.name)&&size>=4096||!NOT_ARCHIVE.test(e.name)&&size>=512&&level<=1)&&inv.archives.length<48){const h=head(full);inv.archives.push({name:maskString(path.relative(dir,full).replace(/\\/g,'/')).slice(0,120),size,magic:magicHex(h),format:format(h)||fp.archiveInfo(e.name,magicHex(h)).format,_path:full});}}};
  walk(dir,0);inv.archives.sort((a,b)=>b.size-a.size);return inv;}
 
 /* readers that scan whole folders for anything text-like: they must never outrank or delay a dedicated reader */
@@ -110,8 +111,10 @@ function classify({engines,inventory:inv,unsupported,preparing,title}){
  if(preparing==='capture')return {step:'decrypt-failed',detail:'encrypted-archive',detected:null};
  const opened=engines.find(e=>e.scenes>0);if(opened)return {step:'parse-failed',detail:opened.id,detected:null};
  const errored=engines.find(e=>e.error&&e.error!=='BUDGET');if(errored)return {step:'parse-failed',detail:errored.id+':'+errored.error,detected:null};
- const unknown=inv.archives.filter(a=>!['ogg','png','riff','zip','aar','afa','alk','qnt'].includes(a.format));
- const scenePck=unknown.find(a=>/(^|\/)scene\.pck$/i.test(a.name));if(scenePck)return {step:'unknown-pack',detail:'siglus-scene-pck',detected:null};if(unknown.length)return {step:'unknown-pack',detail:unknown[0].format||'magic:'+unknown[0].magic.slice(0,8),detected:null};
+ const unknown=inv.archives.filter(a=>!fp.MEDIA.has(a.format)&&!fp.archiveInfo(a.name,a.magic).resource);
+ const scenePck=unknown.find(a=>/(^|\/)scene\.pck$/i.test(a.name));if(scenePck)return {step:'unknown-pack',detail:'siglus-scene-pck',detected:null};
+ /* an engine MeguLit can name but has no reader for: say which, not a bare unknown-pack */
+ const known=fp.fingerprint(inv);if(known&&(unknown.length||(inv.markers||[]).length))return {step:'unsupported-engine',detail:known.engine,detected:null};if(unknown.length)return {step:'unknown-pack',detail:unknown[0].format||'magic:'+unknown[0].magic.slice(0,8),detected:null};
  if(inv.scripts)return {step:'parse-failed',detail:'loose-scripts',detected:null};
  return {step:'no-script',detail:'',detected:null};}
 
@@ -126,7 +129,7 @@ function probeGame({dir,executable,title},{budgetMs=60000}={}){
  if(!engines.some(e=>e.lines>0))try{const z=require('./original-engines/scenes.cjs').cxChineseOnly(dir);if(z)engines.push({id:'kirikiri-cx',scenes:1,parsed:1,lines:z.lines,japaneseLines:0,dialogueLines:z.lines,chineseLines:z.lines,error:'zh-patch-only',ms:0});}catch{}
  const c=classify({engines,inventory:inv,unsupported,preparing,title});const best=engines.find(e=>e.id===c.detected);
  return {schema:'megulit.probe-result',version:1,reader:reader(),ms:Date.now()-t,fingerprint:fingerprint?{key:fingerprint.key,exe:maskString(fingerprint.exe),size:fingerprint.size}:null,
-  inventory:{files:inv.files,bytes:inv.bytes,ext:inv.ext,scripts:inv.scripts,archives:inv.archives.map(({_path,...a})=>a)},
+  inventory:{files:inv.files,bytes:inv.bytes,ext:inv.ext,scripts:inv.scripts,markers:inv.markers,engine:c.step==='unsupported-engine'?c.detail:'',archives:fp.tidy(inv.archives.map(({_path,...a})=>a))},
   engines:engines.map(({sizes,...e})=>e),detected:c.detected,lines:best?.lines||0,japaneseLines:best?.japaneseLines||0,dialogueLines:best?.dialogueLines||0,chineseLines:best?.chineseLines||0,sizes:best?.sizes||[],
   step:c.step,detail:c.detail,unsupported:unsupported?{engine:unsupported.engine,code:unsupported.code}:null,preparing,_archives:inv.archives.map(a=>a._path)};
 }
