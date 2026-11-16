@@ -139,7 +139,6 @@ tbody tr:hover td{background:#121212}
       </div>
       <div class="spark" id="spark"></div>
       <div class="axis"><span id="ax0">-15m</span><span>now</span></div>
-      <div class="cap">正在用 MeguLit 的人 · 每 15 秒采样</div>
     </section>
 
     <section class="pane">
@@ -153,11 +152,11 @@ tbody tr:hover td{background:#121212}
     </section>
 
     <section class="pane">
-      <span class="ti">┤ <b>full dumps</b> ├</span><span class="tr">完整剧本上传</span>
+      <span class="ti">┤ <b>full dumps</b> ├</span><span class="tr">r2://probe-full</span>
       <div class="cnt">
-        <div><div class="v r" id="fReady">--</div><div class="k">ready 待适配</div></div>
-        <div><div class="v" id="fUp">--</div><div class="k">uploading 上传中</div></div>
-        <div><div class="v" id="fDone">--</div><div class="k">done 已适配</div></div>
+        <div><div class="v r" id="fReady">--</div><div class="k">ready</div></div>
+        <div><div class="v" id="fUp">--</div><div class="k">uploading</div></div>
+        <div><div class="v" id="fDone">--</div><div class="k">done</div></div>
       </div>
       <div class="m"><span class="k">r2</span><span class="bar" id="bR2"></span><span class="v" id="vR2">--</span></div>
       <div class="kv" style="margin-top:6px">
@@ -168,12 +167,12 @@ tbody tr:hover td{background:#121212}
     </section>
 
     <section class="pane">
-      <span class="ti">┤ <b>why</b> ├</span><span class="tr">读不好的原因</span>
+      <span class="ti">┤ <b>why</b> ├</span><span class="tr">by step</span>
       <div id="steps"><div class="empty">-- no data</div></div>
     </section>
 
     <section class="pane wide">
-      <span class="ti">┤ <b>targets</b> ├</span><span class="tr">多少人在读</span>
+      <span class="ti">┤ <b>targets</b> ├</span><span class="tr">by reporters</span>
       <div id="top"><div class="empty">-- no rows</div></div>
     </section>
 
@@ -242,12 +241,10 @@ function sparkStr(el,vals,cw){var w=cols(el,cw),v=vals.slice(-w),mx=Math.max(1,M
 function spark(){var el=$("spark");el.innerHTML=sparkStr(el,hist.map(function(p){return p[1];}),8.4);$("ax0").textContent="-"+Math.round(cols(el,8.4)*PERIOD/60)+"m";
  var l=$("lat");l.innerHTML=sparkStr(l,lath.map(function(p){return p[1];}),7.3);}
 
-var STEP_CN={"unknown-pack":"封包不认识","not-japanese":"不是日文","parse-failed":"解析失败","decrypt-failed":"解密失败","chinese-build":"汉化版","low-pairing":"中日配不上","timeout":"超时"};
 function renderSteps(list){var w=$("steps");
  if(!list||!list.length){w.innerHTML='<div class="empty">-- no data</div>';return;}
  var mx=Math.max.apply(null,list.map(function(s){return s.n;}));
- w.innerHTML=list.map(function(s,i){return '<div class="m"><span class="k" title="'+esc(s.step)+'">'+esc(s.step)+'</span><span class="bar" id="sb'+i+'"></span><span class="v">'+s.n+'</span></div>';}).join("")+
-  '<div class="cap">'+list.map(function(s){return STEP_CN[s.step]?esc(s.step)+" = "+STEP_CN[s.step]:"";}).filter(Boolean).join(" · ")+'</div>';
+ w.innerHTML=list.map(function(s,i){return '<div class="m"><span class="k" title="'+esc(s.step)+'">'+esc(s.step)+'</span><span class="bar" id="sb'+i+'"></span><span class="v">'+s.n+'</span></div>';}).join("");
  list.forEach(function(s,i){meter($("sb"+i),s.n,mx);});}
 function stateTag(s){return '<span class="st '+esc(s)+'">'+esc(s||"-")+'</span>';}
 function renderTop(list){var w=$("top");
