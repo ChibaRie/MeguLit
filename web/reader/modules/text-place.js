@@ -12,7 +12,7 @@
   if (!b || !document.body) { document.addEventListener('DOMContentLoaded', install, { once: true }); return; }
   if (b.textPlace) return;
   let unmatched = null; const UNMATCHED_MS = 400;
-  let on = false, line = null, frame = 0, lastGeom = '', boxBottom = 0, boxKey = '', anchor = null, anchorLine = '', anchorMode = true, drawnByGame = '', page = null; const clones = new Map();
+  let on = false, line = null, frame = 0, lastGeom = '', boxBottom = 0, boxKey = '', anchor = null, anchorLine = '', anchorLimit = NaN, anchorMode = true, drawnByGame = '', page = null; const clones = new Map();
   const style = document.createElement('style');
   style.textContent = [
     'body.megulit-placed .sentence-window.megulit-place-window{left:0!important;top:0!important;right:auto!important;bottom:auto!important;width:100vw!important;height:100vh!important;max-height:none!important;margin:0!important;padding:0!important;background:none!important;border:0!important;box-shadow:none!important;outline:0!important;backdrop-filter:none!important;overflow:visible!important;transform:none!important;pointer-events:none}',
@@ -87,6 +87,10 @@
     for (const p of ['left', 'top']) win.style.removeProperty(p);
     const tok = sentence.querySelector('.char-token'), wr = win.getBoundingClientRect(), tr = tok?.getBoundingClientRect();
     if (tr && tr.width) { set(win, 'left', (wr.left + anchor[0] - tr.left) + 'px'); set(win, 'top', (wr.top + anchor[1] - tr.top) + 'px'); set(win, 'right', 'auto'); set(win, 'bottom', 'auto'); set(win, 'margin', '0'); }
+    /* the translation stays above the game's own bar (1.3 rows over the client bottom): smaller, never lower; the Japanese keeps its size */
+    const row = win.querySelector('.tomoyo-cn-row'), parts = row ? [...row.querySelectorAll('*')] : [];
+    for (const o of parts) o.style.removeProperty('font-size');
+    if (row && Number.isFinite(anchorLimit)) { const fs0 = parseFloat(getComputedStyle(parts[0] || row).fontSize) || 16; for (let k = 0, fs = fs0; k < 6 && row.getBoundingClientRect().bottom > anchorLimit && fs > 10; k++) { const rb = row.getBoundingClientRect(); fs = Math.max(10, Math.floor(fs * Math.max(.6, (anchorLimit - rb.top) / Math.max(1, rb.height)))); for (const o of parts.length ? parts : [row]) set(o, 'font-size', fs + 'px'); } }
   }
   function release(fallback = false) {
     if (!page) document.body.classList.remove('megulit-placed');
@@ -337,6 +341,7 @@
       if (anchor && anchorLine === lineKey && Math.abs(a[0] - anchor[0]) < size * 2 && Math.abs(a[1] - anchor[1]) < size * 2) a = anchor;
       else if (anchor && Math.abs(a[0] - anchor[0]) <= Math.max(6, size * .6) && Math.abs(a[1] - anchor[1]) <= Math.max(6, size * .6)) a = anchor;
       anchor = a; anchorLine = lineKey;
+      anchorLimit = map.bounds[3] - (median(got.map(b => b[3])) || size) * 1.3;
       release(true);
       pin(win, sentence);
       return;
