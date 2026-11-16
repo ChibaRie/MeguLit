@@ -85,6 +85,9 @@ const html = `<!doctype html><html><head><meta charset="utf-8"><style>
     assert.deepStrictEqual(await page.evaluate(() => window.__tomoyoChinese.textPlaceAlign([...'そして――殺人――。'], [...'そして―殺人―。'])), [0, 1, 2, 3, 3.5, 4, 5, 6, 6.5, 7], 'two reader dashes share the game dash');
     assert.deepStrictEqual(await page.evaluate(() => window.__tomoyoChinese.textPlaceAlign([...'晴れ。晴れ。'], [...'晴れ。'])), [0, 1, 2, null, null, null], 'a repeated copy is not drawn twice');
     assert.strictEqual(await page.evaluate(() => window.__tomoyoChinese.textPlaceAlign([...'あいう'], [...'かきく'])), null, 'another line');
+    /* 2026-11-16 (user: 「今日も明　　後日も」): repeated stretches and long runs of the game's own extra glyphs (ruby) keep every character */
+    assert.deepStrictEqual(await page.evaluate(() => window.__tomoyoChinese.textPlaceAlign([...'今日も明日も明後日も'], [...'今日も明日も明後日も'])), [0, 1, 2, 3, 4, 5, 6, 7, 8, 9], 'repeated 日も明');
+    assert.deepStrictEqual(await page.evaluate(() => window.__tomoyoChinese.textPlaceAlign([...'今日も明日も明後日も'], [...'きょう今日もあした明日もあさって明後日も'])), [3, 4, 5, 9, 10, 11, 16, 17, 18, 19], 'ruby runs between the characters');
     await page.evaluate(() => window.__tomoyoChinese.textPlace({ fallback: true, text: '今日は晴れ' })); await frame();
     /* 2026-11-16 (user recording, 死に逝く君、館に芽吹く憎悪): the translation keeps one size for the box (no small-then-large),
        stays inside the text box (never over the game's UI bar under it) and is not shown while the line is still typing */

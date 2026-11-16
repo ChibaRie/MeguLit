@@ -56,13 +56,18 @@
   const DASHES = /[‒-―─━⸺⸻]/;
   const same = (a, b) => a === b || (DASHES.test(a) && DASHES.test(b));
   function align(reader, placed) {
-    const out = new Array(reader.length).fill(null); let p = 0, found = 0;
-    for (let j = 0; j < reader.length; j++) {
-      const prev = j > 0 ? out[j - 1] : null;
-      if (prev != null && prev % 1 === 0 && DASHES.test(reader[j]) && DASHES.test(placed[prev]) && !DASHES.test(placed[p] || '')) { out[j] = prev + .5; continue; }
-      let k = -1; for (let q = p; q < placed.length && q <= p + 6; q++) if (same(reader[j], placed[q])) { k = q; break; }
-      if (k >= 0) { out[j] = k; p = k + 1; found++; }
+    /* 2026-11-16 (user: 「今日も明日も明後日も」 drawn as 「今日も明　　後日も」): a greedy match with a short look-ahead lost
+       repeated stretches (日も明 twice) and anything after a long run of the game's extra glyphs (ruby, a doubled copy).
+       A longest common subsequence keeps every character the two texts share, in order, earliest copy first. */
+    const n = reader.length, m = placed.length, out = new Array(n).fill(null); let found = 0;
+    const L = Array.from({ length: n + 1 }, () => new Uint16Array(m + 1));
+    for (let j = n - 1; j >= 0; j--) for (let q = m - 1; q >= 0; q--) L[j][q] = same(reader[j], placed[q]) ? L[j + 1][q + 1] + 1 : Math.max(L[j + 1][q], L[j][q + 1]);
+    for (let j = 0, q = 0; j < n && q < m;) {
+      if (same(reader[j], placed[q]) && L[j][q] === L[j + 1][q + 1] + 1) { out[j] = q; found++; j++; q++; }
+      else if (L[j][q + 1] >= L[j + 1][q]) q++; else j++;
     }
+    /* two reader dashes on one game dash: the second takes the right half of the first's box */
+    for (let j = 1; j < n; j++) { const prev = out[j - 1]; if (out[j] == null && prev != null && prev % 1 === 0 && DASHES.test(reader[j]) && DASHES.test(placed[prev]) && !DASHES.test(placed[prev + 1] || '')) out[j] = prev + .5; }
     const need = Math.ceil(.6 * Math.min(placed.length, reader.length));
     return found && found >= need ? out : null;
   }
