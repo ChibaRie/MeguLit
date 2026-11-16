@@ -9,6 +9,12 @@
 #   .\Release.ps1 -Version 1.4.9-beta.1 -Notes notes.md -Beta  # beta: branch beta, GitHub prerelease, not on the site
 #   -IncludeWorkingChanges                                 # also commit the uncommitted changes in this release
 #
+# Resume: progress is recorded per stage in %TEMP%\megulit-release-state-<tag>.json (sync, bump, build, commit, push, release,
+# upload, verify). If a run fails, run the SAME command again: finished stages are skipped, the half-done version bump is not
+# treated as a dirty tree, an unchanged build is reused, and an unstable self-test gets one automatic retry. The state is
+# dropped on success; -Restart forgets it. A dry run keeps its own state (-dry suffix). MEGULIT_RELEASE_FAIL_AFTER=<stage>
+# injects a failure right after that stage (to test the resume).
+#
 # notes.md: Chinese first, then a line with only ---, then English (the in-app update card shows the reader's half).
 # The package keeps the updater contract: MeguLit-vX.Y.Z-win-x64.zip with every entry under MeguLit/ (see
 # services/update.cjs). Its file list is the previous release's list plus newly tracked files under core/, services/,
@@ -21,6 +27,7 @@ param(
  [switch]$SkipBuild, # reuse the last -Prepare (or release) build when the tree and MeguLit.exe are unchanged since
  [switch]$Hotfix,    # replace the package of the latest release (same version); installs from v1.1.8 on pick it up
  [switch]$IncludeWorkingChanges, # ship uncommitted changes in the release commit instead of refusing
+ [switch]$Restart, # forget the recorded progress of an earlier failed run and start from the first stage
  [switch]$Beta      # user 2026-11-13: commit to branch beta and publish a GitHub prerelease. The site, the mirror and the
                     # in-app updater read releases/latest, which skips prereleases, so only stable releases reach them
 )
@@ -33,7 +40,8 @@ $Root=$PSScriptRoot
 Set-Location $Root
 Add-Type -AssemblyName System.IO.Compression,System.IO.Compression.FileSystem
 function Step($m){Write-Host "== $m" -ForegroundColor Yellow}
-function G{ & git.exe @args; if($LASTEXITCODE -ne 0){throw "git $($args -join ' ') failed"} }
+# A native program's stderr text (vswhere, git progress...) is not a failure: only the exit code is (E-resume).
+function G{ $e=$ErrorActionPreference;$ErrorActionPreference='Continue';try{& git.exe @args}finally{$ErrorActionPreference=$e}; if($LASTEXITCODE -ne 0){throw "git $($args -join ' ') failed"} }
 function Utf8NoBom{New-Object System.Text.UTF8Encoding($false)}
 function ReadText($p){[IO.File]::ReadAllText((Join-Path $Root $p),[Text.Encoding]::UTF8)}
 function WriteText($p,$t){[IO.File]::WriteAllText((Join-Path $Root $p),$t,(Utf8NoBom))}
@@ -79,9 +87,30 @@ function Api($method,$path,$body=$null){
  Invoke-RestMethod @p
 }
 
+# ---------- resume state ----------
+$StateFile=Join-Path $env:TEMP ("megulit-release-state-$Tag"+$(if($DryRun){'-dry'}else{''})+'.json');$State=@{head='';stages=@{};releaseId=0;commit=''};$Resuming=$false
+$headNow=(& git.exe rev-parse HEAD)
+if($Restart -and (Test-Path $StateFile)){Remove-Item $StateFile -Force}
+if(-not $Prepare -and (Test-Path $StateFile)){
+ try{$s=Get-Content $StateFile -Raw|ConvertFrom-Json;$ok=($s.head -eq $headNow) -or ($s.commit -and $s.commit -eq $headNow)
+  if($ok){foreach($p in $s.stages.PSObject.Properties){$State.stages[$p.Name]=$p.Value};$State.head=$s.head;$State.commit=$s.commit;$State.releaseId=[int]$s.releaseId;$Resuming=$State.stages.Count -gt 0}
+  else{Write-Host '  recorded progress is for a different commit; starting from the first stage'}}catch{Write-Host "  progress file unreadable ($($_.Exception.Message)); starting over"}
+}
+if(-not $State.head){$State.head=$headNow}
+if($Resuming){Write-Host ("  RESUMING $Tag after: "+(($State.stages.Keys|Sort-Object) -join ', '));$SkipBuild=[switch]$true}
+function SaveState{if(-not $Prepare){($State|ConvertTo-Json -Depth 4)|Set-Content $StateFile -Encoding ascii}}
+function Done($n){[bool]$State.stages[$n]}
+function Mark($n){$State.stages[$n]=$true;SaveState;if($env:MEGULIT_RELEASE_FAIL_AFTER -eq $n){throw "injected failure after stage $n (MEGULIT_RELEASE_FAIL_AFTER)"}}
+function Skip($n){Write-Host "  stage $n already done; skipping"}
+SaveState
+
 Step 'sync main'
-if(-not $DryRun -and -not $Prepare){
+if($DryRun -or $Prepare){}
+elseif(Done 'sync'){Skip 'sync'}
+else{
  $dirty=git status --porcelain --untracked-files=no
+ # an earlier run of this release already bumped the version files: that is our own change, not someone else's
+ if($Resuming){$bumpFiles='web/about.js','desktop/Cargo.toml','desktop/tauri.conf.json','desktop/Cargo.lock','README.md';$dirty=@($dirty|Where-Object{$l=$_;-not ($bumpFiles|Where-Object{$l -like "* $_"})})}
  if($dirty -and -not $IncludeWorkingChanges){throw "Working tree has uncommitted changes (add -IncludeWorkingChanges to ship them):`n$dirty"}
  G fetch -q origin
  if($Beta){
@@ -94,6 +123,7 @@ if(-not $DryRun -and -not $Prepare){
   G checkout -q main
   G merge -q --ff-only origin/main
  }
+ $State.head=(& git.exe rev-parse HEAD);Mark 'sync'
 }
 $latest=Invoke-RestMethod -Uri "https://api.github.com/repos/$Repo/releases/latest" -Headers $Headers
 $prev=$latest.tag_name -replace '^v',''
@@ -107,6 +137,7 @@ Write-Host "previous release v$prevLabelShown -> v$Label ($Tag)"
 
 # ---------- version ----------
 Step 'bump version'
+if(Done 'bump'){Skip 'bump'}else{
 Swap 'web/about.js' "export const VERSION='\d+\.\d+\.\d+(?:[a-z]|-beta\.\d+)?';" "export const VERSION='$Label';"
 Swap 'desktop/Cargo.toml' '(?m)^version = "\d+\.\d+\.\d+"' "version = `"$Version`""
 Swap 'desktop/tauri.conf.json' '"version": "\d+\.\d+\.\d+"' "`"version`": `"$Version`""
@@ -117,6 +148,7 @@ $readme=[regex]::Replace($readme,'MeguLit-v\d+\.\d+\.\d+-win-x64\.zip',$Asset)
 $readme=[regex]::Replace($readme,'\u4e0b\u8f7d v\d+\.\d+\.\d+',"$([char]0x4e0b)$([char]0x8f7d) $Tag")
 if($readme -ne (ReadText 'README.md')){WriteText 'README.md' $readme}
 }
+Mark 'bump'}
 
 # ---------- build ----------
 Step 'build and test'
@@ -137,13 +169,17 @@ if($SkipBuild -and (Test-Path $stampFile) -and (Test-Path $exePath)){
 if($reuse){Write-Host "  nothing changed since the last build of $Tag; reusing MeguLit.exe"}
 else{
  if($SkipBuild){Write-Host '  building (no reusable build for this version)'}
- & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Root 'Build.ps1') -Check
- if($LASTEXITCODE -ne 0){throw 'Build or tests failed'}
+ # stderr from the child (vswhere...) is not a failure; only its exit code is. One automatic retry: the timing-sensitive
+ # self-tests (D2D and friends) flake now and then, and a second run is cheap (cargo is incremental).
+ $ea=$ErrorActionPreference;$ErrorActionPreference='Continue'
+ try{for($try=1;$try -le 2;$try++){& powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Root 'Build.ps1') -Check;if($LASTEXITCODE -eq 0){break};if($try -eq 1){Write-Host '  build/tests failed; retrying once (unstable self-test?)' -ForegroundColor Yellow}}}finally{$ErrorActionPreference=$ea}
+ if($LASTEXITCODE -ne 0){throw 'Build or tests failed (twice)'}
  @{version=$Version;exe=(Get-FileHash $exePath -Algorithm SHA256).Hash} | ConvertTo-Json | Set-Content $stampFile
 }
+if(-not $Prepare){Mark 'build'}
 if($Prepare){Step "prepared $Tag (built and tested; release later with -SkipBuild)";return}
 # E667: also when the build is reused, no native binary older than its sources (native/native-builds.json) is packaged.
-Push-Location $Root;try{& node tools/native-stale.cjs;if($LASTEXITCODE -ne 0){throw 'A native binary is older than its sources or lacks its marker; run Build.ps1 (see tools/native-stale.cjs output)'}}finally{Pop-Location}
+Push-Location $Root;try{$ea=$ErrorActionPreference;$ErrorActionPreference='Continue';& node tools/native-stale.cjs;$ErrorActionPreference=$ea;if($LASTEXITCODE -ne 0){throw 'A native binary is older than its sources or lacks its marker; run Build.ps1 (see tools/native-stale.cjs output)'}}finally{Pop-Location}
 
 # ---------- package ----------
 Step 'package'
@@ -239,24 +275,27 @@ if(-not $Beta){
  }finally{$za.Dispose();$zb.Dispose()}
  if($HotPath){Write-Host "$HotAsset  $($changed.Count) files  $((Get-Item $HotPath).Length) bytes (hot update from v$prevLabelShown)"}else{Write-Host "  no hot package: $why"}
 }
-if($DryRun){if($HotPath){Write-Host "  hot package at $HotPath"};& git.exe checkout -- web/about.js desktop/Cargo.toml desktop/tauri.conf.json desktop/Cargo.lock README.md;Step "dry run finished; package at $zipPath (version files restored)";return}
+if($DryRun){if($HotPath){Write-Host "  hot package at $HotPath"};& git.exe checkout -- web/about.js desktop/Cargo.toml desktop/tauri.conf.json desktop/Cargo.lock README.md;Remove-Item $StateFile -Force -ErrorAction SilentlyContinue;Step "dry run finished; package at $zipPath (version files restored)";return}
 
 # ---------- commit ----------
 # Direct commit on main, no pull request (user 2026-11-10: PRs opened through the GitHub integration list the bot as a
 # contributor). The commit carries only the author's own identity.
 Step "commit and push to $Branch"
+if(Done 'commit'){Skip 'commit'}else{
 if((G rev-parse --abbrev-ref HEAD) -ne $Branch){G checkout -q $Branch}
 G add -A
 # E400 a hotfix of the same version may change nothing tracked (the fix was committed before): push what is there
 & git.exe diff --cached --quiet
 if($LASTEXITCODE -ne 0){G -c "user.name=$Author" -c "user.email=$Email" commit -q -m $(if($Label -ne $Version){"v$Label"}elseif($Hotfix){"$Tag hotfix"}else{"$Tag"})}else{Write-Host '  nothing new to commit'}
-G push -q origin $Branch
+$State.commit=(& git.exe rev-parse HEAD);Mark 'commit'}
+if(Done 'push'){Skip 'push'}else{G push -q origin $Branch;Mark 'push'}
 $merged=@{sha=(G rev-parse HEAD)}
 Write-Host "pushed to $Branch at $($merged.sha)"
 
 # ---------- release ----------
 Step 'publish release'
-if($Hotfix){
+if(Done 'release'){Skip 'release';$rel=Api GET "/releases/$($State.releaseId)";$oldAssets=@($rel.assets | Where-Object {$_.name -eq $Asset})}
+elseif($Hotfix){
  # same version: swap the package, append the notes; the tag stays on the first commit of this version
  $rel=Api GET "/releases/tags/$Tag"
  # E401 the old package stays until the new one is up (deleting first left a window where update checks saw no package)
@@ -270,28 +309,34 @@ if($Hotfix){
 }else{
  $rel=Api POST '/releases' @{tag_name=$Tag;target_commitish=$merged.sha;name="MeguLit v$Label";body=($DownloadLine+"`n`n## MeguLit v$Label`n`n"+(LangBlocks $Zh $En $false));make_latest='true'}
 }
+if(-not (Done 'release')){$State.releaseId=[int]$rel.id;Mark 'release'}
 # E386 upload with gh: Invoke-RestMethod hung for over an hour on v1.3.0 with no timeout; gh finished in seconds
+if(Done 'upload'){Skip 'upload'}else{
 $ghExe=(Get-Command gh -ErrorAction SilentlyContinue).Source;if(-not $ghExe){$ghExe='E:/Apps/tools/gh/bin/gh.exe'}
 $uploadPath=$zipPath;if($Hotfix){$uploadPath=Join-Path $work ('next-'+$Asset);Copy-Item $zipPath $uploadPath -Force}
 $job=Start-Job -ScriptBlock {param($gh,$tag,$zip,$repo) & $gh release upload $tag $zip -R $repo --clobber 2>&1} -ArgumentList $ghExe,$Tag,$uploadPath,$Repo
 if(-not (Wait-Job $job -Timeout 900)){Stop-Job $job;throw 'Upload did not finish in 15 minutes'};Receive-Job $job | Out-Host;Remove-Job $job
 if($Hotfix){$next=(Api GET "/releases/$($rel.id)").assets | Where-Object {$_.name -eq ('next-'+$Asset)} | Select-Object -First 1;if(-not $next){throw 'Uploaded asset not found on the release'}
  foreach($old in $oldAssets){Api DELETE "/releases/assets/$($old.id)" | Out-Null};Api PATCH "/releases/assets/$($next.id)" @{name=$Asset} | Out-Null}
+Mark 'upload'}
+$ghExe=(Get-Command gh -ErrorAction SilentlyContinue).Source;if(-not $ghExe){$ghExe='E:/Apps/tools/gh/bin/gh.exe'}
 $a=(Api GET "/releases/$($rel.id)").assets | Where-Object {$_.name -eq $Asset} | Select-Object -First 1
 if(-not $a){throw 'Uploaded asset not found on the release'}
 if($a.size -ne $size){throw "Uploaded size $($a.size) differs from $size"}
 if($a.digest -and $a.digest -ne "sha256:$hash"){throw "GitHub digest $($a.digest) differs from sha256:$hash"}
 # the hot package goes up after the full one; any older hot package on this release (an earlier hotfix) is removed,
 # since it would bring installs to files this release no longer has
-if($HotPath){
+if(Done 'hot'){Skip 'hot'}elseif($HotPath){
  $job=Start-Job -ScriptBlock {param($gh,$tag,$zip,$repo) & $gh release upload $tag $zip -R $repo --clobber 2>&1} -ArgumentList $ghExe,$Tag,$HotPath,$Repo
  if(-not (Wait-Job $job -Timeout 600)){Stop-Job $job;throw 'Hot package upload did not finish in 10 minutes'};Receive-Job $job | Out-Host;Remove-Job $job
  $hotHash=(Get-FileHash $HotPath -Algorithm SHA256).Hash.ToLower()
  $all=(Api GET "/releases/$($rel.id)").assets;$h=$all | Where-Object {$_.name -eq $HotAsset} | Select-Object -First 1
  if(-not $h -or ($h.digest -and $h.digest -ne "sha256:$hotHash")){throw 'Hot package missing or its digest differs'}
  foreach($stale in @($all | Where-Object {$_.name -match '-hot-from-' -and $_.name -ne $HotAsset})){Api DELETE "/releases/assets/$($stale.id)" | Out-Null}
+ Mark 'hot'
 }elseif($Hotfix){foreach($stale in @((Api GET "/releases/$($rel.id)").assets | Where-Object {$_.name -match '-hot-from-'})){Api DELETE "/releases/assets/$($stale.id)" | Out-Null}}
 
+if(-not (Done 'hot')){Mark 'hot'}
 Step 'verify download'
 $back=Join-Path $work 'check.zip'
 # a hotfix replaces a file under the same URL; the download edge can serve the old one for a few seconds
@@ -300,7 +345,7 @@ $back=Join-Path $work 'check.zip'
 $ok=$false;try{Invoke-WebRequest -Uri $a.browser_download_url -OutFile $back -UseBasicParsing -TimeoutSec 120;$ok=(Get-FileHash $back -Algorithm SHA256).Hash.ToLower() -eq $hash;if(-not $ok){throw 'Downloaded package hash differs'}}catch{if($_.Exception.Message -eq 'Downloaded package hash differs'-and -not ($Hotfix -and $a.digest -eq "sha256:$hash")){throw};Write-Host "  download check skipped (slow network): $($_.Exception.Message)";if(-not $a.digest){throw 'No GitHub digest and no download to check'}}
 # An installed copy of the previous package (its version label and package digest recorded as after an update) must see
 # this release as an update: a new version by number, a hotfix by package digest (E358: 1.2.8a slipped through).
-if($Beta){Remove-Item $work -Recurse -Force;Step "beta released (prerelease, not on the site or in app updates) $($rel.html_url)";return}
+if($Beta){Remove-Item $StateFile -Force -ErrorAction SilentlyContinue;Remove-Item $work -Recurse -Force;Step "beta released (prerelease, not on the site or in app updates) $($rel.html_url)";return}
 $prevDigest=(Get-FileHash $prevZip -Algorithm SHA256).Hash.ToLower();$probeRoot=Join-Path $work 'probe';New-Item -ItemType Directory (Join-Path $probeRoot 'data') -Force | Out-Null
 $prevLabel=if($Hotfix){(Select-String -Path (Join-Path $Root 'web/about.js') -Pattern "VERSION='([^']+)'" | Select-Object -First 1).Matches[0].Groups[1].Value}else{$prev}
 if($Hotfix){$prevLabel=(& git.exe show "HEAD~1:web/about.js" | Select-String -Pattern "VERSION='([^']+)'" | Select-Object -First 1).Matches[0].Groups[1].Value}
@@ -310,4 +355,5 @@ $probe=& node -e "require('./services/update.cjs').check(process.argv[1],fetch,p
 Write-Host "update check from v${prevLabel}: $probe"
 if($probe -notmatch ' true'){throw "An installed v$prevLabel does not see this release as an update: $probe"}
 Remove-Item $work -Recurse -Force
+Remove-Item $StateFile -Force -ErrorAction SilentlyContinue
 Step "released $($rel.html_url)"
