@@ -46,16 +46,16 @@ function inventory(dir,{depth=2,limit=6000}={}){
  walk(dir,0);inv.archives.sort((a,b)=>b.size-a.size);return inv;}
 
 const DECRYPT=/decrypt|encrypt|cipher|key|filter|scheme|CX|PROTECT|TPM/i;
-const KANA=/[ぁ-ゖァ-ヺ]/;
+const KANA=/[ぁ-ゖァ-ヺ]/,HAN=/[一-鿿]/;
 /* every engine of scenes.cjs, plus System4 / BGI from original-text.cjs, with a per-engine time cap */
 function runEngines(dir,{deadline}){
  const scenes=require('./original-engines/scenes.cjs'),out=[];
  for(const id of Object.keys(scenes.ENGINES)){if(Date.now()>deadline){out.push({id,scenes:-1,lines:0,error:'BUDGET',ms:0});continue;}
-  const engine=scenes.ENGINES[id],t=Date.now();let list=null,error='',lines=0,sizes=[],japanese=0,parsed=0;
+  const engine=scenes.ENGINES[id],t=Date.now();let list=null,error='',lines=0,sizes=[],japanese=0,han=0,parsed=0;
   try{list=engine.scenes(dir)||[];}catch(e){error=String(e?.code||e?.message||e).slice(0,60);}
   if(list&&list.length){for(const s of list){if(Date.now()>deadline){error=error||'BUDGET';break;}let p;try{p=engine.parse(s.read());parsed++;}catch(e){if(!error)error=String(e?.code||e?.message||e).slice(0,60);sizes.push(0);continue;}
-    const n=p?.lines?.length||0;lines+=n;sizes.push(n);for(const l of p?.lines||[])if(KANA.test(l))japanese++;}}
-  if(list?.length||error)out.push({id,scenes:list?list.length:-1,parsed,lines,japaneseLines:japanese,sizes:sizes.slice(0,4000),error,ms:Date.now()-t});}
+    const n=p?.lines?.length||0;lines+=n;sizes.push(n);for(const l of p?.lines||[]){if(KANA.test(l))japanese++;else if(HAN.test(l))han++;}}}
+  if(list?.length||error)out.push({id,scenes:list?list.length:-1,parsed,lines,japaneseLines:japanese,hanLines:han,sizes:sizes.slice(0,4000),error,ms:Date.now()-t});}
  return out;}
 function nativeEngines(dir,executable){const out=[];let ot;try{ot=require('./original-text.cjs');}catch{return out;}
  for(const id of ['system4','bgi']){const a=ot.ADAPTERS?.[id];if(!a)continue;const t=Date.now();let loc=null,error='';try{loc=a.locate(dir,path.parse(String(executable||'')).name);}catch(e){error=String(e?.message||e).slice(0,60);}
@@ -66,7 +66,9 @@ function nativeEngines(dir,executable){const out=[];let ot;try{ot=require('./ori
 /* which step failed, from the evidence */
 function classify({engines,inventory:inv,unsupported,preparing}){
  const read=engines.filter(e=>e.lines>0).sort((a,b)=>b.lines-a.lines)[0];
- if(read){if(read.japaneseLines<read.lines*.3&&read.lines>=50)return {step:'not-japanese',detail:read.id,detected:read.id};return {step:'ok',detail:read.id,detected:read.id};}
+ if(read){/* a Chinese build (GBK script, kana-free Han text) is read correctly, not a failure */
+  if(read.japaneseLines<read.lines*.3&&read.lines>=50&&(read.hanLines||0)>=read.lines*.5)return {step:'ok',detail:read.id+':chinese-build',detected:read.id};
+  if(read.japaneseLines<read.lines*.3&&read.lines>=50)return {step:'not-japanese',detail:read.id,detected:read.id};return {step:'ok',detail:read.id,detected:read.id};}
  if(unsupported)return {step:DECRYPT.test(unsupported.code)?'decrypt-failed':'parse-failed',detail:(unsupported.engine+':'+unsupported.code).slice(0,60),detected:null};
  const failedDecrypt=engines.find(e=>e.error&&DECRYPT.test(e.error));if(failedDecrypt)return {step:'decrypt-failed',detail:failedDecrypt.id+':'+failedDecrypt.error,detected:null};
  if(preparing==='capture')return {step:'decrypt-failed',detail:'encrypted-archive',detected:null};
