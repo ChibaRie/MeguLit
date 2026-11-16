@@ -141,6 +141,9 @@
     if (t.classList.contains('megulit-dash') || !DASH.test(t.textContent || '')) return;
     const cs = getComputedStyle(t), fill = cs.webkitTextFillColor, color = fill && fill !== 'rgba(0, 0, 0, 0)' ? fill : cs.color;
     t.style.setProperty('--megulit-dash-color', color); t.classList.add('megulit-dash');
+    /* 2026-11-16 (user: 「──」 drawn as two lines of different widths): a game style's own fill / outline rules outranked
+       the dash rule, so the glyph was painted under the drawn line. Inline !important wins over every stylesheet. */
+    for (const [p, v] of [['-webkit-text-fill-color', 'transparent'], ['-webkit-text-stroke-width', '0px'], ['text-shadow', 'none'], ['paint-order', 'normal']]) t.style.setProperty(p, v, 'important');
   }
   const DASH = /^[‒-―─━⸺⸻]+$/;
   /* put a sentence's character tokens on their boxes (boxes[j] for the j-th shown token; a missing box = not drawn yet) */

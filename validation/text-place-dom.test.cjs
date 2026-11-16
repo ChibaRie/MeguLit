@@ -105,6 +105,13 @@ const html = `<!doctype html><html><head><meta charset="utf-8"><style>
       await page.evaluate(() => window.__tomoyoChinese.textPlace({ text: '今日は晴れ', client: [1280, 720], rects: [[100, 400, 32, 32], [132, 400, 32, 32], null, null, null] })); await frame();
       assert.strictEqual(await page.evaluate(() => getComputedStyle(document.querySelector('.tomoyo-cn-row')).visibility), 'hidden', 'typing: translation waits for the whole line');
       await page.evaluate(() => { const s = document.querySelector('.sentence-text'); s.innerHTML = s.dataset.keep; document.querySelector('.tomoyo-cn-row').textContent = '今天是晴天'; window.__tomoyoChinese.textPlace({ fallback: true, text: '今日は晴れ' }); }); await frame(); }
+    /* 2026-11-16 (user: 「──」 drawn as two lines of different widths): a game style outranking the dash rule still leaves
+       one thin line, never the glyph under it */
+    await page.evaluate(() => { const st = document.createElement('style'); st.id = 'hostile'; st.textContent = 'html body .sentence-window .sentence-text .char-token.char-token.char-token{-webkit-text-fill-color:rgb(247,247,123)!important;-webkit-text-stroke:3px #000!important;text-shadow:0 0 2px #000!important}'; document.head.append(st);
+      const s = document.querySelector('.sentence-text'); s.dataset.keep2 = s.innerHTML; s.innerHTML = [...'――殺人'].map(c => '<span class="char-token">' + c + '</span>').join('');
+      window.__tomoyoChinese.textPlace({ text: '――殺人', client: [1280, 720], rects: [0, 1, 2, 3].map(i => [100 + i * 32, 400, 32, 32]) }); }); await frame();
+    assert.deepStrictEqual(await page.evaluate(() => { const c = getComputedStyle(document.querySelector('.sentence-text .char-token')); return [c.webkitTextFillColor, c.webkitTextStrokeWidth, c.textShadow]; }), ['rgba(0, 0, 0, 0)', '0px', 'none'], 'dash glyph hidden under its line');
+    await page.evaluate(() => { document.getElementById('hostile').remove(); const s = document.querySelector('.sentence-text'); s.innerHTML = s.dataset.keep2; window.__tomoyoChinese.textPlace({ fallback: true, text: '今日は晴れ' }); }); await frame();
     /* name plate and a choice drawn on their boxes, click-through */
     await page.evaluate(() => window.__tomoyoChinese.textPlaceExtra({ client: [1280, 720], items: [{ id: 1, kind: 'n', text: '朋也', rects: [[80, 450, 28, 30], [108, 450, 28, 30]] }, { id: 2, kind: 'o', text: 'はい', rects: [[600, 200, 32, 34], [632, 200, 32, 34]] }] })); await frame();
     assert.deepStrictEqual(await box('.megulit-place-name span:nth-child(2)'), [108, 450, 28, 30], 'name plate on its boxes');
