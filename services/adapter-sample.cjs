@@ -58,7 +58,7 @@ function sampleGame({dir,executable,result}){
  const samples=[],entries=[];const archives=(result?._archives||[]).filter(f=>{try{return fs.statSync(f).isFile();}catch{return false;}});
  const budget={raw:0,start:Date.now()},room=()=>budget.raw<GAME_RAW_MAX&&Date.now()-budget.start<GAME_MS;
  const step=result?.step||'';
- if(['unknown-pack','decrypt-failed','timeout','parse-failed'].includes(step)){
+ if(['unknown-pack','unsupported-engine','decrypt-failed','timeout','parse-failed'].includes(step)){
   const pick=archives.filter(f=>!/\.(ogg|png|wav|mp4|webm|avi|wmv)$/i.test(f)).sort((a,b)=>SCRIPTY.test(path.basename(b))-SCRIPTY.test(path.basename(a))).slice(0,3);
   for(const f of pick){if(room())try{samples.push(archiveSample(f,dir,budget));}catch{}entries.push(...xp3Entries(f),...opaqueBlocks(f));}}
  if(step==='parse-failed'){
@@ -73,11 +73,11 @@ function sampleGame({dir,executable,result}){
  return {samples:samples.slice(0,PER_GAME_SAMPLES+3),keys};}
 
 /* ---- service side ----------------------------------------------------------------------------------------------- */
-const ALLOWED_STEPS=['unknown-pack','decrypt-failed','parse-failed','not-japanese','chinese-build','decode-suspect','low-pairing','timeout'];
+const ALLOWED_STEPS=['unknown-pack','unsupported-engine','decrypt-failed','parse-failed','not-japanese','chinese-build','decode-suspect','low-pairing','timeout'];
 /* the uploaded part of a probe result: counts and names that went through maskString, nothing else */
 function publicResult(r){const inv=r.inventory||{};return {step:r.step,detail:String(r.detail||'').replace(/[^\x20-\x7e]/g,'?').slice(0,80),detected:r.detected||null,reader:String(r.reader||''),lines:r.lines|0,japaneseLines:r.japaneseLines|0,dialogueLines:r.dialogueLines|0,chineseLines:r.chineseLines|0,sizes:(r.sizes||[]).slice(0,4000).map(n=>n|0),
  pairing:r.pairing&&r.pairing.total?{total:r.pairing.total|0,paired:r.pairing.paired|0,unpaired:r.pairing.unpaired|0,rate:r.pairing.rate,reasons:r.pairing.reasons||{}}:null,
- inventory:{files:inv.files|0,bytes:inv.bytes||0,scripts:inv.scripts|0,ext:Object.fromEntries(Object.entries(inv.ext||{}).filter(([k])=>/^[\x20-\x7e]{1,12}$/.test(k)).slice(0,60)),archives:(inv.archives||[]).slice(0,48).map(a=>({name:d.maskString(a.name).slice(0,120),size:a.size||0,magic:/^[0-9a-f]{0,16}$/.test(a.magic||'')?a.magic:'',format:/^[a-z0-9-]{0,20}$/.test(a.format||'')?a.format:''}))},
+ inventory:{files:inv.files|0,bytes:inv.bytes||0,scripts:inv.scripts|0,ext:Object.fromEntries(Object.entries(inv.ext||{}).filter(([k])=>/^[\x20-\x7e]{1,12}$/.test(k)).slice(0,60)),archives:(inv.archives||[]).slice(0,48).map(a=>({name:d.maskString(a.name).slice(0,120),size:a.size||0,magic:/^[0-9a-f]{0,16}$/.test(a.magic||'')?a.magic:'',format:/^[a-z0-9-]{0,20}$/.test(a.format||'')?a.format:'',engine:/^[a-z0-9-]{0,20}$/.test(a.engine||'')?a.engine:'',...(a.resource?{resource:true}:{}),...(a.count>1?{count:a.count|0}:{})})),markers:(inv.markers||[]).filter(m=>/^[a-z0-9-]{1,20}$/.test(m)).slice(0,8),engine:/^[a-z0-9-]{0,20}$/.test(inv.engine||'')?inv.engine:''},
  engines:(r.engines||[]).slice(0,60).map(e=>({id:String(e.id).slice(0,30),scenes:e.scenes|0,parsed:e.parsed|0,lines:e.lines|0,japaneseLines:e.japaneseLines|0,dialogueLines:e.dialogueLines|0,chineseLines:e.chineseLines|0,error:String(e.error||'').replace(/[^\x20-\x7e]/g,'?').slice(0,60),ms:e.ms|0})),
  unsupported:r.unsupported?{engine:String(r.unsupported.engine||'').slice(0,30),code:String(r.unsupported.code||'').replace(/[^\x20-\x7e]/g,'?').slice(0,40)}:null,preparing:r.preparing||null};}
 /* last line of defence: outside titles, the bundle may hold no kana/kanji but placeholders and kept punctuation */
@@ -110,7 +110,7 @@ async function prepare(root,db,{ids=null,sampler,titles=true}={}){
 /* how much a game's probe carries: items = result + every kept sample + key candidates + runtime findings; complete =
    nothing trimmed or dropped and, where a runtime read could add keys (archive / decrypt / parse problems), it is in.
    failed = only the result row (nothing to build from). The relay keeps the better of two probes of one game by this. */
-const RUNTIME_STEPS=['unknown-pack','decrypt-failed','parse-failed','timeout'];
+const RUNTIME_STEPS=['unknown-pack','unsupported-engine','decrypt-failed','parse-failed','timeout'];
 function completeness(g){const rt=g.runtime||null,rtItems=rt?['keys','indexes','dispatch','scripts','constants'].reduce((n,k)=>n+(Array.isArray(rt[k])?rt[k].length:0),0):0;
  const items=1+(g.samples||[]).filter(x=>x.sample).length+((g.keys||[]).length?1:0)+rtItems;
  const complete=!g.trimmed&&!(g.samples||[]).some(x=>x.dropped)&&(!RUNTIME_STEPS.includes(g.step)||rtItems>0);
