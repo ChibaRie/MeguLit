@@ -22,6 +22,7 @@ const html = `<!doctype html><html><head><meta charset="utf-8"><style>
     const frame = () => page.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
     const box = sel => page.evaluate(s => { const r = document.querySelector(s).getBoundingClientRect(); return [r.left, r.top, r.width, r.height].map(Math.round); }, sel);
     const nth = n => `.sentence-text .char-token:nth-of-type(${n})`;
+    await page.evaluate(() => window.__tomoyoChinese.textPlaceAnchor(false));
     await page.evaluate(() => { const b = window.__tomoyoChinese; b.textPlaceMode({ on: true });
       b.textPlace({ text: '「今日は晴れ', client: [1280, 720], rects: [[60, 500, 30, 32], [100, 500, 30, 32], [130, 500, 30, 32], [160, 500, 30, 32], [100, 540, 30, 32], [130, 540, 30, 32]] }); });
     await frame();
@@ -120,6 +121,18 @@ const html = `<!doctype html><html><head><meta charset="utf-8"><style>
       window.__tomoyoChinese.textPlace({ text: '――殺人', client: [1280, 720], rects: [0, 1, 2, 3].map(i => [100 + i * 32, 400, 32, 32]) }); }); await frame();
     assert.deepStrictEqual(await page.evaluate(() => { const c = getComputedStyle(document.querySelector('.sentence-text .char-token')); return [c.webkitTextFillColor, c.webkitTextStrokeWidth, c.textShadow]; }), ['rgba(0, 0, 0, 0)', '0px', 'none'], 'dash glyph hidden under its line');
     await page.evaluate(() => { document.getElementById('hostile').remove(); const s = document.querySelector('.sentence-text'); s.innerHTML = s.dataset.keep2; window.__tomoyoChinese.textPlace({ fallback: true, text: '今日は晴れ' }); }); await frame();
+    /* 2026-11-16 (user: 字号/换行宽度听设置；位置跟着原文但别抖): anchored layout */
+    await page.evaluate(() => { const b = window.__tomoyoChinese; b.textPlaceAnchor(true); document.querySelector('.tomoyo-cn-row').textContent = '今天是晴天'; });
+    const firstTok = () => page.evaluate(() => { const r = document.querySelector('.sentence-text .char-token').getBoundingClientRect(); return [Math.round(r.left), Math.round(r.top), getComputedStyle(document.querySelector('.sentence-text .char-token')).fontSize]; });
+    const at = (dx, dy, n = 5) => page.evaluate(([dx, dy, n]) => window.__tomoyoChinese.textPlace({ text: '今日は晴れ', client: [1280, 720], rects: [0, 1, 2, 3, 4].map(i => i < n ? [300 + dx + i * 40, 400 + dy, 40, 40] : null) }), [dx, dy, n]);
+    await at(0, 0); await frame(); const a0 = await firstTok();
+    assert.deepStrictEqual(a0.slice(0, 2), [300, 400], 'first character on the game line\'s top-left');
+    assert.notStrictEqual(a0[2], '40px', 'the size is the reader\'s own setting, not the game boxes\'');
+    await at(0, 0, 2); await frame(); assert.deepStrictEqual((await firstTok()).slice(0, 2), [300, 400], 'typing does not move it');
+    await page.evaluate(() => window.__tomoyoChinese.textPlace({ fallback: true, text: '今日は晴れ' })); await frame();
+    await at(4, -3); await frame(); assert.deepStrictEqual((await firstTok()).slice(0, 2), [300, 400], 'a few px off: kept (no jitter)');
+    await at(0, -200); await frame(); assert.deepStrictEqual((await firstTok()).slice(0, 2), [300, 200], 'another text box: follows');
+    await page.evaluate(() => { window.__tomoyoChinese.textPlaceAnchor(false); window.__tomoyoChinese.textPlace({ fallback: true, text: '今日は晴れ' }); }); await frame();
     /* name plate and a choice drawn on their boxes, click-through */
     await page.evaluate(() => window.__tomoyoChinese.textPlaceExtra({ client: [1280, 720], items: [{ id: 1, kind: 'n', text: '朋也', rects: [[80, 450, 28, 30], [108, 450, 28, 30]] }, { id: 2, kind: 'o', text: 'はい', rects: [[600, 200, 32, 34], [632, 200, 32, 34]] }] })); await frame();
     assert.deepStrictEqual(await box('.megulit-place-name span:nth-child(2)'), [108, 450, 28, 30], 'name plate on its boxes');

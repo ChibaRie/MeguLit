@@ -12,7 +12,7 @@
   if (!b || !document.body) { document.addEventListener('DOMContentLoaded', install, { once: true }); return; }
   if (b.textPlace) return;
   let unmatched = null; const UNMATCHED_MS = 400;
-  let on = false, line = null, frame = 0, lastGeom = '', boxBottom = 0, boxKey = '', drawnByGame = '', page = null; const clones = new Map();
+  let on = false, line = null, frame = 0, lastGeom = '', boxBottom = 0, boxKey = '', anchor = null, anchorLine = '', anchorMode = true, drawnByGame = '', page = null; const clones = new Map();
   const style = document.createElement('style');
   style.textContent = [
     'body.megulit-placed .sentence-window.megulit-place-window{left:0!important;top:0!important;right:auto!important;bottom:auto!important;width:100vw!important;height:100vh!important;max-height:none!important;margin:0!important;padding:0!important;background:none!important;border:0!important;box-shadow:none!important;outline:0!important;backdrop-filter:none!important;overflow:visible!important;transform:none!important;pointer-events:none}',
@@ -73,13 +73,25 @@
     return found && found >= need ? out : null;
   }
   b.textPlaceAlign = align;
+  /* per-character placement on the game's boxes (the layout before 2026-11-16) instead of the anchored reader layout */
+  b.textPlaceAnchor = v => { anchorMode = v !== false; anchor = null; anchorLine = ''; schedule?.(); };
   const median = list => { const v = list.filter(n => n > 0).sort((x, y) => x - y); return v.length ? v[v.length >> 1] : 0; };
   function target() {
     const own = document.querySelector('.sentence-window.tomoyo-hook-reader');
     return own && own.isConnected ? own : document.querySelector('.sentence-window');
   }
+  /* the reader's own layout, its first character on the anchor */
+  function pin(win, sentence) {
+    if (!anchor || !win || !sentence) return;
+    document.body.classList.add('megulit-anchored'); win.classList.add('megulit-anchor-window');
+    for (const p of ['left', 'top']) win.style.removeProperty(p);
+    const tok = sentence.querySelector('.char-token'), wr = win.getBoundingClientRect(), tr = tok?.getBoundingClientRect();
+    if (tr && tr.width) { set(win, 'left', (wr.left + anchor[0] - tr.left) + 'px'); set(win, 'top', (wr.top + anchor[1] - tr.top) + 'px'); set(win, 'right', 'auto'); set(win, 'bottom', 'auto'); set(win, 'margin', '0'); }
+  }
   function release(fallback = false) {
     if (!page) document.body.classList.remove('megulit-placed');
+    document.body.classList.remove('megulit-anchored');
+    for (const w of document.querySelectorAll('.megulit-anchor-window')) { w.classList.remove('megulit-anchor-window'); for (const p of ['left', 'top', 'right', 'bottom', 'margin']) w.style.removeProperty(p); }
     document.body.classList.toggle('megulit-place-fallback', fallback === true);
     for (const w of document.querySelectorAll('.megulit-place-window')) {
       w.classList.remove('megulit-place-window');
@@ -87,6 +99,8 @@
       for (const n of w.querySelectorAll('.char-token,.megulit-ruby-base,.tomoyo-cn-row')) { n.classList.remove('megulit-unplaced'); for (const p of ['left', 'top', 'width', 'height', 'font-size', 'line-height']) n.style.removeProperty(p); }
     }
     if (lastGeom) { lastGeom = ''; dispatchEvent(new CustomEvent('megulit-reveal-progress', { detail: { typing: false } })); }
+    /* between lines (the next one not matched yet) the text stays where the last line was, not at the reader's own place */
+    if (fallback === true && anchorMode && anchor) { const w = target(); pin(w, w?.querySelector('.sentence-text:not(.megulit-old-line)')); }
   }
   /* record px are game-client px; the reader surface may be larger than the game (galLayoutInfo: client origin and size
      in physical px), CSS px = physical / devicePixelRatio */
@@ -312,6 +326,21 @@
     /* no real box for any of the reader's characters (all 0 / null / outside the game): the reader keeps its own place;
        placing would leave the translation row at the surface's top-left corner */
     if (!boxes.some(Boolean)) { release(true); return; }
+    /* 2026-11-16 (user: 字号和换行宽度要听设置；位置要跟着原文走但是别抖): the line is laid out by the reader itself with the
+       user's own font size and wrap width; only its place comes from the game: the top-left of the game's first character,
+       taken once per line (typing never moves it) and kept while a new line starts within a few px of it (the same text
+       box). A box that really moved (another text box, a different scene layout) moves it. */
+    if (anchorMode) {
+      /* the line's top-left: the leftmost box of its top row (the first matched character may sit further right) */
+      const got = boxes.filter(Boolean), top = Math.min(...got.map(b => b[1])), lineKey = String(line.text || '');
+      let a = [Math.min(...got.filter(b => b[1] < top + size * .5).map(b => b[0])), top];
+      if (anchor && anchorLine === lineKey && Math.abs(a[0] - anchor[0]) < size * 2 && Math.abs(a[1] - anchor[1]) < size * 2) a = anchor;
+      else if (anchor && Math.abs(a[0] - anchor[0]) <= Math.max(6, size * .6) && Math.abs(a[1] - anchor[1]) <= Math.max(6, size * .6)) a = anchor;
+      anchor = a; anchorLine = lineKey;
+      release(true);
+      pin(win, sentence);
+      return;
+    }
     document.body.classList.remove('megulit-place-fallback');
     document.body.classList.add('megulit-placed');
     win.classList.add('megulit-place-window');
