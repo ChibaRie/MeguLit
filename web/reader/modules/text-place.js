@@ -358,7 +358,9 @@
          about one row above the client's bottom (where games keep their SAVE/LOAD bars) */
       const boxOf = map.bounds.map(Math.round).join(','); if (boxOf !== boxKey) { boxKey = boxOf; boxBottom = 0; }
       boxBottom = Math.max(boxBottom, y1);
-      const limit = Math.min(B, Math.max(Math.max(boxBottom, y1) + size * 1.6, B - size * 1.4));
+      /* 2026-11-16 (1.4.16 recording: 「在公园悠闲地度过……」 on the SAVE/LOAD bar): the bottom is a hard limit, about one and a half
+         Japanese rows above the client bottom where games keep their bars; under it the translation shrinks, never lower */
+      const limit = Math.min(B - size * 1.5, Math.max(Math.max(boxBottom, y1) + size * 1.6, y1 + size * 1.25));
       const below = y1 + size * .2, room = limit - (only ? y0 : below);
       let rh = row.offsetHeight || base * 1.25;
       row.style.removeProperty('max-height'); row.style.removeProperty('overflow');
