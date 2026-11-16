@@ -316,8 +316,8 @@ line is drawn again. Built and run by `Build.ps1` and CI through `native/native-
   `OverlayPlacement.page()`; an unarmed awake page while another path hides the line goes out as `{elsewhere:true}` and
   `web/reader/modules/text-place.js` places the line as without a page (glyph boxes, or its own place without plate).
   And whenever the game still draws the line itself (an unarmed page with nothing else hiding it, a ③ `visible` note)
-  the game keeps its own Japanese and the reader adds only the translation under it, never on a plate (2026-11-16:
-  the 11-15 version sent the reader back to its plated window; the user rejected any plate behind MeguLit text).
+  the reader is not placed over the game's line but goes back to its own window, bilingual (Japanese on top, clickable
+  for lookups; translation under it), never on a plate (2026-11-16: the user rejected any plate behind MeguLit text).
   The "only the translation was left" report is covered by `elsewhere` alone. An armed page and a gone window keep their rules.
 - Lesson: a layer's page message is only that layer's word. "Not armed" means "this layer does not hide", not "nothing
   hides"; combine it with the other hide paths before deciding who draws the Japanese.
