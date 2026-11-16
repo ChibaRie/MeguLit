@@ -11,6 +11,7 @@ const kit=require('./kit.cjs');/* E577 shared engine kit */
 //   siglus    Steam dat/*.dbs language tables (Summer Pockets): Japanese column + the Chinese column
 //   yuris     YU-RIS YPF archives (pac/ysbin.ypf + update*.ypf), YSTB scene files (yuris.cjs)
 //   aquaplus  AQUAPLUS / Leaf KCAP script.pak string tables (aquaplus.cjs)
+//   aquaplus-pck AQUAPLUS big-endian "Filename" PCK, Data/Game/Script.sdat MES.BIN scenes (WHITE ALBUM, aquaplus-pck.cjs)
 //   nscripter NScripter / ONScripter 0.txt or nscript.dat, one scene per label block (nscripter.cjs)
 //   unity-text Unity TextAssets whose lines carry every language (unity-text.cjs)
 //   higurashi 07th Expansion Unity StreamingAssets/Scripts/*.txt (higurashi.cjs)
@@ -464,6 +465,8 @@ const kirikiriLang={
 const yuris=require('./yuris.cjs');
 // E330 AQUAPLUS / Leaf KCAP (script.pak, WHITE ALBUM2): aquaplus.cjs.
 const aquaplus=require('./aquaplus.cjs');
+// #303 AQUAPLUS "Filename" PCK (Data/Game/Script.sdat, WHITE ALBUM -綴られる冬の想い出- PC): aquaplus-pck.cjs.
+const aquaplusPck=require('./aquaplus-pck.cjs').engine;
 // E331 NScripter / ONScripter (0.txt or nscript.dat, blocks by label): nscripter.cjs.
 const nscripter=require('./nscripter.cjs');
 // E340 Unity TextAssets with 日本語※简体※繁體 lines (月に寄りそう乙女の作法): unity-text.cjs. E341 07th Expansion Unity
@@ -514,7 +517,7 @@ const makers=require('./makers.cjs').ENGINES;
 const escude=require('./escude.cjs').engine,pjadv=require('./pjadv.cjs').engine,luca=require('./luca.cjs').engine,stuff=require('./stuff.cjs').engine,stcm2=require('./stcm2.cjs').engine;
 const eushully=require('./eushully.cjs').engine;
 const F4A_SCAN=require('./archive-scan.cjs').ENGINES;
-const ENGINES={'adapter-pack':adapterPack,'nitroplus-n4':nitroplusN4,'kirikiri-lang':kirikiriLang,tyrano,kirikiri,artemis,renpy,siglus,'kirikiri-cx':kirikiriCx,'kirikiri-dump':kirikiriDump,'kirikiri-ks':kirikiriKs,hunex,yuris,aquaplus,nscripter,'unity-text':unityText,higurashi,mages,'capcom-msg':capcomMsg,'spike-wad':spikeWad,pwaat,naninovel,'mages-cpk':magesCpk,'unity-assets':unityAssets,drv3,catsystem2,rpgmaker,wolf,avg32,'nitro-npk':nitroNpk,'nitro-pak':nitroPak,'nitro-npa':nitroNpa,iga,paz,bruns,'re-pak':rePak,fvp,advhd,reallive,vgprompter,majiro,softpal,systemnnn,liar,rgss,silky,tmrhiro,nekosdk,ikura,exhibit,eagls,ast,seraph,interheart,nexas,malie,shiinario,cmvs,lucifen,kaguya,lcse,yuka,qlie,entis,alicesoft,marble,...webbundle,plaintext:require('./plaintext.cjs').engine,circus,whale,ddsystem,aoi,kid,...makers,escude,eushully,pjadv,luca,stuff,stcm2,slg:F4A_SCAN.slg,cpk:F4A_SCAN.cpk,evbox:F4A_SCAN.evbox,ism:F4A_SCAN.ism,glib2:F4A_SCAN.glib2,tanuki:F4A_SCAN.tanuki,yaneurao:F4A_SCAN.yaneurao,rits:F4A_SCAN.rits,bluegale:F4A_SCAN.bluegale,cyberworks:F4A_SCAN.cyberworks,dxlib:F4A_SCAN.dxlib,garbro};
+const ENGINES={'adapter-pack':adapterPack,'nitroplus-n4':nitroplusN4,'kirikiri-lang':kirikiriLang,tyrano,kirikiri,artemis,renpy,siglus,'kirikiri-cx':kirikiriCx,'kirikiri-dump':kirikiriDump,'kirikiri-ks':kirikiriKs,hunex,yuris,aquaplus,'aquaplus-pck':aquaplusPck,nscripter,'unity-text':unityText,higurashi,mages,'capcom-msg':capcomMsg,'spike-wad':spikeWad,pwaat,naninovel,'mages-cpk':magesCpk,'unity-assets':unityAssets,drv3,catsystem2,rpgmaker,wolf,avg32,'nitro-npk':nitroNpk,'nitro-pak':nitroPak,'nitro-npa':nitroNpa,iga,paz,bruns,'re-pak':rePak,fvp,advhd,reallive,vgprompter,majiro,softpal,systemnnn,liar,rgss,silky,tmrhiro,nekosdk,ikura,exhibit,eagls,ast,seraph,interheart,nexas,malie,shiinario,cmvs,lucifen,kaguya,lcse,yuka,qlie,entis,alicesoft,marble,...webbundle,plaintext:require('./plaintext.cjs').engine,circus,whale,ddsystem,aoi,kid,...makers,escude,eushully,pjadv,luca,stuff,stcm2,slg:F4A_SCAN.slg,cpk:F4A_SCAN.cpk,evbox:F4A_SCAN.evbox,ism:F4A_SCAN.ism,glib2:F4A_SCAN.glib2,tanuki:F4A_SCAN.tanuki,yaneurao:F4A_SCAN.yaneurao,rits:F4A_SCAN.rits,bluegale:F4A_SCAN.bluegale,cyberworks:F4A_SCAN.cyberworks,dxlib:F4A_SCAN.dxlib,garbro};
 // The engine whose running scripts this folder holds, if any can be read.
 function readable(id,dir){let scenes;try{scenes=ENGINES[id].scenes(dir);}catch{return false;}
  for(const s of scenes.slice(0,64)){try{if(ENGINES[id].parse(s.read()).lines.length)return true;}catch{}}return false;} /* 64: a game may open with many code-only scenes (女王蜂の王房 endings, first.ks) */
