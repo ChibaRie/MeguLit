@@ -96,6 +96,44 @@ function controlBlockIn(file){let b;try{b=fs.readFileSync(file);}catch{return nu
 // movie)? Only multi-byte magics: a one-byte guess (* ; @) matches random bytes of a wrong scheme.
 const HEAD=/^(?:\xff\xfe|\xef\xbb\xbf|TJS2|PSB\x00|mdf\x00|TLG[05]|\x89PNG|OggS|RIFF|AMV\d)/;
 const looks=b=>HEAD.test(b.toString('latin1',0,4))||(b.length>=4&&(b[1]^b[3])===0x53&&(b[2]^b[3])===0x42);
+const TEXT_NAME=/\.(ks|tjs|txt|asd|csv|ini)$/i;
+const isJpg=b=>b.length>=10&&b[0]===0xff&&b[1]===0xd8&&b[2]===0xff&&(b[3]===0xe0&&b.toString('latin1',6,10)==='JFIF'||b[3]===0xe1&&b.toString('latin1',6,10)==='Exif');
+const looksHashXor=b=>HEAD.test(b.toString('latin1',0,4))||isJpg(b);
+const sjisDec=new TextDecoder('shift_jis'),gbkDec=new TextDecoder('gbk'),utf8Dec=new TextDecoder('utf-8',{fatal:true});
+function scoreScript(b){
+ if(b.length<16)return 0;
+ let lf=0,crlf=0,lfcr=0;
+ for(let i=0;i<b.length;i++){const c=b[i];if(c<9||(c>13&&c<32&&c!==27))return 0;if(c===10){lf++;if(i>0&&b[i-1]===13)crlf++;if(i+1<b.length&&b[i+1]===13)lfcr++;}}
+ if(!lf||lfcr>crlf)return 0;
+ const cut=b.lastIndexOf(10),view=cut>16&&b.length===512?b.subarray(0,cut+1):b;
+ if(!/(?:^|\n)\s*(?:\[[A-Za-z_][\w\s=."']*\]|@[A-Za-z_]|;|\/\/|\*[A-Za-z0-9_]+|\b(?:var|function|class|if|return)\b)/m.test(view.toString('latin1')))return 0;
+ try{utf8Dec.decode(view);return 8;}catch{}
+ for(const dec of [sjisDec,gbkDec]){const t=dec.decode(view);if(!/\ufffd/.test(t)&&(t.match(/[｡-ﾟ]/g)||[]).length<=t.length*.05)return crlf>=lf*.5?8:6;}
+ return 0;
+}
+// KiriKiri 2 simple xp3dec.tpm extraction filter: each byte is XOR-ed with (adlr_hash ^ key) & 0xff.
+function hashXorFilter(file,xp3,list,plainHits){
+ const enc=(list?list.files:[]).filter(e=>e.encrypted&&e.size>=16&&e.size<=(4<<20));
+ if(!enc.length)return null;
+ const picked=enc.length>24?Array.from({length:24},(_,i)=>enc[Math.floor(i*enc.length/24)]):enc;
+ const sample=picked.map(e=>{try{return {e,r:xp3.read(file,e).subarray(0,512)};}catch{return null;}}).filter(Boolean);
+ if(!sample.length||plainHits>=Math.max(2,Math.ceil(sample.length/2)))return null;
+ const minHits=Math.min(2,sample.length);
+ let bestK=-1,bestScore=0;
+ for(let k=0;k<256;k++){
+  let hits=0,score=0;
+  for(const {e,r} of sample){
+   const x=((e.hash>>>0)^k)&0xff,b=Buffer.from(r);for(let i=0;i<b.length;i++)b[i]^=x;
+   if(looksHashXor(b)){hits++;score+=10;}
+   else if(TEXT_NAME.test(e.name)){const sc=scoreScript(b);if(sc>0){hits++;score+=sc;}}
+  }
+  if(hits>=minHits&&hits>plainHits&&score>bestScore){bestScore=score;bestK=k;}
+ }
+ if(bestK<0)return null;
+ return function decrypt(hash,offset,buf,pos=0,count=buf.length-pos){
+  const x=((hash>>>0)^bestK)&0xff;for(let i=0;i<count;i++)buf[pos+i]^=x;return buf;
+ };
+}
 const memo=new Map();
 // The filter of one archive: the known scheme that turns most of its encrypted entries into known heads (at least
 // two and more than reading them as they are), or null.
@@ -106,6 +144,7 @@ function forArchive(file){let key;try{const st=fs.statSync(file);key=path.resolv
   for(const s of schemes()){let cb=s.cb;if(!cb&&s.tpm)cb=controlBlockIn(path.join(dir,s.tpm))||controlBlockIn(path.join(dir,'plugin',s.tpm));if(!cb)continue;
    let dec;try{dec=filter({...s,cb});}catch{continue;}let hits=0;
    for(const {e,r} of sample){const b=Buffer.from(r);try{dec(e.hash,0,b);}catch{continue;}if(looks(b))hits++;}
-   if(hits>top){top=hits;best=dec;best.titles=s.titles;}}}catch{best=null;}
+   if(hits>top){top=hits;best=dec;best.titles=s.titles;}}
+  if(!best)best=hashXorFilter(file,xp3,list,plainHits);}catch{best=null;}
  memo.set(key,best);return best;}
 module.exports={filter,generate,run,schemes,controlBlockIn,forArchive,looks};
