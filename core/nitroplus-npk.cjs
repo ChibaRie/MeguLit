@@ -10,10 +10,13 @@
 //         zlib index at 0x114: {u32 name length, Shift-JIS name, u32 offset, u32 size, u32 size, u32 packed, u32 packed size}.
 const fs=require('node:fs'),crypto=require('node:crypto'),zlib=require('node:zlib');
 
-const KEYS={saya:Buffer.from('763a14338b0dac040accfc13851cfacbb20b000b01f868486b460f8c34d42a96','hex')};
-/* every NPK2 key GARbro knows (Formats.dat, exported by tools/garbro-schemes.ps1 -Engine npk) plus Saya's: an NPK2 archive from
+const KEYS={
+ saya:Buffer.from('763a14338b0dac040accfc13851cfacbb20b000b01f868486b460f8c34d42a96','hex'),
+ saya18:Buffer.from('d0b71f3c4e24cecfddeea91d24b0403229a3e5330d2951826051d6c94af5af54','hex'),
+};
+/* every NPK2 key GARbro / MwareStuff knows (nitro-schemes.json npk2) plus Saya's: an NPK2 archive from
    another build or title is opened with whichever key turns its index into entries */
-const ALL_KEYS=[KEYS.saya,...Object.values(require('../services/original-engines/nitro-schemes.json').npk2).map(h=>Buffer.from(h,'hex'))];
+const ALL_KEYS=[...new Map([KEYS.saya,KEYS.saya18,...Object.values(require('../services/original-engines/nitro-schemes.json').npk2).map(h=>Buffer.from(h,'hex'))].map(k=>[k.toString('hex'),k])).values()];
 const SEGMENT=65536;
 
 function aes(decrypt,key,iv,data){const c=(decrypt?crypto.createDecipheriv:crypto.createCipheriv)('aes-256-cbc',key,iv);return Buffer.concat([c.update(data),c.final()]);}
