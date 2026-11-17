@@ -333,4 +333,56 @@ describe('rUGP (age) engine reader', () => {
    fs.rmSync(tmp, { recursive: true, force: true });
   }
  });
+
+ it('reads 3-volume trilingual .rio/.rio.002/.rio.003 (.rio.ici) builds like Muv-Luv Alternative', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'rugp-3vol-'));
+  try {
+   const shift = 1;
+   const block1 = buildCrsaBlock([
+    { jp: '「第一区域へ突入する」', en: 'Entering sector one.', tr: '「突入第一区域」' },
+    { jp: '「通信応答なし」', en: 'No response on comms.', tr: '「通讯无应答」' },
+   ], [], 3);
+   const block2 = buildCrsaBlock([
+    { jp: '「第三巻データ確認」', en: 'Checking part three data.', tr: '「确认第三卷数据」' },
+   ], [], 3);
+
+   const off1 = 0x100;
+   const off2 = (off1 + block1.length + 32 + 1) & ~1;
+   const tocOff = (off2 + block2.length + 32 + 1) & ~1;
+   const toc = buildToc([
+    { off: off1, sz: block1.length },
+    { off: off2, sz: block2.length },
+   ], { encrypted: true, shift });
+   const arc = Buffer.alloc(tocOff + toc.length, 0);
+   block1.copy(arc, off1);
+   block2.copy(arc, off2);
+   toc.copy(arc, tocOff);
+
+   // Split across 3 volumes so block1 spans .rio/.rio.002, block2 sits in .rio.002/.rio.003, TOC in .rio.003
+   const s1 = off1 + 24, s2 = off2 + 16;
+   fs.writeFileSync(path.join(tmp, 'Muv-Luv_Alternative16.exe'), Buffer.alloc(32));
+   fs.writeFileSync(path.join(tmp, 'Ages3ResT.dll'), Buffer.alloc(32));
+   fs.writeFileSync(path.join(tmp, 'alternative16.rio'), arc.subarray(0, s1));
+   fs.writeFileSync(path.join(tmp, 'alternative16.rio.002'), arc.subarray(s1, s2));
+   fs.writeFileSync(path.join(tmp, 'alternative16.rio.003'), arc.subarray(s2));
+   fs.writeFileSync(path.join(tmp, 'alternative16.rio.ici'), buildIci(tocOff / 2, toc.length));
+
+   const res = probeGame({ dir: tmp, executable: path.join(tmp, 'Muv-Luv_Alternative16.exe'), title: 'Alternative Synth' });
+   assert.equal(res.step, 'ok');
+   assert.equal(res.detected, 'rugp');
+   assert.equal(res.lines, 3);
+   assert.equal(res.japaneseLines, 3);
+
+   const base = rugp.scenes(tmp).map(s => rugp.parse(s.read()));
+   const patched = rugp.patchLines(base);
+   assert.ok(patched);
+   assert.deepEqual(patched[1].lines, ['「确认第三卷数据」']);
+
+   const fmap = rugp.foreign(tmp);
+   assert.equal(fmap.get(ot.foreignKey('「突入第一区域」')), '「第一区域へ突入する」');
+   assert.equal(fmap.get(ot.foreignKey('Checking part three data.')), '「第三巻データ確認」');
+  } finally {
+   fs.rmSync(tmp, { recursive: true, force: true });
+  }
+ });
 });
