@@ -51,6 +51,8 @@ function inventory(dir,{depth=2,limit=6000}={}){
 const GENERIC=new Set(['garbro','unity-assets','cpk']),DEDICATED_JP=30,GENERIC_MS=30000;
 const DECRYPT=/decrypt|encrypt|cipher|key|filter|scheme|CX|PROTECT|TPM/i;
 const KANA=/[ぁ-ゖァ-ヺ]/;
+/* reader outcomes that are not failures of the reader: it ran and the folder had nothing for it */
+const SOFT_ERROR=/^(NO_SCENES|BUDGET)$/;
 const HAN=/[㐀-鿿]/;
 /* E600 language counting. dialogue = a line that can be spoken text: script commands, identifiers, file names and
    resource paths are not (they would drown the ratio of games with many of them). chinese = Han and no kana. */
@@ -60,19 +62,22 @@ function lineKind(l){const t=String(l).trim();if(!t||PATHISH.test(t)||SCRIPTISH_
 /* → {dialogue,japanese,chinese} over a list of lines; japanese keeps the old meaning (any kana, whole list) */
 function countLines(lines){let dialogue=0,japanese=0,chinese=0;for(const l of lines||[]){if(KANA.test(l))japanese++;const k=lineKind(l);if(k)dialogue++;if(k===2)chinese++;}return {dialogue,japanese,chinese};}
 /* every engine of scenes.cjs, plus System4 / BGI from original-text.cjs, with a per-engine time cap */
-function runEngines(dir,{deadline}){
+function runEngines(dir,{deadline,routed=[],progress=()=>{}}){
  const scenes=require('./original-engines/scenes.cjs'),out=[];
  /* the GARbro last resort never runs over a folder whose KiriKiri cx archives MeguLit decrypts itself (detect() skips it the same way): on a cold cache it spent 20-80 s unpacking them for nothing and the probe timed out (ATRI) */
  let skipGarbro=false;try{skipGarbro=scenes.ownCx(dir);}catch{}
  /* E610 dedicated readers first, in scenes.detect order; the generic scans (garbro, unity-assets, cpk) only when no dedicated reader read a sizeable amount of Japanese, and each with its own time cap */
- const ids=Object.keys(scenes.ENGINES),order=[...ids.filter(i=>!GENERIC.has(i)),...ids.filter(i=>GENERIC.has(i))];let dedicatedJp=0;
- for(const id of order){const generic=GENERIC.has(id);if(generic&&dedicatedJp>=DEDICATED_JP)continue;if(id==='garbro'&&skipGarbro)continue;if(Date.now()>deadline){out.push({id,scenes:-1,lines:0,error:'BUDGET',ms:0});continue;}
+ const ids=Object.keys(scenes.ENGINES),first=routed.filter(i=>ids.includes(i)),rest=ids.filter(i=>!first.includes(i)),order=[...first.filter(i=>!GENERIC.has(i)),...rest.filter(i=>!GENERIC.has(i)),...first.filter(i=>GENERIC.has(i)),...rest.filter(i=>GENERIC.has(i))];let dedicatedJp=0;
+ /* S5 routing: the readers the fingerprint / registry name run first (never starved by the budget) and are always listed, a reader that found nothing as NO_SCENES */
+ const isRouted=new Set(first);
+ for(const id of order){const generic=GENERIC.has(id);if(generic&&dedicatedJp>=DEDICATED_JP)continue;progress({stage:'engine:'+id,engines:out});if(id==='garbro'&&skipGarbro)continue;if(Date.now()>deadline){out.push({id,scenes:-1,lines:0,error:'BUDGET',ms:0});continue;}
   const engine=scenes.ENGINES[id],t=Date.now(),limit=generic?Math.min(deadline,t+GENERIC_MS):deadline;let list=null,error='',lines=0,sizes=[],japanese=0,parsed=0,dialogue=0,chinese=0;
   try{list=engine.scenes(dir,{deadline:limit})||[];}catch(e){error=String(e?.code||e?.message||e).slice(0,60);}
   if(list&&list.length){for(const s of list){if(Date.now()>limit){error=error||'BUDGET';break;}let p;try{p=engine.parse(s.read());parsed++;}catch(e){if(!error)error=String(e?.code||e?.message||e).slice(0,60);sizes.push(0);continue;}
     const n=p?.lines?.length||0;lines+=n;sizes.push(n);const c=countLines(p?.lines);japanese+=c.japanese;dialogue+=c.dialogue;chinese+=c.chinese;}}
   if(!generic)dedicatedJp=Math.max(dedicatedJp,japanese);
-  if(list?.length||error)out.push({id,scenes:list?list.length:-1,parsed,lines,japaneseLines:japanese,dialogueLines:dialogue,chineseLines:chinese,sizes:sizes.slice(0,4000),error,ms:Date.now()-t});}
+  if(!list?.length&&!error&&isRouted.has(id))error='NO_SCENES';
+  if(list?.length||error)out.push({id,scenes:list?list.length:-1,parsed,lines,japaneseLines:japanese,dialogueLines:dialogue,chineseLines:chinese,sizes:sizes.slice(0,4000),error,ms:Date.now()-t,...isRouted.has(id)?{routed:true}:{}});}
  return out;}
 function nativeEngines(dir,executable){const out=[];let ot;try{ot=require('./original-text.cjs');}catch{return out;}
  for(const id of ['system4','bgi']){const a=ot.ADAPTERS?.[id];if(!a)continue;const t=Date.now();let loc=null,error='';try{loc=a.locate(dir,path.parse(String(executable||'')).name);}catch(e){error=String(e?.message||e).slice(0,60);}
@@ -108,11 +113,11 @@ function classify({engines,inventory:inv,unsupported,preparing,title}){
  const read=readers.find(e=>!GENERIC.has(e.id)&&e.japaneseLines>=DEDICATED_JP)||readers[0];
  if(read){const lang=judgeLanguage({...read,title});if(lang==='chinese-build'||lang==='decode-suspect'||lang==='not-japanese')return {step:lang,detail:read.id,detected:read.id};return {step:'ok',detail:read.id,detected:read.id};}
  if(unsupported)return {step:DECRYPT.test(unsupported.code)?'decrypt-failed':'parse-failed',detail:(unsupported.engine+':'+unsupported.code).slice(0,60),detected:null};
- const failedDecrypt=engines.find(e=>e.error&&DECRYPT.test(e.error));if(failedDecrypt)return {step:'decrypt-failed',detail:failedDecrypt.id+':'+failedDecrypt.error,detected:null};
+ const failedDecrypt=engines.find(e=>e.error&&!SOFT_ERROR.test(e.error)&&DECRYPT.test(e.error));if(failedDecrypt)return {step:'decrypt-failed',detail:failedDecrypt.id+':'+failedDecrypt.error,detected:null};
  if(preparing==='unpack')return {step:'preparing',detail:'cx-unpack',detected:null};
  if(preparing==='capture')return {step:'decrypt-failed',detail:'encrypted-archive',detected:null};
  const opened=engines.find(e=>e.scenes>0);if(opened)return {step:'parse-failed',detail:opened.id,detected:null};
- const errored=engines.find(e=>e.error&&e.error!=='BUDGET');if(errored)return {step:'parse-failed',detail:errored.id+':'+errored.error,detected:null};
+ const errored=engines.find(e=>e.error&&e.error!=='BUDGET'&&!SOFT_ERROR.test(e.error));if(errored)return {step:'parse-failed',detail:errored.id+':'+errored.error,detected:null};
  const unknown=inv.archives.filter(a=>!fp.DOCUMENT.test(a.name)&&!fp.MEDIA.has(a.format)&&!fp.archiveInfo(a.name,a.magic).resource);
  const scenePck=unknown.find(a=>/(^|\/)scene\.pck$/i.test(a.name));if(scenePck)return {step:'unknown-pack',detail:'siglus-scene-pck',detected:null};
  /* an engine MeguLit can name but has no reader for: say which, not a bare unknown-pack */
@@ -120,14 +125,32 @@ function classify({engines,inventory:inv,unsupported,preparing,title}){
  if(inv.scripts)return {step:'parse-failed',detail:'loose-scripts',detected:null};
  return {step:'no-script',detail:'',detected:null};}
 
-function probeGame({dir,executable,title},{budgetMs=60000}={}){
- const t=Date.now(),deadline=t+budgetMs;let fingerprint=null;
+/* S5 the per-game budget grows with the game: big folders and many archives (8 GB KiriKiri, Unity with hundreds of
+   bundles) ran out of the flat 90 s before a reader got to them. Never more than 4x the base. */
+function scaledBudget(budgetMs,inv){const gb=(inv?.bytes||0)/2**30,n=(inv?.archives||[]).length;return Math.round(Math.min(budgetMs*4,budgetMs+gb*8000+n*1500));}
+/* S5 the readers the evidence names: registry folder tests plus the inventory fingerprint, as scenes.cjs reader ids */
+const norm=t=>String(t||'').toLowerCase().replace(/[^a-z0-9]/g,'');
+function routedReaders(dir,inv){const out=[],add=ids=>{for(const i of ids||[])if(!out.includes(i))out.push(i);};let reg;try{reg=require('./original-engines/registry.cjs');}catch{}
+ const known=fp.fingerprint(inv)?.engine;
+ if(known&&reg){const k=norm(known);for(const [name,ids] of Object.entries(reg.READERS)){const n=norm(name),tokens=String(name).toLowerCase().split(/[^a-z0-9'-]+/).map(norm);if(n.startsWith(k)||tokens.includes(k))add(ids);}}
+ if(known)try{add(Object.keys(require('./original-engines/scenes.cjs').ENGINES).filter(i=>norm(i)===norm(known)||i.startsWith(known+'-')));}catch{}
+ try{add(reg?.readersFor(dir));}catch{}
+ return {engine:known||null,readers:out};}
+function probeGame({dir,executable,title},{budgetMs=60000,progress=null}={}){
+ const t=Date.now();let fingerprint=null,deadline=t+budgetMs;
  try{if(executable)fingerprint=require('./shared-adaptation.cjs').fingerprint(executable);}catch{}
  const inv=inventory(dir);let unsupported=null,preparing=null;
+ budgetMs=scaledBudget(budgetMs,inv);deadline=t+budgetMs;
+ const route=routedReaders(dir,inv);
+ /* S5 stages written as they finish: a worker killed on the budget still reports the inventory, the readers that
+    ran and the stage it was in (the service reads this back, adapter-probe.cjs probeOne) */
+ const report=p=>{if(!progress)return;try{progress({at:Date.now(),budgetMs,inventory:{files:inv.files,bytes:inv.bytes,ext:inv.ext,scripts:inv.scripts,markers:inv.markers,archives:fp.tidy(inv.archives.map(({_path,...a})=>a))},routed:route.readers,...p,engines:(p.engines||[]).map(({sizes,...e})=>e)});}catch{}};
+ report({stage:'cx-prepare'});
  /* cx archives are decrypted here, not by a background worker the probe would not wait for */
  try{require('./original-engines/scenes.cjs').cxPrepareSync(dir,{deadline:t+budgetMs/2});}catch{}
  try{const scenes=require('./original-engines/scenes.cjs');unsupported=scenes.unsupportedReason(dir);preparing=scenes.preparing(dir)?.kind||null;}catch{}
- const engines=[...nativeEngines(dir,executable),...runEngines(dir,{deadline})];
+ report({stage:'native'});
+ const native=nativeEngines(dir,executable),engines=[...native,...runEngines(dir,{deadline,routed:route.readers,progress:p=>report({...p,engines:[...native,...p.engines]})})];
  /* the engine that named the unsupported code is a reader that tried: list it (issue showed 'engines tried: -' next to cmvs:CMVS_CPZ7) */
  if(unsupported?.engine&&!engines.some(e=>e.id===unsupported.engine))engines.push({id:String(unsupported.engine),scenes:-1,parsed:0,lines:0,japaneseLines:0,dialogueLines:0,chineseLines:0,sizes:[],error:String(unsupported.code||'').slice(0,60),ms:0});
  if(!engines.some(e=>e.lines>0))try{const z=require('./original-engines/scenes.cjs').cxChineseOnly(dir);if(z)engines.push({id:'kirikiri-cx',scenes:1,parsed:1,lines:z.lines,japaneseLines:0,dialogueLines:z.lines,chineseLines:z.lines,error:'zh-patch-only',ms:0});}catch{}
@@ -135,6 +158,6 @@ function probeGame({dir,executable,title},{budgetMs=60000}={}){
  return {schema:'megulit.probe-result',version:1,reader:reader(),ms:Date.now()-t,fingerprint:fingerprint?{key:fingerprint.key,exe:maskString(fingerprint.exe),size:fingerprint.size}:null,
   inventory:{files:inv.files,bytes:inv.bytes,ext:inv.ext,scripts:inv.scripts,markers:inv.markers,engine:c.step==='unsupported-engine'?c.detail:'',archives:fp.tidy(inv.archives.map(({_path,...a})=>a))},
   engines:engines.map(({sizes,...e})=>e),detected:c.detected,lines:best?.lines||0,japaneseLines:best?.japaneseLines||0,dialogueLines:best?.dialogueLines||0,chineseLines:best?.chineseLines||0,sizes:best?.sizes||[],
-  step:c.step,detail:c.detail,unsupported:unsupported?{engine:unsupported.engine,code:unsupported.code}:null,preparing,_archives:inv.archives.map(a=>a._path)};
+  tried:engines.filter(e=>e.routed||e.scenes!==0).map(e=>e.id).slice(0,24),budgetMs,step:c.step,detail:c.detail,unsupported:unsupported?{engine:unsupported.engine,code:unsupported.code}:null,preparing,_archives:inv.archives.map(a=>a._path)};
 }
-module.exports={probeGame,classify,judgeLanguage,countLines,inventory,reader,MAGICS};
+module.exports={probeGame,routedReaders,scaledBudget,classify,judgeLanguage,countLines,inventory,reader,MAGICS};
