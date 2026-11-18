@@ -26,7 +26,11 @@ function complete(dir){return REQUIRED.every(n=>{try{return fs.statSync(path.joi
 function x86(exe){try{const fd=fs.openSync(exe,'r');try{const head=Buffer.alloc(64);fs.readSync(fd,head,0,64,0);if(head.readUInt16LE(0)!==0x5a4d)return false;const pe=Buffer.alloc(6);fs.readSync(fd,pe,0,6,head.readUInt32LE(60));return pe.readUInt32LE(0)===0x4550&&pe.readUInt16LE(4)===0x14c;}finally{fs.closeSync(fd);}}catch{return false;}}
 // Siglus is Unicode internally and needs no Japanese locale; under the emulator it could not see fonts installed
 // for the current user only (CLANNAD HD: "未发现字体 Noto Sans Mono CJK SC", E215.2), so it is not recommended there.
-function recommended(game,exe){return game.source!=='steam'&&!require('./locale-policy.cjs').chineseSystem4Patch(exe)&&/YU-RIS|BGI|KiriKiri|RealLive|CatSystem|AdvHD|WillPlus|Majiro|QLIE|SoftPal|NeXAS|System4|ShiinaRio|Entis|Cotopha|NScripter|LiveMaker/i.test(game.engine||'')&&x86(exe);}
+/* #376 (CLANNAD HD, 2026-11-17): a program with Steam's steam_api beside it is started by Steam or with its app id; under the
+   Japanese-environment helper its Steam start fails (「Steam の初期化に失敗しました」, no window). Such a folder is never
+   started through the helper, whatever the record says (Steam builds are Unicode). */
+function steamApi(exe){try{const dir=path.dirname(String(exe||''));return fs.readdirSync(dir).some(n=>/^steam_api(64)?\.dll$/i.test(n));}catch{return false;}}
+function recommended(game,exe){return game.source!=='steam'&&!steamApi(exe)&&!require('./locale-policy.cjs').chineseSystem4Patch(exe)&&/YU-RIS|BGI|KiriKiri|RealLive|CatSystem|AdvHD|WillPlus|Majiro|QLIE|SoftPal|NeXAS|System4|ShiinaRio|Entis|Cotopha|NScripter|LiveMaker/i.test(game.engine||'')&&x86(exe);}
 class LocaleEmulator{
  constructor(root,fetcher=(...a)=>fetch(...a)){this.fetch=fetcher;this.root=root;this.dir=path.join(root,'runtime','locale-emulator');this.job=null;this.cached=null;}
  async status(refresh=false){
@@ -122,4 +126,4 @@ class LocaleEmulator{
   return {localeJapanese:true,localePath:s.path,gamePid:result.pid};
  }
 }
-module.exports={LocaleEmulator,profile,complete,x86,recommended,RELEASE,URL};
+module.exports={LocaleEmulator,profile,complete,x86,steamApi,recommended,RELEASE,URL};
