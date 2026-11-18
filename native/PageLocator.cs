@@ -47,12 +47,12 @@ public sealed class PageLocator : IDisposable {
  public void Request(IntPtr target, string text, bool art) {
   if (target == IntPtr.Zero || String.IsNullOrWhiteSpace(text) || text.Length > 600) return;
   lock (Gate) {
-   if (art) { Target = target; Text = text; At = DateTime.UtcNow; Serial++; Art = true; if (Worker == null) { Worker = new Thread(Run) { IsBackground = true, Name = "MeguLit page locator" }; Worker.Start(); } Wake.Set(); return; }
+   if (art) { Target = target; Text = text; At = DateTime.UtcNow; Serial++; Art = true; if (Worker == null) { Worker = new Thread(Run) { IsBackground = true, Name = "MeguLit page locator", Priority = ThreadPriority.BelowNormal }; Worker.Start(); } Wake.Set(); return; }
    Art = false;
    // After 12 ADV lines in a row only every fourth line is read; a page found again restores every line.
    if (AdvRun >= 12 && ++Skipped % 4 != 0) return;
    Target = target; Text = text; At = DateTime.UtcNow; Serial++;
-   if (Worker == null) { Worker = new Thread(Run) { IsBackground = true, Name = "MeguLit page locator" }; Worker.Start(); }
+   if (Worker == null) { Worker = new Thread(Run) { IsBackground = true, Name = "MeguLit page locator", Priority = ThreadPriority.BelowNormal }; Worker.Start(); }
   }
   Wake.Set();
  }
