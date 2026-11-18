@@ -129,6 +129,8 @@ const ENGINES=[
  {name:'ExHIBIT',hook:null,test:f=>f.has(/\.rld$/i)||f.sub('dat',/\.rld$/i)||f.sub('rld',/\.rld$/i)},
  {name:'SakanaGL',hook:null,test:f=>f.has(/^sakanagl\.dll$/i)},
  {name:'Leaf / AQUAPLUS',hook:true,test:f=>f.has(/^grp\.pak$/i)&&f.has(/^char\.pak$/i)&&f.has(/^(voice|bgm|se)\.pak$/i)},
+ /* #303 the PC release of WHITE ALBUM -綴られる冬の想い出-: big-endian "Filename" PCK, script in Data/Game/Script.sdat */
+ {name:'AQUAPLUS PCK',hook:null,test:f=>f.peek('Data/Game/Script.sdat',/^Filename/,8)},
  // More engines (user, 2026-11-09). Signatures are files only these engines ship; text reading goes through the
  // general hook and is confirmed on first play (hook:null) until a game of that engine is verified.
  {name:'Escude',hook:true,test:f=>f.magic(/^script\.bin$/i,'ESC-ARC')||f.has(/^script\.bin$/i)&&f.has(/^(gpr|evt|st)\.bin$/i)},
@@ -237,7 +239,7 @@ const READERS={"BGI / Ethornell":["bgi"],
  "ExHIBIT":["exhibit"],
  "Escude":["escude"],"ARCGameEngine (Eushully)":["eushully"],"PJADV":["pjadv"],"Luca System":["luca"],"ISM":["ism"],"Enigma Virtual Box":["evbox"],"GLib2":["glib2"],"Cyberworks (C,system)":["cyberworks"],"DxLib":["dxlib"],
  "SLG System":["slg"],"Stuff Script (Propeller)":["stuff"],"STCM2":["stcm2"],"Willadv":["advhd"],"Tanuki Engine":["tanuki"],"Yaneurao":["yaneurao"],"Rits":["rits"],"BlueGale":["bluegale"],
- "Leaf / AQUAPLUS":["aquaplus"],
+ "Leaf / AQUAPLUS":["aquaplus"],"AQUAPLUS PCK":["aquaplus-pck"],
  "LC-ScriptEngine":["lcse"],
  "Wolf RPG":["wolf"],
  "RPG Maker MV/MZ":["rpgmaker"],
