@@ -26,7 +26,8 @@ const hs='e:/steam/steamapps/common/海沙风云';
 test('海沙风云 (Unity + Fungus JSON in TextAssets)',{skip:!fs.existsSync(hs)&&'no local copy'},()=>{
  assert.equal(scenes.detect(hs),'unity-assets');const l=scenes.read('unity-assets',hs);const big=l.find(s=>s.name==='脑死部分');assert.ok(big&&big.lines.length>1000);assert.equal(big.lines[0],'这里是贝让旧城区的港口。');});
 // ゆのはな: MAGES SC3 scripts in script.cpk (user contribution 36de7c9b, first 2 MB of the CPK only)
-const yuno=require('node:fs').readdirSync('h:/MeguLit-Work/contrib').find(n=>n.startsWith('36de7c9b'));
+/* the contribution folder is on the maintainer's machine only: elsewhere (CI) the test is skipped, not the whole file failed */
+let yuno=null;try{yuno=fs.readdirSync('h:/MeguLit-Work/contrib').find(n=>n.startsWith('36de7c9b'));}catch{}
 const yunoCpk=yuno&&'h:/MeguLit-Work/contrib/'+yuno+'/files/data/script.cpk.section.head';
 test('ゆのはな: SC3 scenes inside a CRI CPK read as Japanese',{skip:!(yunoCpk&&fs.existsSync(yunoCpk))&&'no contribution copy'},()=>{
  const tmp=fs.mkdtempSync(require('node:os').tmpdir()+'/yuno-');try{fs.mkdirSync(tmp+'/data');fs.copyFileSync(yunoCpk,tmp+'/data/script.cpk');
