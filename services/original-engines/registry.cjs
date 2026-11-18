@@ -98,7 +98,7 @@ const ENGINES=[
  {name:'Luca System',hook:null,test:f=>f.sub('files',/^script\.pak$/i)},
  {name:'NEKOPACK',hook:null,test:f=>f.magicAny(/\.(dat|pak)$/i,'NEKOPACK')},
  {name:'Marble',hook:null,test:f=>f.has(/\.mbl$/i)},
- {name:'rUGP (age)',hook:null,test:f=>f.has(/^rugp.*\.exe$/i)||f.has(/\.rio$/i)&&f.has(/\.rio\.ini$/i)},
+ {name:'rUGP (age)',hook:null,test:f=>f.has(/^rugp.*\.exe$/i)||f.has(/^ages3rest\.dll$/i)||f.has(/\.rio$/i)&&f.has(/\.rio\.(ici|ini)$/i)||f.magicAny(/\.rio$/i,'\xcd\x32\x6e\x59')},
  /* E620 the F2 plain-text script family (Suika 2, NVList, VNDS, PyMO …): fingerprints are data in plaintext-profiles.json */
  ...require('./plaintext.cjs').RAW.profiles.filter(p=>p.match).map(p=>({name:p.engine,hook:null,test:f=>require('./plaintext.cjs').matches(f,p.id)})),
  /* E660–E669 F4b proprietary engines (research: H:\MeguLit-Work\f4b, notes E660–E669). Readers: Circus (adv32) and Whale
@@ -235,6 +235,7 @@ const READERS={"BGI / Ethornell":["bgi"],
  "Yuka":["yuka"],
  "NEKOPACK":["nekosdk"],
  "Marble":["marble"],
+ "rUGP (age)":["rugp"],
  "Seraph":["seraph"],
  "ExHIBIT":["exhibit"],
  "Escude":["escude"],"ARCGameEngine (Eushully)":["eushully"],"PJADV":["pjadv"],"Luca System":["luca"],"ISM":["ism"],"Enigma Virtual Box":["evbox"],"GLib2":["glib2"],"Cyberworks (C,system)":["cyberworks"],"DxLib":["dxlib"],
