@@ -30,6 +30,7 @@ function status(root,exe){const dir=path.dirname(String(exe||'')),key=dump().cap
 function consider(root,game,{enabled=true,force=false}={}){
  if(!enabled||!game?.executable||process.platform!=='win32')return false;
  const exe=game.executable,dir=path.dirname(exe),archives=hxArchives(dir);if(!archives.length||prepared(dir,archives))return false;
+ try{const cx=require('./original-engines/cx-filter.cjs');if(archives.every(a=>cx.forArchive(path.join(dir,a))))return false;}catch{}
  const key=dump().captureKey(dir);if(active.has(key)||queue.some(j=>j.key===key))return true;
  if(readState(root)[key]&&!force)return false;
  const bit=bitness(exe),helper=path.join(nativeDir(),'ColdCapture'+bit+'.exe'),dll=path.join(nativeDir(),'MeguLitScn'+bit+'.dll');

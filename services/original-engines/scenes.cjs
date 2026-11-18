@@ -252,7 +252,7 @@ const siglus={
 const os=require('node:os');
 const MEDIA_XP3=/^(?:bg|fg|ev|sd)?image|^(?:bgm|voice|sound|se|movie|video|thum|emote|font|sysse)/i;
 const cxArchives=dir=>{try{return fs.readdirSync(dir).filter(f=>/\.xp3$/i.test(f)&&!MEDIA_XP3.test(f)).map(f=>path.join(dir,f));}catch{return [];}};
-const cxCache=file=>{const st=fs.statSync(file);return path.join(os.tmpdir(),'megulit-cx',crypto.createHash('sha256').update(path.resolve(file).toLowerCase()+'|'+st.size+'|'+st.mtimeMs+'|5').digest('hex').slice(0,24)+'.json');};
+const cxCache=file=>{const st=fs.statSync(file);return path.join(os.tmpdir(),'megulit-cx',crypto.createHash('sha256').update(path.resolve(file).toLowerCase()+'|'+st.size+'|'+st.mtimeMs+'|6').digest('hex').slice(0,24)+'.json');};
 const cxBuilds=new Map(),cxMemo=new Map(),cxQueue=[],cxStarted=new Map();let cxRunning=false;
 function cxDocs(file){
  let out;try{out=cxCache(file);}catch{return null;}

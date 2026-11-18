@@ -45,10 +45,14 @@ function textsOf(doc){
 }
 function build(file){
  const list=xp3.list(file),docs=[];if(!list)return {docs,files:0};let tried=0;
+ let cx=null;if(list.files.some(e=>e.encrypted))try{cx=require('./cx-filter.cjs').forArchive(file);}catch{}
  for(const entry of list.files){
-  let raw;try{raw=xp3.read(file,entry);}catch{continue;}
-  if(raw.length<0x40||(raw[1]^raw[3])!==0x53||(raw[2]^raw[3])!==0x42)continue;tried++;
-  const doc=psb.openCx(raw);if(!doc)continue;const scenes=textsOf(doc);
+  let raw;try{raw=xp3.read(file,entry,cx);}catch{continue;}
+  if(raw.length<0x40)continue;
+  const h=raw.toString('latin1',0,4),plain=h==='PSB\0'||h==='mdf\0';
+  if(!plain&&(raw[1]^raw[3])!==0x53&&(raw[2]^raw[3])!==0x42)continue;tried++;
+  let doc=null;if(plain)try{const d=psb.parse(raw,{tolerant:true});if(d?.root&&typeof d.root==='object')doc=d;}catch{}if(!doc)doc=psb.openCx(raw);if(!doc)continue;
+  const scenes=textsOf(doc);
   if(scenes.length)docs.push({entry:entry.name,name:typeof doc.root.name==='string'?doc.root.name:'',scenes});
  }
  return {docs,files:tried};
