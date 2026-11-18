@@ -21,7 +21,7 @@ public static class GameCapture{
  [DllImport("user32.dll")]static extern IntPtr GetAncestor(IntPtr hwnd,uint flags);
  // Proven: BitBlt has shown this window's picture. Blind: BitBlt keeps giving a blank picture while the screen shows
  // the game, so only PrintWindow can read it. Votes: screen checks in a row that said "blind".
- sealed class Choice{public bool Proven,Blind;public int Votes;public DateTime Printed;}
+ sealed class Choice{public bool Proven,Blind;public int Votes;public DateTime Printed,ProvenAt;}
  static readonly Dictionary<IntPtr,Choice> Choices=new Dictionary<IntPtr,Choice>();static readonly object Gate=new object();
  // PrintWindow with PW_RENDERFULLCONTENT makes a DirectX game present an extra frame, seen as a whole black or white
  // flash. Games open on plain black/white screens (warnings, logos, fades), which BitBlt reads as "blank", and that used
@@ -55,13 +55,55 @@ public static class GameCapture{
  public static bool Into(IntPtr hwnd,Bitmap image,uint printFlags,bool screenFallback){
   Skipped=false;FromScreen=false;if(Busy(hwnd)){Skipped=true;return false;}
   Choice c;lock(Gate){if(!Choices.TryGetValue(hwnd,out c)){if(Choices.Count>16)Choices.Clear();c=new Choice();Choices[hwnd]=c;}}
-  if(Blt(hwnd,image)&&!Blank(image)){lock(Gate){c.Proven=true;c.Blind=false;c.Votes=0;}return true;}
+  if(Blt(hwnd,image)&&!Blank(image)){lock(Gate){c.Proven=true;c.Blind=false;c.Votes=0;c.ProvenAt=DateTime.UtcNow;}return true;}
   if(!c.Proven&&!c.Blind){int vote=BlindVote(hwnd,image);lock(Gate){if(vote>0){if(++c.Votes>=3)c.Blind=true;}else if(vote<0)c.Votes=0;}}
   bool print=false;if(c.Blind)lock(Gate){if((DateTime.UtcNow-c.Printed).TotalMilliseconds>=PrintGapMs){c.Printed=DateTime.UtcNow;print=true;}}
   if(!print){if(screenFallback&&!c.Proven&&ScreenInto(hwnd,image)){FromScreen=true;return true;}Skipped=true;return false;}
   bool printed;using(var g=Graphics.FromImage(image)){IntPtr dc=g.GetHdc();try{printed=PrintWindow(hwnd,dc,printFlags);}finally{g.ReleaseHdc(dc);}}
   if(printed&&!Blank(image))return true;if(!screenFallback)return printed;
   FromScreen=true;return ScreenInto(hwnd,image);
+ }
+ // 2026-11-19 (perf: the wait marker read the whole client area 16-33 times a second only to cut a corner out of it):
+ // reads only part (client coordinates). image is either client-sized (part lands at its own place, the rest is left as
+ // it was) or part-sized (part lands at 0,0). Only for a window whose whole picture BitBlt has already shown (Proven):
+ // then BitBlt of the part is the same pixels a full read would give there. A blank part is trusted only while the whole
+ // picture was seen non-blank within PartProofMs (a plain spot of the text box); otherwise the whole client area is read
+ // as before, so a black fade or a window BitBlt cannot see behaves exactly like Into (skipped, PrintWindow rules).
+ const int PartProofMs=400;
+ public static bool Part(IntPtr hwnd,Bitmap image,Rectangle part,int clientW,int clientH,uint printFlags){
+  bool whole=image.Width==clientW&&image.Height==clientH;int dx=whole?part.X:0,dy=whole?part.Y:0;
+  Skipped=false;FromScreen=false;if(Busy(hwnd)){Skipped=true;return false;}
+  if(part.Width<1||part.Height<1||part.X<0||part.Y<0||part.Right>clientW||part.Bottom>clientH||(!whole&&(image.Width<part.Width||image.Height<part.Height)))return false;
+  Choice c;bool proven=false;DateTime at=DateTime.MinValue;lock(Gate){if(Choices.TryGetValue(hwnd,out c)&&c.Proven&&!c.Blind){proven=true;at=c.ProvenAt;}}
+  if(proven){
+   // Read into a part-sized picture: a device context over a client-sized bitmap copies the whole bitmap in and out
+   // (measured 1920x1080: 5-20 ms against 0.5 ms), then copy its rows into place.
+   Bitmap small=whole?Scratch(part.Width,part.Height):image;
+   if(BltPart(hwnd,small,0,0,part)){bool blank=BlankPart(small,new Rectangle(0,0,part.Width,part.Height));
+    if(!blank||(DateTime.UtcNow-at).TotalMilliseconds<PartProofMs){if(!blank)lock(Gate)c.ProvenAt=DateTime.UtcNow;if(whole)CopyRows(small,image,part.X,part.Y);return true;}}}
+  if(whole)return Into(hwnd,image,printFlags);
+  using(var full=new Bitmap(clientW,clientH,PixelFormat.Format32bppArgb)){if(!Into(hwnd,full,printFlags))return false;
+   using(var g=Graphics.FromImage(image)){g.CompositingMode=System.Drawing.Drawing2D.CompositingMode.SourceCopy;g.DrawImage(full,new Rectangle(0,0,part.Width,part.Height),part,GraphicsUnit.Pixel);}}
+  return true;
+ }
+ [ThreadStatic]static Bitmap ScratchBitmap;
+ static Bitmap Scratch(int w,int h){var b=ScratchBitmap;if(b==null||b.Width!=w||b.Height!=h){if(b!=null)b.Dispose();b=ScratchBitmap=new Bitmap(w,h,PixelFormat.Format32bppArgb);}return b;}
+ static void CopyRows(Bitmap from,Bitmap to,int x,int y){int w=from.Width,h=from.Height;
+  var a=from.LockBits(new Rectangle(0,0,w,h),ImageLockMode.ReadOnly,PixelFormat.Format32bppArgb);
+  try{var b=to.LockBits(new Rectangle(x,y,w,h),ImageLockMode.WriteOnly,PixelFormat.Format32bppArgb);
+   try{var row=new byte[w*4];for(int j=0;j<h;j++){Marshal.Copy(IntPtr.Add(a.Scan0,j*a.Stride),row,0,row.Length);Marshal.Copy(row,0,IntPtr.Add(b.Scan0,j*b.Stride),row.Length);}}
+   finally{to.UnlockBits(b);}}finally{from.UnlockBits(a);}
+ }
+ static bool BltPart(IntPtr hwnd,Bitmap image,int dx,int dy,Rectangle part){
+  using(var g=Graphics.FromImage(image)){IntPtr dest=g.GetHdc(),src=GetDC(hwnd);if(src==IntPtr.Zero){g.ReleaseHdc(dest);return false;}
+   try{return BitBlt(dest,dx,dy,part.Width,part.Height,src,part.X,part.Y,0x00CC0020);}finally{ReleaseDC(hwnd,src);g.ReleaseHdc(dest);}}
+ }
+ static bool BlankPart(Bitmap image,Rectangle r){
+  if(r.Width<4||r.Height<4)return true;int lo=255,hi=0;
+  var d=image.LockBits(r,ImageLockMode.ReadOnly,PixelFormat.Format32bppArgb);
+  try{var row=new byte[r.Width*4];for(int y=0;y<r.Height;y+=Math.Max(1,r.Height/12)){Marshal.Copy(IntPtr.Add(d.Scan0,y*d.Stride),row,0,r.Width*4);for(int x=0;x<r.Width;x+=Math.Max(1,r.Width/24)){int i=x*4,l=(row[i]+row[i+1]+row[i+2])/3;if(l<lo)lo=l;if(l>hi)hi=l;}}}
+  finally{image.UnlockBits(d);}
+  return hi-lo<6;
  }
  // +1: the window is in front and the screen over its client area shows a non-blank picture that differs from the
  // blank one BitBlt gave on most sampled points (BitBlt cannot see it). -1: the screen is blank or matches (the game
