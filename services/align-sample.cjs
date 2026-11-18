@@ -47,12 +47,14 @@ function score(z,j){
 }
 /* A Chinese line that is a translation: prose, not Japanese, not just the Japanese line again. */
 const translated=(z,j)=>typeof z==='string'&&prose(z)&&!japaneseLine(z)&&/[一-鿿]/.test(z)&&String(z).replace(/\s/g,'')!==String(j||'').replace(/\s/g,'');
+const addedSound=z=>{const f=features(z);return f.len>0&&f.len<=5&&!f.punct.quote&&!/[。」』）]$/.test(f.t);};
 /* total / paired / unpaired with reasons over every translated line. */
 function census(zh,ja){
  let total=0,paired=0;const reasons={};
  for(let i=0;i<zh.length;i++){if(!translated(zh[i],ja[i]))continue;total++;const j=ja[i];
   /* an original line in Latin letters ("OK", "Hello World") is still that line's original */
-  const why=typeof j!=='string'||!j.trim()?'no-japanese-line':'';
+  /* S9 a sound effect the translation spells out (咚, 喀啷喀啷) where the Japanese only plays a sound has no line to pair */
+  const why=typeof j!=='string'||!j.trim()?(addedSound(zh[i])?'added-sound':'no-japanese-line'):'';
   if(why)reasons[why]=(reasons[why]||0)+1;else paired++;}
  return {total,paired,unpaired:total-paired,reasons};
 }

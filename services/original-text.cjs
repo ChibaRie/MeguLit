@@ -81,7 +81,7 @@ const readScript=loc=>ADAPTERS[loc.engine].read(loc.target),fingerprint=loc=>ADA
 function gameRow(db,id){const row=db.prepare('SELECT * FROM games WHERE id=? AND removed_at IS NULL').get(String(id));if(!row)throw Error('GAME_NOT_FOUND');return row;}
 
 // ---- Running build: what the installed (patched) game still contains ---------------------------
-function scanRunning(root,id,executable){
+function scanRunning(root,id,executable,opts={}){
  const dir=path.dirname(executable),loc=locate(dir,path.parse(executable).name);if(!loc){const waiting=scenes.preparing(dir);return writeState(root,id,waiting?{status:'preparing',error:'SCRIPT_PREPARING',preparing:waiting,runtime:null,gameDir:dir}:(()=>{const why=scenes.unsupportedReason(dir);return why?{status:'unsupported',error:why.code,detail:why.detail,engine:why.engine,preparing:null,runtime:null,gameDir:dir}:{status:'unsupported',error:'NO_SUPPORTED_SCRIPT',detail:'',preparing:null,runtime:null,gameDir:dir};})());}const file=loc.target;
  const hash=fingerprint(loc),current=readState(root)[id];if(current?.runtime?.sha256===hash&&(current.runtime.reader||'')===READER&&current.runtime.index&&fs.existsSync(current.runtime.index))return current;
  const ain=readScript(loc),japanese=ain.lines.filter(t=>prose(t)&&japaneseLine(t)).length,nonEmpty=ain.lines.filter(prose).length,zhOnly=chineseOnly(ain.lines);
@@ -95,7 +95,9 @@ function scanRunning(root,id,executable){
     FileHook\ over the archives) adopts them as the original, as the live engines do while the game runs. A copy the
     user imported stays theirs. */
  const eng=scenes.ENGINES[loc.engine];
- if(ADAPTERS[loc.engine].scene&&eng?.originalLines&&!eng.live&&state.status!=='native-japanese'&&(!original||original.auto))try{return adoptOriginal(root,id,state,dir);}catch{}
+ if(ADAPTERS[loc.engine].scene&&eng?.originalLines&&!eng.live&&state.status!=='native-japanese'&&(!original||original.auto))try{const adopted=adoptOriginal(root,id,state,dir);if(adopted?.original?.index)return adopted;}catch{}
+ /* S9 the Japanese release kept in a subfolder by the translation's installer (backupOriginal) is imported by itself */
+ if(!opts.noBackup&&(state.status==='chinese-only'||state.status==='awaiting-original')&&!original?.index)try{const b=backupOriginal(dir,loc.engine,path.parse(executable).name);if(b)return importInto(root,id,state,b,path.parse(executable).name,true);}catch{}
  return state;
 }
 // ---- Original import and alignment -------------------------------------------------------------
@@ -126,7 +128,13 @@ function importOriginal(root,db,id,dir){
  if(path.resolve(dir).toLowerCase()===path.dirname(row.executable).toLowerCase())throw Error('ORIGINAL_IS_RUNNING_COPY');
  writeState(root,id,{status:'scanning',error:''});
  try{
-  const state=scanRunning(root,id,row.executable);if(!state.runtime)throw Error(state.error||'NO_SUPPORTED_SCRIPT');
+  const state=scanRunning(root,id,row.executable,{noBackup:true});if(!state.runtime)throw Error(state.error||'NO_SUPPORTED_SCRIPT');
+  return importInto(root,id,state,dir,path.parse(row.executable).name,false);
+ }catch(error){writeState(root,id,{status:'failed',error:String(error.message||error)});throw error;}
+}
+/* the import itself: the user's folder (importOriginal) or a Japanese release found inside the game folder (auto) */
+function importInto(root,id,state,dir,exeBase,auto){
+ {
   const loc=locate(dir,path.parse(state.runtime.file).name);if(!loc||loc.engine!==(state.runtime.engine||'system4'))throw Error('ORIGINAL_SCRIPT_NOT_FOUND');const file=loc.target;
   const hash=fingerprint(loc);if(hash===state.runtime.sha256)throw Error('ORIGINAL_SAME_AS_RUNNING');
   const runtime=readIndex(state.runtime.index);let ain=realign(loc,readScript(loc),runtime,runningDirOf(state.runtime));const japanese=ain.lines.filter(t=>prose(t)&&japaneseLine(t)).length;
@@ -137,10 +145,21 @@ function importOriginal(root,db,id,dir){
   if(pc.verdict.lines){ain={...ain,lines:pc.verdict.lines,ruby:pc.verdict.ruby?.some(Boolean)?pc.verdict.ruby:undefined,structure:runtime.structure,sizes:runtime.sizes};alignment=align(runtime,ain);}
   alignment={...alignment,reliable:alignment.reliable&&pc.verdict.ok,pairing:pc.report};
   const index=writeIndex(root,id,'original-'+hash.slice(0,16)+'.json',{schema:SCHEMA,role:'original',engine:ain.engine,version:ain.version,codepage:ain.codepage,source:{file,sha256:hash,dir},structure:ain.structure,lines:ain.lines,...(Array.isArray(ain.ruby)?{ruby:ain.ruby}:{})});
-  const exe=fs.readdirSync(dir).find(f=>/\.exe$/i.test(f)&&path.parse(f).name.toLowerCase()===path.parse(row.executable).name.toLowerCase());
-  return writeState(root,id,{original:{dir,file,sha256:hash,index,codepage:ain.codepage,lines:ain.lines.length,executable:exe?path.join(dir,exe):''},alignment,status:alignment.reliable?'ready':'unreliable',mode:readState(root)[id]?.mode||(alignment.reliable?'original':'off'),error:''});
- }catch(error){writeState(root,id,{status:'failed',error:String(error.message||error)});throw error;}
+  const exe=fs.readdirSync(dir).find(f=>/\.exe$/i.test(f)&&path.parse(f).name.toLowerCase()===String(exeBase).toLowerCase());
+  return writeState(root,id,{original:{dir,file,sha256:hash,index,codepage:ain.codepage,lines:ain.lines.length,executable:exe?path.join(dir,exe):'',...(auto?{auto:true,backup:true}:{})},alignment,status:alignment.reliable?'ready':'unreliable',mode:readState(root)[id]?.mode||(alignment.reliable?'original':'off'),error:''});
+ }
 }
+/* S9 (2026-11-19) a Chinese build that replaced the script archive in place and kept the Japanese one in a subfolder
+   (穢翼のユースティア 汉化版: data01000.arc is Chinese, backup/备份/data01000.arc is the 2011 Japanese release). Folders up to
+   three levels down that hold a file named like one of the running script's sources are read with the same reader; the
+   one with most Japanese lines, at least half its prose, is the original. → folder or null */
+function sourceNames(engine,dir){if(engine==='bgi')return fs.readdirSync(dir).filter(f=>/^data0\d{4}\.arc$/i.test(f));const e=scenes.ENGINES[engine];if(!e?.sources)return [];return e.sources(dir).filter(f=>path.dirname(path.resolve(f)).toLowerCase()===path.resolve(dir).toLowerCase()).map(f=>path.basename(f));}
+function backupOriginal(dir,engine,base){if(engine!=='bgi'&&!ADAPTERS[engine]?.scene)return null;
+ const names=new Set(sourceNames(engine,dir).map(n=>n.toLowerCase()));if(!names.size)return null;
+ let best=null,seen=0;const visit=(d,level)=>{let list;try{list=fs.readdirSync(d,{withFileTypes:true});}catch{return;}
+  if(level>0&&list.some(e=>e.isFile()&&names.has(e.name.toLowerCase())))try{const loc=ADAPTERS[engine].locate(d,base);if(loc&&loc.engine===engine){const r=readScript(loc),prose_=r.lines.filter(prose),ja=prose_.filter(japaneseLine).length;if(ja>=prose_.length*.5&&ja>=50&&(!best||ja>best.ja))best={dir:d,ja};}}catch{}
+  if(level<3)for(const e of list)if(e.isDirectory()&&!/^\.megulit/i.test(e.name)&&++seen<400)visit(path.join(d,e.name),level+1);};
+ visit(dir,0);return best?best.dir:null;}
 // ---- Chinese patch import (user, 2026-11-09): the game runs in Japanese and a translation group's patch is imported --
 // The patch's script is read with the same engine adapter and lined up with the running Japanese script; the patch's
 // line i then is the translation of Japanese line i (zero-latency bilingual, the group's own wording).
@@ -585,4 +604,4 @@ async function discover(root,db,id,options={}){
  writeState(root,id,{status:state.original?.index?(state.alignment?.reliable?'ready':'unreliable'):status,lastSearch:{at:Date.now(),found:search.found.length,complete:search.complete,searched:search.searched,checked}});
  return {notFound:true,search:{found:search.found.length,complete:search.complete,searched:search.searched,checked}};
 }
-module.exports={_fillStore:fillStore,providerKey,foreignKey,foreignNear,foreignSeq,scriptPairs,brief,autoPatchLater,autoPatch,buildPatch,collect,nearbyPatchSources,patchHint,importPatch,clearPatch,locate,readScript,ADAPTERS,readAin,_ain:{mtXor,inflateAin},align,Matcher,importOriginal,status,setMode,provider,scanRunning,japaneseLine,chineseOnly,norm,discover,findCandidates};
+module.exports={backupOriginal,_fillStore:fillStore,providerKey,foreignKey,foreignNear,foreignSeq,scriptPairs,brief,autoPatchLater,autoPatch,buildPatch,collect,nearbyPatchSources,patchHint,importPatch,clearPatch,locate,readScript,ADAPTERS,readAin,_ain:{mtXor,inflateAin},align,Matcher,importOriginal,status,setMode,provider,scanRunning,japaneseLine,chineseOnly,norm,discover,findCandidates};

@@ -120,6 +120,11 @@ function classify({engines,inventory:inv,unsupported,preparing,title}){
  if(inv.scripts)return {step:'parse-failed',detail:'loose-scripts',detected:null};
  return {step:'no-script',detail:'',detected:null};}
 
+/* the Japanese lines under a Chinese build: {kind:'layer'|'backup',lines} or null (S9) */
+function underlay(dir,id,executable){const scenes=require('./original-engines/scenes.cjs'),eng=scenes.ENGINES[id];
+ if(eng?.originalLines){const lines=eng.originalLines(dir);if(Array.isArray(lines)&&lines.some(Boolean))return {kind:'layer',lines:lines.filter(Boolean)};}
+ const ot=require('./original-text.cjs'),base=path.parse(String(executable||'')).name,b=ot.backupOriginal(dir,id,base);if(!b)return null;
+ const loc=ot.ADAPTERS[id].locate(b,base);return loc?{kind:'backup',lines:ot.readScript(loc).lines.filter(Boolean)}:null;}
 function probeGame({dir,executable,title},{budgetMs=60000}={}){
  const t=Date.now(),deadline=t+budgetMs;let fingerprint=null;
  try{if(executable)fingerprint=require('./shared-adaptation.cjs').fingerprint(executable);}catch{}
@@ -131,10 +136,16 @@ function probeGame({dir,executable,title},{budgetMs=60000}={}){
  /* the engine that named the unsupported code is a reader that tried: list it (issue showed 'engines tried: -' next to cmvs:CMVS_CPZ7) */
  if(unsupported?.engine&&!engines.some(e=>e.id===unsupported.engine))engines.push({id:String(unsupported.engine),scenes:-1,parsed:0,lines:0,japaneseLines:0,dialogueLines:0,chineseLines:0,sizes:[],error:String(unsupported.code||'').slice(0,60),ms:0});
  if(!engines.some(e=>e.lines>0))try{const z=require('./original-engines/scenes.cjs').cxChineseOnly(dir);if(z)engines.push({id:'kirikiri-cx',scenes:1,parsed:1,lines:z.lines,japaneseLines:0,dialogueLines:z.lines,chineseLines:z.lines,error:'zh-patch-only',ms:0});}catch{}
- const c=classify({engines,inventory:inv,unsupported,preparing,title});const best=engines.find(e=>e.id===c.detected);
+ let c=classify({engines,inventory:inv,unsupported,preparing,title}),original=null,restore=null;
+ /* S9 (2026-11-19) a Chinese build that still holds the Japanese release (a patch layer over it, or the installer's backup
+    folder) is read through the Japanese lines MeguLit adopts as the original (original-text.cjs), not the Chinese ones the
+    game shows. Still Chinese: say whether the 日文原版恢复 tool can switch it (restore: state:adapter). */
+ if(c.step==='chinese-build'&&c.detected)try{const u=underlay(dir,c.detected,executable),e=engines.find(x=>x.id===c.detected);if(u&&e){const k=countLines(u.lines);Object.assign(e,{lines:u.lines.length,japaneseLines:k.japanese,dialogueLines:k.dialogue,chineseLines:k.chinese,original:u.kind});original=u.kind;c=classify({engines,inventory:inv,unsupported,preparing,title});}}catch{}
+ if(c.step==='chinese-build')try{const r=require('../core/japanese-restore.cjs').detect(dir);restore=String(r.state||'')+(r.adapter?':'+r.adapter:'');}catch{}
+ const best=engines.find(e=>e.id===c.detected);
  return {schema:'megulit.probe-result',version:1,reader:reader(),ms:Date.now()-t,fingerprint:fingerprint?{key:fingerprint.key,exe:maskString(fingerprint.exe),size:fingerprint.size}:null,
   inventory:{files:inv.files,bytes:inv.bytes,ext:inv.ext,scripts:inv.scripts,markers:inv.markers,engine:c.step==='unsupported-engine'?c.detail:'',archives:fp.tidy(inv.archives.map(({_path,...a})=>a))},
   engines:engines.map(({sizes,...e})=>e),detected:c.detected,lines:best?.lines||0,japaneseLines:best?.japaneseLines||0,dialogueLines:best?.dialogueLines||0,chineseLines:best?.chineseLines||0,sizes:best?.sizes||[],
-  step:c.step,detail:c.detail,unsupported:unsupported?{engine:unsupported.engine,code:unsupported.code}:null,preparing,_archives:inv.archives.map(a=>a._path)};
+  step:c.step,detail:c.detail,original,restore,unsupported:unsupported?{engine:unsupported.engine,code:unsupported.code}:null,preparing,_archives:inv.archives.map(a=>a._path)};
 }
 module.exports={probeGame,classify,judgeLanguage,countLines,inventory,reader,MAGICS};
