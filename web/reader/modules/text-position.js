@@ -54,16 +54,17 @@
  /* E550 per-line colour: the colour the engine drew this line with (KiriKiri chColor: narration grey, speech white), else the
     colour learned for its kind (speech in 「」 or narration) at calibration, else the text colour. */
  // A colour belongs to a draw transaction, never to a wall-clock cache. Source can arrive on either side of begin.
- let colorSource='',colorSequence=null,colorDraw=null,latestDraw=null,waitingDraw=false;
+ let colorSource='',colorSequence=null,colorDraw=null,latestDraw=null,retiredDraw=null,waitingDraw=false;
  const sourceToken=text=>text?window.TomeIslandSource?.token(text)??null:null;
  const paintLine=(color,text)=>{const gs=window.TomoyoGameStyle,p=b.galPreferences?.()||{},c=gs?.lineColor?gs.lineColor(p,text||'',color):'',root=document.documentElement.style;
   const on=!!c;document.body.classList.toggle('tome-line-color',on);if(on)root.setProperty('--tomoyo-gal-line-color',c);else root.removeProperty('--tomoyo-gal-line-color');};
  api.paintLine=paintLine;
- b.lineColorReset=()=>{colorSource='';colorSequence=null;colorDraw=latestDraw=null;waitingDraw=false;paintLine('','');};
+ b.lineColorReset=()=>{colorSource='';colorSequence=null;colorDraw=latestDraw=retiredDraw=null;waitingDraw=false;paintLine('','');};
  b.lineColorFor=(text,sequence)=>{const next=String(text||''),seq=Number.isSafeInteger(sequence)?sequence:null;
   if(next===colorSource&&(seq===null||seq===colorSequence))return;colorSource=next;colorSequence=seq;
   if(colorDraw&&!colorDraw.claimed&&colorDraw.sourceToken!=null&&colorDraw.sourceToken===sourceToken(next)){colorDraw.claimed=true;waitingDraw=false;paintLine(colorDraw.color,next);return;}
-  colorDraw=null;waitingDraw=true;paintLine('',next);
+  /* A draw already claimed by the previous sequence is retired: a late end for it must not recolour this one, even with the same text. */
+  retiredDraw=colorDraw?.claimed?{engine:colorDraw.engine,line:colorDraw.line}:null;colorDraw=null;waitingDraw=true;paintLine('',next);
  };
  const lineColor=m=>{
   if(!/_adv_v1$/.test(String(m.engine||''))||!Number.isSafeInteger(m.line))return;
@@ -71,6 +72,7 @@
   const same=latestDraw?.engine===m.engine&&latestDraw.line===m.line;
   const matches=Number.isSafeInteger(m.sourceToken)&&m.sourceToken===sourceToken(colorSource);
   if(m.phase==='end'&&!same&&!Number.isSafeInteger(m.sourceToken))return;
+  if(retiredDraw?.engine===m.engine&&retiredDraw.line===m.line)return;
   if(!same||!colorDraw&&matches){latestDraw={engine:m.engine,line:m.line};colorDraw={...latestDraw,claimed:waitingDraw,color:'',sourceToken:null};waitingDraw=false;}
   // A late end for the previous source cannot recolour a sentence waiting for its own begin.
   if(!colorDraw||colorDraw.engine!==m.engine||colorDraw.line!==m.line)return;

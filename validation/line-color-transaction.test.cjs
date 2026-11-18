@@ -138,3 +138,11 @@ test('core and web automatic palettes prefer current draws over learned read tin
   assert.equal(g.paintFor({...p,autoGameStyle:false},true,'#ffffff').color,'#ffff00');
  }
 });
+
+test('same text shown again as a new sequence rejects the previous sequence late end',t=>{
+ const f=fixture(t),A='同じ文章がもう一度表示されました。';
+ f.status({hookSourceRead:true});f.source(A);f.draw(1,'#ffff00');f.draw(1,'#ffff00','end','krkr',A);assert.equal(f.color(),'#ffff00');
+ f.source(A);f.b.lineColorFor(A,987654);assert.equal(f.color(),undefined,'new sequence of identical text clears the colour');
+ f.draw(1,'#ffff00','end','krkr',A);assert.equal(f.color(),undefined,'late end of the retired draw cannot repaint');
+ f.draw(2,'#ffffff');f.draw(2,'#ffffff','end','krkr',A);assert.equal(f.color(),'#ffffff','the new draw still paints its own colour');
+});
