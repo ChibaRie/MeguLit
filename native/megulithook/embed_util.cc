@@ -1,5 +1,6 @@
 #include "MinHook.h"
 #include "MeguLitGdiHide.h"
+#include "MeguLitEmbedWait.h"
 static std::atomic<bool> patch_fun_ptrs_patch_once_flag = true;
 DynamicShiftJISCodec *dynamiccodec = new DynamicShiftJISCodec(932);
 
@@ -211,7 +212,7 @@ bool isPauseKeyPressed()
 {
   return WinKey::isKeyControlPressed() || WinKey::isKeyShiftPressed() && !WinKey::isKeyReturnPressed();
 }
-std::unordered_map<UINT64, std::wstring> translatecache;
+static MeguLitEmbed::Cache translatecache;
 bool check_is_thread_selected(const ThreadParam &tp)
 {
   for (int i = 0; i < ARRAYSIZE(commonsharedmem->embedtps); i++)
@@ -225,21 +226,15 @@ bool check_embed_able(const ThreadParam &tp)
 {
   return host_connected && check_is_thread_selected(tp) && ((isPauseKeyPressed() == false) ? true : !commonsharedmem->fastskipignore);
 }
+/* MeguLit 2026-11-19: the answer event comes from MeguLitEmbedArm (made before the line went out), see MeguLitEmbedWait.h */
 bool waitforevent(UINT32 timems, const ThreadParam &tp, const std::wstring &origin)
 {
-  char eventname[1000];
-  sprintf(eventname, LUNA_EMBED_notify_event, GetCurrentProcessId(), simplehash::djb2_n2((const unsigned char *)(origin.c_str()), origin.size() * 2));
-  auto event = win_event(eventname);
-  while (timems)
-  {
-    if (check_embed_able(tp) == false)
-      return false;
-    auto sleepstep = min(100, timems);
-    if (event.wait(sleepstep))
-      return true;
-    timems -= sleepstep;
-  }
-  return false;
+  HANDLE ev = MeguLitEmbed::Take(LUNA_EMBED_notify_event, GetCurrentProcessId(), simplehash::djb2_n2((const unsigned char *)(origin.c_str()), origin.size() * 2));
+  bool ok = MeguLitEmbed::Wait(ev, timems, [&]()
+                               { return check_embed_able(tp); });
+  if (ev)
+    CloseHandle(ev);
+  return ok;
 }
 
 void TextHook::parsenewlineseperator(TextBuffer *buff)
@@ -271,12 +266,58 @@ UINT64 texthash(void *data, size_t len)
   }
   return sum;
 }
+static_assert(offsetof(CommonSharedMem, hash) == 16, "HookBridge.cs SyncEmbedGeneration writes the generation at offset 16");
+/* MeguLit: the cache generation (MeguLitEmbedWait.h): what the bridge bumped plus what the hook sees itself */
+static UINT64 embedgeneration()
+{
+  UINT64 h = 1469598103934665603ull;
+  h = MeguLitEmbed::Fold(h, &commonsharedmem->hash, sizeof(commonsharedmem->hash));
+  h = MeguLitEmbed::Fold(h, &commonsharedmem->waittime, sizeof(commonsharedmem->waittime));
+  h = MeguLitEmbed::Fold(h, &commonsharedmem->displaymode, sizeof(commonsharedmem->displaymode));
+  h = MeguLitEmbed::Fold(h, commonsharedmem->embedtps, sizeof(commonsharedmem->embedtps));
+  return h;
+}
+static DWORD embedcodepage(HookParam &hp, TextBuffer &buff)
+{
+  auto hostcodepage = hp.codepage ? hp.codepage : (commonsharedmem->codepage ? commonsharedmem->codepage : hp.detectedCodepage);
+  if (hp.isAscii() && !hostcodepage)
+  {
+    if (all_ascii(buff.viewA()))
+      return CP_UTF8;
+    return 0;
+  }
+  return hostcodepage;
+}
 bool checktranslatedok(TextBuffer buff)
 {
-  ZeroMemory(commonsharedmem->text, sizeof(commonsharedmem->text)); // clear trans before call
   if (buff.size > 1000)
     return true;
-  return translatecache.count(texthash(buff.data, buff.size));
+  return translatecache.Find(texthash(buff.data, buff.size), embedgeneration(), GetTickCount64(), nullptr) != MeguLitEmbed::Miss;
+}
+/* MeguLit 2026-11-19, before the line goes out (texthook.cc). 1: cached, no wait and no question to the bridge;
+   0: the bridge is asked and the answer event already exists; -1: no write-back for this line (not selected, unreadable);
+   -2: too long to write back, the bridge is not asked.
+   Only a stream that will wait clears the shared answer buffer: another stream clearing it could wipe the selected stream's answer. */
+int MeguLitEmbedArm(HookParam &hp, TextBuffer &buff, const ThreadParam &tp)
+{
+  if (!check_embed_able(tp))
+    return -1;
+  if (buff.size > 1000)
+    return -2; /* upstream: never asked, so it only waited the full time for nothing */
+  if (commonsharedmem->clearText)
+    return 0;
+  if (translatecache.Find(texthash(buff.data, buff.size), embedgeneration(), GetTickCount64(), nullptr) != MeguLitEmbed::Miss)
+    return 1;
+  auto hostcodepage = embedcodepage(hp, buff);
+  if (hp.isAscii() && !hostcodepage)
+    return -1;
+  auto t = commonparsestring(buff.data, buff.size, &hp, hostcodepage);
+  if (!t)
+    return -1;
+  ZeroMemory(commonsharedmem->text, sizeof(commonsharedmem->text)); /* clear trans before call */
+  auto &origin = t.value();
+  MeguLitEmbed::Arm(LUNA_EMBED_notify_event, GetCurrentProcessId(), simplehash::djb2_n2((const unsigned char *)(origin.c_str()), origin.size() * 2));
+  return 0;
 }
 bool TextHook::waitfornotify(TextBuffer *buff, ThreadParam tp)
 {
@@ -303,19 +344,19 @@ bool TextHook::waitfornotify(TextBuffer *buff, ThreadParam tp)
     return false;
   std::wstring translate;
   auto hash = texthash(buff->data, buff->size);
-  auto found = translatecache.find(hash);
-  if (found != translatecache.end())
-  {
-    translate = found->second;
-  }
-  else
+  auto generation = embedgeneration();
+  auto hit = translatecache.Find(hash, generation, GetTickCount64(), &translate);
+  if (hit == MeguLitEmbed::Unchanged)
+    return false;
+  if (hit == MeguLitEmbed::Miss)
   {
     if (waitforevent(commonsharedmem->waittime, tp, origin) == false)
       return false;
     translate = commonsharedmem->text;
+    /* an empty answer is cached too (short-lived): the next redraw of this line does not wait again */
+    translatecache.Put(hash, generation, GetTickCount64(), translate);
     if ((translate.size() == 0))
       return false;
-    translatecache.insert(std::make_pair(hash, translate));
   }
   if (hp.lineSeparator)
     strReplace(translate, L"\n", hp.lineSeparator);
