@@ -47,8 +47,24 @@ function archiveSample(file,dir,budget){
   budget.raw+=head+tail;const h=d.sample(readRange(file,0,head),{max:head,compress:true});if(!h)return null;
   const t=d.sample(readRange(file,st.size-tail,tail),{max:tail,compress:true});if(t){for(const p of t.parts)p.at+=st.size-tail;for(const o of t.opaque)o.at+=st.size-tail;}
   return {size:st.size,parts:[...h.parts,...(t?.parts||[])],opaque:[...h.opaque,...(t?.opaque||[])],entropy:h.entropy};},Math.max(SAMPLE_HEAD,SAMPLE_TAIL));
- if(!s)return {name,role:'archive',size:st.size,dropped:'VERIFY'};
- return sized({name,role:'archive',size:st.size,head:sha(readHead(file,1<<20)),sample:{parts:s.parts,opaque:s.opaque,entropy:s.entropy}},s);}
+ /* S5 a window with one block of text in it used to drop the whole archive (Stand by you root.pfs, リビドー Script2.arc: dropped VERIFY, index lost):
+    keep every 64 KiB block that passes on its own, plus the regions the header points into (directories in the middle: rio, npa) */
+ const kept=s?{...s,parts:[...s.parts],opaque:[...s.opaque]}:blockSample(file,st.size,[[0,Math.min(st.size,SAMPLE_HEAD)],...st.size>SAMPLE_HEAD?[[Math.max(SAMPLE_HEAD,st.size-SAMPLE_TAIL),st.size]]:[]],budget);
+ if(kept&&st.size>SAMPLE_HEAD+SAMPLE_TAIL){const more=blockSample(file,st.size,headerPointers(file,st.size,SAMPLE_HEAD,st.size-SAMPLE_TAIL).map(at=>[at,Math.min(st.size-SAMPLE_TAIL,at+POINTER_SPAN)]),budget,SAMPLE_PACKED_MAX-packedSize(kept));if(more){kept.parts.push(...more.parts);kept.opaque.push(...more.opaque);}}
+ if(!kept||!kept.parts.length)return {name,role:'archive',size:st.size,dropped:'VERIFY'};
+ const s2=kept;
+ return sized({name,role:'archive',size:st.size,head:sha(readHead(file,1<<20)),sample:{parts:s2.parts,opaque:s2.opaque,entropy:s2.entropy},...s2.droppedBlocks?{droppedBlocks:s2.droppedBlocks}:{}},s2);}
+/* S5 offsets a header names: u32 / u64 little-endian values in the first 64 bytes that land between lo and hi (at most 3) */
+const POINTER_SPAN=1<<20,BLOCK_SPAN=64*1024;
+function headerPointers(file,size,lo,hi){let h;try{h=readRange(file,0,64);}catch{return [];}const out=[];
+ for(let o=0;o+4<=h.length&&out.length<3;o+=4){const x=h.readUInt32LE(o);if(x>=lo&&x<hi&&!out.some(y=>Math.abs(y-x)<POINTER_SPAN))out.push(x);}
+ return out.sort((a,b)=>a-b);}
+/* the 64 KiB blocks of the given ranges that pass desensitize.verify on their own, up to maxPacked compressed */
+function blockSample(file,size,ranges,budget,maxPacked=SAMPLE_PACKED_MAX){const parts=[],opaque=[];let packed=0,dropped=0;
+ for(const [a,b] of ranges)for(let at=a;at<b;at+=BLOCK_SPAN){const len=Math.min(BLOCK_SPAN,b-at);let buf;try{buf=readRange(file,at,len);}catch{continue;}budget.raw+=len;
+  const s=d.sample(buf,{max:len,compress:true});if(!s){dropped++;continue;}const p=packedSize(s);if(packed+p>maxPacked)return parts.length?{size,parts,opaque,entropy:0,droppedBlocks:dropped}:null;packed+=p;
+  for(const x of s.parts){x.at+=at;parts.push(x);}for(const o of s.opaque){o.at+=at;opaque.push(o);}}
+ return parts.length?{size,parts,opaque,entropy:0,droppedBlocks:dropped}:null;}
 /* a script: the whole file up to SCRIPT_MAX */
 function scriptSample(bytes,max=SCRIPT_MAX){return fitted(w=>d.sample(bytes.subarray(0,Math.min(w,bytes.length)),{max:Math.min(w,bytes.length),compress:true}),Math.min(max,bytes.length));}
 /* encrypted entries of an XP3 archive, for known-plaintext key candidates: [{data,ext}] */
