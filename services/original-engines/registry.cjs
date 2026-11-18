@@ -177,6 +177,7 @@ const ENGINES=[
  {name:'Unity (Yarn Spinner)',hook:null,test:f=>f.managed(/^YarnSpinner/i)},
  {name:'Unity (Game Creator)',hook:null,test:f=>f.managed(/^GameCreator/i)},
  {name:'Unity (Adventure Creator)',hook:null,test:f=>f.managed(/^AC(\.|Runtime)|AdventureCreator/i)},
+ {name:'Unity (Aokana)',hook:null,test:f=>require('./aokana.cjs').probe(f.dir)},
  {name:'DxLib',hook:true,generic:true,test:f=>f.has(/\.dxa$/i)},
  // Unity games read through LunaHook's Mono/IL2CPP hooks for many, not all, titles: verified on first play.
  // A Unity build keeps <Name>_Data beside <Name>.exe. A folder that only holds something named *_Data (a library
@@ -272,6 +273,7 @@ const READERS={"BGI / Ethornell":["bgi"],
  "SystemAoi":["aoi"],
  "KID Engine":["kid"],
  "Unity (Game Creator)":["unity-text","unity-assets"],
+ "Unity (Aokana)":["aokana"],
  "GameMaker":["gamemaker"],"SRPG Studio":["srpg"],"Adventure Game Studio":["ags"],"Macromedia Director":["director"],"Hot Soup Processor":["hsp"],
  "Clickteam Fusion":["clickteam"],"MonoGame / XNA":["xna"],"RPG Paper Maker":["rpgpaper"],"libGDX":["java"],"Java":["java"],"OHRRPGCE":["ohrrpgce"],
  "RE Engine (Capcom)":["re-pak"],"Unity":["unity-text","naninovel","higurashi","capcom-msg","vgprompter","pwaat","unity-assets"]};
