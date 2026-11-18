@@ -80,7 +80,7 @@ function select(db,id,language,executable,root){if(!['ja','zh'].includes(languag
  if(status.defaultOriginal&&language==='zh'&&!versions.ja)versions.ja=row.executable;
  const launch=lib.languageLaunch||{exe:row.executable,source:lib.source,localeMode:lib.localeMode};
  const sameOriginal=path.normalize(file).toLowerCase()===path.normalize(launch.exe).toLowerCase();
- original.library={...lib,exe:file,patchIssue:'',source:sameOriginal?launch.source:'folder',languageLaunch:launch,languageExecutables:{...versions,[language]:file},contentLanguage:language,localeMode:sameOriginal&&launch.source==='steam'?launch.localeMode||'off':language==='ja'&&require('../core/locale-emulator.cjs').x86(file)?'japanese':'off'};
+ original.library={...lib,exe:file,patchIssue:'',source:sameOriginal?launch.source:'folder',languageLaunch:launch,languageExecutables:{...versions,[language]:file},contentLanguage:language,localeMode:sameOriginal&&launch.source==='steam'?launch.localeMode||'off':language==='ja'&&require('../core/locale-emulator.cjs').x86(file)&&!require('../core/locale-emulator.cjs').steamApi(file)?'japanese':'off'};
  db.prepare('UPDATE games SET executable=?,original=? WHERE id=?').run(file,JSON.stringify(original),id);return {...inspect(db,id,root),changed:file!==row.executable||status.current!==language};
 }
 function originalExecutable(db,id,root,mode,executable){

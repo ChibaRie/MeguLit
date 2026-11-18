@@ -117,7 +117,7 @@ function importFor(root,{executable,engine='',library=null,styleSync=null,cheap=
  const record=doc.records[fp.key]?clean(doc.records[fp.key]):null;if(!record)return {applied:[],fingerprint:fp};
  const done=new Set(doc.applied[fp.key]?.parts||[]),applied=[];
  if(record.hook.stream&&!done.has('stream')){const file=streamFile(root,executable,fp.size);if(!fs.existsSync(file)){try{atomic(file,{...record.hook.stream,embeddable:record.hook.embed!=='readonly',shared:true,at:new Date().toISOString()});applied.push('stream');}catch{}}else done.add('stream');}
- if(library&&record.localeMode&&!library.localeMode&&!done.has('locale')){library.localeMode=record.localeMode;applied.push('locale');}
+ if(library&&record.localeMode&&!library.localeMode&&!done.has('locale')&&!(record.localeMode==='japanese'&&require('../core/locale-emulator.cjs').steamApi(executable))){library.localeMode=record.localeMode;applied.push('locale');}
  if(!cheap&&!done.has('profile')){const prefs={};if(record.layout.box)for(const[k,v]of Object.entries(BOX))prefs[v]=record.layout.box[k];if(record.layout.scan)for(const[k,v]of Object.entries(SCAN))prefs[v]=record.layout.scan[k];if(record.layout.colors)Object.assign(prefs,record.layout.colors);if(record.hook.profile)prefs.hookProfile=record.hook.profile;
   if(Object.keys(prefs).length){try{const key=profileKeyOf(executable),file=path.join(root,'data','config','game-style-profiles.json'),docP=readJSON(file),entries=docP.entries&&typeof docP.entries==='object'?docP.entries:{};
    if(!entries[key]&&!styleSync?.profiles?.[key]){const now=Date.now(),entry={name:'',prefs,savedAt:now,textSavedAt:record.layout.colors?now:0,positionSavedAt:record.layout.box?now:0,shared:true,history:[]};

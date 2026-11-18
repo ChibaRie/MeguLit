@@ -133,7 +133,7 @@ async function launch(db,id,runtime=null,windowsLaunch=false,{retried=false,redi
    else child=await startProcess(launchVia,[],path.dirname(launchVia),'GAME_LAUNCH_FAILED');
    trace('launcher-started',{launcher:path.basename(launchVia),pid:child.pid});
    stage='window-wait';state=await waitForVisibleGame(()=>gameProcesses(root,game.executable),{helper:true,helperError:'GAME_LAUNCH_FAILED',exit:()=>child.exit,trace,attempts:360,timeout:90000});
-  }else if(!elevation&&!windowsLaunch&&profile.localeMode==='japanese'&&profile.source!=='steam'&&require('../core/locale-emulator.cjs').x86(game.executable)){
+  }else if(!elevation&&!windowsLaunch&&profile.localeMode==='japanese'&&profile.source!=='steam'&&require('../core/locale-emulator.cjs').x86(game.executable)&&!(require('../core/locale-emulator.cjs').steamApi(game.executable)&&(trace('locale-skipped-steam',{}),true))){
    stage='locale-start';const lib=runtime?.library?.()||new(require('../core/library.cjs').Library)(require('../core/layout.cjs'));
    let result=await lib.locale.launch(game.executable,{trace});
    if(result.needLocaleEmulator){trace('locale-emulator-install',{});await lib.locale.ensure();result=await lib.locale.launch(game.executable,{trace});if(result.needLocaleEmulator)throw Error('LOCALE_EMULATOR_REQUIRED');}
@@ -201,7 +201,7 @@ async function launch(db,id,runtime=null,windowsLaunch=false,{retried=false,redi
       trace('steam-restart-timeout',{waiting});if(waiting==='ShowGameArgs')throw Object.assign(Error('STEAM_CONFIRM_ARGS'),{detail:waiting});if(waiting)throw Object.assign(Error('STEAM_WAITING_USER'),{detail:waiting});throw waitError;}
     }else{
     const LE=require('../core/locale-emulator.cjs');
-    if(error.message!=='GAME_PROCESS_EXITED'||steam||elevation||windowsLaunch||Date.now()-startedAt>3000||!LE.x86(game.executable))throw error;
+    if(error.message!=='GAME_PROCESS_EXITED'||steam||elevation||windowsLaunch||Date.now()-startedAt>3000||!LE.x86(game.executable)||LE.steamApi(game.executable))throw error;
     const lib=runtime?.library?.()||new(require('../core/library.cjs').Library)(require('../core/layout.cjs'));
     trace('locale-fallback',{});stage='locale-start';const result=await lib.locale.launch(game.executable,{trace});if(result.needLocaleEmulator)throw error;
     state={pid:result.gamePid,locale:'japanese'};
@@ -253,8 +253,10 @@ const changedFiles=r=>!!r&&((r.removed|0)+(r.replaced|0)+(r.added|0)+(r.imported
 function importedExecutable(db,id,file,language){
   if(language==='ja'){require('./game-language.cjs').originalExecutable(db,id,root,'select',file);}
   const row=db.prepare('SELECT original FROM games WHERE id=?').get(id),original=JSON.parse(row?.original||'{}'),lib=original.library||{};
-  if(language==='ja')original.library={...lib,localeMode:require('../core/locale-emulator.cjs').x86(file)?'japanese':lib.localeMode||'off'};
-  else{original.library={...lib,exe:file,contentLanguage:'zh',originalExecutableVerified:false};db.prepare('UPDATE games SET executable=? WHERE id=?').run(file,id);}
+  /* #376 a Steam folder (steam_api beside the program) keeps its start mode; undo puts back the mode the restore replaced */
+  const LE=require('../core/locale-emulator.cjs');
+  if(language==='ja'){const next=LE.x86(file)&&!LE.steamApi(file)?'japanese':lib.localeMode||'off';original.library={...lib,localeMode:next,...(next!==(lib.localeMode||'')&&lib.localeBeforeJapanese===undefined?{localeBeforeJapanese:lib.localeMode||''}:{})};}
+  else{original.library={...lib,exe:file,contentLanguage:'zh',originalExecutableVerified:false};if(lib.localeBeforeJapanese!==undefined){original.library.localeMode=lib.localeBeforeJapanese;delete original.library.localeBeforeJapanese;}db.prepare('UPDATE games SET executable=? WHERE id=?').run(file,id);}
   db.prepare('UPDATE games SET original=? WHERE id=?').run(JSON.stringify(original),id);
 }
 function restoreWord(db,id) {

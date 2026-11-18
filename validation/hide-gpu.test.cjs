@@ -54,7 +54,7 @@ test('HookBridge loads the layer, arms it for glyph-fallback streams and treats 
  assert.match(l,/GdiHideHit\("gpu "/,'hide-only only after a confirmed hit');
  assert.match(l,/type="hookChars",line=s/,'ToMe_CHARS passed on like the engine paths');
  assert.match(l,/if\(!GpuCanaryArm\(\)\)return;/,'crash canary checked before the DLL is loaded');
- assert.match(l,/if\(code>=0xC0000000u&&code<=0xCFFFFFFFu\)\{e\["off"\]=true;/,'an exception exit (not a forced kill, 0xFFFFFFFF) turns layer 4 off for that game');
+ assert.match(l,/if\(GpuCanaryCrash\(code\)\)\{e\["off"\]=true;/,'an exception exit (not a forced kill, 0xFFFFFFFF) turns layer 4 off for that game');
  assert.match(l,/public static void GpuCanaryReset\(\)/,'turning it on again is the user\'s call');
  assert.match(b,/if\(!GpuCanarySelfTest\(\)\)\{Console\.Error\.WriteLine\("FAIL gpu hide crash canary"\);return 3;\}/,'canary file logic runs in HookBridge --self-test (arm, crash 0xC0000005 refuses, reset)');});
 
@@ -74,7 +74,7 @@ test('text marks: the game draws a row of 「・」, same count, codes kept, can
  assert.match(p,/\? "\\uFF65" : "\\u30FB"/,'half-width 「･」, full-width 「・」');
  assert.match(h,/EmbedTextPolicy\.Mark\("今日はいい天気だね。\\n明日もABC？"\);if\(mk!="・・・・・・・・・・\\n・・・･･･・"/,'self-test: count and line breaks kept');
  assert.match(l,/if\(on&&GpuCanaryOff\(\)!=""\)/,'refused for a game the crash canary turned off');
- assert.match(l,/code>=0xC0000000u&&code<=0xCFFFFFFFu/,'a forced kill (0xFFFFFFFF) is not a crash');
+ assert.match(l,/code>=0xC0000000u&&code<=0xC0FFFFFFu/,'a forced kill (0xFFFFFFFF) is not a crash');
  assert.match(m,/\(hp\.type & \(DATA_INDIRECT \| USING_STRING \| EMBED_ABLE\)\) \|\| hp\.text_fun/,'per-character argument hooks only');
  assert.match(m,/if \(c < 0x80 \|\| c == 0x3000/,'ASCII codes and blanks untouched');
  assert.match(t,/MeguLitMarks::Mark\(hp, plpdatain\)/,'wired after the GDI hide feed, only for the selected stream');
