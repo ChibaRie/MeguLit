@@ -26,3 +26,8 @@ test('a timed-out worker reports the stage it was in and what it read',()=>{
  const ok=probe.partialResult({stage:'engine:garbro',engines:[{id:'kirikiri-cx',scenes:40,lines:5000,japaneseLines:4800,dialogueLines:4900,chineseLines:0}],inventory:{files:1,bytes:1,ext:{},archives:[]}});
  assert.strictEqual(ok.step,'ok');assert.strictEqual(ok.detected,'kirikiri-cx');assert.strictEqual(ok.timedOut,'engine:garbro');
  assert.strictEqual(probe.partialResult(null).step,'timeout');});
+test('a reader with lines but no dialogue at all has read no text (otomeki #324: encrypted xp3, dump of 254 command lines)',()=>{
+ const inv={files:9,bytes:9,ext:{},archives:[{name:'data.xp3',magic:'5850330d0a200a1a',format:'xp3'}],markers:[]};
+ const c=core.classify({engines:[{id:'kirikiri-dump',scenes:1,parsed:1,lines:254,japaneseLines:0,dialogueLines:0,chineseLines:0,error:''}],inventory:inv,unsupported:null,preparing:'capture',title:'otomeki'});
+ assert.deepStrictEqual(c,{step:'decrypt-failed',detail:'encrypted-archive',detected:null});
+ const old=core.classify({engines:[{id:'kirikiri',scenes:3,lines:300,japaneseLines:280}],inventory:inv,unsupported:null,preparing:null,title:'x'});assert.strictEqual(old.step,'ok');});

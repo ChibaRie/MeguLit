@@ -109,7 +109,9 @@ function judgeLanguage({lines=0,japaneseLines=0,dialogueLines,chineseLines,title
 
 /* which step failed, from the evidence */
 function classify({engines,inventory:inv,unsupported,preparing,title,garbroNeed=0}){
- const readers=engines.filter(e=>e.lines>0).sort((a,b)=>b.lines-a.lines);
+ /* S5 a reader whose lines hold no dialogue at all (no kana, no Han, no Latin prose: file lists, commands) has read no text;
+    judging its language said not-japanese for an encrypted KiriKiri game whose dump was 254 command lines (otomeki #324) */
+ const readers=engines.filter(e=>e.lines>0&&!(e.dialogueLines===0&&!e.japaneseLines&&!e.chineseLines)).sort((a,b)=>b.lines-a.lines);
  const read=readers.find(e=>!GENERIC.has(e.id)&&e.japaneseLines>=DEDICATED_JP)||readers[0];
  if(read){const lang=judgeLanguage({...read,title});if(lang==='chinese-build'||lang==='decode-suspect'||lang==='not-japanese')return {step:lang,detail:read.id,detected:read.id};return {step:'ok',detail:read.id,detected:read.id};}
  if(unsupported)return {step:DECRYPT.test(unsupported.code)?'decrypt-failed':'parse-failed',detail:(unsupported.engine+':'+unsupported.code).slice(0,60),detected:null};
