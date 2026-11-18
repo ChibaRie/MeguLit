@@ -31,3 +31,6 @@ test('a reader with lines but no dialogue at all has read no text (otomeki #324:
  const c=core.classify({engines:[{id:'kirikiri-dump',scenes:1,parsed:1,lines:254,japaneseLines:0,dialogueLines:0,chineseLines:0,error:''}],inventory:inv,unsupported:null,preparing:'capture',title:'otomeki'});
  assert.deepStrictEqual(c,{step:'decrypt-failed',detail:'encrypted-archive',detected:null});
  const old=core.classify({engines:[{id:'kirikiri',scenes:3,lines:300,japaneseLines:280}],inventory:inv,unsupported:null,preparing:null,title:'x'});assert.strictEqual(old.step,'ok');});
+test('a script archive that starts with zeros is reported as an incomplete file',()=>{
+ const c=core.classify({engines:[{id:'siglus',scenes:-1,lines:0,error:'NO_SCENES'}],inventory:{files:2,bytes:9,ext:{},markers:['siglus'],archives:[{name:'Scene.pck',size:9<<20,magic:'0000000000000000',format:''}]},unsupported:null,preparing:null,title:'x'});
+ assert.deepStrictEqual(c,{step:'parse-failed',detail:'incomplete-file:Scene.pck',detected:null});});

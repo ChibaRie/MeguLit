@@ -121,6 +121,9 @@ function classify({engines,inventory:inv,unsupported,preparing,title,garbroNeed=
  const opened=engines.find(e=>e.scenes>0);if(opened)return {step:'parse-failed',detail:opened.id,detected:null};
  const errored=engines.find(e=>e.error&&e.error!=='BUDGET'&&!SOFT_ERROR.test(e.error));if(errored)return {step:'parse-failed',detail:errored.id+':'+errored.error,detected:null};
  const unknown=inv.archives.filter(a=>!fp.DOCUMENT.test(a.name)&&!fp.MEDIA.has(a.format)&&!fp.archiveInfo(a.name,a.magic).resource);
+ /* S5 an archive that starts with zeros is not there yet (a Steam download preallocates, a copy stopped half way): say so, the reader is not the problem */
+ const blank=inv.archives.find(a=>a.size>=4096&&/^0{16}$/.test(a.magic||'')&&/script|scenario|scene|scn|story|text|msg|nss/i.test(a.name));
+ if(blank)return {step:'parse-failed',detail:'incomplete-file:'+String(blank.name).split('/').pop().slice(0,40),detected:null};
  const scenePck=unknown.find(a=>/(^|\/)scene\.pck$/i.test(a.name));if(scenePck)return {step:'unknown-pack',detail:'siglus-scene-pck',detected:null};
  /* an engine MeguLit can name but has no reader for: say which, not a bare unknown-pack */
  const known=fp.fingerprint(inv);if(known&&(unknown.length||(inv.markers||[]).length))return {step:'unsupported-engine',detail:known.engine,detected:null};if(unknown.length)return {step:'unknown-pack',detail:(garbroNeed?'needs-garbro:':'')+(unknown[0].format||'magic:'+unknown[0].magic.slice(0,8)),detected:null};
@@ -162,6 +165,7 @@ function probeGame({dir,executable,title},{budgetMs=60000,progress=null}={}){
   if(files.length&&g.installed()){report({stage:'garbro-unpack',engines});for(const f of files){const left=deadline-Date.now()-3000;if(left<5000)break;try{g.unpackSync(f,{timeout:left});}catch{}}
    const again=runEngines(dir,{deadline:Math.max(deadline,Date.now()+GENERIC_MS),only:['garbro']}).find(e=>e.id==='garbro');if(again){const i=engines.findIndex(e=>e.id==='garbro');if(i>=0)engines[i]=again;else engines.push(again);}}
   else if(files.length)garbroNeed=files.length;}catch{}
+ {const named=unsupported?.engine&&engines.find(e=>e.id===unsupported.engine&&e.error==='NO_SCENES');if(named){named.error=String(unsupported.code||'').slice(0,60);named.scenes=-1;}}
  if(unsupported?.engine&&!engines.some(e=>e.id===unsupported.engine))engines.push({id:String(unsupported.engine),scenes:-1,parsed:0,lines:0,japaneseLines:0,dialogueLines:0,chineseLines:0,sizes:[],error:String(unsupported.code||'').slice(0,60),ms:0});
  if(!engines.some(e=>e.lines>0))try{const z=require('./original-engines/scenes.cjs').cxChineseOnly(dir);if(z)engines.push({id:'kirikiri-cx',scenes:1,parsed:1,lines:z.lines,japaneseLines:0,dialogueLines:z.lines,chineseLines:z.lines,error:'zh-patch-only',ms:0});}catch{}
  const c=classify({engines,inventory:inv,unsupported,preparing,title,garbroNeed});const best=engines.find(e=>e.id===c.detected);
