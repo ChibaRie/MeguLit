@@ -256,7 +256,7 @@ function importedExecutable(db,id,file,language){
   /* #376 a Steam folder (steam_api beside the program) keeps its start mode; undo puts back the mode the restore replaced */
   const LE=require('../core/locale-emulator.cjs');
   if(language==='ja'){const next=LE.x86(file)&&!LE.steamApi(file)?'japanese':lib.localeMode||'off';original.library={...lib,localeMode:next,...(next!==(lib.localeMode||'')&&lib.localeBeforeJapanese===undefined?{localeBeforeJapanese:lib.localeMode||''}:{})};}
-  else{const {localeBeforeJapanese,...rest}=lib;original.library={...rest,exe:file,contentLanguage:'zh',originalExecutableVerified:false,...(localeBeforeJapanese!==undefined?{localeMode:localeBeforeJapanese}:{})};db.prepare('UPDATE games SET executable=? WHERE id=?').run(file,id);}
+  else{original.library={...lib,exe:file,contentLanguage:'zh',originalExecutableVerified:false};if(lib.localeBeforeJapanese!==undefined){original.library.localeMode=lib.localeBeforeJapanese;delete original.library.localeBeforeJapanese;}db.prepare('UPDATE games SET executable=? WHERE id=?').run(file,id);}
   db.prepare('UPDATE games SET original=? WHERE id=?').run(JSON.stringify(original),id);
 }
 function restoreWord(db,id) {
