@@ -89,7 +89,7 @@ test('host: the probe switches the probed stream on without replacement, keeps i
  assert.ok(b.includes('!c.gdiProbe)return;tp=c.tp;on=(ReplacementEnabled||ProbeWanted)&&!DotsOwn(c);'),'only the stream the GDI hide probes');
  assert.ok(b.includes('bool v1=(ReplacementEnabled||ProbeWanted&&c.gdiProbe)&&!DotsOwn(c);'));
  assert.ok(b.includes('Enabled&&Armed(Candidates[Selected])&&(ReplacementEnabled||ProbeWanted&&Candidates[Selected].gdiProbe)&&!DotsOwn(Candidates[Selected]))Luna_UseEmbed(Candidates[Selected].tp,true);'),'on connect too');
- assert.ok(b.includes('return !GlyphCached&&Enabled&&(ReplacementEnabled||ProbeWanted)&&Selected!=""'),'glyph hide lines are pushed while probing');});
+ assert.match(b,/static bool GlyphWanted\(\)\{lock\(Gate\)\{Candidate c;return (?:!HookTarget\.ChineseText&&)?!GlyphCached&&Enabled&&\(ReplacementEnabled\|\|ProbeWanted\)&&Selected!=""/,'glyph hide lines are pushed while probing (a Chinese build keeps its text)');});
 test('reader: where the hook cannot hide the game text, MeguLit does not paint a second copy of the Japanese line over it',()=>{
  const g=read('web/reader/modules/gal.js');
  assert.match(g,/body\.tomoyo-gal-bound\.megulit-readonly-hook \.sentence-window:not\(\.tome-island-page\) \.sentence-text \.char-token \{ -webkit-text-fill-color:transparent!important;/);

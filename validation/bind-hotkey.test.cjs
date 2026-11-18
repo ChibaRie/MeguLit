@@ -89,7 +89,7 @@ test('reconnecting to a game an earlier MeguLit injected: HookBridge connects fi
  const font=read('native/fontprobe/FontProbe.cpp');assert.match(font,/if \(pipe == INVALID_HANDLE_VALUE\) \{ pipe = CreateFileW\(name[^\n]*continue; fresh = true; \}/,'FontProbe redials and replays to a new HookBridge');
  assert.match(font,/CloseHandle\(p\); InterlockedExchange\(&CtlConnected, 0\); Command\("OFF"\)/,'with HookBridge gone nothing stays hidden');
  assert.match(read('native/gpuhide/GpuHide.cpp'),/if \(pipe == INVALID_HANDLE_VALUE\) \{ pipe = CreateFileW\(name/);
- assert.match(read('native/fontdot/FontDot.cpp'),/if \(Pipe == INVALID_HANDLE_VALUE\) \{\s*DWORD now = GetTickCount\(\); if \(now - PipeTried < 2000\) return;/);
+ /* perf/inject-hotpath: the pipe is dialled by the background Writer (never on the game thread), at most every 2 s */assert.match(read('native/fontdot/FontDot.cpp'),/if \(Pipe == INVALID_HANDLE_VALUE\) \{\s*DWORD now = GetTickCount\(\); if \(!first && now - tried < 2000\) continue;[^\n]*\n\s*Pipe = CreateFileA\(name/);
 });
 
 test('MeguLit started while a library game runs: the home window says 「检测到…正在运行…Alt+M」 once, not for the game it rebinds itself',async t=>{
