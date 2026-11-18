@@ -113,19 +113,26 @@ function luaLang(block){/* {{ "text", {"ruby", text="よみ"}, "base", {"/ruby"}
  while(i<block.length){const c=block[i];
   if(c==='"'){let j=i+1,s='';while(j<block.length&&block[j]!=='"'){if(block[j]==='\\'){s+=block[j+1];j+=2;continue;}s+=block[j++];}
    if(depth===2){page+=s;if(pending){ruby.push([s,pending]);pending=null;}}i=j+1;continue;}
-  if(c==='{'){if(depth===2){const end=luaBlock(block,i),tag=block.slice(i,end+1),r=/^\{\s*"ruby"\s*,\s*text\s*=\s*"((?:[^"\\]|\\.)*)"/.exec(tag);if(r)pending=r[1];i=end+1;continue;}depth++;if(depth===2)page='';}
+  if(c==='{'){if(depth===2){const end=luaBlock(block,i);if(end<0)break;const tag=block.slice(i,end+1),r=/^\{\s*"ruby"\s*,\s*text\s*=\s*"((?:[^"\\]|\\.)*)"/.exec(tag);if(r)pending=r[1];i=end+1;continue;}depth++;if(depth===2)page='';}
   else if(c==='}'){if(depth===2&&page)pages.push(page);depth--;}
   i++;}
  return {text:pages.join('\n'),ruby};}
-function parseAstMulti(text){const lines=[],zh=[],ruby=[],anchors=[],re=/\btext\s*=\s*\{/g;let m,last=0;
+const AST_PLACEHOLDER=/^\s*(?:\*[^*\r\n]+\*\s*)+$/;
+function parseAstMulti(text){const rows=[],anchors=[],re=/\btext\s*=\s*\{/g;let m,last=0,matched=false;
  while((m=re.exec(text))){const open=text.indexOf('{',m.index),end=luaBlock(text,open);if(end<0)break;
   for(const a of text.slice(last,m.index).matchAll(/"((?:[^"\\]|\\.)*)"/g))if(ascii(a[1]))anchors.push(a[1]);
   const block=text.slice(open,end+1),langs={};for(const k of block.matchAll(/\b(ja|cn|tw|en)\s*=\s*\{/g)){const o=k.index+k[0].length-1,e=luaBlock(block,o);if(e>0&&!(k[1] in langs))langs[k[1]]=luaLang(block.slice(o,e+1));}
-  if(langs.ja){lines.push(langs.ja.text);zh.push((langs.cn||langs.tw)?.text||'');ruby.push(langs.ja.ruby.length?langs.ja.ruby:null);}
+  if(langs.ja){matched=true;rows.push(langs);}
   last=end+1;re.lastIndex=end+1;}
- return {lines,anchors,zh,ruby};}
+ if(!matched)return null;
+ const jaNonEmpty=rows.map(r=>r.ja.text).filter(Boolean);
+ /* Releases without Japanese (Steam HENPRI) keep "*テキスト*" placeholders in every ja slot: fall back to the release's real language so placeholders are not counted as Japanese. */
+ if(jaNonEmpty.length&&jaNonEmpty.every(t=>AST_PLACEHOLDER.test(t))){
+  const pick=rows.some(r=>r.en?.text)?'en':rows.some(r=>r.cn?.text)?'cn':rows.some(r=>r.tw?.text)?'tw':'';
+  return {lines:pick?rows.map(r=>pick==='cn'?(r.cn||r.tw)?.text||'':r[pick]?.text||''):[],anchors,zh:[],ruby:[]};}
+ return {lines:rows.map(r=>r.ja.text),anchors,zh:rows.map(r=>(r.cn||r.tw)?.text||''),ruby:rows.map(r=>r.ja.ruby.length?r.ja.ruby:null)};}
 function parseAst(buf){const lines=[],anchors=[],text=decode(buf),re=/"((?:[^"\\]|\\.)*)"/g;let m;
- if(/\btext\s*=\s*\{\s*ja\s*=\s*\{/.test(text))return parseAstMulti(text);
+ if(/\bja\s*=\s*\{/.test(text)&&/\btext\s*=\s*\{/.test(text)){const multi=parseAstMulti(text);if(multi)return multi;}
  while((m=re.exec(text))){const s=m[1].replace(/\\(.)/g,'$1');if(ascii(s))anchors.push(s);else lines.push(s);}
  return {lines,anchors};}
 const isPfs=f=>/\.pfs(?:\.\d+)?$/i.test(f);

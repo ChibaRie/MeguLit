@@ -17,11 +17,11 @@ function archives(gameDir){
 function entries(file){try{return sc().pfsList(file);}catch{return null;}}
 function readEntry(file,list,name){const e=list.files.find(f=>f.name.toLowerCase()===name.toLowerCase());return e?sc().pfsRead(file,e,list.key):null;}
 
-/* the text holds Japanese next to other languages */
+/* the text holds real Japanese next to other languages (not "*テキスト*" placeholders) */
 function multilingual(dir,files){
  for(const f of files){const list=entries(path.join(dir,f));if(!list)continue;
-  for(const e of list.files.filter(e=>/\.ast$/i.test(e.name)&&e.size>4000).slice(0,8)){let t='';try{t=sc().pfsRead(path.join(dir,f),e,list.key).toString('utf8');}catch{continue;}
-   if(/\bja\s*=\s*\{[^]{0,400}?[ぁ-ヿ]/.test(t)&&/\b(en|cn|tw|zh)\s*=\s*\{/.test(t))return true;}}
+  for(const e of list.files.filter(e=>/\.ast$/i.test(e.name)&&e.size>4000).slice(0,8)){let buf,t='';try{buf=sc().pfsRead(path.join(dir,f),e,list.key);t=buf.toString('utf8');}catch{continue;}
+   if(/\bja\s*=\s*\{/.test(t)&&/\b(en|cn|tw|zh)\s*=\s*\{/.test(t)&&sc().parseAst(buf).lines.some(l=>/[ぁ-ゖァ-ヺ]/.test(l)))return true;}}
  return false;
 }
 /* the game's Lua files (the last archive holding a name wins, like the engine) */
