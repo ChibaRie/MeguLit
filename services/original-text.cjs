@@ -547,9 +547,11 @@ function staticProvider(root,executable){
    resolve:text=>withRuby(resolveLine(text))};
   function resolveLine(text){const r=m.match(text);if(r.japanese===undefined)return r;
     // E449 lines the release leaves in Japanese take the filled translation written for them (fill.cjs), marked filled.
-    if(r.indices.some(untranslated)){const parts=r.indices.map(i=>{if(!untranslated(i))return m.og[i];const f=fillLines.lookup(rt[i]);return f&&f.zh?f.zh:null;});
-     if(parts.every(p=>p!=null))return {...r,translation:parts.join(''),japanese:undefined,filled:true,source:'filled'};}
-    if(r.indices.some(untranslated)){const t=fill.get(r.indices.map(i=>rt[i]).join(''));return t?{...r,translation:t,japanese:undefined,machine:true}:{status:'none',method:'untranslated',indices:r.indices};}
+    /* line by line: the patch's line, else its filled translation, else the line translated ahead (script-prefetch keeps
+       each script line on its own, so a capture of two lines in one box finds them; a patched line keeps its wording) */
+    if(r.indices.some(untranslated)){let machine=false;const parts=r.indices.map(i=>{if(!untranslated(i))return m.og[i];const f=fillLines.lookup(rt[i]);if(f&&f.zh)return f.zh;const t=fill.get(rt[i]);if(t)machine=true;return t||null;});
+     if(parts.every(p=>p!=null))return machine?{...r,translation:parts.join(''),japanese:undefined,machine:true}:{...r,translation:parts.join(''),japanese:undefined,filled:true,source:'filled'};
+     const t=fill.get(r.indices.map(i=>rt[i]).join(''));return t?{...r,translation:t,japanese:undefined,machine:true}:{status:'none',method:'untranslated',indices:r.indices};}
     return {...r,translation:r.japanese,japanese:undefined};}
   return {...api,
    // The next lines after the reading position that still need a translation, each with the lines before it as context.
