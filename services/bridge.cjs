@@ -461,7 +461,7 @@ async function dispatch(request,runtime=null) {
         const {AnkiReviewer}=require('./anki-review.cjs');
         const reviewConfig=store.readJSON(path.join(root,'data','config','v4-preferences.json'),store.readJSON(path.join(root,'migration','baseline-20261103','config','v4-preferences.json')));const reviewer=new AnkiReviewer({db,config:reviewConfig,mediaDir:require('../core/anki-media-cache.cjs').dirFor(root),voiceCheck:async(text,buf)=>{const gv=require('./game-voice.cjs');await Promise.race([gv.refreshStale(root),new Promise(r=>setTimeout(r,8000).unref?.())]);return gv.recordedFits(root,text,buf);},gameVoice:async text=>{const v=require('./game-voice.cjs').find(root,text);return v?.source==='scan'?v:null;},speak:runtime?async text=>{const c=runtime.config?.()||reviewConfig;try{await runtime.services().ensureSpeech(c.aivisUrl,c.aivisGpu);}catch{}return runtime.speech().synthesize({surface:text,reading:'',pitch:[]},c);}:null});
         if(request.action==='anki_status')return await reviewer.status();
-        if(request.action==='anki_current')return await reviewer.snapshot();
+        if(request.action==='anki_current')return await reviewer.snapshot(null,{recover:true});
         if(request.action==='anki_stop')return await reviewer.stop();
         if(request.action==='anki_practice')return request.end===true?reviewer.endPractice():await reviewer.practice(String(request.deck||''),request.advance===true,request.resume===true);
         if(request.action==='anki_deck_config')return await reviewer.deckConfig(String(request.deck||''));
