@@ -54,7 +54,7 @@ public static partial class HookBridge {
  }
  /* Crash canary (owner 2026-11-14: layer 4 must never crash a game). Per game build (data/gpu-hide/<exe>-<size>.json, the
     key of the stream memory): armed while the DLL is loaded into a running game; the bridge waits for the game to end.
-    An exit by an exception (NTSTATUS error codes 0xC0000000-0xCFFFFFFF: access violation, stack overflow, ...; not 0xFFFFFFFF = a forced kill) turns the layer off for that
+    An exit by an exception (system NTSTATUS error codes 0xC0000000-0xC0FFFFFF: access violation, stack overflow, ...; not 0xFFFFFFFF = a forced kill) turns the layer off for that
     game ("off", with the reason); any other exit clears the arm. Turning it on again is the user's call (GpuCanaryReset). */
  [System.Runtime.InteropServices.DllImport("kernel32.dll")] static extern uint WaitForSingleObject(IntPtr h,uint ms);
  [System.Runtime.InteropServices.DllImport("kernel32.dll")] static extern bool GetExitCodeProcess(IntPtr h,out uint code);
@@ -65,14 +65,20 @@ public static partial class HookBridge {
  public static string GpuCanaryOff(){return GpuCanaryOffFile(GpuCanaryFile());}
  /// <summary>The user turns the layer on again for the bound game.</summary>
  public static void GpuCanaryReset(){string f=GpuCanaryFile();if(f!=""&&File.Exists(f))try{File.Delete(f);}catch{}}
- static string GpuCanaryOffFile(string f){var d=GpuCanaryRead(f);object v;return d.TryGetValue("off",out v)&&Convert.ToBoolean(v)?(d.ContainsKey("reason")?Convert.ToString(d["reason"]):"off"):"";}
+ /* #338 (STEINS;GATE 0, 2026-11-16): the game ended with 0xCFFFFFFF (facility 0xFFF: a status the game or Steam set, not a
+    Windows exception) and the layer stayed off, so 隐藏对话 never worked again. A crash is a system exception code
+    (facility below 0x100: 0xC0000005, 0xC00000FD, 0xC06D007E ...); a record turned off by any other code is ignored. */
+ static bool GpuCanaryCrash(uint code){return code>=0xC0000000u&&code<=0xC0FFFFFFu;}
+ static string GpuCanaryOffFile(string f){var d=GpuCanaryRead(f);object v;if(!(d.TryGetValue("off",out v)&&Convert.ToBoolean(v)))return "";
+  object x;if(d.TryGetValue("exit",out x)){try{if(!GpuCanaryCrash((uint)Convert.ToInt64(x)))return "";}catch{}}
+  return d.ContainsKey("reason")?Convert.ToString(d["reason"]):"off";}
  // Arms the file for a run (false = the layer is off for this game). Pure file logic, self-tested.
  static bool GpuCanaryArmFile(string f,long pid){if(f=="")return true;var d=GpuCanaryRead(f);object v;if(d.TryGetValue("off",out v)&&Convert.ToBoolean(v))return false;
   if(d.TryGetValue("armed",out v)&&Convert.ToBoolean(v))Diagnostic("gpu hide canary: the previous run was not seen to its end (bridge stopped first); keeping the layer on");
   d["armed"]=true;d["pid"]=pid;d["at"]=DateTime.UtcNow.ToString("o");GpuCanaryWrite(f,d);return true;}
  // The game ended with this exit code: an exception code turns the layer off for the game, anything else clears the arm.
  static void GpuCanaryExitFile(string f,uint code){if(f=="")return;var e=GpuCanaryRead(f);e["armed"]=false;e["exit"]=(long)code;
-  if(code>=0xC0000000u&&code<=0xCFFFFFFFu){e["off"]=true;e["reason"]="game exited with exception 0x"+code.ToString("X8")+" while layer 4 was loaded ("+DateTime.UtcNow.ToString("o")+")";Diagnostic("gpu hide canary: "+e["reason"]+"; layer 4 is off for this game from now on");}
+  if(GpuCanaryCrash(code)){e["off"]=true;e["reason"]="game exited with exception 0x"+code.ToString("X8")+" while layer 4 was loaded ("+DateTime.UtcNow.ToString("o")+")";Diagnostic("gpu hide canary: "+e["reason"]+"; layer 4 is off for this game from now on");}
   GpuCanaryWrite(f,e);}
  // Returns false when the layer must not load into this game.
  static bool GpuCanaryArm(){string f=GpuCanaryFile();if(f=="")return true;
@@ -84,6 +90,7 @@ public static partial class HookBridge {
   try{if(!GpuCanaryArmFile(f,1)||GpuCanaryOffFile(f)!="")return false;GpuCanaryExitFile(f,0);if(GpuCanaryOffFile(f)!=""||!GpuCanaryArmFile(f,2))return false;
    GpuCanaryExitFile(f,1);if(GpuCanaryOffFile(f)!=""||!GpuCanaryArmFile(f,2))return false; /* an ordinary non-zero exit is not a crash */
    GpuCanaryExitFile(f,0xFFFFFFFFu);if(GpuCanaryOffFile(f)!="")return false; /* nor a forced kill (TerminateProcess -1) */
+   if(!GpuCanaryArmFile(f,2))return false;GpuCanaryExitFile(f,0xCFFFFFFFu);if(GpuCanaryOffFile(f)!=""||!GpuCanaryArmFile(f,2))return false; /* nor a status outside the system facilities (#338) */
    if(!GpuCanaryArmFile(f,3))return false;GpuCanaryExitFile(f,0xC0000005u);if(GpuCanaryOffFile(f).IndexOf("0xC0000005",StringComparison.Ordinal)<0||GpuCanaryArmFile(f,4))return false;
    File.Delete(f);return GpuCanaryArmFile(f,5);}catch{return false;}finally{try{Directory.Delete(dir,true);}catch{}}}
  /* Text marks (docs/text-architecture.md, "Marks"; owner 2026-11-14): the game draws its own line as a row of 「・」 and
