@@ -41,8 +41,8 @@ const hasKana=t=>KANA.test(t);
 /* Shift-JIS for the originals, GBK for Chinese patches: replacement characters and half-width katakana (what GBK bytes
    become when read as Shift-JIS) count against an encoding; a tie goes to the one with more kana */
 function codepage(all){if(!all||!all.length)return 'shift_jis';
- const score=enc=>{const t=new TextDecoder(enc).decode(all);return {bad:(t.match(/�/g)||[]).length*4+(t.match(/[｡-ﾟ]/g)||[]).length,kana:(t.match(KANA_G)||[]).length};};
- const s=score('shift_jis'),g=score('gbk');return s.bad<g.bad||s.bad===g.bad&&s.kana>=g.kana?'shift_jis':'gbk';}
+ const score=enc=>{const t=new TextDecoder(enc).decode(all),repl=(t.match(/\ufffd/g)||[]).length,hw=(t.match(/[｡-ﾟ]/g)||[]).length;return {repl,hw,bad:repl*4+hw,kana:(t.match(KANA_G)||[]).length};};
+ const s=score('shift_jis'),g=score('gbk');return s.bad<g.bad||s.bad===g.bad&&s.kana>=g.kana||s.repl<=g.repl&&s.kana>=Math.max(8,g.kana*4,s.hw*4)?'shift_jis':'gbk';}
 const decoder=bufs=>new TextDecoder(codepage(Buffer.concat(bufs.filter(b=>b&&b.some(c=>c>=0x80)).slice(0,4000))));
 /* E577 the same choice over many strings (BGI, WOLF, YU-RIS, System4 AIN …: one code page per script) */
 const codepageOf=(bufs,{min=0,max=4000}={})=>codepage(Buffer.concat(bufs.filter(b=>b&&b.length>min).slice(0,max)));
