@@ -213,7 +213,10 @@ LR"MGLT((function(){
     return void;
    } incontextof st;
    st.trOwn=function(inst,L){
-    try {return inst===L.textLayer || (typeof inst.textLayer=='Object' && inst.textLayer!==void && inst.textLayer===L.textLayer);} catch(e) {return false;}
+    try {if(inst===L.textLayer || (typeof inst.textLayer=='Object' && inst.textLayer!==void && inst.textLayer===L.textLayer)) return true;
+     /* 2026-11-19 live 千恋＊万花: the plugin's renderers are bound to no layer (no textLayer member); one is the dialogue's
+        only while KAG is writing to that very message layer */
+     return typeof inst.textLayer=='undefined' && L===this.kag.current;} catch(e) {return false;}
    } incontextof st;
    st.trRestore=function(){
     try {if(this.trOp!==void && isvalid this.trT) {if(this.trT.opacity==0) this.trT.opacity=this.trOp;}} catch(e) {}

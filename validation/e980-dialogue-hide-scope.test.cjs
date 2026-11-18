@@ -30,6 +30,15 @@ test('confirmed dialogue still hides, read mode and a layer switch restore its e
  const old=f.layer;f.layer={height:200,textLayer:{opacity:128}};f.st.trHide();
  assert.equal(old.textLayer.opacity,192);assert.equal(f.layer.textLayer.opacity,128,'unknown new layer kept');
 });
+test('live 千恋＊万花: a TextRender bound to no layer hides only the message layer KAG writes to (kag.current)',()=>{
+ /* 2026-11-19: Yuzusoft's renderers have no textLayer member, so the strict check alone never hid any dialogue and
+    MeguLit drew the line over the game's own copy */
+ const loose=()=>({getCharacters:()=>[..."これは台詞です"].map((text,i)=>({text,x:20*i,y:0,cw:20,size:24}))});
+ const f=fixture();f.st.kag={current:{}};f.st.trDone(loose());assert.equal(f.layer.textLayer.opacity,255,'another layer is current');assert.equal(f.out.length,0);
+ f.st.kag.current=f.layer;f.st.trDone(loose());assert.equal(f.layer.textLayer.opacity,0);assert.ok(f.out.some(s=>s.includes('hidden=1')));
+ const g=fixture();g.st.kag={current:g.layer};g.st.trDone({textLayer:{opacity:255},getCharacters(){throw Error('a renderer bound to another layer must not be sampled');}});
+ assert.equal(g.layer.textLayer.opacity,255);
+});
 test('a name plate with the same renderer ownership stays visible',()=>{
  const f=fixture();f.layer.height=40;f.st.trDone(f.renderer(f.layer));assert.equal(f.layer.textLayer.opacity,255);assert.equal(f.out.length,0);
 });
