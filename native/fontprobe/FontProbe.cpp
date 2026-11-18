@@ -325,13 +325,23 @@ void Report() {
 
 // ---- private fonts ---------------------------------------------------------------------------------------------------
 std::set<unsigned> Saved;
+// The disk write runs on a worker thread: the game's AddFontMemResourceEx / GdipPrivateAddMemoryFont call only hashes
+// the font and copies a new one (the caller may free its buffer once the call returns).
+struct SaveJob { unsigned h; DWORD size; unsigned char *data; };
+DWORD WINAPI SaveWorker(void *arg) {
+ SaveJob *j = (SaveJob *)arg; wchar_t path[1200]; swprintf_s(path, L"%smem-%08x.ttf", Dir, j->h); bool ok = true;
+ if (GetFileAttributesW(path) == INVALID_FILE_ATTRIBUTES) { HANDLE f = CreateFileW(path, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, 0, NULL); if (f == INVALID_HANDLE_VALUE) ok = false; else { DWORD done = 0; BOOL w = WriteFile(f, j->data, j->size, &done, NULL); CloseHandle(f); if (!w || done != j->size) { DeleteFileW(path); ok = false; } } }
+ if (ok) Send("ToMe_FONTFILE kind=mem path=" + Utf8(path));
+ HeapFree(GetProcessHeap(), 0, j->data); HeapFree(GetProcessHeap(), 0, j); return 0;
+}
 void SaveMemory(const void *data, DWORD size) {
  if (!data || size < 1024 || size > 60u * 1024 * 1024 || !Dir[0]) return;
  unsigned h = 2166136261u; const unsigned char *p = (const unsigned char *)data; for (DWORD i = 0; i < size; i += (size > 65536 ? 7 : 1)) h = (h ^ p[i]) * 16777619u; h ^= size;
  EnterCriticalSection(&Gate); bool fresh = Saved.insert(h).second; LeaveCriticalSection(&Gate); if (!fresh) return;
- wchar_t path[1200]; swprintf_s(path, L"%smem-%08x.ttf", Dir, h);
- if (GetFileAttributesW(path) == INVALID_FILE_ATTRIBUTES) { HANDLE f = CreateFileW(path, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, 0, NULL); if (f == INVALID_HANDLE_VALUE) return; DWORD done = 0; BOOL ok = WriteFile(f, data, size, &done, NULL); CloseHandle(f); if (!ok || done != size) { DeleteFileW(path); return; } }
- Send("ToMe_FONTFILE kind=mem path=" + Utf8(path));
+ SaveJob *j = (SaveJob *)HeapAlloc(GetProcessHeap(), 0, sizeof(SaveJob)); unsigned char *copy = j ? (unsigned char *)HeapAlloc(GetProcessHeap(), 0, size) : NULL;
+ if (!copy) { if (j) HeapFree(GetProcessHeap(), 0, j); return; }
+ memcpy(copy, data, size); j->h = h; j->size = size; j->data = copy;
+ HANDLE t = CreateThread(NULL, 0, SaveWorker, j, 0, NULL); if (t) CloseHandle(t); else { HeapFree(GetProcessHeap(), 0, copy); HeapFree(GetProcessHeap(), 0, j); }
 }
 void ReportFile(const std::wstring &file) {
  if (file.empty() || file.size() > 900) return; wchar_t win[MAX_PATH]; GetWindowsDirectoryW(win, MAX_PATH);
