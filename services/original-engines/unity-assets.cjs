@@ -21,11 +21,12 @@ function dataDirs(dir){let names;try{names=fs.readdirSync(dir,{withFileTypes:tru
 function walk(d,depth,out){let es;try{es=fs.readdirSync(d,{withFileTypes:true});}catch{return;}
  for(const e of es){const f=path.join(d,e.name);if(e.isDirectory()){if(depth>0&&!/^(Managed|Mono|il2cpp_data|Plugins|MonoBleedingEdge|Resources)$/i.test(e.name))walk(f,depth-1,out);}else out.push(f);}}
 /* serialized files of the player and bundle files, in a fixed order */
+const BUNDLE_EXT=/\.(bundle|ab|unity3d)$/i;
 function sources(dir){const players=[],bundles=[],loose=[];
  for(const d of dataDirs(dir)){let names;try{names=fs.readdirSync(d);}catch{continue;}
   for(const n of names)if(/^(?:resources\.assets|sharedassets\d+\.assets|globalgamemanagers\.assets|level\d+)$/i.test(n))players.push(d+path.sep+n);
   const all=[];walk(d,5,all);for(const f of all){const b=path.basename(f);if(LOOSE.test(b)&&/StreamingAssets|Resources|[\/]data[\/]/i.test(f))loose.push(f);else if(!NOT_BUNDLE.test(b)&&!BUNDLE_SKIP.test(b))bundles.push(f);}}
- for(const f of bundles.slice()){let sz;try{sz=fs.statSync(f).size;}catch{sz=0;}if(sz<64||sz>MAX_BUNDLE*8||ufs.start(require('./kit.cjs').head(f,65536))<0)bundles.splice(bundles.indexOf(f),1);}
+ for(const f of bundles.slice()){let sz;try{sz=fs.statSync(f).size;}catch{sz=0;}if(sz<64||sz>MAX_BUNDLE*8||(!BUNDLE_EXT.test(f)&&ufs.start(require('./kit.cjs').head(f,65536))<0))bundles.splice(bundles.indexOf(f),1);}
  return {players:players.sort(),bundles:bundles.sort(),loose:loose.sort()};}
 
 function noise(s){return !CJK.test(s)||/^(Assets|Packages)\/|^[\w.\-/\\ ]+\.\w{2,5}$/.test(s)||/^\d+_[A-Za-z]/.test(s);}
@@ -37,17 +38,25 @@ function entriesOf(buf,label){const r=ser.parse(buf);if(!r)return [];const out=[
  if(mono.length>=2)out.push({name:label+'#mono',bytes:Buffer.from('\u0001MONO\n'+mono.join('\n'),'utf8')});
  return out;}
 
+function wantNode(head){
+ const r=ser.parse(head);if(!r)return false;
+ let maxEnd=0;
+ for(const o of r.objects)if(o.type===49||(o.type===114&&o.size>=12)){const e=o.offset+o.size;if(e>maxEnd)maxEnd=e;}
+ return maxEnd||false;
+}
+
 const memo=new Map();
-function index(dir){const key=dir;const src=sources(dir);const sig=[...src.players,...src.bundles,...src.loose].map(f=>f+'|'+stat(f)).join('\n');
+function index(dir,opts={}){const key=dir;const src=sources(dir);const sig=[...src.players,...src.bundles,...src.loose].map(f=>f+'|'+stat(f)).join('\n');
  const hit=memo.get(key);if(hit&&hit.sig===sig)return hit.scenes;
+ const deadline=opts?.deadline||Infinity;let timedOut=false;
  const scenes=new Map();const add=(e,from)=>{let k=e.name.toLowerCase(),n=1,base=k;while(scenes.has(k))k=base+'~'+(++n);scenes.set(k,{name:e.name,read:()=>e.bytes,from});};
- for(const f of src.players){let sz=0;try{sz=fs.statSync(f).size;}catch{}if(sz>MAX_NODE*4||!sz)continue;let buf;try{buf=fs.readFileSync(f);}catch{continue;}
+ for(const f of src.players){if(Date.now()>deadline){timedOut=true;break;}let sz=0;try{sz=fs.statSync(f).size;}catch{}if(sz>MAX_NODE*4||!sz)continue;let buf;try{buf=fs.readFileSync(f);}catch{continue;}
   try{for(const e of entriesOf(buf,path.basename(f)))add(e,f);}catch{}}
- for(const f of src.bundles){let nodes;try{nodes=ufs.list(f);}catch{nodes=null;}if(!nodes)continue;
-  for(const n of nodes){if(/\.(resS|resource|ress)$/i.test(n.name)||n.size>MAX_NODE||n.size<64)continue;let node;try{node=ufs.readNode(f,n.index,MAX_NODE);}catch{continue;}if(!node)continue;
-   try{for(const e of entriesOf(node.data,path.basename(f).replace(/_[0-9a-f]{32}\.bundle$/i,'')))add(e,f);}catch{}}}
- for(const f of src.loose){let sz=0;try{sz=fs.statSync(f).size;}catch{}if(sz<8||sz>16<<20)continue;let buf;try{buf=fs.readFileSync(f);}catch{continue;}if(CJK.test(buf.toString('utf8',0,Math.min(buf.length,400000))))add({name:path.basename(f).replace(/\.[^.]+$/,''),bytes:buf},f);}
- const list=[...scenes.values()].sort((a,b)=>a.name.localeCompare(b.name));memo.set(key,{sig,scenes:list});if(memo.size>6)memo.delete(memo.keys().next().value);return list;}
+ if(!timedOut)for(const f of src.bundles){if(Date.now()>deadline){timedOut=true;break;}
+  let nodes;try{nodes=ufs.readMatchingNodes(f,wantNode,MAX_NODE);}catch{nodes=null;}if(!nodes)continue;
+  for(const node of nodes){try{for(const e of entriesOf(node.data,path.basename(f).replace(/_[0-9a-f]{32}\.bundle$/i,'')))add(e,f);}catch{}}}
+ if(!timedOut)for(const f of src.loose){if(Date.now()>deadline){timedOut=true;break;}let sz=0;try{sz=fs.statSync(f).size;}catch{}if(sz<8||sz>16<<20)continue;let buf;try{buf=fs.readFileSync(f);}catch{continue;}if(CJK.test(buf.toString('utf8',0,Math.min(buf.length,400000))))add({name:path.basename(f).replace(/\.[^.]+$/,''),bytes:buf},f);}
+ const list=[...scenes.values()].sort((a,b)=>a.name.localeCompare(b.name));if(!timedOut){memo.set(key,{sig,scenes:list});if(memo.size>6)memo.delete(memo.keys().next().value);}return list;}
 
 /* ---- text → lines ------------------------------------------------------------------------------------------------ */
 const speakerLike=s=>s.length<=24&&!/[。！？!?…「」『』]/.test(s);
@@ -83,5 +92,5 @@ function parse(buf){
  for(const r of rows||[]){const t=clean(r.text);if(!t||!CJK.test(t))continue;const sp=(r.speaker||'').replace(/^\d+_(?:[A-Za-z ]+_)?/,'');lines.push(sp?sp+'：'+t:t);speakers.push(sp);}
  return {lines,anchors:[],speakers};}
 module.exports={id:'unity-assets',hint:'<游戏>_Data（TextAsset / MonoBehaviour / AssetBundle）',
- scenes:dir=>index(dir),archives:()=>[],sources:dir=>{const s=sources(dir);return [...s.players,...s.bundles,...s.loose].filter(f=>/_Data/i.test(f));},
- parse,test:()=>false,_internal:{entriesOf,jsonLines,csvLines,sources,KANA}};
+ scenes:(dir,opts)=>index(dir,opts),archives:()=>[],sources:dir=>{const s=sources(dir);return [...s.players,...s.bundles,...s.loose].filter(f=>/_Data/i.test(f));},
+ parse,test:()=>false,_internal:{entriesOf,jsonLines,csvLines,sources,wantNode,KANA}};

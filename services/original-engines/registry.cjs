@@ -248,7 +248,7 @@ const READERS={"BGI / Ethornell":["bgi"],
  "RPG Maker VX/XP":["rgss"],
  "Unity (Utage)":["utage","unity-text","unity-assets"],
  "Unity (Naninovel)":["naninovel"],
- "Unity (Yarn Spinner)":["unity-text","unity-assets"],
+ "Unity (Yarn Spinner)":["yarnspinner","unity-text","unity-assets"],
  "Unity (Adventure Creator)":["unity-text","unity-assets"],
  "Visual Novel Maker":["vnmaker"],
  "Twine / SugarCube":["twine"],
@@ -276,7 +276,7 @@ const READERS={"BGI / Ethornell":["bgi"],
  "Unity (Aokana)":["aokana"],
  "GameMaker":["gamemaker"],"SRPG Studio":["srpg"],"Adventure Game Studio":["ags"],"Macromedia Director":["director"],"Hot Soup Processor":["hsp"],
  "Clickteam Fusion":["clickteam"],"MonoGame / XNA":["xna"],"RPG Paper Maker":["rpgpaper"],"libGDX":["java"],"Java":["java"],"OHRRPGCE":["ohrrpgce"],
- "RE Engine (Capcom)":["re-pak"],"Unity":["unity-text","naninovel","utage","higurashi","capcom-msg","vgprompter","pwaat","unity-assets"]};
+ "RE Engine (Capcom)":["re-pak"],"Unity":["unity-text","naninovel","utage","yarnspinner","higurashi","capcom-msg","vgprompter","pwaat","unity-assets"]};
 for(const p of require('./plaintext.cjs').RAW.profiles)READERS[p.engine]=p.detectOnly?[]:['plaintext'];
 for(const e of ENGINES)e.readers=READERS[e.name]||[];
 
