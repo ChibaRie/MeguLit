@@ -19,6 +19,8 @@ const matchKey=s=>norm(inlineTags(s)).replace(/≪([^≪≫／]*)／[^≪≫]*�
 const japaneseLine=t=>{const k=(t.match(KANA)||[]).length,h=(t.match(HAN)||[]).length;return k>=2&&k>=h*.2;};
 // Lines that carry language at all (not file names, labels or numbers): what the Japanese / translated share is measured on.
 const prose=t=>/[^\x00-\x7f]/.test(t)&&!!String(t).trim();
+const SCRIPT_ASCII=/^[@#\[<*;%$&]|^\/\/|^[A-Za-z_][\w.]*\s*[(=]|\.(png|jpe?g|bmp|ogg|wav|mp3|ks|tjs|txt|ws2|scr|mjo|bsc|ybn|dat|arc|xp3)\b/i;
+const latinDialogue=t=>{const s=String(t).trim();return !!s&&!SCRIPT_ASCII.test(s)&&!/[ぁ-ゖァ-ヺ一-鿿]/.test(s)&&/[A-Za-z]+\s+[A-Za-z]+/.test(s);};
 /* E452 (#108 小红帽与迷失森林 Kirikiroid2 package): a translation group can replace the script text outright, leaving
    Japanese only in speaker tags (【ティアナ】), stage names and system screens. Per line such a script still looks a
    quarter Japanese, so the whole script is measured instead: kana as a share of kana + Han over the prose lines that
@@ -84,7 +86,7 @@ function scanRunning(root,id,executable){
  const hash=fingerprint(loc),current=readState(root)[id];if(current?.runtime?.sha256===hash&&(current.runtime.reader||'')===READER&&current.runtime.index&&fs.existsSync(current.runtime.index))return current;
  const ain=readScript(loc),japanese=ain.lines.filter(t=>prose(t)&&japaneseLine(t)).length,nonEmpty=ain.lines.filter(prose).length,zhOnly=chineseOnly(ain.lines);
  // An English (or other) original read by a scene engine is neither the Japanese game nor a Chinese build: nothing to do.
- if(ADAPTERS[loc.engine].scene&&!zhOnly){const chinese=ain.lines.filter(t=>prose(t)&&!japaneseLine(t)&&/[一-鿿]{2}/.test(t)).length;if(!nonEmpty||japanese<nonEmpty*.5&&chinese<nonEmpty*.3)return writeState(root,id,{status:'unsupported',error:'SCRIPT_NOT_JAPANESE',runtime:null,gameDir:dir});}
+ if(ADAPTERS[loc.engine].scene&&!zhOnly){const chinese=ain.lines.filter(t=>prose(t)&&!japaneseLine(t)&&/[一-鿿]{2}/.test(t)).length,latin=ain.lines.filter(latinDialogue).length;if(!nonEmpty||(japanese<nonEmpty*.5||latin>=Math.max(100,japanese*2,chinese*2))&&chinese<nonEmpty*.3)return writeState(root,id,{status:'unsupported',error:'SCRIPT_NOT_JAPANESE',runtime:null,gameDir:dir});}
  const index=writeIndex(root,id,'runtime-'+hash.slice(0,16)+'.json',{schema:SCHEMA,role:'runtime',engine:ain.engine,version:ain.version,codepage:ain.codepage,source:{file,sha256:hash},structure:ain.structure,lines:ain.lines,...(ain.ruby?{ruby:ain.ruby}:{}),...(ain.sizes?{sizes:ain.sizes}:{})});
  const original=current?.original;const runtime={file,engine:loc.engine,sha256:hash,reader:READER,index,codepage:ain.codepage,version:ain.version,structure:ain.structure,lines:nonEmpty,japaneseLines:japanese};
  // A changed game build invalidates the earlier alignment; the original index itself stays.
@@ -547,9 +549,11 @@ function staticProvider(root,executable){
    resolve:text=>withRuby(resolveLine(text))};
   function resolveLine(text){const r=m.match(text);if(r.japanese===undefined)return r;
     // E449 lines the release leaves in Japanese take the filled translation written for them (fill.cjs), marked filled.
-    if(r.indices.some(untranslated)){const parts=r.indices.map(i=>{if(!untranslated(i))return m.og[i];const f=fillLines.lookup(rt[i]);return f&&f.zh?f.zh:null;});
-     if(parts.every(p=>p!=null))return {...r,translation:parts.join(''),japanese:undefined,filled:true,source:'filled'};}
-    if(r.indices.some(untranslated)){const t=fill.get(r.indices.map(i=>rt[i]).join(''));return t?{...r,translation:t,japanese:undefined,machine:true}:{status:'none',method:'untranslated',indices:r.indices};}
+    /* line by line: the patch's line, else its filled translation, else the line translated ahead (script-prefetch keeps
+       each script line on its own, so a capture of two lines in one box finds them; a patched line keeps its wording) */
+    if(r.indices.some(untranslated)){let machine=false;const parts=r.indices.map(i=>{if(!untranslated(i))return m.og[i];const f=fillLines.lookup(rt[i]);if(f&&f.zh)return f.zh;const t=fill.get(rt[i]);if(t)machine=true;return t||null;});
+     if(parts.every(p=>p!=null))return machine?{...r,translation:parts.join(''),japanese:undefined,machine:true}:{...r,translation:parts.join(''),japanese:undefined,filled:true,source:'filled'};
+     const t=fill.get(r.indices.map(i=>rt[i]).join(''));return t?{...r,translation:t,japanese:undefined,machine:true}:{status:'none',method:'untranslated',indices:r.indices};}
     return {...r,translation:r.japanese,japanese:undefined};}
   return {...api,
    // The next lines after the reading position that still need a translation, each with the lines before it as context.

@@ -7,25 +7,27 @@ const kit=require('./kit.cjs');/* E577 shared engine kit */
    count, segments of (u64 offset, aligned size, size, unpacked size). Each segment is AES-256-CBC with the archive IV;
    a segment whose size is below its unpacked size is raw deflate. */
 const fs=require('node:fs'),crypto=require('node:crypto'),zlib=require('node:zlib'),path=require('node:path');
-// Game title -> key, from GARbro's Formats.dat (Npk2Scheme.KnownKeys); exe names that identify each title.
-const KEYS={
- 'Minikui Mojika no Ko':{exe:['mojika.exe'],key:'aa4560f783f78a90205dc14e5409670409bc004639175ad9c0b3d297da2f3868'},
- 'Sonicomi':{exe:['sonicomi.exe'],key:'65abb4a8cde0c810bb4a26723754c3a7e43de9ea7f5bb843501d05abcf08d9c1'},
- 'Tokyo Necro':{exe:[],key:'962c5f3a789c8437b71212a115d6ca9f9ae3fd210ff6af70a8a8f8bbfe5e8af5'},
- /* 2026-11-15 saved-line voice: the Steam Saya (N4) voice.npk, same key as core/nitroplus-npk.cjs KEYS.saya */
- 'The Song of Saya':{exe:['saya_steam.exe'],key:'763a14338b0dac040accfc13851cfacbb20b000b01f868486b460f8c34d42a96'},
-};
-function decrypt(key,iv,data){const d=crypto.createDecipheriv('aes-256-cbc',key,iv);d.setAutoPadding(false);return Buffer.concat([d.update(data),d.final()]);}
+const npk2=require('../../core/nitroplus-npk.cjs'),SCHEMES=require('./nitro-schemes.json').npk2||{};
+// Game title -> key, from nitro-schemes.json (crskycode/GARbro Formats.dat, MIT & marcussacana/MwareStuff NPK3Tool, Unlicense).
+const EXES={'Minikui Mojika no Ko':['mojika.exe'],'Sonicomi':['sonicomi.exe'],'The Song of Saya':['saya_steam.exe'],'The Song of Saya (Steam) [+18]':['saya_steam.exe']};
+const KEYS=Object.fromEntries(Object.entries(SCHEMES).map(([title,key])=>[title,{exe:EXES[title]||[],key}]));
+function decrypt(key,iv,data,padding=false){const d=crypto.createDecipheriv('aes-256-cbc',key,iv);d.setAutoPadding(padding);return Buffer.concat([d.update(data),d.final()]);}
 const head=file=>kit.head(file,0x20);
-// The key that turns the first index block into a plausible entry (flag, short name length, printable name).
-function findKey(file){const h=head(file);if(h.toString('latin1',0,4)!=='NPK2')return null;const blk=kit.readAt(file,0x20,32);
- for(const [title,v] of Object.entries(KEYS)){const key=Buffer.from(v.key,'hex'),p=decrypt(key,h.subarray(8,24),blk),n=p.readUInt16LE(1);
-  if(p[0]<=1&&n>0&&n<=0x104&&/^[\x20-\x7e]{4}/.test(p.toString('latin1',3,7)))return {title,key};}
+function plausibleEntry(p){const n=p.readUInt16LE(1);if(p[0]>1||!n||n>0x104)return false;for(let i=0;i<Math.min(n,16);i++){const b=p[3+i];if(b<0x20||b===0x7f)return false;}return true;}
+// The key that decrypts the archive index into valid entries (flag, name length, PKCS7 padding, segment bounds).
+function findKey(file){const h=head(file);if(h.toString('latin1',0,4)!=='NPK2')return null;
+ const iv=h.subarray(8,24),count=h.readInt32LE(0x18),size=h.readUInt32LE(0x1c),fsz=kit.size(file);
+ if(count<0||count>100000||0x20+size>fsz)return null;
+ const blk=kit.readAt(file,0x20,32);let encIdx=null;
+ for(const [title,v] of Object.entries(KEYS)){const key=Buffer.from(v.key,'hex'),p=decrypt(key,iv,blk);
+  if(!plausibleEntry(p))continue;
+  try{encIdx=encIdx||kit.readAt(file,0x20,size);const entries=npk2.npkIndex(decrypt(key,iv,encIdx,true),count,fsz);return {title,key,entries};}catch{}}
  return null;}
-function list(file,key){const h=head(file),iv=h.subarray(8,24),count=h.readUInt32LE(0x18),size=h.readUInt32LE(0x1c);
- if(!key){const k=findKey(file);if(!k)return null;key=k.key;}
- /* E580 the index parser is the Saya port's (core/nitroplus-npk.cjs npkIndex) */
- let entries;try{entries=require('../../core/nitroplus-npk.cjs').npkIndex(decrypt(key,iv,kit.readAt(file,0x20,size)),count,kit.size(file));}catch{return null;}
+function list(file,key){const h=head(file);if(h.toString('latin1',0,4)!=='NPK2')return null;
+ const iv=h.subarray(8,24),count=h.readInt32LE(0x18),size=h.readUInt32LE(0x1c),fsz=kit.size(file);
+ let entries;
+ if(!key){const k=findKey(file);if(!k)return null;key=k.key;entries=k.entries;}
+ else{try{entries=npk2.npkIndex(decrypt(key,iv,kit.readAt(file,0x20,size),true),count,fsz);}catch{return null;}}
  return entries.map(e=>{const s=e.segments.map(x=>({offset:x.offset,aligned:x.stored,size:x.size,unpacked:x.unpacked}));return {name:e.name,unpacked:e.length,read:()=>read(file,key,iv,s)};});}
 function read(file,key,iv,segs){const fd=fs.openSync(file,'r');try{return Buffer.concat(segs.map(s=>{const b=Buffer.alloc(s.aligned);fs.readSync(fd,b,0,s.aligned,s.offset);const plain=decrypt(key,iv,b).subarray(0,s.size);return s.size<s.unpacked?zlib.inflateRawSync(plain):plain;}));}finally{fs.closeSync(fd);}}
 /* Scenes: media/script/nut/*.nut in script.npk, compiled Squirrel ("SCRP" ... "RIQS"). String literals are

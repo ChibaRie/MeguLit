@@ -11,14 +11,15 @@ function knownPrograms(row,lib){
 function matchGame(db,item,{manual=false}={}){
  if(item.mediaId!=null){const row=db.prepare('SELECT * FROM games WHERE legacy_id=?').get(item.mediaId);if(row)return row;}
  if(!item.exe)return null;
- const target=canonical(item.exe),exact=db.prepare("SELECT * FROM games WHERE lower(executable)=lower(?) AND executable!=''").all(item.exe);
+ const target=canonical(item.exe),exact=db.prepare("SELECT * FROM games WHERE lower(executable)=lower(?) AND executable!=''").all(item.exe).filter(row=>!JSON.parse(row.original||'{}').mergedInto);
  if(exact.length===1)return exact[0];
  if(exact.length>1)return null;
  const names=new Set([item.title,...item.names||[]].map(normalize).filter(Boolean));
  let sig;
  const matches=db.prepare('SELECT * FROM games').all().filter(row=>{
   if(item.mediaId!=null&&row.legacy_id!=null&&item.mediaId!==row.legacy_id)return false;
-  const lib=JSON.parse(row.original||'{}').library||{};
+  const original=JSON.parse(row.original||'{}');if(original.mergedInto)return false;
+  const lib=original.library||{};
   if(knownPrograms(row,lib).some(file=>canonical(file)===target))return true;
   if(!item.missing&&row.executable&&canonical(lib.dir)===canonical(item.dir)&&(item.variants||[]).some(variant=>canonical(variant.exe)===canonical(row.executable)))return true;
   // The scanner keys a work by its install folder; another program in that same folder (crack/original/launcher

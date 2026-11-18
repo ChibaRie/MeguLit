@@ -68,7 +68,7 @@ function runEngines(dir,{deadline}){
  const ids=Object.keys(scenes.ENGINES),order=[...ids.filter(i=>!GENERIC.has(i)),...ids.filter(i=>GENERIC.has(i))];let dedicatedJp=0;
  for(const id of order){const generic=GENERIC.has(id);if(generic&&dedicatedJp>=DEDICATED_JP)continue;if(id==='garbro'&&skipGarbro)continue;if(Date.now()>deadline){out.push({id,scenes:-1,lines:0,error:'BUDGET',ms:0});continue;}
   const engine=scenes.ENGINES[id],t=Date.now(),limit=generic?Math.min(deadline,t+GENERIC_MS):deadline;let list=null,error='',lines=0,sizes=[],japanese=0,parsed=0,dialogue=0,chinese=0;
-  try{list=engine.scenes(dir)||[];}catch(e){error=String(e?.code||e?.message||e).slice(0,60);}
+  try{list=engine.scenes(dir,{deadline:limit})||[];}catch(e){error=String(e?.code||e?.message||e).slice(0,60);}
   if(list&&list.length){for(const s of list){if(Date.now()>limit){error=error||'BUDGET';break;}let p;try{p=engine.parse(s.read());parsed++;}catch(e){if(!error)error=String(e?.code||e?.message||e).slice(0,60);sizes.push(0);continue;}
     const n=p?.lines?.length||0;lines+=n;sizes.push(n);const c=countLines(p?.lines);japanese+=c.japanese;dialogue+=c.dialogue;chinese+=c.chinese;}}
   if(!generic)dedicatedJp=Math.max(dedicatedJp,japanese);
@@ -95,9 +95,10 @@ function judgeLanguage({lines=0,japaneseLines=0,dialogueLines,chineseLines,title
  const knownChinese=Number.isFinite(chineseLines);
  if(knownChinese&&chineseLines>=base*.5&&chineseLines>=jp*2)return 'chinese-build';
  if(!knownChinese&&jp<base*.1&&chineseTitle(title))return 'chinese-build';/* old probe: the title says Chinese build, and kana lines are a sliver */
- if(jp>=1000||jp>=base*.3)return 'japanese';
+ if(jp>=base*.3)return 'japanese';
  /* an English (Latin-script) release read correctly: dialogue lines that are neither kana nor Han are Latin text, so the script was decoded fine and the build just is not Japanese */
  if(dialogueLines>0){const latin=Math.max(0,dialogueLines-jp-(chineseLines||0));if(latin>=base*.5&&latin>=jp*2&&latin>=100)return 'not-japanese';}
+ if(jp>=1000)return 'japanese';
  if(jp<Math.max(10,lines*.001)&&lines>=100)return 'decode-suspect';
  return jp>=Math.min(300,base*.05)?'japanese':'not-japanese';}
 

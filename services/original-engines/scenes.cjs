@@ -11,6 +11,7 @@ const kit=require('./kit.cjs');/* E577 shared engine kit */
 //   siglus    Steam dat/*.dbs language tables (Summer Pockets): Japanese column + the Chinese column
 //   yuris     YU-RIS YPF archives (pac/ysbin.ypf + update*.ypf), YSTB scene files (yuris.cjs)
 //   aquaplus  AQUAPLUS / Leaf KCAP script.pak string tables (aquaplus.cjs)
+//   aquaplus-pck AQUAPLUS big-endian "Filename" PCK, Data/Game/Script.sdat MES.BIN scenes (WHITE ALBUM, aquaplus-pck.cjs)
 //   nscripter NScripter / ONScripter 0.txt or nscript.dat, one scene per label block (nscripter.cjs)
 //   unity-text Unity TextAssets whose lines carry every language (unity-text.cjs)
 //   higurashi 07th Expansion Unity StreamingAssets/Scripts/*.txt (higurashi.cjs)
@@ -112,19 +113,26 @@ function luaLang(block){/* {{ "text", {"ruby", text="よみ"}, "base", {"/ruby"}
  while(i<block.length){const c=block[i];
   if(c==='"'){let j=i+1,s='';while(j<block.length&&block[j]!=='"'){if(block[j]==='\\'){s+=block[j+1];j+=2;continue;}s+=block[j++];}
    if(depth===2){page+=s;if(pending){ruby.push([s,pending]);pending=null;}}i=j+1;continue;}
-  if(c==='{'){if(depth===2){const end=luaBlock(block,i),tag=block.slice(i,end+1),r=/^\{\s*"ruby"\s*,\s*text\s*=\s*"((?:[^"\\]|\\.)*)"/.exec(tag);if(r)pending=r[1];i=end+1;continue;}depth++;if(depth===2)page='';}
+  if(c==='{'){if(depth===2){const end=luaBlock(block,i);if(end<0)break;const tag=block.slice(i,end+1),r=/^\{\s*"ruby"\s*,\s*text\s*=\s*"((?:[^"\\]|\\.)*)"/.exec(tag);if(r)pending=r[1];i=end+1;continue;}depth++;if(depth===2)page='';}
   else if(c==='}'){if(depth===2&&page)pages.push(page);depth--;}
   i++;}
  return {text:pages.join('\n'),ruby};}
-function parseAstMulti(text){const lines=[],zh=[],ruby=[],anchors=[],re=/\btext\s*=\s*\{/g;let m,last=0;
+const AST_PLACEHOLDER=/^\s*(?:\*[^*\r\n]+\*\s*)+$/;
+function parseAstMulti(text){const rows=[],anchors=[],re=/\btext\s*=\s*\{/g;let m,last=0,matched=false;
  while((m=re.exec(text))){const open=text.indexOf('{',m.index),end=luaBlock(text,open);if(end<0)break;
   for(const a of text.slice(last,m.index).matchAll(/"((?:[^"\\]|\\.)*)"/g))if(ascii(a[1]))anchors.push(a[1]);
   const block=text.slice(open,end+1),langs={};for(const k of block.matchAll(/\b(ja|cn|tw|en)\s*=\s*\{/g)){const o=k.index+k[0].length-1,e=luaBlock(block,o);if(e>0&&!(k[1] in langs))langs[k[1]]=luaLang(block.slice(o,e+1));}
-  if(langs.ja){lines.push(langs.ja.text);zh.push((langs.cn||langs.tw)?.text||'');ruby.push(langs.ja.ruby.length?langs.ja.ruby:null);}
+  if(langs.ja){matched=true;rows.push(langs);}
   last=end+1;re.lastIndex=end+1;}
- return {lines,anchors,zh,ruby};}
+ if(!matched)return null;
+ const jaNonEmpty=rows.map(r=>r.ja.text).filter(Boolean);
+ /* Releases without Japanese (Steam HENPRI) keep "*テキスト*" placeholders in every ja slot: fall back to the release's real language so placeholders are not counted as Japanese. */
+ if(jaNonEmpty.length&&jaNonEmpty.every(t=>AST_PLACEHOLDER.test(t))){
+  const pick=rows.some(r=>r.en?.text)?'en':rows.some(r=>r.cn?.text)?'cn':rows.some(r=>r.tw?.text)?'tw':'';
+  return {lines:pick?rows.map(r=>pick==='cn'?(r.cn||r.tw)?.text||'':r[pick]?.text||''):[],anchors,zh:[],ruby:[]};}
+ return {lines:rows.map(r=>r.ja.text),anchors,zh:rows.map(r=>(r.cn||r.tw)?.text||''),ruby:rows.map(r=>r.ja.ruby.length?r.ja.ruby:null)};}
 function parseAst(buf){const lines=[],anchors=[],text=decode(buf),re=/"((?:[^"\\]|\\.)*)"/g;let m;
- if(/\btext\s*=\s*\{\s*ja\s*=\s*\{/.test(text))return parseAstMulti(text);
+ if(/\bja\s*=\s*\{/.test(text)&&/\btext\s*=\s*\{/.test(text)){const multi=parseAstMulti(text);if(multi)return multi;}
  while((m=re.exec(text))){const s=m[1].replace(/\\(.)/g,'$1');if(ascii(s))anchors.push(s);else lines.push(s);}
  return {lines,anchors};}
 const isPfs=f=>/\.pfs(?:\.\d+)?$/i.test(f);
@@ -251,7 +259,7 @@ const siglus={
 const os=require('node:os');
 const MEDIA_XP3=/^(?:bg|fg|ev|sd)?image|^(?:bgm|voice|sound|se|movie|video|thum|emote|font|sysse)/i;
 const cxArchives=dir=>{try{return fs.readdirSync(dir).filter(f=>/\.xp3$/i.test(f)&&!MEDIA_XP3.test(f)).map(f=>path.join(dir,f));}catch{return [];}};
-const cxCache=file=>{const st=fs.statSync(file);return path.join(os.tmpdir(),'megulit-cx',crypto.createHash('sha256').update(path.resolve(file).toLowerCase()+'|'+st.size+'|'+st.mtimeMs+'|5').digest('hex').slice(0,24)+'.json');};
+const cxCache=file=>{const st=fs.statSync(file);return path.join(os.tmpdir(),'megulit-cx',crypto.createHash('sha256').update(path.resolve(file).toLowerCase()+'|'+st.size+'|'+st.mtimeMs+'|6').digest('hex').slice(0,24)+'.json');};
 const cxBuilds=new Map(),cxMemo=new Map(),cxQueue=[],cxStarted=new Map();let cxRunning=false;
 function cxDocs(file){
  let out;try{out=cxCache(file);}catch{return null;}
@@ -464,6 +472,8 @@ const kirikiriLang={
 const yuris=require('./yuris.cjs');
 // E330 AQUAPLUS / Leaf KCAP (script.pak, WHITE ALBUM2): aquaplus.cjs.
 const aquaplus=require('./aquaplus.cjs');
+// #303 AQUAPLUS "Filename" PCK (Data/Game/Script.sdat, WHITE ALBUM -綴られる冬の想い出- PC): aquaplus-pck.cjs.
+const aquaplusPck=require('./aquaplus-pck.cjs').engine;
 // E331 NScripter / ONScripter (0.txt or nscript.dat, blocks by label): nscripter.cjs.
 const nscripter=require('./nscripter.cjs');
 // E340 Unity TextAssets with 日本語※简体※繁體 lines (月に寄りそう乙女の作法): unity-text.cjs. E341 07th Expansion Unity
@@ -478,7 +488,7 @@ const vgprompter=require('./vgprompter.cjs');
 const fill=require('./fill.cjs'),avg32=require('./avg32.cjs'),nitroNpk=require('./npk.cjs').engine,nitroPak=require('./nitro-pak.cjs').engine,nitroNpa=require('./nitro-npa.cjs').engine,iga=require('./iga.cjs').engine,paz=require('./paz.cjs').engine,bruns=require('./bruns.cjs').engine,rePak=require('./re-pak.cjs').engine,fvp=require('./fvp.cjs').engine,advhd=require('./advhd.cjs').engine,reallive=require('./reallive.cjs').engine;
 const voiceRef=require('./voice-ref.cjs');
 const unityAssets=require('./unity-assets.cjs'),drv3=require('./drv3.cjs').engine,magesCpk=require('./mages-cpk.cjs').engine;/* E700 generic Unity */
-const catsystem2=require('./catsystem2.cjs'),naninovel=require('./naninovel.cjs'),unityText=require('./unity-text.cjs'),higurashi=require('./higurashi.cjs'),mages=require('./mages.cjs'),capcomMsg=require('./capcom-msg.cjs'),spikeWad=require('./spike-wad.cjs');
+const catsystem2=require('./catsystem2.cjs'),naninovel=require('./naninovel.cjs'),yarnspinner=require('./yarnspinner.cjs'),utage=require('./utage.cjs'),unityText=require('./unity-text.cjs'),higurashi=require('./higurashi.cjs'),mages=require('./mages.cjs'),capcomMsg=require('./capcom-msg.cjs'),spikeWad=require('./spike-wad.cjs'),aokana=require('./aokana.cjs').engine;
 // E409 Nitroplus N4 (Steam The Song of Saya, script.npk NPK2): nitroplus-n4.cjs.
 const nitroplusN4=require('./nitroplus-n4.cjs');
 // E470 GARbro on-demand pack, tried after every reader of MeguLit's own (garbro.cjs).
@@ -513,8 +523,10 @@ const makers=require('./makers.cjs').ENGINES;
 /* E640–E654 family F4a: Escude, PJADV, Luca System, Stuff (Propeller .msc), STCM2L; archive + generic scan engines */
 const escude=require('./escude.cjs').engine,pjadv=require('./pjadv.cjs').engine,luca=require('./luca.cjs').engine,stuff=require('./stuff.cjs').engine,stcm2=require('./stcm2.cjs').engine;
 const eushully=require('./eushully.cjs').engine;
+const rugp=require('./rugp.cjs').engine;
 const F4A_SCAN=require('./archive-scan.cjs').ENGINES;
-const ENGINES={'adapter-pack':adapterPack,'nitroplus-n4':nitroplusN4,'kirikiri-lang':kirikiriLang,tyrano,kirikiri,artemis,renpy,siglus,'kirikiri-cx':kirikiriCx,'kirikiri-dump':kirikiriDump,'kirikiri-ks':kirikiriKs,hunex,yuris,aquaplus,nscripter,'unity-text':unityText,higurashi,mages,'capcom-msg':capcomMsg,'spike-wad':spikeWad,pwaat,naninovel,'mages-cpk':magesCpk,'unity-assets':unityAssets,drv3,catsystem2,rpgmaker,wolf,avg32,'nitro-npk':nitroNpk,'nitro-pak':nitroPak,'nitro-npa':nitroNpa,iga,paz,bruns,'re-pak':rePak,fvp,advhd,reallive,vgprompter,majiro,softpal,systemnnn,liar,rgss,silky,tmrhiro,nekosdk,ikura,exhibit,eagls,ast,seraph,interheart,nexas,malie,shiinario,cmvs,lucifen,kaguya,lcse,yuka,qlie,entis,alicesoft,marble,...webbundle,plaintext:require('./plaintext.cjs').engine,circus,whale,ddsystem,aoi,kid,...makers,escude,eushully,pjadv,luca,stuff,stcm2,slg:F4A_SCAN.slg,cpk:F4A_SCAN.cpk,evbox:F4A_SCAN.evbox,ism:F4A_SCAN.ism,glib2:F4A_SCAN.glib2,tanuki:F4A_SCAN.tanuki,yaneurao:F4A_SCAN.yaneurao,rits:F4A_SCAN.rits,bluegale:F4A_SCAN.bluegale,cyberworks:F4A_SCAN.cyberworks,dxlib:F4A_SCAN.dxlib,garbro};
+const siglusPck=require('./siglus-pck.cjs').engine;
+const ENGINES={'adapter-pack':adapterPack,'nitroplus-n4':nitroplusN4,'kirikiri-lang':kirikiriLang,tyrano,kirikiri,artemis,renpy,siglus,'siglus-pck':siglusPck,'kirikiri-cx':kirikiriCx,'kirikiri-dump':kirikiriDump,'kirikiri-ks':kirikiriKs,hunex,yuris,aquaplus,'aquaplus-pck':aquaplusPck,nscripter,'unity-text':unityText,higurashi,mages,'capcom-msg':capcomMsg,'spike-wad':spikeWad,pwaat,naninovel,yarnspinner,utage,'mages-cpk':magesCpk,aokana,'unity-assets':unityAssets,drv3,catsystem2,rpgmaker,wolf,avg32,'nitro-npk':nitroNpk,'nitro-pak':nitroPak,'nitro-npa':nitroNpa,iga,paz,bruns,'re-pak':rePak,fvp,advhd,reallive,vgprompter,majiro,softpal,systemnnn,liar,rgss,silky,tmrhiro,nekosdk,ikura,exhibit,eagls,ast,seraph,interheart,nexas,malie,shiinario,cmvs,lucifen,kaguya,lcse,yuka,qlie,entis,alicesoft,marble,rugp,...webbundle,plaintext:require('./plaintext.cjs').engine,circus,whale,ddsystem,aoi,kid,...makers,escude,eushully,pjadv,luca,stuff,stcm2,slg:F4A_SCAN.slg,cpk:F4A_SCAN.cpk,evbox:F4A_SCAN.evbox,ism:F4A_SCAN.ism,glib2:F4A_SCAN.glib2,tanuki:F4A_SCAN.tanuki,yaneurao:F4A_SCAN.yaneurao,rits:F4A_SCAN.rits,bluegale:F4A_SCAN.bluegale,cyberworks:F4A_SCAN.cyberworks,dxlib:F4A_SCAN.dxlib,garbro};
 // The engine whose running scripts this folder holds, if any can be read.
 function readable(id,dir){let scenes;try{scenes=ENGINES[id].scenes(dir);}catch{return false;}
  for(const s of scenes.slice(0,64)){try{if(ENGINES[id].parse(s.read()).lines.length)return true;}catch{}}return false;} /* 64: a game may open with many code-only scenes (女王蜂の王房 endings, first.ks) */

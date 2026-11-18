@@ -13,7 +13,7 @@ const ENGINES=[
  {name:'BGI / Ethornell',hook:true,test:f=>f.has(/^BGI.*\.exe$/i)||f.has(/^sysgrp\.arc$/i)||(f.has(/\.arc$/i)&&f.has(/^bgi\.gdb$/i))},
  {name:'YU-RIS',hook:true,test:f=>f.has(/\.ypf$/i)||f.sub('pac',/\.ypf$/i)||f.has(/^yscfg\.dat$/i)},
  {name:'KiriKiri',hook:true,test:f=>f.has(/\.xp3$/i)},
- {name:'SiglusEngine',hook:true,test:f=>f.has(/^scene\.pck$/i)||f.has(/^siglusengine.*\.exe$/i)},
+ {name:'SiglusEngine',hook:true,test:f=>f.has(/^scene\.pck$/i)||f.has(/^siglusengine.*\.exe$/i)||f.has(/^scene.*\.pck$/i)&&!f.magicAny(/^scene.*\.pck$/i,'GDPC')},
  {name:'RealLive',hook:true,test:f=>f.has(/^seen\.txt$/i)||f.has(/^reallive.*\.exe$/i)},
  {name:'CatSystem2',hook:true,test:f=>f.has(/^cs2conf\.dll$/i)||(f.has(/\.int$/i)&&f.has(/^cs2.*\.exe$/i))},
  {name:'Artemis',hook:true,test:f=>f.has(/\.pfs(\.\d+)?$/i)},
@@ -98,7 +98,7 @@ const ENGINES=[
  {name:'Luca System',hook:null,test:f=>f.sub('files',/^script\.pak$/i)},
  {name:'NEKOPACK',hook:null,test:f=>f.magicAny(/\.(dat|pak)$/i,'NEKOPACK')},
  {name:'Marble',hook:null,test:f=>f.has(/\.mbl$/i)},
- {name:'rUGP (age)',hook:null,test:f=>f.has(/^rugp.*\.exe$/i)||f.has(/\.rio$/i)&&f.has(/\.rio\.ini$/i)},
+ {name:'rUGP (age)',hook:null,test:f=>f.has(/^rugp.*\.exe$/i)||f.has(/^ages3rest\.dll$/i)||f.has(/\.rio$/i)&&f.has(/\.rio\.(ici|ini)$/i)||f.magicAny(/\.rio$/i,'\xcd\x32\x6e\x59')},
  /* E620 the F2 plain-text script family (Suika 2, NVList, VNDS, PyMO …): fingerprints are data in plaintext-profiles.json */
  ...require('./plaintext.cjs').RAW.profiles.filter(p=>p.match).map(p=>({name:p.engine,hook:null,test:f=>require('./plaintext.cjs').matches(f,p.id)})),
  /* E660–E669 F4b proprietary engines (research: H:\MeguLit-Work\f4b, notes E660–E669). Readers: Circus (adv32) and Whale
@@ -129,6 +129,8 @@ const ENGINES=[
  {name:'ExHIBIT',hook:null,test:f=>f.has(/\.rld$/i)||f.sub('dat',/\.rld$/i)||f.sub('rld',/\.rld$/i)},
  {name:'SakanaGL',hook:null,test:f=>f.has(/^sakanagl\.dll$/i)},
  {name:'Leaf / AQUAPLUS',hook:true,test:f=>f.has(/^grp\.pak$/i)&&f.has(/^char\.pak$/i)&&f.has(/^(voice|bgm|se)\.pak$/i)},
+ /* #303 the PC release of WHITE ALBUM -綴られる冬の想い出-: big-endian "Filename" PCK, script in Data/Game/Script.sdat */
+ {name:'AQUAPLUS PCK',hook:null,test:f=>f.peek('Data/Game/Script.sdat',/^Filename/,8)},
  // More engines (user, 2026-11-09). Signatures are files only these engines ship; text reading goes through the
  // general hook and is confirmed on first play (hook:null) until a game of that engine is verified.
  {name:'Escude',hook:true,test:f=>f.magic(/^script\.bin$/i,'ESC-ARC')||f.has(/^script\.bin$/i)&&f.has(/^(gpr|evt|st)\.bin$/i)},
@@ -175,6 +177,7 @@ const ENGINES=[
  {name:'Unity (Yarn Spinner)',hook:null,test:f=>f.managed(/^YarnSpinner/i)},
  {name:'Unity (Game Creator)',hook:null,test:f=>f.managed(/^GameCreator/i)},
  {name:'Unity (Adventure Creator)',hook:null,test:f=>f.managed(/^AC(\.|Runtime)|AdventureCreator/i)},
+ {name:'Unity (Aokana)',hook:null,test:f=>require('./aokana.cjs').probe(f.dir)},
  {name:'DxLib',hook:true,generic:true,test:f=>f.has(/\.dxa$/i)},
  // Unity games read through LunaHook's Mono/IL2CPP hooks for many, not all, titles: verified on first play.
  // A Unity build keeps <Name>_Data beside <Name>.exe. A folder that only holds something named *_Data (a library
@@ -191,7 +194,7 @@ const ENGINES=[
 const READERS={"BGI / Ethornell":["bgi"],
  "YU-RIS":["yuris"],
  "KiriKiri":["kirikiri-lang","kirikiri","kirikiri-cx","kirikiri-dump","kirikiri-ks"],
- "SiglusEngine":["siglus"],
+ "SiglusEngine":["siglus","siglus-pck"],
  "RealLive":["reallive","avg32"],
  "CatSystem2":["catsystem2"],
  "Artemis":["artemis"],
@@ -233,18 +236,19 @@ const READERS={"BGI / Ethornell":["bgi"],
  "Yuka":["yuka"],
  "NEKOPACK":["nekosdk"],
  "Marble":["marble"],
+ "rUGP (age)":["rugp"],
  "Seraph":["seraph"],
  "ExHIBIT":["exhibit"],
  "Escude":["escude"],"ARCGameEngine (Eushully)":["eushully"],"PJADV":["pjadv"],"Luca System":["luca"],"ISM":["ism"],"Enigma Virtual Box":["evbox"],"GLib2":["glib2"],"Cyberworks (C,system)":["cyberworks"],"DxLib":["dxlib"],
  "SLG System":["slg"],"Stuff Script (Propeller)":["stuff"],"STCM2":["stcm2"],"Willadv":["advhd"],"Tanuki Engine":["tanuki"],"Yaneurao":["yaneurao"],"Rits":["rits"],"BlueGale":["bluegale"],
- "Leaf / AQUAPLUS":["aquaplus"],
+ "Leaf / AQUAPLUS":["aquaplus"],"AQUAPLUS PCK":["aquaplus-pck"],
  "LC-ScriptEngine":["lcse"],
  "Wolf RPG":["wolf"],
  "RPG Maker MV/MZ":["rpgmaker"],
  "RPG Maker VX/XP":["rgss"],
- "Unity (Utage)":["unity-text","unity-assets"],
+ "Unity (Utage)":["utage","unity-text","unity-assets"],
  "Unity (Naninovel)":["naninovel"],
- "Unity (Yarn Spinner)":["unity-text","unity-assets"],
+ "Unity (Yarn Spinner)":["yarnspinner","unity-text","unity-assets"],
  "Unity (Adventure Creator)":["unity-text","unity-assets"],
  "Visual Novel Maker":["vnmaker"],
  "Twine / SugarCube":["twine"],
@@ -269,9 +273,10 @@ const READERS={"BGI / Ethornell":["bgi"],
  "SystemAoi":["aoi"],
  "KID Engine":["kid"],
  "Unity (Game Creator)":["unity-text","unity-assets"],
+ "Unity (Aokana)":["aokana"],
  "GameMaker":["gamemaker"],"SRPG Studio":["srpg"],"Adventure Game Studio":["ags"],"Macromedia Director":["director"],"Hot Soup Processor":["hsp"],
  "Clickteam Fusion":["clickteam"],"MonoGame / XNA":["xna"],"RPG Paper Maker":["rpgpaper"],"libGDX":["java"],"Java":["java"],"OHRRPGCE":["ohrrpgce"],
- "RE Engine (Capcom)":["re-pak"],"Unity":["unity-text","naninovel","higurashi","capcom-msg","vgprompter","pwaat","unity-assets"]};
+ "RE Engine (Capcom)":["re-pak"],"Unity":["unity-text","naninovel","utage","yarnspinner","higurashi","capcom-msg","vgprompter","pwaat","unity-assets"]};
 for(const p of require('./plaintext.cjs').RAW.profiles)READERS[p.engine]=p.detectOnly?[]:['plaintext'];
 for(const e of ENGINES)e.readers=READERS[e.name]||[];
 

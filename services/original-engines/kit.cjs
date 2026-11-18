@@ -41,18 +41,19 @@ const hasKana=t=>KANA.test(t);
 /* Shift-JIS for the originals, GBK for Chinese patches: replacement characters and half-width katakana (what GBK bytes
    become when read as Shift-JIS) count against an encoding; a tie goes to the one with more kana */
 function codepage(all){if(!all||!all.length)return 'shift_jis';
- const score=enc=>{const t=new TextDecoder(enc).decode(all);return {bad:(t.match(/�/g)||[]).length*4+(t.match(/[｡-ﾟ]/g)||[]).length,kana:(t.match(KANA_G)||[]).length};};
- const s=score('shift_jis'),g=score('gbk');return s.bad<g.bad||s.bad===g.bad&&s.kana>=g.kana?'shift_jis':'gbk';}
+ const score=enc=>{const t=new TextDecoder(enc).decode(all),repl=(t.match(/\ufffd/g)||[]).length,hw=(t.match(/[｡-ﾟ]/g)||[]).length;return {repl,hw,bad:repl*4+hw,kana:(t.match(KANA_G)||[]).length};};
+ const s=score('shift_jis'),g=score('gbk');return s.bad<g.bad||s.bad===g.bad&&s.kana>=g.kana||s.repl<=g.repl&&s.kana>=Math.max(8,g.kana*4,s.hw*4)?'shift_jis':'gbk';}
 const decoder=bufs=>new TextDecoder(codepage(Buffer.concat(bufs.filter(b=>b&&b.some(c=>c>=0x80)).slice(0,4000))));
 /* E577 the same choice over many strings (BGI, WOLF, YU-RIS, System4 AIN …: one code page per script) */
 const codepageOf=(bufs,{min=0,max=4000}={})=>codepage(Buffer.concat(bufs.filter(b=>b&&b.length>min).slice(0,max)));
 /* a text script: BOM, then strict UTF-8, then Shift-JIS or GBK (KiriKiri, Tyrano, NScripter, Artemis, Ren'Py sources) */
 /* KiriKiri's own scrambled text (header FE FE <mode> FF FE): mode 0 XORs each UTF-16 unit >= 0x20 with ((c&0xFE)<<8)^1, mode 1
-   swaps the odd and even bits, mode 2 is zlib after the header; null when the bytes do not decode */
+   swaps the odd and even bits of every unit (no 0x20 threshold: krkrz base/TextStream.cpp, and the mode KiriKiri itself
+   writes; a line break is stored as 0x05), mode 2 is zlib after the header; null when the bytes do not decode */
 function krkrScrambled(buf){if(!(buf[0]===0xfe&&buf[1]===0xfe&&buf[2]<=2))return null;const mode=buf[2];
  if(mode===2){const zlib=require('node:zlib');for(let i=5;i<Math.min(buf.length,64);i++)if(buf[i]===0x78){try{const o=zlib.inflateSync(buf.subarray(i));return (o[0]===0xff&&o[1]===0xfe?o.subarray(2):o).toString('utf16le');}catch{}}return null;}
  const n=(buf.length-5)>>1,out=Buffer.alloc(n*2);
- for(let i=0;i<n;i++){let c=buf.readUInt16LE(5+i*2);if(c>=0x20)c=mode===0?(c^(((c&0xfe)<<8)^1)):(((c&0xaaaa)>>1)|((c&0x5555)<<1));out.writeUInt16LE(c&0xffff,i*2);}
+ for(let i=0;i<n;i++){let c=buf.readUInt16LE(5+i*2);if(mode===1)c=((c&0xaaaa)>>1)|((c&0x5555)<<1);else if(c>=0x20)c^=((c&0xfe)<<8)^1;out.writeUInt16LE(c&0xffff,i*2);}
  return out.toString('utf16le');}
 function decodeText(buf){
  const scr=krkrScrambled(buf);if(scr!==null)return scr;
