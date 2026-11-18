@@ -37,3 +37,13 @@ test('a located page that goes to sleep still hides the reader (title, text wind
  assert.ok(d&&d.visible===false&&d.engine==='gpupage',JSON.stringify(events));
  assert.ok(events.some(e=>e.type==='hookGpuPage'));
 });
+
+test('a stream with no Japanese keeps the game text and tells the user why, once',()=>{
+ const {HookNative}=require('../core/hook-native.cjs');
+ const h=Object.create(HookNative.prototype);h.state={};h.pid=42;h.trace=()=>{};h.notify=m=>Object.assign(h.state,m);h.configure=()=>{};h.preferences={};h.windowState={};h.originalText=null;
+ for(const l of ['衛宮士郎在這個夜晚遇見了她，命運從此改變','他們說聖杯戰爭已經開始了','少女從魔法陣中走了出來'])h.japaneseGuard(l);
+ assert.equal(h.noJapaneseSource,true);assert.equal(h.state.sourceChinese,true);assert.match(h.state.hookMessage,/不会隐藏游戏原字/);
+ const g=Object.create(HookNative.prototype);g.state={sourceForeign:true,hookMessage:'x'};g.pid=1;g.trace=()=>{};g.notify=m=>Object.assign(g.state,m);g.configure=()=>{};g.originalText=null;
+ for(const l of ['衛宮士郎在這個夜晚遇見了她，命運從此改變','他們說聖杯戰爭已經開始了','少女從魔法陣中走了出來'])g.japaneseGuard(l);
+ assert.equal(g.state.hookMessage,'x','an earlier language notice is kept');
+});
