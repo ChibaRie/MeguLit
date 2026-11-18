@@ -25,7 +25,7 @@ function libraryGames(db){try{return db.prepare("SELECT id,title,executable FROM
 /* the zero-latency side of a game: pairing of the Chinese script against the Japanese one (counts only) */
 function pairingOf(root,id){try{const s=readJSON(path.join(root,'data','config','original-text.json'))?.[id];const p=s?.patchAlignment?.pairing;
  const out={brief:require('./original-text.cjs').brief(root,id),status:String(s?.status||''),patchStatus:String(s?.patchStatus||'')};
- if(p&&Number.isFinite(p.total)&&p.total>0)Object.assign(out,{total:p.total,paired:p.paired|0,unpaired:p.unpaired|0,rate:Math.round(p.paired/p.total*10000)/10000,reasons:Object.fromEntries(Object.entries(p.reasons||{}).filter(([k,v])=>/^[a-z-]{1,40}$/.test(k)&&Number.isFinite(v)).slice(0,12))});
+ if(p&&Number.isFinite(p.total)&&p.total>0)Object.assign(out,{total:p.total,paired:p.paired|0,unpaired:p.unpaired|0,added:p.added?.count|0,rate:Math.round(p.paired/p.total*10000)/10000,reasons:Object.fromEntries(Object.entries(p.reasons||{}).filter(([k,v])=>/^[a-z-]{1,40}$/.test(k)&&Number.isFinite(v)).slice(0,12))});
  return out;}catch{return null;}}
 const LOW_PAIRING=.98;
 function finish(root,game,result){const pairing=pairingOf(root,game.id);const r={...result,pairing};

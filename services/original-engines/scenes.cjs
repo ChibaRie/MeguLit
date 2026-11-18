@@ -99,12 +99,13 @@ function rank(name){const m=name.toLowerCase().match(/^patch(\d*)\.xp3$/);return
    ''. null when no Chinese scene has a Japanese one under it (the adoption in original-text.cjs then does nothing). */
 const KANA_LINE=/[ぁ-ゖァ-ヺ]/,HAN_LINE=/[一-鿿]/;
 function sceneLanguage(lines){let ja=0,zh=0;for(const t of lines||[]){if(KANA_LINE.test(t))ja++;else if(HAN_LINE.test(t))zh++;}return zh>=5&&zh>ja*3?'zh':ja>0&&ja>=zh?'ja':'';}
-function layerOriginal(running,layers,parse){let swapped=0;const align=require('./bgi.cjs').alignLines;
- const out=running.flatMap(s=>{let own;try{own=parse(s.read());}catch{return [];}const lines=own.lines||[];if(sceneLanguage(lines)!=='zh')return lines;
+function layerOriginal(running,layers,parse){let swapped=0,at=0;const align=require('./bgi.cjs').alignLines,added=[],rewritten=[];
+ const out=running.flatMap(s=>{const r=scene(s);at+=r.length;return r;});
+ function scene(s){let own;try{own=parse(s.read());}catch{return [];}const lines=own.lines||[];if(sceneLanguage(lines)!=='zh')return lines;
   const under=(layers.get(s.name.toLowerCase())||[]).slice(0,-1).reverse();
-  for(const u of under){let ja;try{ja=parse(u.read());}catch{continue;}if(sceneLanguage(ja.lines)!=='ja')continue;swapped++;return align([{name:s.name,lines}],[{name:s.name,lines:ja.lines}]);}
-  return lines.map(()=>'');});
- return swapped?out:null;}
+  for(const u of under){let ja;try{ja=parse(u.read());}catch{continue;}if(sceneLanguage(ja.lines)!=='ja')continue;swapped++;const r=align([{name:s.name,lines}],[{name:s.name,lines:ja.lines}]);for(const i of r.added||[])added.push(at+i);for(const i of r.rewritten||[])rewritten.push(at+i);return r;}
+  return lines.map(()=>'');}
+ if(swapped)Object.defineProperties(out,{added:{value:added},rewritten:{value:rewritten}});return swapped?out:null;}
 const addLayer=(layers,s)=>{const k=s.name.toLowerCase();if(!layers.has(k))layers.set(k,[]);layers.get(k).push(s);};
 
 // ---- Artemis --------------------------------------------------------------------------------------------------

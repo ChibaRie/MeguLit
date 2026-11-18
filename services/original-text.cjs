@@ -120,7 +120,7 @@ function realign(loc,ain,runtime,runningDir){if(loc.engine!=='bgi'||align(runtim
    the realigned lines follow ('zh': Japanese lines for the Chinese build, 'ja': Chinese lines for the Japanese build). */
 const sampler=require('./align-sample.cjs');
 function pairCheck(zh,ja,{into='zh',zhSizes,jaSizes,ruby,structureOk=true}={}){
- const v=sampler.verify(zh,ja,{into,zhSizes,jaSizes,ruby,force:!structureOk});
+ const v=sampler.verify(zh,ja,{into,zhSizes,jaSizes,ruby,force:!structureOk,added:into==='zh'?ja.added:null,rewritten:into==='zh'?ja.rewritten:null});
  return {verdict:v,report:sampler.report(v)};
 }
 function importOriginal(root,db,id,dir){

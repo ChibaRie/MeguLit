@@ -55,7 +55,16 @@ test('alignLines: a sound effect the translation added is left out, the rest of 
  const run=[{name:'s',lines:['v01','莉莎','「呐－那边的大哥哥，和我一起化作星光吧ー」','这家伙。','非要用这么麻烦的说法么。','咚','v02']}];
  const jp=[{name:'s',lines:['v01','リサ','「ねー、そこのおにーさん、わたしと光ろーよー」','やれやれだ。','やっかいを起こさなきゃいいが。','v02']}];
  assert.deepEqual(bgi.alignLines(run,jp),['v01','リサ','「ねー、そこのおにーさん、わたしと光ろーよー」','やれやれだ。','やっかいを起こさなきゃいいが。','','v02']);
- assert.deepEqual(sampler.census(['咚','这家伙。'],['','']).reasons,{'added-sound':1,'no-japanese-line':1});
+ const c=sampler.census(['咚','这家伙。'],['','']);assert.deepEqual(c.reasons,{'no-japanese-line':1});assert.equal(c.total,1);assert.deepEqual(c.added,{count:1,sound:1,line:0,rewritten:0});
+});
+
+test('alignLines: a voiced block the Japanese lacks, a speaker name in katakana and a rewritten line are told apart; census keeps them out of unpaired',()=>{
+ const run=[{name:'s',lines:['v01','梅尔特','「了解－盛谢惠顾了哦?」','喀啷喀啷','门铃响起。','喧哗瞬间安静下来。','v02','凯伊姆','「真豪奢啊」','v03','「羽化病吗」','这下子就更麻烦了。','被《羽狩》看到的话，钱也就会被揣进他们的腰包了。','v04']}];
+ const jp=[{name:'s',lines:['v01','メルト','「りょーかい。毎度どうも♪」','入り口の扉が開いた。','喧噪が瞬時に静まる。','v03','「羽つきか」','《羽つき》は《羽化病》という伝染病に冒された人間の通称だ。','感染拡大を防ぐため、国が《羽狩り》を設立した。','奴らの仕事は、罹患者を《羽狩り》が保護することだ。','v04']}];
+ const out=bgi.alignLines(run,jp);
+ assert.deepEqual(out.slice(1,6),['メルト','「りょーかい。毎度どうも♪」','','入り口の扉が開いた。','喧噪が瞬時に静まる。']);
+ assert.deepEqual(out.added,[7,8]);assert.deepEqual(out.rewritten,[11,12]);
+ const c=sampler.census(run[0].lines,out,out.added,out.rewritten);assert.equal(c.unpaired,0);assert.deepEqual(c.added,{count:5,sound:1,line:2,rewritten:2});
 });
 
 test('probe: a Chinese patch over the Japanese release reads as Japanese (original: layer); a plain Chinese build says whether it can be restored',()=>{
