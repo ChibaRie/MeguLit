@@ -62,7 +62,7 @@ function lineKind(l){const t=String(l).trim();if(!t||PATHISH.test(t)||SCRIPTISH_
 /* → {dialogue,japanese,chinese} over a list of lines; japanese keeps the old meaning (any kana, whole list) */
 function countLines(lines){let dialogue=0,japanese=0,chinese=0;for(const l of lines||[]){if(KANA.test(l))japanese++;const k=lineKind(l);if(k)dialogue++;if(k===2)chinese++;}return {dialogue,japanese,chinese};}
 /* every engine of scenes.cjs, plus System4 / BGI from original-text.cjs, with a per-engine time cap */
-function runEngines(dir,{deadline,routed=[],progress=()=>{}}){
+function runEngines(dir,{deadline,routed=[],progress=()=>{},only=null}){
  const scenes=require('./original-engines/scenes.cjs'),out=[];
  /* the GARbro last resort never runs over a folder whose KiriKiri cx archives MeguLit decrypts itself (detect() skips it the same way): on a cold cache it spent 20-80 s unpacking them for nothing and the probe timed out (ATRI) */
  let skipGarbro=false;try{skipGarbro=scenes.ownCx(dir);}catch{}
@@ -70,7 +70,7 @@ function runEngines(dir,{deadline,routed=[],progress=()=>{}}){
  const ids=Object.keys(scenes.ENGINES),first=routed.filter(i=>ids.includes(i)),rest=ids.filter(i=>!first.includes(i)),order=[...first.filter(i=>!GENERIC.has(i)),...rest.filter(i=>!GENERIC.has(i)),...first.filter(i=>GENERIC.has(i)),...rest.filter(i=>GENERIC.has(i))];let dedicatedJp=0;
  /* S5 routing: the readers the fingerprint / registry name run first (never starved by the budget) and are always listed, a reader that found nothing as NO_SCENES */
  const isRouted=new Set(first);
- for(const id of order){const generic=GENERIC.has(id);if(generic&&dedicatedJp>=DEDICATED_JP)continue;progress({stage:'engine:'+id,engines:out});if(id==='garbro'&&skipGarbro)continue;if(Date.now()>deadline){out.push({id,scenes:-1,lines:0,error:'BUDGET',ms:0});continue;}
+ for(const id of only?order.filter(i=>only.includes(i)):order){const generic=GENERIC.has(id);if(generic&&dedicatedJp>=DEDICATED_JP)continue;progress({stage:'engine:'+id,engines:out});if(id==='garbro'&&skipGarbro)continue;if(Date.now()>deadline){out.push({id,scenes:-1,lines:0,error:'BUDGET',ms:0});continue;}
   const engine=scenes.ENGINES[id],t=Date.now(),limit=generic?Math.min(deadline,t+GENERIC_MS):deadline;let list=null,error='',lines=0,sizes=[],japanese=0,parsed=0,dialogue=0,chinese=0;
   try{list=engine.scenes(dir,{deadline:limit})||[];}catch(e){error=String(e?.code||e?.message||e).slice(0,60);}
   if(list&&list.length){for(const s of list){if(Date.now()>limit){error=error||'BUDGET';break;}let p;try{p=engine.parse(s.read());parsed++;}catch(e){if(!error)error=String(e?.code||e?.message||e).slice(0,60);sizes.push(0);continue;}
@@ -108,7 +108,7 @@ function judgeLanguage({lines=0,japaneseLines=0,dialogueLines,chineseLines,title
  return jp>=Math.min(300,base*.05)?'japanese':'not-japanese';}
 
 /* which step failed, from the evidence */
-function classify({engines,inventory:inv,unsupported,preparing,title}){
+function classify({engines,inventory:inv,unsupported,preparing,title,garbroNeed=0}){
  const readers=engines.filter(e=>e.lines>0).sort((a,b)=>b.lines-a.lines);
  const read=readers.find(e=>!GENERIC.has(e.id)&&e.japaneseLines>=DEDICATED_JP)||readers[0];
  if(read){const lang=judgeLanguage({...read,title});if(lang==='chinese-build'||lang==='decode-suspect'||lang==='not-japanese')return {step:lang,detail:read.id,detected:read.id};return {step:'ok',detail:read.id,detected:read.id};}
@@ -121,7 +121,7 @@ function classify({engines,inventory:inv,unsupported,preparing,title}){
  const unknown=inv.archives.filter(a=>!fp.DOCUMENT.test(a.name)&&!fp.MEDIA.has(a.format)&&!fp.archiveInfo(a.name,a.magic).resource);
  const scenePck=unknown.find(a=>/(^|\/)scene\.pck$/i.test(a.name));if(scenePck)return {step:'unknown-pack',detail:'siglus-scene-pck',detected:null};
  /* an engine MeguLit can name but has no reader for: say which, not a bare unknown-pack */
- const known=fp.fingerprint(inv);if(known&&(unknown.length||(inv.markers||[]).length))return {step:'unsupported-engine',detail:known.engine,detected:null};if(unknown.length)return {step:'unknown-pack',detail:unknown[0].format||'magic:'+unknown[0].magic.slice(0,8),detected:null};
+ const known=fp.fingerprint(inv);if(known&&(unknown.length||(inv.markers||[]).length))return {step:'unsupported-engine',detail:known.engine,detected:null};if(unknown.length)return {step:'unknown-pack',detail:(garbroNeed?'needs-garbro:':'')+(unknown[0].format||'magic:'+unknown[0].magic.slice(0,8)),detected:null};
  if(inv.scripts)return {step:'parse-failed',detail:'loose-scripts',detected:null};
  return {step:'no-script',detail:'',detected:null};}
 
@@ -152,12 +152,20 @@ function probeGame({dir,executable,title},{budgetMs=60000,progress=null}={}){
  report({stage:'native'});
  const native=nativeEngines(dir,executable),engines=[...native,...runEngines(dir,{deadline,routed:route.readers,progress:p=>report({...p,engines:[...native,...p.engines]})})];
  /* the engine that named the unsupported code is a reader that tried: list it (issue showed 'engines tried: -' next to cmvs:CMVS_CPZ7) */
+ /* S5 GARbro route: nothing read and archives the GARbro pack would open (HyPack Cocotte, formats MeguLit has no reader for):
+    unpack them now when the pack is installed (a probe never downloads it), else say the pack is what is missing */
+ let garbroNeed=0;
+ if(!engines.some(e=>e.lines>0))try{const g=require('./original-engines/garbro.cjs'),scenes=require('./original-engines/scenes.cjs');
+  const files=scenes.ownCx(dir)?[]:g.archives(dir).filter(f=>{const c=g.cacheDir(f);return !g.readJson(path.join(c,'done.json'))&&g.readJson(path.join(c,'failed.json'))?.version!==g.version();});
+  if(files.length&&g.installed()){report({stage:'garbro-unpack',engines});for(const f of files){const left=deadline-Date.now()-3000;if(left<5000)break;try{g.unpackSync(f,{timeout:left});}catch{}}
+   const again=runEngines(dir,{deadline:Math.max(deadline,Date.now()+GENERIC_MS),only:['garbro']}).find(e=>e.id==='garbro');if(again){const i=engines.findIndex(e=>e.id==='garbro');if(i>=0)engines[i]=again;else engines.push(again);}}
+  else if(files.length)garbroNeed=files.length;}catch{}
  if(unsupported?.engine&&!engines.some(e=>e.id===unsupported.engine))engines.push({id:String(unsupported.engine),scenes:-1,parsed:0,lines:0,japaneseLines:0,dialogueLines:0,chineseLines:0,sizes:[],error:String(unsupported.code||'').slice(0,60),ms:0});
  if(!engines.some(e=>e.lines>0))try{const z=require('./original-engines/scenes.cjs').cxChineseOnly(dir);if(z)engines.push({id:'kirikiri-cx',scenes:1,parsed:1,lines:z.lines,japaneseLines:0,dialogueLines:z.lines,chineseLines:z.lines,error:'zh-patch-only',ms:0});}catch{}
- const c=classify({engines,inventory:inv,unsupported,preparing,title});const best=engines.find(e=>e.id===c.detected);
+ const c=classify({engines,inventory:inv,unsupported,preparing,title,garbroNeed});const best=engines.find(e=>e.id===c.detected);
  return {schema:'megulit.probe-result',version:1,reader:reader(),ms:Date.now()-t,fingerprint:fingerprint?{key:fingerprint.key,exe:maskString(fingerprint.exe),size:fingerprint.size}:null,
   inventory:{files:inv.files,bytes:inv.bytes,ext:inv.ext,scripts:inv.scripts,markers:inv.markers,engine:c.step==='unsupported-engine'?c.detail:'',archives:fp.tidy(inv.archives.map(({_path,...a})=>a))},
   engines:engines.map(({sizes,...e})=>e),detected:c.detected,lines:best?.lines||0,japaneseLines:best?.japaneseLines||0,dialogueLines:best?.dialogueLines||0,chineseLines:best?.chineseLines||0,sizes:best?.sizes||[],
-  tried:engines.filter(e=>e.routed||e.scenes!==0).map(e=>e.id).slice(0,24),budgetMs,step:c.step,detail:c.detail,unsupported:unsupported?{engine:unsupported.engine,code:unsupported.code}:null,preparing,_archives:inv.archives.map(a=>a._path)};
+  tried:engines.filter(e=>e.routed||e.scenes!==0).map(e=>e.id).slice(0,24),budgetMs,...garbroNeed?{needs:'garbro'}:{},step:c.step,detail:c.detail,unsupported:unsupported?{engine:unsupported.engine,code:unsupported.code}:null,preparing,_archives:inv.archives.map(a=>a._path)};
 }
 module.exports={probeGame,routedReaders,scaledBudget,classify,judgeLanguage,countLines,inventory,reader,MAGICS};

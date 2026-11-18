@@ -117,7 +117,7 @@ function parseAsb(buf){let p=9;const lines=[],anchors=[],u32=()=>{if(p+4>buf.len
   flush();if(name==='sel_text'&&a.text)lines.push(a.text);else if(name==='RegisterTextToHistory'&&a['1'])lines.push(a['1']);}
  flush();return {lines,anchors};}
 function parseArtemisTxt(text){const lines=[],anchors=[];let msg=[];const flush=()=>{if(msg.length)lines.push(msg.join('\n'));msg=[];};
- for(const raw of text.split(/\r?\n/)){const l=raw.replace(/(\/\/|;).*/,'');if(l.startsWith('*')){flush();anchors.push(l.slice(1).trim());continue;}
+ for(const raw of text.split(/\r?\n/)){const l=raw.replace(/\0/g,'').replace(/(\/\/|;).*/,'');if(l.startsWith('*')){flush();anchors.push(l.slice(1).trim());continue;}
   const cmd=/^\s*\[([^\]' ]+)((?:[^\]"']|"(?:\\"|[^"])*"|'(?:\\'|[^'])*')*)\]\s*$/.exec(l);
   if(cmd){const sel=cmd[1]==='sel_text'&&/\btext\s*=\s*("(?:\\"|[^"])*"|'(?:\\'|[^'])*'|[^\]"' ]*)/.exec(cmd[2]);if(sel){flush();lines.push(sel[1].replace(/^["']|["']$/g,''));}continue;}
   if(l.trim()){msg.push(l.trim().replace(/\[[^\]]*\]/g,''));continue;}flush();}
@@ -516,6 +516,8 @@ const catsystem2=require('./catsystem2.cjs'),naninovel=require('./naninovel.cjs'
 const nitroplusN4=require('./nitroplus-n4.cjs');
 // E470 GARbro on-demand pack, tried after every reader of MeguLit's own (garbro.cjs).
 const garbro=require('./garbro.cjs').engine;
+/* S5 Kogado / Hypatia HyPack (kogado.cjs) */
+const kogado=require('./kogado.cjs').engine;
 /* E561 signed adapter packs (services/adapter-packs.cjs) go first: a pack exists for a folder only because the readers below
    did not read it well; a pack that makes a game worse is turned off for that game by adapter-feed.cjs */
 const adapterPack=(()=>{try{return require('../adapter-packs.cjs').engine;}catch{return {id:'adapter-pack',scenes:()=>[],parse:()=>({lines:[],anchors:[]}),sources:()=>[]};}})();
@@ -549,7 +551,7 @@ const eushully=require('./eushully.cjs').engine;
 const rugp=require('./rugp.cjs').engine;
 const F4A_SCAN=require('./archive-scan.cjs').ENGINES;
 const siglusPck=require('./siglus-pck.cjs').engine;
-const ENGINES={'adapter-pack':adapterPack,'nitroplus-n4':nitroplusN4,'kirikiri-lang':kirikiriLang,tyrano,kirikiri,artemis,renpy,siglus,'siglus-pck':siglusPck,'kirikiri-cx':kirikiriCx,'kirikiri-dump':kirikiriDump,'kirikiri-ks':kirikiriKs,hunex,yuris,aquaplus,'aquaplus-pck':aquaplusPck,nscripter,'unity-text':unityText,higurashi,mages,'capcom-msg':capcomMsg,'spike-wad':spikeWad,pwaat,naninovel,yarnspinner,utage,'mages-cpk':magesCpk,aokana,'unity-assets':unityAssets,drv3,catsystem2,rpgmaker,wolf,avg32,'nitro-npk':nitroNpk,'nitro-pak':nitroPak,'nitro-npa':nitroNpa,iga,paz,bruns,'re-pak':rePak,fvp,advhd,reallive,vgprompter,majiro,softpal,systemnnn,liar,rgss,silky,tmrhiro,nekosdk,ikura,exhibit,eagls,ast,seraph,interheart,nexas,malie,shiinario,cmvs,lucifen,kaguya,lcse,yuka,qlie,entis,alicesoft,marble,rugp,...webbundle,plaintext:require('./plaintext.cjs').engine,circus,whale,ddsystem,aoi,kid,...makers,escude,eushully,pjadv,luca,stuff,stcm2,slg:F4A_SCAN.slg,cpk:F4A_SCAN.cpk,evbox:F4A_SCAN.evbox,ism:F4A_SCAN.ism,glib2:F4A_SCAN.glib2,tanuki:F4A_SCAN.tanuki,yaneurao:F4A_SCAN.yaneurao,rits:F4A_SCAN.rits,bluegale:F4A_SCAN.bluegale,cyberworks:F4A_SCAN.cyberworks,dxlib:F4A_SCAN.dxlib,garbro};
+const ENGINES={'adapter-pack':adapterPack,'nitroplus-n4':nitroplusN4,'kirikiri-lang':kirikiriLang,tyrano,kirikiri,artemis,renpy,siglus,'siglus-pck':siglusPck,'kirikiri-cx':kirikiriCx,'kirikiri-dump':kirikiriDump,'kirikiri-ks':kirikiriKs,hunex,yuris,aquaplus,'aquaplus-pck':aquaplusPck,nscripter,'unity-text':unityText,higurashi,mages,'capcom-msg':capcomMsg,'spike-wad':spikeWad,pwaat,naninovel,yarnspinner,utage,'mages-cpk':magesCpk,aokana,'unity-assets':unityAssets,drv3,catsystem2,rpgmaker,wolf,avg32,'nitro-npk':nitroNpk,'nitro-pak':nitroPak,'nitro-npa':nitroNpa,iga,paz,bruns,'re-pak':rePak,fvp,advhd,kogado,reallive,vgprompter,majiro,softpal,systemnnn,liar,rgss,silky,tmrhiro,nekosdk,ikura,exhibit,eagls,ast,seraph,interheart,nexas,malie,shiinario,cmvs,lucifen,kaguya,lcse,yuka,qlie,entis,alicesoft,marble,rugp,...webbundle,plaintext:require('./plaintext.cjs').engine,circus,whale,ddsystem,aoi,kid,...makers,escude,eushully,pjadv,luca,stuff,stcm2,slg:F4A_SCAN.slg,cpk:F4A_SCAN.cpk,evbox:F4A_SCAN.evbox,ism:F4A_SCAN.ism,glib2:F4A_SCAN.glib2,tanuki:F4A_SCAN.tanuki,yaneurao:F4A_SCAN.yaneurao,rits:F4A_SCAN.rits,bluegale:F4A_SCAN.bluegale,cyberworks:F4A_SCAN.cyberworks,dxlib:F4A_SCAN.dxlib,garbro};
 // The engine whose running scripts this folder holds, if any can be read.
 function readable(id,dir){let scenes;try{scenes=ENGINES[id].scenes(dir);}catch{return false;}
  for(const s of scenes.slice(0,64)){try{if(ENGINES[id].parse(s.read()).lines.length)return true;}catch{}}return false;} /* 64: a game may open with many code-only scenes (女王蜂の王房 endings, first.ks) */
