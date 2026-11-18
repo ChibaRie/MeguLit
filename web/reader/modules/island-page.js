@@ -102,7 +102,7 @@
   // a slower first tokenization still paints the readings when ready), so each reading appears with its characters.
   function revealWithRuby(jp){const chars=[...jp.querySelectorAll('.char-token')];for(const c of chars)c.classList.add('tome-typewriter-pending');
    const go=()=>{if(jp.isConnected&&!jp.dataset.tomeRubyRevealed){jp.dataset.tomeRubyRevealed='1';w.TomeTypewriter?.reveal(jp,chars,{instant:false});}};
-   const ready=b.prepareRuby?.(jp);if(!ready){go();return;}Promise.race([ready.catch(()=>false),new Promise(r=>setTimeout(r,300))]).then(go);}
+   const ready=b.prepareRuby?.(jp);if(!ready){go();return;}Promise.race([ready.catch(()=>false),new Promise(r=>setTimeout(r,80))]).then(go);}
   /* FLOW: no engine positions. Lines start at the top of the calibrated text box and each one sits under the last (its measured height, translation included), as the game itself writes them down the page. When the newest line runs past the bottom of the game area the earlier lines go (the page turned). */
   /* Issue 119: page modes take their text size from the game; a Japanese size the user set by hand (Alt+T or the home settings) wins, at the same scale as the normal reader. */
   function userSize(p){if(p.sizeSource!=='user')return 0;const v=parseFloat(w.getComputedStyle(d.documentElement).getPropertyValue('--tomoyo-gal-jp-size'));return Number.isFinite(v)&&v>4?v:0;}
