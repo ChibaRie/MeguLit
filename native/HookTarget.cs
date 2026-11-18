@@ -20,6 +20,7 @@ public static class HookTarget {
  // Explicit text-language metadata is checked before any hide path is armed. A locale/font/voice setting alone is not proof.
  public static bool ChineseText=false;
  public static bool ChineseLanguage(string text){return System.Text.RegularExpressions.Regex.IsMatch(text??"",@"(?im)^\s*(?:text|main|selected|current|game)?(?:lang(?:uage)?(?:type|id|code)?|locale)\s*=\s*[""']?(?:zh(?:[-_](?:cn|tw|hk|hans|hant))?|cn|chs|cht|schinese|tchinese|chinese|simplifiedchinese|traditionalchinese)[""']?\s*(?:[;#].*)?$");}
+ public static void SetSourceLanguage(string language){if(language=="zh")ChineseText=true;else if(language=="ja")ChineseText=false;}
  public static void ConfirmJapanese(string text){if(ChineseText && (text??"").Length>=8 && System.Text.RegularExpressions.Regex.Matches(text??"", "[ぁ-ゖァ-ヺ]").Count>=2 && System.Text.RegularExpressions.Regex.IsMatch(text??"", "[。！？!?「」]"))ChineseText=false;}
  public static bool ReadChineseText(string exe){try{string dir=Path.GetDirectoryName(exe);foreach(string file in Directory.GetFiles(dir,"*.ini")){var fi=new FileInfo(file);if(fi.Length>262144)continue;try{if(ChineseLanguage(File.ReadAllText(file)))return true;}catch{}}}catch{}return false;}
  public static void Validate(uint pid,string window,string name,string started){
@@ -28,7 +29,7 @@ public static class HookTarget {
   try{var path=new StringBuilder(32768);int size=path.Capacity;uint exit;System.Runtime.InteropServices.ComTypes.FILETIME created,exited,kernel,user;
    if(!QueryFullProcessImageName(process,0,path,ref size)||!GetProcessTimes(process,out created,out exited,out kernel,out user)||!GetExitCodeProcess(process,out exit))throw new Exception("Unable to verify bound game identity");
    ExePath=path.ToString();
-   ChineseText=ReadChineseText(ExePath);
+   ChineseText=ReadChineseText(ExePath);SetSourceLanguage(Environment.GetEnvironmentVariable("MEGULIT_SOURCE_LANGUAGE"));
    long filetime=((long)created.dwHighDateTime<<32)|(uint)created.dwLowDateTime;
    if(exit!=259||!String.Equals(Path.GetFileNameWithoutExtension(path.ToString()),name,StringComparison.OrdinalIgnoreCase)||DateTime.FromFileTimeUtc(filetime).Ticks.ToString(CultureInfo.InvariantCulture)!=started)throw new Exception("Bound game process changed; bind the game again");
   }finally{CloseHandle(process);}

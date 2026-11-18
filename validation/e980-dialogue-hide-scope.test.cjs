@@ -33,3 +33,24 @@ test('confirmed dialogue still hides, read mode and a layer switch restore its e
 test('a name plate with the same renderer ownership stays visible',()=>{
  const f=fixture();f.layer.height=40;f.st.trDone(f.renderer(f.layer));assert.equal(f.layer.textLayer.opacity,255);assert.equal(f.out.length,0);
 });
+test('saved Chinese content metadata and chinese-only script verdict reach the hide bridge without an ini',()=>{
+ const {Reader}=require('../services/reader.cjs'),{HookNative}=require('../core/hook-native.cjs');
+ function run(lib,japanese){
+  const sent=[],hooks=Object.create(HookNative.prototype);Object.assign(hooks,{process:{},send:m=>sent.push(m)});
+  const modules={
+   './original-text.cjs':{providerKey:()=>'',provider:()=>({})},
+   './store.cjs':{openStore:()=>({close(){}})},
+   './library.cjs':{activeGameForProgram:()=>({id:'game',original:JSON.stringify({library:lib})})},
+   './japanese-presence.cjs':{verdict:()=>({japanese})}
+  };
+  const refresh=vm.runInNewContext('({'+Reader.prototype.refreshTextSource.toString()+'}).refreshTextSource',{require:id=>{assert.ok(modules[id],id);return modules[id];}});
+  refresh.call({root:'H:\\fixture',gal:{hooks},prefs:()=>({})},{exe:'H:\\fixture\\game.exe'});
+  return {hooks,sent};
+ }
+ assert.equal(run({contentLanguage:'zh'},null).sent[0]?.value,'zh');
+ assert.equal(run({},false).sent[0]?.value,'zh','chinese-only script verdict also blocks default hiding');
+ assert.equal(run({contentLanguage:'ja',originalExecutableVerified:true},true).sent[0]?.value,'ja');
+ assert.equal(run({},null).sent.length,0,'unknown language grants no Chinese/Japanese override');
+ const f=run({contentLanguage:'zh'},false);f.hooks.setSourceLanguage('zh');assert.equal(f.sent.length,1,'unchanged metadata cannot undo live Japanese confirmation');
+ f.hooks.setSourceLanguage('ja');assert.equal(f.sent.at(-1)?.value,'ja','restoring Japanese changes the live bridge policy');
+});
