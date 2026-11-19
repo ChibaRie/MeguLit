@@ -54,7 +54,7 @@ class GameStyleSync{
  configure(p,s){const identity=String(s.gameProcessId||'')+'|'+String(s.gameStarted||'');if(identity!==this.identity){this.identity=identity;this.generation++;this.source='';this.latest=null;this.profileKey=null;this.samples=[];this.lastAt=0;this.calibrating=false;clearTimeout(this.timer);}this.p=p;this.s=s;
   const key=/^[a-f0-9]{64}$/i.test(String(s.gameStyleKey||''))?String(s.gameStyleKey).toLowerCase():null;
   this.gameName=String(s.gameTitle||s.processName||p.gameProcess||'').trim().slice(0,180);
-  if(key&&key!==this.profileKey){this.profileKey=key;const entry=this.profile;if(entry?.textSavedAt)this.latest={profile:true};this.status('profile',{gameStyleProfile:entry?.prefs||{},gameStyleEffectivePrefs:{...this.base(),...entry?.prefs},gameStylePositionMap:this.maps[key]||null});}
+  if(key&&key!==this.profileKey){this.profileKey=key;const entry=this.profile;if(entry?.textSavedAt)this.latest={profile:true};this.status('profile',{gameStyleProfile:entry?.prefs||{},gameStyleEffectivePrefs:this.effective(entry),gameStylePositionMap:this.maps[key]||null});}
   this.enabled=p.autoGameStyle!==false;if(!this.enabled&&!this.calibrating){clearTimeout(this.timer);this.generation++;}}
  snapshot(){const e=this.profile;return {gameStyleIdentity:this.identity||'',gameStyleKey:this.profileKey,gameStyleGameName:this.gameName||e?.name||'',gameStyleTextSavedAt:e?.textSavedAt||0,gameStylePositionSavedAt:e?.positionSavedAt||0,gameStyleSavedAt:e?.savedAt||0,gameStyleHistory:(e?.history||[]).slice(0,7)};}
  // Calibration import lists: other saved works on this PC, names and save times only. importFrom reads one group
@@ -62,8 +62,15 @@ class GameStyleSync{
  savedWorks(){return Object.entries(this.profiles||{}).filter(([key,e])=>key!==this.profileKey&&e&&e.prefs).map(([key,e])=>({key,name:String(e.name||key).slice(0,120),textSavedAt:e.textSavedAt||0,positionSavedAt:e.positionSavedAt||0})).sort((a,b)=>Math.max(b.textSavedAt,b.positionSavedAt)-Math.max(a.textSavedAt,a.positionSavedAt)).slice(0,200);}
  importFrom(key,part){const e=this.profiles?.[key];if(!e||!e.prefs||key===this.profileKey||!['text','position'].includes(part))return null;return {prefs:profileTools.pick({...profileTools.pick(gameStyle.defaults,part),...e.prefs},part),map:part==='position'?(this.maps?.[key]||null):undefined};}
  // Built-in defaults, then the user's global text preset from the home settings (E215); a work's saved prefs go on top.
+ /* 2026-11-19 (user, 素晴らしき日々: 「默认的位置贼偏」): a work with no saved settings at all, before any engine place is known,
+    starts where this user's other works keep their text: the median box of the saved positions (3 or more), else 20 / 76 /
+    width 60 (the built-in 4 / 70 / 92 sat far from most dialogue boxes). A work with its own settings never changes. */
+ newWorkPosition(){const saved=Object.entries(this.profiles||{}).filter(([key,e])=>key!==this.profileKey&&e?.positionSavedAt&&['x','y','width'].every(k=>Number.isFinite(Number(e.prefs?.[k])))).map(([,e])=>e.prefs);
+  const pos=saved.length>=3?{x:median(saved.map(p=>Number(p.x))),y:median(saved.map(p=>Number(p.y))),width:median(saved.map(p=>Number(p.width)))}:{x:20,y:76,width:60};
+  pos.x=Math.max(0,Math.min(95,pos.x));pos.y=Math.max(0,Math.min(95,pos.y));pos.width=Math.max(20,Math.min(100-pos.x,pos.width));pos.height=Math.max(5,Math.min(Number(gameStyle.defaults.height)||27,100-pos.y));return pos;}
+ effective(entry){return {...this.base(),...(entry?.prefs?{}:this.newWorkPosition()),...entry?.prefs};}
  base(){return {...profileTools.pick(gameStyle.defaults,'base'),...(this.profileFile?require('./text-defaults.cjs').read(path.dirname(this.profileFile)):{})};}
- replay(){this.status('profile',{gameStyleProfile:this.profile?.prefs||{},gameStyleEffectivePrefs:{...this.base(),...this.profile?.prefs},gameStylePositionMap:this.positionMap()});}
+ replay(){this.status('profile',{gameStyleProfile:this.profile?.prefs||{},gameStyleEffectivePrefs:this.effective(this.profile),gameStylePositionMap:this.positionMap()});}
  // Measuring only runs during a calibration (the original is shown for it); between calibrations nothing is scanned.
  observe(source,read,engine=''){this.sourceEngine=engine;if(!source?.trim()||source===this.source)return;this.source=source.slice(0,4000);this.sourceRead=read===true;this.generation++;this.waitNext=false;if(this.calibrating&&(this.sessionMisses||0)<SESSION_MISSES)this.request(true);}
  resize(width,height){const key=width+'x'+height;if(this.size&&this.size!==key&&this.calibrating){this.generation++;this.request(true);}this.size=key;}
