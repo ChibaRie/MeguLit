@@ -502,7 +502,9 @@ static void Deactivate(string reason){if(WaitHook!=null)WaitHook.Disable();lock(
     Lines of a writable stream go back to write-back hidden, which worked; the verdict is remembered for the game like a failed trial. */
  static volatile bool GlyphPassLeaked;static int GlyphLeakLines;
  static void GlyphPassLeak(string why){if(GlyphPassLeaked)return;GlyphPassLeaked=true;GlyphProven=false;GlyphAllFailed=true;GlyphAllNoted=false;
-  GlyphSave(new Dictionary<string,object>{{"allFailed",GlyphVersion},{"bridge",BridgeBuild()},{"leak",why},{"at",DateTime.UtcNow.ToString("o")}});GlyphAllNote("the engine keeps glyphs it has rasterised ("+why+"), the font layer cannot blank them");}
+  GlyphSave(new Dictionary<string,object>{{"allFailed",GlyphVersion},{"bridge",BridgeBuild()},{"leak",why},{"at",DateTime.UtcNow.ToString("o")}});GlyphAllNote("the engine keeps glyphs it has rasterised ("+why+"), the font layer cannot blank them");
+  /* said once: the verdict is remembered for the game, so the next run starts written back and never gets here */
+  Status("这款游戏首次适配时前几句可能显示不全：开个新存档推进几句，再回标题重新开始即可");}
  static void GlyphLineReport(string s){var m=System.Text.RegularExpressions.Regex.Match(s,@"^line seq=\d{1,9} chars=\d{1,6} placed=\d{1,6} hidden=\d{1,6} requested=\d{1,6} repeat=\d{1,6} missing=(\d{1,6})$");if(!m.Success)return;
   if(m.Groups[1].Value=="0")return;/* one such line is enough: every further passed line puts more blank glyphs into the engine's cache, and those stay until the game is restarted */Interlocked.Increment(ref GlyphLeakLines);GlyphPassLeak("a line with glyphs that were not blanked ("+s.Substring(5)+")");}
  /// <summary>HookBridge --self-test: a hit proves the pass-through and clean lines keep it; the first line with glyphs that were not blanked, or a cache report, takes the proof back, and later hits do not bring it back.</summary>

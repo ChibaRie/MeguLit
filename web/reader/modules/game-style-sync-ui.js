@@ -150,7 +150,6 @@
    for(const k of ['japaneseSize','translationSize','japaneseSpacingPx'])delete out[k];}else if(m.gameStyleAutomatic!==true)out.sizeSource='';const part=m.gameStylePurpose||'all',
    generation=++measurementSerial,key=session.key;
   document.body.classList.remove('tome-style-probing');
-  /* 2026-11-19 (user, 死に逝く君: "校准完全对不上了"; log: the engine placed the line at 322,743, the reader drew it 125 px lower, and calibrating only moved the box). A line placed on the game's own characters is moved by its saved offset (anchorDX/anchorDY), which no calibration ever touched, so an offset from an earlier session could not be calibrated away. A position calibration means "where the game draws it": the offset goes back to 0 with it. */if(part!=='text'){out.anchorDX=0;out.anchorDY=0;}
   apply(pick(out,part));message=t('measured');aligning=part!=='text';
   const complete=()=>{if(generation!==measurementSerial||key!==session.key)return;aligning=false;
    if(part!=='text'){const target={...r,textWidth:Number(r.style?.width)*r.width/100,samples:r.positionSamples};const map=window.__tomeTextPosition?.finishCalibration?.(target,
