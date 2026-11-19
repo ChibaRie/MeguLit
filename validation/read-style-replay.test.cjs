@@ -71,7 +71,7 @@ test('pixel sample: each sentence is measured for itself from the game window an
  assert.equal(r.sync.lineStyle('既に読んだ台詞がここに表示されています。'),true);await r.wait();
  assert.equal(r.requests.length,1);assert.equal(r.requests[0].captureMode,undefined,'the game window alone, not the visible screen with MeguLit over it');assert.equal(r.requests[0].source,'既に読んだ台詞がここに表示されています。');
  await r.answer(r.requests[0].id,{textColor:'#FFE080',textEdgeColor:'#101010'});
- assert.deepEqual(r.samples().map(m=>({token:m.sourceToken,style:m.style})),[{token:r.token('既に読んだ台詞がここに表示されています。'),style:{fill:'#ffe080',alpha:1,edge:'#101010',edgeAlpha:1}}]);
+ assert.deepEqual(r.samples().map(m=>({token:m.sourceToken,style:m.style})),[{token:r.token('既に読んだ台詞がここに表示されています。'),style:{fill:'#ffe080',alpha:1}}],'the fill only: a measured edge may be a drop shadow');
  /* the next sentence starts while the previous answer is still out: the late answer is dropped, the new one is its own */
  r.sync.lineStyle('まだ読んでいない台詞がここに表示されています。');await r.wait();const first=r.requests.at(-1);
  r.sync.lineStyle('さらに次の未読の台詞がここに表示されています。');await r.answer(first.id,{textColor:'#ffffff'});

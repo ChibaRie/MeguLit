@@ -123,7 +123,9 @@ class GameStyleSync{
   const st=m.result?.valid?m.result.style:null,hex=c=>/^#[0-9a-f]{6}$/i.test(c||'');
   /* not found yet (still being typed, or not drawn by the game): one more look, then this sentence stays without a sample */
   if(!st||!hex(st.textColor)||st.textGradient===true){if(this.lineAttempt<2&&!st){this.lineTimer=setTimeout(p.retry,900);this.lineTimer.unref?.();}return;}
-  const style={fill:st.textColor.toLowerCase(),alpha:1};if(hex(st.textEdgeColor)){style.edge=st.textEdgeColor.toLowerCase();style.edgeAlpha=1;}
+  /* The fill only. The measured outline (textEdgeColor) is not passed on: pixels cannot tell an outline from a drop shadow, and on
+     live ISLAND the shadow came out as an outline on some sentences and not on others. The outline stays the saved one. */
+  const style={fill:st.textColor.toLowerCase(),alpha:1};
   this.emit({type:'lineStyleSample',sourceToken:islandSource.token(p.text),style,origin:'pixel'});}
  cancel(){if(this.calibrating)this.emit({type:'gameStyleStatus',gameStyleState:'cancelled'});clearTimeout(this.timer);clearTimeout(this.captureTimer);clearTimeout(this.timeout);this.pending=null;this.calibrating=false;this.generation++;this.calibrationSerial=(this.calibrationSerial||0)+1;this.emit({type:'gameStyleStatus',gameStylePreview:false});}
  captureReady(id){const p=this.pending;if(!p||p.id!==id||p.sent||p.generation!==this.generation||p.calibration&&(!this.calibrating||p.session!==(this.calibrationSerial||0)))return false;clearTimeout(this.captureTimer);p.sent=true;this.child?.stdin.write(JSON.stringify(p.request)+'\n');return true;}
