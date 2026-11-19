@@ -128,7 +128,7 @@ if(typeof value.rubyRowOffsetsX==='string')result.rubyRowOffsetsX=value.rubyRowO
   }
   function paintFor(settings, read=false, engineColor='') {
     // An actual engine colour takes priority over a learned/manual gradient for that sentence.
-    // Saved read colours can come from calibration; they must not suppress this sentence's draw evidence.
+    /* Saved read colours can come from calibration; they must not suppress this sentence's draw evidence. */
     /* An engine colour near black over a light text setting is a shadow/outline or an unset field, not the text (user: ISLAND sometimes came out black) */const lum=c=>{const v=[1,3,5].map(i=>parseInt(String(c).slice(i,i+2),16));return v[0]*.2126+v[1]*.7152+v[2]*.0722;};if(/^#[0-9a-f]{6}$/i.test(engineColor)&&lum(engineColor)<48&&!(/^#[0-9a-f]{6}$/i.test(settings.textColor)&&lum(settings.textColor)<96))engineColor='';
     if(settings.autoGameStyle!==false&&/^#[0-9a-f]{6}$/i.test(engineColor))return {color:engineColor,gradient:'none',fill:'currentColor'};
     const prefix=read?'readText':'text',on=settings[prefix+'Gradient'];

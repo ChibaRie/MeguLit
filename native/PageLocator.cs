@@ -150,7 +150,7 @@ public sealed class PageLocator : IDisposable {
     drawing them (OCR reads, never covers: MeguLit lays only its invisible readable copy and the translation). A group is
     shown once two reads agree and hidden after two reads without it. Nothing is ever written to the game. */
  public sealed class ScanItem { public int Id; public string Text; public List<Row> Rows; public int Seen, Misses; public bool Shown, Foreign; public DateTime Since; }
- volatile bool ScanOn, ScanDialogSeen, ScanSlow; bool ScanBlindNoted; volatile int ScanOthers; string ScanSeen; IntPtr ScanTarget; string ScanDialog, ScanSpeaker; bool ScanBand, ScanForeign; Thread Scanner; string ArtActive;
+ public uint[] OwnPids; volatile bool ScanOn, ScanDialogSeen, ScanSlow; bool ScanBlindNoted; volatile int ScanOthers; string ScanSeen; IntPtr ScanTarget; string ScanDialog, ScanSpeaker; bool ScanBand, ScanForeign; Thread Scanner; string ArtActive;
  OcrEngine ForeignEngine; bool ForeignTried;
  readonly List<ScanItem> ScanItems = new List<ScanItem>(); int ScanId = 1000000;
  public void Scan(IntPtr target, bool on, string dialog, string speaker, bool band) { Scan(target, on, dialog, speaker, band, false); }
@@ -184,6 +184,8 @@ public sealed class PageLocator : IDisposable {
      /* 2026-11-19 the periodic scan never uses PrintWindow (it makes the game thread redraw a frame): BitBlt or skip this round */
      if (!GameCapture.BltOnly(target, image)) { if (!ScanBlindNoted) { ScanBlindNoted = true; Emit(new { type = "pageLocateStatus", status = "art scan skipped: the window gives no picture to BitBlt (PrintWindow is not used for the scan)" }); } continue; }
      ScanBlindNoted = false;
+     /* 2026-11-19 MeguLit's own windows over the game (menu, word card, the reader's lines, glass) are painted out first (OwnCover.cs) */
+     OwnCover.Paint(image, OwnCover.Parts(target, w, h, OwnPids));
      thumb = Thumb(image);
      bool pending = false; foreach (var it in ScanItems) if (!it.Shown || it.Misses > 0) pending = true;
      // The same picture: what is shown stays; a candidate seen once (or missed once) is read again to settle it.
@@ -777,6 +779,38 @@ public sealed class PageLocator : IDisposable {
    int used = 0; foreach (var g in groups) used += g.Count;
    return new System.Web.Script.Serialization.JavaScriptSerializer().Serialize(new { sw = w, sh = h, dialogSeen = seen, others = Math.Max(0, rows.Count - used), raw = rows.ConvertAll(r => r.Text), groups = list });
   }
+ }
+
+ // 2026-11-19 own windows painted out (OwnCover): a dark quote in the middle (素晴らしき日々 opening) and MeguLit's menu over
+ // one corner showing two lines. Unpainted, the scan reads the menu too; painted, only the quote. "0", the failing step, or
+ // "skip" without Japanese OCR.
+ public static string ScanMaskSelfTest(string save) {
+  var locator = new PageLocator(o => { });
+  try { locator.Engine = OcrEngine.TryCreateFromLanguage(new Language("ja")); } catch { }
+  if (locator.Engine == null) return "skip no Japanese OCR";
+  const string quote = "世界の中には価値が存在しない。";
+  var menu = new Rectangle(900, 40, 340, 140);
+  Func<bool, List<List<Row>>> read = paint => {
+   using (var image = new Bitmap(1280, 720, PixelFormat.Format24bppRgb)) {
+    using (var g = Graphics.FromImage(image))
+    using (var big = new Font("MS Mincho", 30, FontStyle.Regular, GraphicsUnit.Pixel))
+    using (var ui = new Font("MS Gothic", 26, FontStyle.Regular, GraphicsUnit.Pixel)) {
+     g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAliasGridFit; g.Clear(Color.Black);
+     g.DrawString(quote, big, new SolidBrush(Color.FromArgb(200, 200, 200)), new RectangleF(0, 340, 1280, 50), new StringFormat { Alignment = StringAlignment.Center });
+     g.FillRectangle(new SolidBrush(Color.FromArgb(40, 44, 60)), menu);
+     g.DrawString("ゲームを表示中です", ui, Brushes.White, 920, 60); g.DrawString("翻訳の設定を開く", ui, Brushes.White, 920, 110);
+    }
+    if (paint) OwnCover.Paint(image, new List<Rectangle> { menu });
+    if (!String.IsNullOrEmpty(save)) image.Save(save + (paint ? ".painted.png" : ".png"), ImageFormat.Png);
+    return ScanGroups(locator.Read(image, 1280, 720), 1280, 720, null, null, false, null);
+   }
+  };
+  var open = read(false); bool menuSeen = false, quoteSeen = false; foreach (var gr in open) { var t = GroupText(gr); if (t.Contains("表示") || t.Contains("設定")) menuSeen = true; if (Same(t, quote)) quoteSeen = true; }
+  if (!menuSeen) return "the menu was not read without painting [" + String.Join(" | ", open.ConvertAll(GroupText).ToArray()) + "]";
+  if (!quoteSeen) return "the quote was not read [" + String.Join(" | ", open.ConvertAll(GroupText).ToArray()) + "]";
+  var painted = read(true);
+  if (painted.Count != 1 || !Same(GroupText(painted[0]), quote)) return "painted: " + String.Join(" | ", painted.ConvertAll(GroupText).ToArray());
+  return "0";
  }
 
  public void Dispose() { Disposed = true; Wake.Set(); }
