@@ -24,6 +24,12 @@ class Immersion{
  // often detected a little before the hook text arrives.
  resetLine(){this.lineAt=this.now?this.now():0;/* 2026-11-19 (1.4.17 live, 千恋＊万花 / 死に逝く君: the subtitle vanished ~30 s into a line the player was still reading, the animated wait marker no longer detected) a line the player's own click or key brought up is read by hand: no marker loss alone closes it */this.manualLine=this.inputAt!=null&&this.lineAt-this.inputAt<3000;this.lineLength=0;this.markerSeen=false;this.markerGoneAt=0;this.drawnAt=0;this.typing=false;this.lineReadyAt=this.lineAt;this.currentText='';}
  frozen(){return this.contextActive===false||this.menuOpen===true||this.thawAt>0&&this.now()<this.thawAt;}
+ /* 2026-11-19 (user, 千恋＊万花: the original showed for a moment now and then). The reading layer is away because the game's text window is
+    not on screen: the game took it away for a staged pause (log 11:20:44.415 "text window hidden: box 73%, picture 0%", the next line 2.8 s
+    later) or changed the scene (11:20:32.916 "scene changed 80%, box 59%"). There is no text to give back to the game then, and giving it
+    back made the game draw the next line itself before the hide was on again. Not this: a skip (the game shows its own fast-forward),
+    a marker or a focus change, where the layer is away while the game's text is still there to read. */
+ awayByDialog(){return this.visible===false&&this.skipAt==null&&(this.windowHidden===true||this.sceneHidden===true);}
  /* an inference that arrived while frozen: a hide is dropped, a "shown again" of the text window or the scene is kept for the thaw */
  refuse(source,visible,why=''){if(visible&&(source==='window'||source==='scene'))this.deferred[source]=why;else delete this.deferred[source];this.onDecision?.({refused:true,source,visible,why,frozen:this.contextActive===false?'context':this.menuOpen?'menu':'settling'});return false;}
  /* the menu was opened or closed (reader service): frozen while it is open and for a while after, with or without a native context report */
