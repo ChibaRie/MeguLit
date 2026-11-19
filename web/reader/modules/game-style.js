@@ -88,6 +88,8 @@ if(typeof value.rubyRowOffsetsX==='string')result.rubyRowOffsetsX=value.rubyRowO
     if (['bilingual','japanese','chinese','bilingual-en','english','none'].includes(value.display)) result.display = value.display;
     if (['outline','soft','none'].includes(value.shadow)) result.shadow = value.shadow;
     if (typeof value.gameProcess === 'string') result.gameProcess = value.gameProcess.slice(0,100);
+    /* 2026-11-19 the remembered game is its full program path (many engines share a program name: BGI.exe, cs2.exe, SiglusEngine.exe) */
+    if (typeof value.gameExecutable === 'string') result.gameExecutable = value.gameExecutable.slice(0,1000);
     return result;
   }
   /* E550 per-line colour (ファタモルガーナの館: narration grey #9d9d9d, speech white). lineKind: 'speech' for a line in

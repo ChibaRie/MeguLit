@@ -72,7 +72,7 @@ test('a game started before MeguLit: one bind for Alt+M, 点选 and the list; th
  lib.bindWindow(reader,{hwnd:'77',title:'さくら',processName:'sakura.exe'},{fontSize:28},e=>out.push(e));
  assert.deepEqual(binds,[{h:'77',s:{fontSize:28,bindEnabled:true}}],'the page settings of the list bind go with it');
  lib.follow(reader,{type:'bound',bound:true,gameHwnd:'77',gameTitle:'さくら'},e=>out.push(e),'zh');
- assert.equal(out[0].message,'已绑定：さくら');assert.deepEqual(saved,[{v:{fontSize:30,gameProcess:'sakura',bindEnabled:true},c:false}],'gameProcess kept: a MeguLit restart binds this game again by itself');
+ assert.equal(out[0].message,'已绑定：さくら');assert.deepEqual(saved,[{v:{fontSize:30,gameProcess:'sakura',gameExecutable:'',bindEnabled:true},c:false}],'gameProcess kept: a MeguLit restart binds this game again by itself (its full path is written by the bound event, validation/autobind-path.test.cjs)');
  const pick=[];lib.request({gal:reader.gal},{hwnd:'9',className:'Progman',processName:'explorer',pick:true},e=>pick.push(e),'zh');assert.equal(pick[0].pick,true);assert.match(pick[0].message,/桌面/);
  const reader2=read('services/reader.cjs');
  assert.match(reader2,/case 'galBind':[^\n]*require\('\.\/bind-hotkey\.cjs'\)\.bindWindow\(this,\{hwnd:r\.hwnd,title:r\.title,processName:r\.processName\},r\.settings/,'the list bind goes the same way');
