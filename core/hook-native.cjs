@@ -36,7 +36,7 @@ function scriptSource(text){
  return marker?text.slice(0,marker.index).trimEnd():text;
 }
 const IslandSource=require('./island-source.js');
-const LineOnce=require('./line-once.js');
+const LineOnce=require('./line-once.js');const {SentencePieces}=require('./sentence-pieces.cjs');
 // Engines whose MeguLit DLL reports each sentence of a full-screen page (hookEngineLine): KiriKiri (E300), Ren'Py (E301),
 // and every other engine through the OCR page locator (E306, GalWindowBridge PageLocator.cs).
 const PAGE_ENGINES=new Set(['krkr','renpy','ocr']);
@@ -450,6 +450,7 @@ class HookNative{
    /* 2026-11-19 (user: 「所有游戏都禁止复读」; 千恋＊万花 「志那都荘まで…」 drawn six times, ruby base and reading alternating): the same
       sentence again in one frame (redraw, base/reading variant, whole run repeated) is one sentence; readings go to the ruby */
    if(typeof drawn==='string'){const once=LineOnce.collapse(drawn);if(once.collapsed){this.trace('source repeat collapsed chars='+drawn.length+'->'+once.text.length);drawn=once.text;for(const pair of once.ruby)if(!ruby.some(q=>q[0]===pair[0]))ruby.push(pair);}}
+  /* 2026-11-19 (素晴らしき日々: 「やっぱり……いい女には、」「たばこと」「屋上と」… one sentence the game adds to its box piece by piece) a piece of an open quotation grows the line (core/sentence-pieces.cjs) */if(typeof drawn==='string'&&drawn.trim()){const grown=(this.sentencePieces||(this.sentencePieces=new SentencePieces(()=>this.now()))).take(this.sourceStream||'',drawn);if(grown!==drawn){this.trace('sentence piece joined chars='+drawn.length+'->'+grown.length);drawn=grown;}}
   let text=String(this.originalTextFor(String(drawn??'').replace(/\n+$/,''))??'').replace(/\n+$/,'');
   if(!text.trim())return;
   /* 2026-11-13 multi-language container (サノバウィッチ 日简繁): the game's own Chinese track is this line's official translation */{const zh=require('./language-tracks.cjs').chineseTrack(scriptSource(cleanSource(m.text,name,String(m.sourceCode||''))),text);if(zh){const k=text.replace(/\s+/g,'');(this.trackPairs||(this.trackPairs=new Map())).set(k,zh);if(this.trackPairs.size>4000)this.trackPairs.delete(this.trackPairs.keys().next().value);}}
@@ -523,7 +524,7 @@ class HookNative{
     KiriKiri games read exactly as before.
     E301: the same protocol carries Ren'Py (MeguLitRenpy32/64.dll + native/MeguLitRenpy.py, NVL pages); every name
     here takes the engine from the report (PAGE_ENGINES), positions go out as <engine>_screen_v1. */
- pageReset(){if(this.pageState)clearTimeout(this.pageState.timer);this.pageState=null;this.pageMode=null;this.flowMarkerAt=null;}
+ pageReset(){this.sentencePieces?.reset();if(this.pageState)clearTimeout(this.pageState.timer);this.pageState=null;this.pageMode=null;this.flowMarkerAt=null;}
  pageNvl(){return this.pageMode?.mode==='nvl'&&this.now()-this.pageMode.at<120000;}
  drawSourceToken(raw){
   let text=require('./language-tracks.cjs').japaneseTrack(scriptSource(cleanSource(String(raw||''))));if(!text.trim())return null;
@@ -719,7 +720,7 @@ class HookNative{
   /* 2026-11-19 16:57 (user: back from another window the current line was gone until the next one; hook log: "left dialogue screen: stream silent 111s" with three tooltips the pointer crossed on the way back). This verdict is an inference like any screen probe: nothing counts and nothing is decided while the reader's context is frozen (not in front, menu open, settling after the return), and what was collected until then is dropped */if(this.contextFrozen?.()===true){L.labels.clear();return false;}
   if(!this.lastSource||!this.lastSourceAt||now-this.lastSourceAt<12000||L.labels.size<3)return false;/* 2026-11-13 (Summer Pockets: the choice screen is silent too, its menu labels changed): a choice screen OCR still finds is not leaving */if(this.choice?.active)return false;
   this.trace('left dialogue screen: stream silent '+Math.round((now-this.lastSourceAt)/1000)+'s, labels='+JSON.stringify([...L.labels].slice(0,5)));
-  this.lastSource='';this.lastSourceAt=0;L.labels.clear();this.clearChoices('left dialogue screen');
+  this.lastSource='';this.lastSourceAt=0;this.sentencePieces?.reset();L.labels.clear();this.clearChoices('left dialogue screen');
   this.notify({hookSource:'',hookSpeaker:'',hookSourceOrigin:'leave',hookSequence:(this.state.hookSequence||0)+1,hookMessage:'游戏离开对话界面，已清空阅读器'});return true;}catch{return false;}}
  /* a menu/title label: letters, at most 24 chars or 4 words, no sentence end */
  static leaveLabel(x){return !!x&&x.length<=24&&x.split(/\s+/).length<=4&&/[\p{L}]{2,}/u.test(x)&&!/[。．.!?！？…」』"”]\s*$/.test(x);}

@@ -15,6 +15,7 @@ const SPEAKER=/^[^「『（(\s。、…―]{1,16}(?=[「『（(])/u;
    9-nine, 351 lines) and voice sync (%D$vl1;). Lines match, and pair, without them. */
 const inlineTags=s=>String(s||'').replace(/%[A-Za-z][^;%\n「」]{0,24};/g,'');
 const plainKey=s=>norm(inlineTags(s)).replace(/≪([^≪≫／]*)／[^≪≫]*≫/g,'$1').replace(/[●○◯〇＊*■□]/g,'●');
+const RESOURCE_LINE=/^[!-~]{1,64}$/;
 const matchKey=s=>norm(inlineTags(s)).replace(/≪([^≪≫／]*)／[^≪≫]*≫/g,'$1').replace(SPEAKER,'').replace(/[●○◯〇＊*■□]/g,'●');
 const japaneseLine=t=>{const k=(t.match(KANA)||[]).length,h=(t.match(HAN)||[]).length;return k>=2&&k>=h*.2;};
 // Lines that carry language at all (not file names, labels or numbers): what the Japanese / translated share is measured on.
@@ -417,13 +418,16 @@ class Matcher{
  constructor(runtimeLines,originalLines){this.rt=runtimeLines;this.og=originalLines;this.normalized=runtimeLines.map(matchKey);this.heads=new Map();this.normalized.forEach((t,i)=>{if(!t)return;const k=t.slice(0,4);if(!this.heads.has(k))this.heads.set(k,[]);this.heads.get(k).push(i);});this.last=-1;}
  /* 2026-11-13 (涙 name screen: 「あなたの現在の名前は『春日　光一』、」 lost its head as if it were a speaker): a line after the
     first of a joined text is also tried whole, without the speaker cut */
- cover(start,s){let at=0,i=start;const used=[];while(at<s.length&&i<this.normalized.length){let t=this.normalized[i];if(!t){i++;continue;}if(!s.startsWith(t,at)){const whole=i>start?plainKey(this.rt[i]):'';if(!whole||!s.startsWith(whole,at))return null;t=whole;}used.push(i);at+=t.length;i++;}return at===s.length?used:null;}
+ /* 2026-11-19 (素晴らしき日々, BGI: 「……そして」 and 「ヒラヒラ服だわね……」」 are two messages with the resource line ev0001_l between
+    them; the bridge hands them over as one line): after the first line, a script line that is only a resource name (ASCII, no
+    space: ev0001_l, yuki_000002_d, bgm017) and does not continue the text is stepped over, up to 3 in a row; it is no part of the cover */
+ cover(start,s){let at=0,i=start,skipped=0;const used=[];while(at<s.length&&i<this.normalized.length){let t=this.normalized[i];if(!t){i++;continue;}if(!s.startsWith(t,at)){const whole=i>start?plainKey(this.rt[i]):'';if(whole&&s.startsWith(whole,at))t=whole;else if(i>start&&skipped<3&&RESOURCE_LINE.test(t)){i++;skipped++;continue;}else return null;}used.push(i);at+=t.length;i++;skipped=0;}return at===s.length?used:null;}
  match(text){
   const s=matchKey(text);if(!s)return {status:'none',method:'empty'};const starts=new Set();for(let k=Math.min(4,s.length);k>=1;k--)for(const i of this.heads.get(s.slice(0,k))||[])if(s.startsWith(this.normalized[i]))starts.add(i);
   const found=[...starts].map(i=>this.cover(i,s)).filter(Boolean);if(!found.length)return {status:'none',method:'no-cover'};
   let pick,method,status;
   if(found.length===1){pick=found[0];method='unique';status='exact';}
-  else{const ahead=found.filter(c=>c[0]>this.last&&c[0]-this.last<=400).sort((a,b)=>a[0]-b[0]);if(this.last>=0&&ahead.length){pick=ahead[0];method='position';status='high';}else{/* E520 (first line after a restart or a load: no reading position yet): a repeated line whose every occurrence has the same original and translation gives the same answer wherever it is, so it is used; the reading position stays unknown */const same=c=>c.map(i=>(this.rt[i]??'')+''+(this.og[i]??'')).join('');if(this.last<0&&found.every(c=>same(c)===same(found[0]))){pick=found[0];method='same-text';status='high';}else return {status:'uncertain',method:'repeated',candidates:found.length};}}
+  else{/* a line that grew (core/sentence-pieces.cjs) starts on the line already read and ends past it */const ahead=found.filter(c=>(c[0]>this.last||c.length>1&&c.at(-1)>this.last&&this.last-c[0]<=12)&&c[0]-this.last<=400).sort((a,b)=>a[0]-b[0]);if(this.last>=0&&ahead.length){pick=ahead[0];method='position';status='high';}else{/* E520 (first line after a restart or a load: no reading position yet): a repeated line whose every occurrence has the same original and translation gives the same answer wherever it is, so it is used; the reading position stays unknown */const same=c=>c.map(i=>(this.rt[i]??'')+''+(this.og[i]??'')).join('');if(this.last<0&&found.every(c=>same(c)===same(found[0]))){pick=found[0];method='same-text';status='high';}else return {status:'uncertain',method:'repeated',candidates:found.length};}}
   if(method!=='same-text')this.last=pick.at(-1);const named=SPEAKER.test(norm(text)),original=pick.map((i,k)=>{const o=inlineTags(this.og[i]??'');return k||named||!SPEAKER.test(norm(this.rt[i]))?o:o.replace(/^[\s　]*/,'').replace(SPEAKER,'');}),already=pick.every(i=>japaneseLine(this.rt[i]));
   if(original.some(t=>!t.trim()))return {status:'uncertain',method:'empty-original',indices:pick};
   return {status,method,indices:pick,japanese:original.join('\n'),captured:text,alreadyJapanese:already};
