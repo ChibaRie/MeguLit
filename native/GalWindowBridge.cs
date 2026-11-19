@@ -399,6 +399,8 @@ static Rect SurfaceBounds(Rect reader,Rect game,System.Drawing.Rectangle scan){r
         if(how!=LastRaise){LastRaise=how;Emit(new{type="layerRaise",how=how,above=aboveGame,topmost=topmost});}
         if(below)Emit(new{type="coverDebug",text=menu?"Alt+T 菜单打开：阅读层固定到游戏上方":"阅读层已移到前台游戏上方"});}
     static string LastRaise="";
+    [DllImport("user32.dll")]static extern bool AttachThreadInput(uint attach,uint to,bool on);
+    [DllImport("kernel32.dll")]static extern uint GetCurrentThreadId();
     static bool BelowGame(IntPtr gameRoot,IntPtr gameTop){int steps=0;for(IntPtr h=GetWindow(Overlay,3);h!=IntPtr.Zero&&steps<400;h=GetWindow(h,3),steps++)if(h==gameRoot||h==gameTop)return true;return false;}
     sealed class LayerZ:ReaderLayerPolicy.ILayerZ{
         readonly IntPtr Root,Top;public LayerZ(IntPtr root,IntPtr top){Root=root;Top=top;}
@@ -407,6 +409,10 @@ static Rect SurfaceBounds(Rect reader,Rect game,System.Drawing.Rectangle scan){r
         public void RequestTopmost(){SetWindowPos(Overlay,new IntPtr(-1),0,0,0,0,0x0001|0x0002|0x0010);}
         public void PlaceAboveGame(){IntPtr above=GetWindow(Top,3);if(above==Overlay)return;SetWindowPos(Overlay,above==IntPtr.Zero?IntPtr.Zero:above,0,0,0,0,0x0001|0x0002|0x0010);}
         public void PlaceTop(){SetWindowPos(Overlay,IntPtr.Zero,0,0,0,0,0x0001|0x0002|0x0010);}
+        /* last step, only when every plain request was ignored: for the length of one call this thread shares the input
+           queue of the foreground thread, which is what makes the system take a z-order request; no focus changes */
+        public void ForceTopmost(){IntPtr fg=GetForegroundWindow();if(fg==IntPtr.Zero)return;uint pid;uint thread=GetWindowThreadProcessId(fg,out pid),self=GetCurrentThreadId();if(thread==0||thread==self)return;
+            if(!AttachThreadInput(self,thread,true))return;try{SetWindowPos(Overlay,new IntPtr(-1),0,0,0,0,0x0001|0x0002|0x0010);}finally{AttachThreadInput(self,thread,false);}}
     }
     /* P0 2026-11-13 (user, ファタモルガーナの館 full screen: the game flashed and kept dropping to the desktop; Alt+T sent it
        to the desktop). A full-screen game (its window covers its whole monitor: KiriKiri fsmethod=cds, TOPMOST popup, E533)
@@ -546,6 +552,18 @@ static Rect SurfaceBounds(Rect reader,Rect game,System.Drawing.Rectangle scan){r
         bool ownFront=fg==overlayRoot||MenuOpen&&MenuRegionReady&&fgPid!=0&&fgPid==(uint)OverlayPid;
         bool ok=TopmostGuard.MayFloat(alive,iconic,gameFront,ownFront);
         LayersMayFloat=ok;if(ok)return;
+        /* 2026-11-19 16:57 (user: 「切屏回来还是直接消失」; reader-host.log: layerRaise how:failed on every return). Sunk out of the
+           topmost band, the layer could not be raised again while the game held the foreground: every z-order request
+           from this process was ignored until MeguLit itself became the foreground (the menu). So the layer no longer
+           leaves the band when it is going to be hidden anyway (another program in front, the game minimised or gone):
+           it is hidden at once and keeps its place; coming back only shows it. It is sunk only where it stays visible
+           without floating (another MeguLit window in front). */
+        bool staysVisible=alive&&!iconic&&PreferredOverlay!=IntPtr.Zero&&fgPid!=0&&fgPid==(uint)OverlayPid&&fg!=overlayRoot;
+        if(!ReaderLayerPolicy.SinkOnLeave(staysVisible)){
+            bool hid=IsShown||IsWindowVisible(Overlay);if(hid){ShowWindow(Overlay,0);IsShown=false;}
+            try{Glass.Hide();}catch{}if(!alive||iconic)DropLayers();
+            if(hid)Emit(new{type="coverDebug",text="前台换成了别的程序/游戏最小化：阅读层隐藏，保留层级，回来直接显示 (event "+ev.ToString("x")+")"});
+            return;}
         bool moved=TopmostGuard.Sink(Overlay,alive&&!iconic?GetAncestor(Target,2):IntPtr.Zero);
         try{Glass.Hide();}catch{}
         if(!alive||iconic){if(IsShown){ShowWindow(Overlay,0);IsShown=false;}DropLayers();}
@@ -641,7 +659,7 @@ static Rect SurfaceBounds(Rect reader,Rect game,System.Drawing.Rectangle scan){r
         bool hostContext=hostForegroundPid==(uint)OverlayPid||hostForegroundPid==hostGamePid||ImeHost(ProcessName(hostForegroundPid));
         bool menuPinned=TranslationMode&&Target!=IntPtr.Zero&&MenuOpen&&MenuRegionReady&&hostContext;
         LayersMayFloat=Layer.Float;
-        if(!Layer.Float&&(GetWindowLong(Overlay,-20)&8)!=0){if(Target!=IntPtr.Zero&&IsWindow(Target))TopmostGuard.Sink(Overlay,GetAncestor(Target,2));else SetWindowPos(Overlay,new IntPtr(-2),0,0,0,0,0x0001|0x0002|0x0010);}
+        if(!Layer.Float&&(GetWindowLong(Overlay,-20)&8)!=0){if(Target!=IntPtr.Zero&&IsWindow(Target)){/* only a layer that stays visible leaves the topmost band; one that is hidden below keeps its place for the return */if(ReaderLayerPolicy.SinkOnLeave(Layer.Context&&!IsIconic(Target)))TopmostGuard.Sink(Overlay,GetAncestor(Target,2));}else SetWindowPos(Overlay,new IntPtr(-2),0,0,0,0,0x0001|0x0002|0x0010);}
         if(IsIconic(Overlay)){MenuFocusPending=false;if(MaskLayer!=null)MaskLayer.Hide();if(TextMask!=null)TextMask.Hide();if(WaitMarker!=null)WaitMarker.Hide();return;}
         if(Dragging)DragTick();
         // Keep the current surface during the first menu construction instead of hiding and immediately showing it again.
@@ -684,7 +702,7 @@ static Rect SurfaceBounds(Rect reader,Rect game,System.Drawing.Rectangle scan){r
         if(!contextActive)MenuFocusPending=false;
         // Another application in front: never topmost, also with the menu open (it stays visible, just above the game;
         // KeepAboveGame keeps it there). Topmost over everything after Alt+Tab was wrong (user, 2026-11-03).
-        if(!Layer.Float&&(GetWindowLong(Overlay,-20)&8)!=0)TopmostGuard.Sink(Overlay,GetAncestor(Target,2));
+        if(!Layer.Float&&(GetWindowLong(Overlay,-20)&8)!=0&&ReaderLayerPolicy.SinkOnLeave(Layer.Context&&!IsIconic(Target)))TopmostGuard.Sink(Overlay,GetAncestor(Target,2));
         if(!visible){if(IsShown){HideReason("menu="+MenuOpen+"/"+MenuRegionReady+" cover="+CoverEnabled+" dialog="+DialogVisible+" iconic="+IsIconic(Target)+" fg="+(fg==gameRoot?"game":fg==overlayRoot?"overlay":"other"));ShowWindow(Overlay,0);}IsShown=false;if(TextMask!=null)TextMask.Hide();
             // Hidden only because no dialogue was detected: keep looking for the wait marker, so its return brings the layer back.
             Rect probeClient;Point probeOrigin=new Point();

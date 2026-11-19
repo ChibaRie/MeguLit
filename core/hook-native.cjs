@@ -716,6 +716,7 @@ class HookNative{
   for(const t of threads){const sample=String(t.sample||'').trim(),old=L.samples.get(t.id);L.samples.set(t.id,sample);if(t.id===selected||!sample||old===sample)continue;
    for(const row of sample.split(/\n+/)){const x=row.trim();if(HookNative.leaveLabel(x)&&!(this.lastSource&&String(this.lastSource).includes(x)))L.labels.add(x);}}
   if(L.samples.size>300)L.samples.clear();
+  /* 2026-11-19 16:57 (user: back from another window the current line was gone until the next one; hook log: "left dialogue screen: stream silent 111s" with three tooltips the pointer crossed on the way back). This verdict is an inference like any screen probe: nothing counts and nothing is decided while the reader's context is frozen (not in front, menu open, settling after the return), and what was collected until then is dropped */if(this.contextFrozen?.()===true){L.labels.clear();return false;}
   if(!this.lastSource||!this.lastSourceAt||now-this.lastSourceAt<12000||L.labels.size<3)return false;/* 2026-11-13 (Summer Pockets: the choice screen is silent too, its menu labels changed): a choice screen OCR still finds is not leaving */if(this.choice?.active)return false;
   this.trace('left dialogue screen: stream silent '+Math.round((now-this.lastSourceAt)/1000)+'s, labels='+JSON.stringify([...L.labels].slice(0,5)));
   this.lastSource='';this.lastSourceAt=0;L.labels.clear();this.clearChoices('left dialogue screen');
