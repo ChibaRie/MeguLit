@@ -143,3 +143,9 @@ test('the engine read flag is wired: bridge note, node status, record field',()=
 test('KiriKiri reports the read flag at every click wait, in its own try, and only when the game has the method',()=>{const s=read('native/krkrtext/script.inc');
  assert.equal(s.split('try {this.flushAll();} catch(e) {} try {this.readNote();} catch(e) {} return (this.old').length-1,3,'line break, page break, page break and clear');
  assert.ok(s.includes("if(typeof k.getCurrentRead!='Object') return;this.report('ToMe_KRKR read v='+(k.getCurrentRead()?1:0));"));});
+test('the KiriKiri script fits the compiler: every raw literal piece and the whole concatenated literal',()=>{
+ /* MSVC: one string literal piece holds 16,380 bytes (8,190 UTF-16 units of a wide literal), the concatenated literal 65,535 bytes (32,767 units).
+    Over the first the build fails with C2026 and the self-test then passes against the previous DLLs (67d07978). */
+ const pieces=[...read('native/krkrtext/script.inc').matchAll(/LR"MGLT\(([\s\S]*?)\)MGLT"/g)].map(m=>m[1].length);
+ assert.ok(pieces.length>=5);assert.ok(Math.max(...pieces)<=8190,'largest piece '+Math.max(...pieces)+' units');
+ const total=pieces.reduce((a,b)=>a+b,0);assert.ok(total<32767,'whole script '+total+' units');});
