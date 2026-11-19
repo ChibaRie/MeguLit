@@ -1,9 +1,9 @@
 [
  {
   "date": "2026-11-19",
-  "text": "1.4.18：修好了素晴らしき日々（美好的每一天）等游戏里有配音的台词飞到窗口顶上、位置一直乱跑的问题；快速点击时一句话不再被一段段替换；上传问题反馈的样本多一道文字检查。仅在开发者本地测试过，如还有问题请在「关于 → 一键上传问题反馈」告诉我们，会持续跟进修复",
-  "text_en": "1.4.18: voiced lines in 素晴らしき日々 (Wonderful Everyday) and other games no longer fly to the top of the window or keep moving around; quick clicks no longer replace a sentence piece by piece; problem-report samples get one more text check. Tested only on the developer's machine so far; if anything still goes wrong, tell us via About → Report a problem and we will keep fixing it",
-  "text_ja": "1.4.18：素晴らしき日々などで、ボイス付きの台詞がウィンドウの上へ飛んだり位置がずれ続けたりする問題を修正。素早くクリックしても文が一部ずつ置き換わらなくなりました。問題報告のサンプルに文字チェックを一段追加。開発者の環境でのみテスト済みです。問題があれば「About → 問題を報告」からお知らせください"
+  "text": "1.4.18：修好了素晴らしき日々（美好的每一天）等游戏里有配音的台词飞到窗口顶上、位置一直乱跑的问题；快速点击时一句话不再被一段段替换；菜单和画面文字的翻译也会在一个来源没结果时换下一个；上传问题反馈的样本多一道文字检查。仅在开发者本地测试过，如还有问题请在「关于 → 一键上传问题反馈」告诉我们，会持续跟进修复",
+  "text_en": "1.4.18: voiced lines in 素晴らしき日々 (Wonderful Everyday) and other games no longer fly to the top of the window or keep moving around; quick clicks no longer replace a sentence piece by piece; menu and on-screen text translations move on to the next source when one gives nothing; problem-report samples get one more text check. Tested only on the developer's machine so far; if anything still goes wrong, tell us via About → Report a problem and we will keep fixing it",
+  "text_ja": "1.4.18：素晴らしき日々などで、ボイス付きの台詞がウィンドウの上へ飛んだり位置がずれ続けたりする問題を修正。素早くクリックしても文が一部ずつ置き換わらなくなりました。メニューや画面上の文字の翻訳も、結果がなければ次の翻訳元に切り替わります。問題報告のサンプルに文字チェックを一段追加。開発者の環境でのみテスト済みです。問題があれば「About → 問題を報告」からお知らせください"
  },
  {
   "date": "2026-11-19",
