@@ -260,7 +260,9 @@ if(-not $Beta){
   $oldShell=$za.GetEntry('MeguLit/build-shell.txt')
   if(-not $oldShell){$why='previous package has no build-shell.txt'}
   else{$rd=New-Object IO.StreamReader($oldShell.Open());$prevShell=$rd.ReadToEnd().Trim();$rd.Dispose();if($prevShell -ne $Shell){$why='MeguLit.exe code, HTML or fonts changed'}}
-  if(-not $why){foreach($e in $zb.Entries){$n=$e.FullName;if($n.EndsWith('/') -or $n -eq 'MeguLit/MeguLit.exe' -or $n -eq 'MeguLit/build-shell.txt'){continue}
+  <# 2026-11-19: the top-level documents (README.md carries the new download name every release) are not program files;
+     counting them meant no release ever got a small package. A hot install simply keeps the previous copies. #>
+  if(-not $why){foreach($e in $zb.Entries){$n=$e.FullName;if($n.EndsWith('/') -or $n -eq 'MeguLit/MeguLit.exe' -or $n -eq 'MeguLit/build-shell.txt' -or $n -match '^MeguLit/[^/]+\.md$'){continue}
    $h=EntryHash $e;$o=$za.GetEntry($n);if($o -and $o.Length -eq $e.Length -and (EntryHash $o) -eq $h){continue}
    $rel=$n.Substring(8);if($rel -notmatch '^(web|services|core|setup)/' -or $rel -match '\.html?$'){$why="$rel changed";break}
    $changed+=[pscustomobject]@{path=$rel;sha256=$h;entry=$e}}}
