@@ -13,7 +13,7 @@ class Immersion{
  constructor(emit,now=Date.now){this.emit=emit;this.now=now;this.visible=true;this.pending=null;this.enabled=false;this.mode='hook';this.target='';this.markerPresent=false;this.resetLine();}
  // markerPresent mirrors the screen and is kept: the native side reports only changes, and a new line's marker is
  // often detected a little before the hook text arrives.
- resetLine(){this.lineAt=this.now?this.now():0;this.lineLength=0;this.markerSeen=false;this.markerGoneAt=0;this.drawnAt=0;this.typing=false;this.lineReadyAt=this.lineAt;this.currentText='';}
+ resetLine(){this.lineAt=this.now?this.now():0;/* 2026-11-19 (1.4.17 live, 千恋＊万花 / 死に逝く君: the subtitle vanished ~30 s into a line the player was still reading, the animated wait marker no longer detected) a line the player's own click or key brought up is read by hand: no marker loss alone closes it */this.manualLine=this.inputAt!=null&&this.lineAt-this.inputAt<3000;this.lineLength=0;this.markerSeen=false;this.markerGoneAt=0;this.drawnAt=0;this.typing=false;this.lineReadyAt=this.lineAt;this.currentText='';}
  configure(v){const enabled=v.immersion===true,mode=['hook','visual','marker'].includes(v.dialogDetection)?v.dialogDetection:'hook';if(enabled!==this.enabled||mode!==this.mode){this.enabled=enabled;this.mode=mode;this.pending=null;this.skipAt=null;this.sceneHidden=false;this.resetLine();if(enabled&&this.engineSignal===false)this.evidence(false,'engine');else this.set(true);}}
  bind(target){if(target!==this.target){this.target=target;this.resumeAt=0;this.pending=null;this.markerPresent=false;this.engineSignal=null;this.engineText=undefined;this.skipAt=null;this.sceneHidden=false;this.resetLine();this.set(true);}}
  /* 2026-11-13 choices on screen (hookChoices): MeguLit draws over them, so the reader is not hidden while they are up */
@@ -84,7 +84,7 @@ class Immersion{
      shortly before, a missing marker only hides after 8 s (auto mode, a long hover); after such an advance input 0.6 s. */
   const advanced=this.inputAt!=null&&this.inputAt>=gone-2500&&this.inputAt<=gone+600;
   if(this.readingAt!=null&&this.now()-this.readingAt<3000)return;
-  if(gone&&this.now()-gone>=(advanced?600:8000)){this.hiddenByMarker=true;this.set(false,'marker');}
+  if(gone&&this.now()-gone>=(advanced?600:this.manualLine?Infinity:8000)){this.hiddenByMarker=true;this.set(false,'marker');}
  }
 }
 module.exports={Immersion};
