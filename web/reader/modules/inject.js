@@ -145,6 +145,14 @@
     host.appendChild(note);
     setTimeout(() => { note.style.opacity = '0'; setTimeout(() => note.remove(), 700); }, 9000);
   };
+  /* 2026-11-19 (user rule: no line stays 「未翻译」) a translation that came from the background retry (services/translation-chain.cjs)
+     fills the line still on screen when it shows none or an error; a line already translated is left as it is */
+  bridge.deliverBackfill = (source, text) => {
+    if (!enabled || !translationVisible || !output?.isConnected || !String(text || '').trim()) return;
+    if (flat(bridge.current) !== flat(source)) return;
+    if (output.dataset.state === 'ready' && output.textContent.trim() && !bridge.lastTranslationError) return;
+    bridge.lastTranslationError = ''; setText(text, false, true); bridge.alignText?.();
+  };
   bridge.deliver = (id, text, error, message = '') => {
     if(bridge.deliverPageTranslation?.(id,text,error,message))return;
     if (id !== bridge.serial || !enabled || !translationVisible || !output?.isConnected) return;

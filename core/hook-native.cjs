@@ -702,7 +702,7 @@ class HookNative{
  deliverSource(text,origin,engine='',nativeLine=0){
   const now=this.now(),live=!engine&&!nativeLine&&(origin||'live')==='live',S=this.skipBurst||(this.skipBurst={last:0,held:null,timer:null,count:0});
   if(!live||this.stashFlush){if(this.stashFlush)S.last=now;this.emitSource(text,origin,engine,nativeLine);return;}
-  {const last=this.lastOfMerged(text);if(last!==text){this.trace('merged skip text: kept the last line of '+text.length+' chars');text=last;}}
+  {const last=this.lastOfMerged(text);if(last!==text){this.trace('merged skip text: kept the last line of '+text.length+' chars');text=last;/* 2026-11-19 (素晴らしき日々: 「それか、…とか言ってるヤツだ。」 untranslated) the script translation was looked up for the merged text; the kept line is looked up itself */try{this.originalTextFor(text);}catch{}}}
   const gap=now-S.last;S.last=now;
   if(gap>=300&&!S.held){S.count=0;this.emitSource(text,origin,engine,nativeLine);return;}
   S.count++;S.held={text,origin};clearTimeout(S.timer);
