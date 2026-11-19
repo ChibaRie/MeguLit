@@ -8,7 +8,7 @@ class Runtime {
  constructor(root,emit=()=>{}){this.root=root;this.folder=path.join(root,'data','config');this.emit=emit;this.stopped=false;}
  config(){return require('../core/v4-config.cjs').cleanV4(readJSON(path.join(this.folder,'v4-preferences.json')));}
  // Bind the window of a game MeguLit just launched; retried a few times while the reader/bridge finishes starting.
- bindLaunched(pid){if(!Number.isInteger(Number(pid))||Number(pid)<=0)return;let tries=0;const go=()=>{const g=this.reader?.gal;if(g){g.send({type:'bindProcess',pid:String(pid)});if(++tries<4)setTimeout(go,1500);}else if(++tries<20)setTimeout(go,500);};setTimeout(go,300);}
+ bindLaunched(pid){if(!Number.isInteger(Number(pid))||Number(pid)<=0)return;/* the game MeguLit started itself (its script is injected early) */let marks=0;const mark=()=>{const h=this.reader?.gal?.hooks;if(h)h.launchedPid=Number(pid);else if(++marks<40)setTimeout(mark,500).unref?.();};mark();let tries=0;const go=()=>{const g=this.reader?.gal;if(g){g.send({type:'bindProcess',pid:String(pid)});if(++tries<4)setTimeout(go,1500);}else if(++tries<20)setTimeout(go,500);};setTimeout(go,300);}
  prepareGame(executable,{enter=true}={}){this.pendingGameEnter=enter;this.pendingGame=path.basename(executable,path.extname(executable));this.pendingExecutable=executable;this.reader?.selectGame(this.pendingGame,enter,executable);}
  // Point the hook at the Japanese original index for this executable, or clear it.
  learning(){return this.localLearning??=new(require('../core/learning-native.cjs').LocalLearning)(this.root,message=>this.emit('reader-event',message));}
