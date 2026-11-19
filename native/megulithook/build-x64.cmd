@@ -11,6 +11,8 @@ set "LIB=E:\Apps\work\megulithook\atl\VC\Tools\MSVC\14.44.35207\atlmfc\lib\x64;%
 for %%F in (MeguLitGdiHide.h MeguLitMarks.h MeguLitEmbedWait.h texthook.cc hijackfuns.cc embed_util.cc main.cc veh_hook.cpp) do copy /y "%~dp0%%F" "E:\Apps\work\megulithook\src\src\NativeImpl\LunaHook\LunaHook\%%F" >nul || exit /b 1
 rem the shared safe unhook flow (native\shared\MeguLitSafeUnhook.h); main.cc and veh_hook.cpp carry its detach and breakpoint parts
 copy /y "%~dp0..\shared\MeguLitSafeUnhook.h" "E:\Apps\work\megulithook\src\src\NativeImpl\LunaHook\LunaHook\MeguLitSafeUnhook.h" >nul || exit /b 1
+rem the crash witness (native\shared\MeguLitCrashWitness.h), armed by main.cc
+copy /y "%~dp0..\shared\MeguLitCrashWitness.h" "E:\Apps\work\megulithook\src\src\NativeImpl\LunaHook\LunaHook\MeguLitCrashWitness.h" >nul || exit /b 1
 rem the changed engine files go to engine32 (copied by hand before; the YU-RIS in-place marks need Yuris.cpp built)
 for %%F in (BGI.cpp Siglus.cpp Yuris.cpp Pal.cpp) do copy /y "%~dp0%%F" "E:\Apps\work\megulithook\src\src\NativeImpl\LunaHook\LunaHook\engine32\%%F" >nul || exit /b 1
 rem Configured every time, like build-x86.cmd (the cache keeps the MinHook path of the checkout that configured it last).

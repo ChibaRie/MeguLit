@@ -79,13 +79,34 @@ public static partial class HookBridge {
   if(d.TryGetValue("armed",out v)&&Convert.ToBoolean(v))Diagnostic("gpu hide canary: the previous run was not seen to its end (bridge stopped first); keeping the layer on");
   d["armed"]=true;d["pid"]=pid;d["at"]=DateTime.UtcNow.ToString("o");GpuCanaryWrite(f,d);return true;}
  // The game ended with this exit code: an exception code turns the layer off for the game, anything else clears the arm.
- static void GpuCanaryExitFile(string f,uint code){if(f=="")return;var e=GpuCanaryRead(f);e["armed"]=false;e["exit"]=(long)code;
-  if(GpuCanaryCrash(code)){e["off"]=true;e["reason"]="game exited with exception 0x"+code.ToString("X8")+" while layer 4 was loaded ("+DateTime.UtcNow.ToString("o")+")";Diagnostic("gpu hide canary: "+e["reason"]+"; layer 4 is off for this game from now on");}
+ static void GpuCanaryExitFile(string f,uint code,string at=""){if(f=="")return;var e=GpuCanaryRead(f);e["armed"]=false;e["exit"]=(long)code;
+  if(GpuCanaryCrash(code)){e["off"]=true;e["reason"]="game exited with exception 0x"+code.ToString("X8")+" while layer 4 was loaded ("+DateTime.UtcNow.ToString("o")+")"+(at==""?"":"; witness: "+at);Diagnostic("gpu hide canary: "+e["reason"]+"; layer 4 is off for this game from now on");}
   GpuCanaryWrite(f,e);}
+ // native/shared/MeguLitCrashWitness.h (armed by the hook DLL in every game) leaves %TEMP%\MeguLit-crash\<exe>-<pid>.txt
+ // and, for an unhandled exception, a .dmp next to it (2026-11-19: 千恋＊万花 ended with 0xC000041D and nothing on the system
+ // said where). After a crash exit both move to logs\crash (newest 6 dumps kept) and the fault goes to the diagnostics;
+ // after a clean exit the report is deleted. Returns the line naming the fault ("" when there is none).
+ static readonly object CrashWitnessGate=new object();
+ static string CrashWitnessCollect(uint pid,uint code){lock(CrashWitnessGate){try{
+  string dir=Path.Combine(Path.GetTempPath(),"MeguLit-crash");if(!Directory.Exists(dir))return "";
+  foreach(var old in new DirectoryInfo(dir).GetFiles())if((DateTime.UtcNow-old.LastWriteTimeUtc).TotalDays>7)try{old.Delete();}catch{}
+  string[] found=Directory.GetFiles(dir,"*-"+pid+".txt");
+  if(!GpuCanaryCrash(code)){foreach(var t in found){try{File.Delete(t);File.Delete(Path.ChangeExtension(t,".dmp"));}catch{}}return "";}
+  if(found.Length==0){Diagnostic("crash witness: no report for pid "+pid+" (exception 0x"+code.ToString("X8")+"; the hook DLL was not loaded or not armed)");return "";}
+  string txt=found[0],dmp=Path.ChangeExtension(txt,".dmp"),dest=Under("logs","crash");Directory.CreateDirectory(dest);
+  string[] lines=File.ReadAllLines(txt);string at="",last="";var shown=new System.Collections.Generic.List<string>();
+  for(int i=0;i<lines.Length;i++){if(lines[i].StartsWith("UNHANDLED ")){at=lines[i];shown.Add(lines[i]);if(i+1<lines.Length)shown.Add(lines[i+1].Trim());}else if(lines[i].StartsWith("first-chance "))last=lines[i];}
+  if(at==""&&last!=""){at=last;shown.Add(last);}
+  string name=Path.GetFileNameWithoutExtension(txt)+"-"+DateTime.UtcNow.ToString("yyyyMMdd-HHmmss");
+  File.Move(txt,Path.Combine(dest,name+".txt"));if(File.Exists(dmp))File.Move(dmp,Path.Combine(dest,name+".dmp"));
+  var dumps=new DirectoryInfo(dest).GetFiles("*.dmp");Array.Sort(dumps,(a,b)=>b.LastWriteTimeUtc.CompareTo(a.LastWriteTimeUtc));for(int i=6;i<dumps.Length;i++)try{dumps[i].Delete();}catch{}
+  Diagnostic("crash witness: game exited with exception 0x"+code.ToString("X8")+"; report logs/crash/"+name+".txt"+(File.Exists(Path.Combine(dest,name+".dmp"))?" with a dump":""));
+  foreach(var l in shown)Diagnostic("crash witness: "+l);
+  return at;}catch(Exception e){Diagnostic("crash witness: "+e.Message);return "";}}}
  // Returns false when the layer must not load into this game.
  static bool GpuCanaryArm(){string f=GpuCanaryFile();if(f=="")return true;
   if(!GpuCanaryArmFile(f,(long)Pid)){string why=GpuCanaryOffFile(f);Diagnostic("gpu hide off for this game (canary): "+why);Emit(new{type="hookGpuHide",state="off",reason=why});return false;}
-  new Thread(()=>{IntPtr h=OpenProcess(0x00100000|0x1000,false,Pid);if(h==IntPtr.Zero)return;try{WaitForSingleObject(h,0xFFFFFFFF);uint code;if(GetExitCodeProcess(h,out code))GpuCanaryExitFile(f,code);}finally{CloseHandle(h);}}){IsBackground=true}.Start();
+  new Thread(()=>{IntPtr h=OpenProcess(0x00100000|0x1000,false,Pid);if(h==IntPtr.Zero)return;try{WaitForSingleObject(h,0xFFFFFFFF);uint code;if(GetExitCodeProcess(h,out code))GpuCanaryExitFile(f,code,CrashWitnessCollect(Pid,code));}finally{CloseHandle(h);}}){IsBackground=true}.Start();
   return true;}
  /// <summary>HookBridge --self-test: arm, crash, refuse, reset, clean exit.</summary>
  public static bool GpuCanarySelfTest(){string dir=Path.Combine(Path.GetTempPath(),"megulit-gpu-canary-"+Guid.NewGuid().ToString("N"));string f=Path.Combine(dir,"game.exe-1.json");
