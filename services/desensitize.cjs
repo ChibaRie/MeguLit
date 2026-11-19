@@ -160,8 +160,24 @@ function desensitize(input){
  /* E596 mixed encodings: where a run in one encoding replaced part of a character in another, the bytes left over can
     read as text again; such remainders are replaced too (a few passes at most) */
  for(let pass=0;pass<3;pass++){const rest=textRuns(out);if(!rest.length)break;for(const c of rest){const ph=placeholder(c);for(let k=0;k<c.len;k++)out[c.at+k]=ph[k];replaced++;}}
+ replaced+=kanaSweep(out);
  return {bytes:out,encoding:enc,replaced};
 }
+/* 2026-11-19 (runtime-harvest live stand-in: 「ブビビ」 read back out of a desensitized 1 MB sample). Outside the primary
+   encoding only runs of 4+ characters were replaced, and the double-byte readers pair bytes from offset 0 only, so a
+   3-kana run in another encoding or at the other byte parity stayed. Whatever an outside reader could decode as three
+   or more kana in a row is replaced, at every offset, in UTF-16LE, UTF-8, Shift-JIS, EUC-JP and GBK (EUC-JP and GBK
+   share the kana rows); kana-only runs that long are vanishingly rare in binary data, so structures stay as they are. */
+const KANA_FORMS=[
+ {len:2,at:(b,i)=>{const cp=b[i]|b[i+1]<<8;return cp>=0x3041&&cp<=0x3096||cp>=0x30a1&&cp<=0x30fa;},ph:[0xa2,0x30],self:(b,i)=>b[i]===0xa2&&b[i+1]===0x30||b[i]===0x42&&b[i+1]===0x30},
+ {len:3,at:(b,i)=>b[i]===0xe3&&(b[i+1]===0x81&&b[i+2]>=0x81&&b[i+2]<=0xbf||b[i+1]===0x82&&b[i+2]>=0x80&&b[i+2]<=0xbf||b[i+1]===0x83&&b[i+2]>=0x80&&b[i+2]<=0xba),ph:[0xe3,0x82,0xa2],self:(b,i)=>b[i]===0xe3&&b[i+1]===0x82&&(b[i+2]===0xa2)||b[i]===0xe3&&b[i+1]===0x81&&b[i+2]===0x82},
+ {len:2,at:(b,i)=>b[i]===0x82&&b[i+1]>=0x9f&&b[i+1]<=0xf1||b[i]===0x83&&b[i+1]>=0x40&&b[i+1]<=0x96&&b[i+1]!==0x7f,ph:[0x83,0x41],self:(b,i)=>b[i]===0x83&&b[i+1]===0x41||b[i]===0x82&&b[i+1]===0xa0},
+ {len:2,at:(b,i)=>b[i]===0xa4&&b[i+1]>=0xa1&&b[i+1]<=0xf3||b[i]===0xa5&&b[i+1]>=0xa1&&b[i+1]<=0xf6,ph:[0xa5,0xa2],self:(b,i)=>b[i]===0xa5&&b[i+1]===0xa2||b[i]===0xa4&&b[i+1]===0xa2}];
+function kanaSweep(buf){let n=0;
+ for(const f of KANA_FORMS)for(let i=0;i+f.len<=buf.length;i++){
+  let j=i,count=0,own=0;while(j+f.len<=buf.length&&f.at(buf,j)){count++;if(f.self(buf,j))own++;j+=f.len;}
+  if(count>=3&&own<count){for(let p=i;p<j;p+=f.len)for(let k=0;k<f.len;k++)buf[p+k]=f.ph[k];n++;i=j-1;}}
+ return n;}
 
 /* A JS string (a file name inside an archive index): ASCII stays, every other letter becomes its class placeholder. */
 function maskString(s){let out='';for(const ch of String(s)){const c=ch.codePointAt(0);out+=c<0x80||KEPT.has(ch)?ch:String.fromCodePoint(U16_PH[cls(c)]||0x25a1);}return out;}
@@ -251,4 +267,4 @@ function keyCandidates(entries,{limit=8}={}){
  return out.sort((a,b)=>b.confidence-a.confidence).slice(0,limit);
 }
 
-module.exports={desensitize,verify,sample,partBytes,sampleSizes,keyCandidates,maskString,textRuns,detect,targets,entropy,primary,PLACEHOLDER_CPS,KEPT};
+module.exports={kanaSweep,desensitize,verify,sample,partBytes,sampleSizes,keyCandidates,maskString,textRuns,detect,targets,entropy,primary,PLACEHOLDER_CPS,KEPT};
