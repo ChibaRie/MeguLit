@@ -97,3 +97,18 @@ test('wiring: the scan runs without artText (5 s quiet), artText only decides th
  assert.match(p,/forced = last != null && !Changed\(last, thumb\) && !pending;\s*if \(forced && !darkRecheck\) continue;/,'OCR only when the picture changed');
  assert.match(p,/bool darkRecheck = Dark\(thumb\) && \(DateTime\.UtcNow - lastOcr\)\.TotalMilliseconds >= \(darkMisses < 3 \? 4000 : 20000\);/,'or, on a dark picture, every 4 s (faint grey text on black), every 20 s after three empty reads');
  assert.match(p,/if \(forced\) darkMisses = groups\.Count \+ foreignGroups\.Count == 0 \? Math\.Min\(darkMisses \+ 1, 3\) : 0;/);assert.match(p,/if \(seen0 != null && Differ\(seen0, thumb\) >= 0\.3\) darkMisses = 0;/,'a fade-in lifts the cap');});
+test('the periodic scan never uses PrintWindow; ocrReadLines can be turned off (game-style keeps it, default on)',()=>{
+ const p=fs.readFileSync(path.join(__dirname,'..','native','PageLocator.cs'),'utf8'),c=fs.readFileSync(path.join(__dirname,'..','native','GameCapture.cs'),'utf8');
+ const run=p.slice(p.indexOf(' void ScanRun()'),p.indexOf(' static List<List<Row>> SplitForeign('));
+ assert.ok(run.length>500,'ScanRun found');
+ assert.match(run,/GameCapture\.BltOnly\(target, image\)/,'the scan reads with BitBlt only');
+ const code=run.replace(/"[^"]*"/g,'""').replace(/\/\*[\s\S]*?\*\//g,'');
+ assert.doesNotMatch(code,/GameCapture\.(Into|Picture|Part)\(|PrintWindow/,'no capture that can fall back to PrintWindow');
+ const blt=c.slice(c.indexOf(' public static bool BltOnly('),c.indexOf(' public static bool Into(IntPtr hwnd,Bitmap image,uint printFlags,bool screenFallback)'));
+ assert.ok(blt.length>100,'BltOnly found');assert.doesNotMatch(blt.replace(/\/\/[^\n]*/g,''),/PrintWindow|ScreenInto/,'BltOnly never prints');
+ const gs=require('../core/game-style.js');
+ assert.equal(gs.clean({}).ocrReadLines,true,'on by default');assert.equal(gs.clean({ocrReadLines:false}).ocrReadLines,false,'kept when turned off');
+ const {GalNative}=require('../core/gal-native.cjs');const sent=[];const g=Object.create(GalNative.prototype);
+ g.send=m=>sent.push(m);g.state={bound:true};g.hooks={artScanState:()=>({on:true,dialog:'',speaker:'',band:false})};
+ g.preferences=gs.clean({ocrReadLines:false});g.artScan();assert.equal(sent[0].on,false,'turned off: no scan without artText');
+});

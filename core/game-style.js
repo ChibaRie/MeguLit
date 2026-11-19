@@ -33,7 +33,7 @@
       const number = value[key] === '' || value[key] == null ? NaN : Number(value[key]);
       if (Number.isFinite(number)) result[key] = Math.max(min, Math.min(max, number));
     }
-    for (const key of ['typewriter','furigana','autoScale','fastMask','scanAuto']) result[key] = value[key] !== false;
+    for (const key of ['typewriter','furigana','autoScale','fastMask','scanAuto','ocrReadLines']) result[key] = value[key] !== false; /* ocrReadLines (2026-11-19): text read from the picture as reader lines, on unless set false */
     for (const key of ['hideWaitMarker','relocateWaitMarker']) result[key] = value[key] === true;
     for(const key of ['textGradient','readTextGradient'])result[key]=value[key]===true;
     // Where the top colour starts turning into the bottom colour, as % of the line height (0 = from the top).

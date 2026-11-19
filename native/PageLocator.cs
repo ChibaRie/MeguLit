@@ -150,7 +150,7 @@ public sealed class PageLocator : IDisposable {
     drawing them (OCR reads, never covers: MeguLit lays only its invisible readable copy and the translation). A group is
     shown once two reads agree and hidden after two reads without it. Nothing is ever written to the game. */
  public sealed class ScanItem { public int Id; public string Text; public List<Row> Rows; public int Seen, Misses; public bool Shown, Foreign; public DateTime Since; }
- volatile bool ScanOn, ScanDialogSeen, ScanSlow; volatile int ScanOthers; string ScanSeen; IntPtr ScanTarget; string ScanDialog, ScanSpeaker; bool ScanBand, ScanForeign; Thread Scanner; string ArtActive;
+ volatile bool ScanOn, ScanDialogSeen, ScanSlow; bool ScanBlindNoted; volatile int ScanOthers; string ScanSeen; IntPtr ScanTarget; string ScanDialog, ScanSpeaker; bool ScanBand, ScanForeign; Thread Scanner; string ArtActive;
  OcrEngine ForeignEngine; bool ForeignTried;
  readonly List<ScanItem> ScanItems = new List<ScanItem>(); int ScanId = 1000000;
  public void Scan(IntPtr target, bool on, string dialog, string speaker, bool band) { Scan(target, on, dialog, speaker, band, false); }
@@ -181,7 +181,9 @@ public sealed class PageLocator : IDisposable {
     int w = rect.Right, h = rect.Bottom; List<List<Row>> groups, foreignGroups = new List<List<Row>>(); byte[] thumb; bool forced;
     string active; lock (Gate) active = ArtActive;
     using (var image = new Bitmap(w, h, PixelFormat.Format24bppRgb)) {
-     if (!GameCapture.Into(target, image, 3)) continue;
+     /* 2026-11-19 the periodic scan never uses PrintWindow (it makes the game thread redraw a frame): BitBlt or skip this round */
+     if (!GameCapture.BltOnly(target, image)) { if (!ScanBlindNoted) { ScanBlindNoted = true; Emit(new { type = "pageLocateStatus", status = "art scan skipped: the window gives no picture to BitBlt (PrintWindow is not used for the scan)" }); } continue; }
+     ScanBlindNoted = false;
      thumb = Thumb(image);
      bool pending = false; foreach (var it in ScanItems) if (!it.Shown || it.Misses > 0) pending = true;
      // The same picture: what is shown stays; a candidate seen once (or missed once) is read again to settle it.
