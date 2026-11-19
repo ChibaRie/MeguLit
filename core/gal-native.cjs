@@ -48,7 +48,8 @@ class GalNative {
       if(message.type==='hookEngineLine'){this.hooks.pageLine?.(message);return;}
       if(message.type==='hookChoiceBoxes'){this.hooks.choiceBoxes?.(message);return;}
       if(message.type==='pageLocateStatus'){this.hooks.trace?.('ocr page '+message.status);return;}
-      if(message.type==='artText'){this.onEvent(message);return;}
+      /* 2026-11-19 (素晴らしき日々: the opening quotes are pictures) what the art scan reads becomes a read-only line of the reader (hook-native ocrLine); drawing it over the picture stays with 文字图片翻译 (artText) */
+      if(message.type==='artText'){if(this.preferences?.artText===true&&message.once!==true)this.onEvent(message);this.hooks.ocrLine(message);return;}
       if(message.type==='markerTarget'){this.hooks.markerTarget(message);this.onEvent({type:'markerDebug',markerDebug:message.active?`found at ${message.x},${message.y} ${message.width}x${message.height} in ${message.clientWidth}x${message.clientHeight}`:'not active'});return;}
       if (message.type === 'layout') { this.notify({ layout:message }); return; }
       this.notify(message);
@@ -124,7 +125,7 @@ class GalNative {
   sceneAsk(type,prefix,shape){const id=String(++this.mediaSerial||(this.mediaSerial=1));return new Promise(resolve=>{const map=this.mediaPending||(this.mediaPending=new Map());const timer=setTimeout(()=>{map.delete(prefix+id);resolve(null);},5000);timer.unref?.();map.set(prefix+id,m=>{clearTimeout(timer);resolve(shape(m));});this.send({type,id});});}
   gameFrame(){const now=Date.now(),id=String(++this.mediaSerial||(this.mediaSerial=1));return new Promise(resolve=>{const map=this.mediaPending||(this.mediaPending=new Map());const timer=setTimeout(()=>{map.delete(id);resolve('');},4000);timer.unref?.();map.set(id,m=>{clearTimeout(timer);resolve(m.jpeg||'');});this.send({type:'mediaClip',id,from:now,to:now,screenshot:true});});}
   /* 2026-11-12 art scan (OCR read path, PageLocator.Scan): on while the game is bound and no hook line is current; sent only when it changes */
-  artScan(){if(this.stopped)return;const s=this.state.bound===true&&this.preferences?.artText===true?this.hooks.artScanState():{on:false,dialog:'',speaker:'',band:false};const key=JSON.stringify(s);if(key===this.artScanKey)return;this.artScanKey=key;this.send({type:'artScan',...s});}
+  artScan(){if(this.stopped)return;/* 2026-11-19 OCR read lines: the scan also runs with artText off (ocrReadLines, default on), then only after 5 s without a hook line */const art=this.preferences?.artText===true,read=this.preferences?.ocrReadLines!==false;const s=this.state.bound===true&&(art||read)?this.hooks.artScanState(undefined,art?2000:5000):{on:false,dialog:'',speaker:'',band:false};if(!art)s.slow=true;const key=JSON.stringify(s);if(key===this.artScanKey)return;this.artScanKey=key;this.send({type:'artScan',...s});}
   stop() {this.compositor?.stop();this.locateHost?.stop();this.placement?.stop();clearInterval(this.artScanTimer);clearTimeout(this.controller.styleTimer);this.stopped=true;this.styleSync.stop();this.hooks.stop(); this.send({ type: 'quit' }); this.process?.stdin.end(); }
 }
 module.exports = { cleanGal, GalNative };

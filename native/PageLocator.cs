@@ -150,24 +150,27 @@ public sealed class PageLocator : IDisposable {
     drawing them (OCR reads, never covers: MeguLit lays only its invisible readable copy and the translation). A group is
     shown once two reads agree and hidden after two reads without it. Nothing is ever written to the game. */
  public sealed class ScanItem { public int Id; public string Text; public List<Row> Rows; public int Seen, Misses; public bool Shown, Foreign; public DateTime Since; }
- volatile bool ScanOn; string ScanSeen; IntPtr ScanTarget; string ScanDialog, ScanSpeaker; bool ScanBand, ScanForeign; Thread Scanner; string ArtActive;
+ volatile bool ScanOn, ScanDialogSeen, ScanSlow; bool ScanBlindNoted; volatile int ScanOthers; string ScanSeen; IntPtr ScanTarget; string ScanDialog, ScanSpeaker; bool ScanBand, ScanForeign; Thread Scanner; string ArtActive;
  OcrEngine ForeignEngine; bool ForeignTried;
  readonly List<ScanItem> ScanItems = new List<ScanItem>(); int ScanId = 1000000;
  public void Scan(IntPtr target, bool on, string dialog, string speaker, bool band) { Scan(target, on, dialog, speaker, band, false); }
  /* foreign (2026-11-13): MeguLit knows the game's script in other languages (a localized build drawing its opening as pictures
     of the translated text, Summer Pockets Steam Chinese); rows in Chinese are then read again with the Chinese OCR and sent as
     foreign groups, which MeguLit maps back to the Japanese line or drops. */
- public void Scan(IntPtr target, bool on, string dialog, string speaker, bool band, bool foreign) {
+ public void Scan(IntPtr target, bool on, string dialog, string speaker, bool band, bool foreign) { Scan(target, on, dialog, speaker, band, foreign, false); }
+ /* slow (2026-11-19): only read lines are wanted (artText off), the picture is looked at every 1.5 s instead of 0.7 s */
+ public void Scan(IntPtr target, bool on, string dialog, string speaker, bool band, bool foreign, bool slow) {
+  ScanSlow = slow;
   lock (Gate) { ScanTarget = target; ScanDialog = String.IsNullOrWhiteSpace(dialog) ? null : dialog; ScanSpeaker = String.IsNullOrWhiteSpace(speaker) ? null : speaker; ScanBand = band; ScanForeign = foreign; }
   bool was = ScanOn; ScanOn = on && target != IntPtr.Zero; if (was != ScanOn) { ScanSeen = null; Emit(new { type = "pageLocateStatus", status = "art scan " + (ScanOn ? "on" : "off") }); }
   if (ScanOn && Scanner == null) { Scanner = new Thread(ScanRun) { IsBackground = true, Name = "MeguLit art scan", Priority = ThreadPriority.BelowNormal }; Scanner.Start(); }
  }
  void ScanRun() {
-  byte[] last = null; int idle = 0; DateTime lastOcr = DateTime.MinValue;
+  byte[] last = null; int idle = 0; DateTime lastOcr = DateTime.MinValue; int darkMisses = 0; byte[] seen0 = null;
   while (!Disposed) {
    /* 2026-11-13 openings fade a line in and out within 3 s: read faster while something is shown or being settled */
    bool busy = false; foreach (var it in ScanItems) if (it.Shown || it.Seen > 0) busy = true;
-   Thread.Sleep(busy ? 400 : 700);
+   Thread.Sleep(busy ? 400 : ScanSlow ? 1500 : 700);
    if (!ScanOn) { ScanClear(); last = null; continue; }
    try {
     IntPtr target; string dialog, speaker; bool band, foreign;
@@ -175,19 +178,34 @@ public sealed class PageLocator : IDisposable {
     if (!EngineTried) { EngineTried = true; try { Engine = OcrEngine.TryCreateFromLanguage(new Language("ja")); } catch { Engine = null; } }
     if (Engine == null || GameCapture.Busy(target)) continue;
     RECT rect; if (!GetClientRect(target, out rect) || rect.Right < 64 || rect.Bottom < 64 || rect.Right > 7680 || rect.Bottom > 4320) continue;
-    int w = rect.Right, h = rect.Bottom; List<List<Row>> groups, foreignGroups = new List<List<Row>>(); byte[] thumb;
+    int w = rect.Right, h = rect.Bottom; List<List<Row>> groups, foreignGroups = new List<List<Row>>(); byte[] thumb; bool forced;
     string active; lock (Gate) active = ArtActive;
     using (var image = new Bitmap(w, h, PixelFormat.Format24bppRgb)) {
-     if (!GameCapture.Into(target, image, 3)) continue;
+     /* 2026-11-19 the periodic scan never uses PrintWindow (it makes the game thread redraw a frame): BitBlt or skip this round */
+     if (!GameCapture.BltOnly(target, image)) { if (!ScanBlindNoted) { ScanBlindNoted = true; Emit(new { type = "pageLocateStatus", status = "art scan skipped: the window gives no picture to BitBlt (PrintWindow is not used for the scan)" }); } continue; }
+     ScanBlindNoted = false;
      thumb = Thumb(image);
      bool pending = false; foreach (var it in ScanItems) if (!it.Shown || it.Misses > 0) pending = true;
      // The same picture: what is shown stays; a candidate seen once (or missed once) is read again to settle it.
-     if (last != null && !Changed(last, thumb) && !pending) continue;
+     /* 2026-11-19 (素晴らしき日々, live: 「私（あるいはこれを読むあなた）は世界に属さない。」 in dark grey on black was never read): faint
+        text on a dark picture barely moves the thumbnail, so a dark picture is read again every 4 s even when it looks the same */
+     /* capped: after three empty forced reads of a dark picture (a long night scene, a black screen) one every 20 s at most, until
+        the picture moves at all (0.3 on average between two looks, far under the 1.2 a change needs: a line fading in) */
+     if (seen0 != null && Differ(seen0, thumb) >= 0.3) darkMisses = 0;
+     seen0 = thumb;
+     bool darkRecheck = Dark(thumb) && (DateTime.UtcNow - lastOcr).TotalMilliseconds >= (darkMisses < 3 ? 4000 : 20000);
+     forced = last != null && !Changed(last, thumb) && !pending;
+     if (forced && !darkRecheck) continue;
+     if (!forced) darkMisses = 0;
      // A picture that keeps moving with no Japanese on it (video, particles) is read every 2.1 s instead of 0.7 s.
      if (idle >= 4 && (DateTime.UtcNow - lastOcr).TotalMilliseconds < 2000) continue;
      last = thumb; lastOcr = DateTime.UtcNow;
      List<Row> rows; lock (OcrLock) rows = Read(image, w, h);
+     /* 2026-11-19 OCR read lines: MeguLit shows a read group as a line only while the dialogue line is not on the picture */
+     ScanDialogSeen = dialog != null && Find(rows, dialog) != null;
      groups = ScanGroups(rows, w, h, dialog, speaker, band, active);
+     /* rows that are no Japanese group: a title or menu screen has many (START, LOAD, CONFIG, a copyright line) */
+     { int used = 0; foreach (var g in groups) used += g.Count; ScanOthers = Math.Max(0, rows.Count - used); }
      if (foreign) {
       if (!ForeignTried) { ForeignTried = true; try { ForeignEngine = OcrEngine.TryCreateFromLanguage(new Language("zh-Hans-CN")); } catch { ForeignEngine = null; } }
       if (ForeignEngine != null) lock (OcrLock) foreignGroups = SplitForeign(this, image, w, h, rows, groups, dialog, speaker, band, active, ForeignEngine);
@@ -200,6 +218,7 @@ public sealed class PageLocator : IDisposable {
     string seen = groups.Count + "/" + foreignGroups.Count + (groups.Count > 0 ? " " + GroupText(groups[0]) : foreignGroups.Count > 0 ? " " + GroupText(foreignGroups[0]) : "");
     if (seen != ScanSeen) { ScanSeen = seen; Emit(new { type = "pageLocateStatus", status = "art scan " + (seen.Length > 60 ? seen.Substring(0, 60) : seen) }); }
     idle = groups.Count + foreignGroups.Count == 0 ? Math.Min(idle + 1, 8) : 0;
+    if (forced) darkMisses = groups.Count + foreignGroups.Count == 0 ? Math.Min(darkMisses + 1, 3) : 0;
     ScanReconcile(groups, foreignGroups, w, h);
    } catch (Exception e) { Emit(new { type = "pageLocateStatus", status = "art scan error " + e.Message }); Thread.Sleep(2000); }
   }
@@ -251,6 +270,8 @@ public sealed class PageLocator : IDisposable {
    if (px[Math.Min(px.Count - 1, px.Count / 4)].Key > 30) r.Glow = mean(px.Count / 6, px.Count / 3);
   } catch { }
  }
+ /* a picture that is mostly black (the thumbnail's mean grey under 40) */
+ public static bool Dark(byte[] thumb) { if (thumb == null || thumb.Length == 0) return false; long s = 0; foreach (byte b in thumb) s += b; return s / thumb.Length < 40; }
  static byte[] Thumb(Bitmap image) {
   using (var small = new Bitmap(64, 36, PixelFormat.Format24bppRgb)) {
    using (var g = Graphics.FromImage(small)) { g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.Bilinear; g.DrawImage(image, 0, 0, 64, 36); }
@@ -348,14 +369,17 @@ public sealed class PageLocator : IDisposable {
   }
   for (int i = ScanItems.Count - 1; i >= 0; i--) {
    var x = ScanItems[i]; if (matched.Contains(x)) continue;
-   if (++x.Misses >= 2 || !x.Shown) { if (x.Shown) ScanEmit(x, w, h, false); ScanItems.RemoveAt(i); }
+   /* 2026-11-19 (ファタモルガーナの館 live: 「鬱蒼と茂る闇の森をかき分けると」 faded out after one read and was never sent): a Japanese group read
+      once and gone goes out once for the reader's read lines (once: true; the art layer never draws it) */
+   if (++x.Misses >= 2 || !x.Shown) { if (x.Shown) ScanEmit(x, w, h, false); else if (x.Seen == 1 && !x.Foreign) ScanEmit(x, w, h, true, true); ScanItems.RemoveAt(i); }
   }
  }
- void ScanEmit(ScanItem it, int w, int h, bool visible) {
+ void ScanEmit(ScanItem it, int w, int h, bool visible) { ScanEmit(it, w, h, visible, false); }
+ void ScanEmit(ScanItem it, int w, int h, bool visible, bool once) {
   var parts = new List<object>();
   if (visible) foreach (var r in it.Rows) parts.Add(new { text = r.Text, x = r.Box.Left, y = r.Box.Top, w = r.Box.Width, h = r.Box.Height, color = r.Color, glow = r.Glow });
   string alt = null; if (it.Foreign) foreach (var r in it.Rows) if (r.Alt != null) { alt = r.Alt; break; }
-  Emit(new { type = "artText", id = it.Id, text = it.Text, visible = visible, source = "ocr", foreign = it.Foreign, alt = alt, rows = parts, sw = w, sh = h, at = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() });
+  Emit(new { type = "artText", id = it.Id, text = it.Text, visible = visible, source = "ocr", foreign = it.Foreign, alt = alt, rows = parts, sw = w, sh = h, dialogSeen = ScanDialogSeen, others = ScanOthers, once = once, at = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() });
  }
  void ScanClear() { foreach (var x in ScanItems) if (x.Shown) ScanEmit(x, 0, 0, false); ScanItems.Clear(); }
 
@@ -731,6 +755,28 @@ public sealed class PageLocator : IDisposable {
    foreach (var gr in play) { var box = gr[0].Box; if (Math.Abs(box.Left + box.Width / 2 - 640) > 40) return "not centred " + GroupText(gr) + " x=" + box.Left; }
   }
   return "0";
+ }
+
+ /* 2026-11-19 OCR read lines: the art scan's reading of one saved picture (a screenshot of a game), as the groups the scan
+    would send (text, rows in picture px) and whether the dialogue line is on it. validation/ocr-read-lines.test.cjs replays
+    such readings; the pictures themselves stay outside the repository. */
+ public static string ScanImage(string file, string dialog) {
+  var locator = new PageLocator(o => { });
+  try { locator.Engine = OcrEngine.TryCreateFromLanguage(new Language("ja")); } catch { }
+  if (locator.Engine == null) return "{\"skip\":\"no Japanese OCR\"}";
+  using (var loaded = new Bitmap(file))
+  using (var image = new Bitmap(loaded.Width, loaded.Height, PixelFormat.Format24bppRgb)) {
+   using (var g = Graphics.FromImage(image)) g.DrawImage(loaded, 0, 0, loaded.Width, loaded.Height);
+   int w = image.Width, h = image.Height;
+   var rows = locator.Read(image, w, h);
+   if (String.IsNullOrWhiteSpace(dialog)) dialog = null;
+   bool seen = dialog != null && Find(rows, dialog) != null;
+   var groups = ScanGroups(rows, w, h, dialog, null, dialog != null, null);
+   var list = new List<object>();
+   foreach (var gr in groups) { var parts = new List<object>(); foreach (var r in gr) parts.Add(new { text = r.Text, x = r.Box.Left, y = r.Box.Top, w = r.Box.Width, h = r.Box.Height }); list.Add(new { text = GroupText(gr), rows = parts }); }
+   int used = 0; foreach (var g in groups) used += g.Count;
+   return new System.Web.Script.Serialization.JavaScriptSerializer().Serialize(new { sw = w, sh = h, dialogSeen = seen, others = Math.Max(0, rows.Count - used), raw = rows.ConvertAll(r => r.Text), groups = list });
+  }
  }
 
  public void Dispose() { Disposed = true; Wake.Set(); }

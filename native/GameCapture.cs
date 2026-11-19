@@ -49,6 +49,15 @@ public static class GameCapture{
  // Fills image (client size) with the window's picture; false when it could not be read this time.
  // Nothing is read during a move (a DirectX game stops presenting then).
  public static bool Into(IntPtr hwnd,Bitmap image,uint printFlags){return Into(hwnd,image,printFlags,false);}
+ // 2026-11-19 (live: the art scan's PrintWindow made the game thread redraw a frame, 66-94 ms stalls): periodic readers
+ // use BitBlt only, never PrintWindow. A blank read is kept only for a window BitBlt has already shown (a dark scene is
+ // dark); otherwise the round is skipped (Skipped). PrintWindow stays for one-off reads the user asks for.
+ public static bool BltOnly(IntPtr hwnd,Bitmap image){
+  Skipped=false;FromScreen=false;if(Busy(hwnd)||!Blt(hwnd,image)){Skipped=true;return false;}
+  Choice c;lock(Gate){if(!Choices.TryGetValue(hwnd,out c)){if(Choices.Count>16)Choices.Clear();c=new Choice();Choices[hwnd]=c;}}
+  if(!Blank(image)){lock(Gate){c.Proven=true;c.Blind=false;c.Votes=0;c.ProvenAt=DateTime.UtcNow;}return true;}
+  bool proven;lock(Gate)proven=c.Proven;if(!proven)Skipped=true;return proven;
+ }
  // screenFallback: some DirectX/Unity windows give a blank picture to both BitBlt and PrintWindow (style sync then saw
  // "ocrLines=0"). Only callers that hide MeguLit's own text first (style measurement) may read the screen instead: it
  // includes overlays, so marker and mask detection never use it.
