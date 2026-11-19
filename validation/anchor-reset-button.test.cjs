@@ -17,9 +17,9 @@ function serve(){const server=http.createServer((req,res)=>{const rel=decodeURIC
  return new Promise(r=>server.listen(0,'127.0.0.1',()=>r(server)));}
 const PROBE=`(async()=>{const w=ms=>new Promise(r=>setTimeout(r,ms));const b=window.__tomoyoChinese,d=document.querySelector('.tomoyo-cn-dialog[open]');d.querySelector('[data-menu-key=calibrate]').click();await w(300);
  const p=d.querySelector('[data-menu-category=calibrate]'),q=s=>p.querySelector(s),reset=q('[data-gal-anchor-reset]'),drag=q('[data-gal-drag]');
- const out={text:reset?.textContent,before:[reset?.disabled,reset?.title,getComputedStyle(reset).opacity],sameRow:reset?.parentElement===drag?.parentElement,
+ const out={text:reset?.textContent,before:[reset?.disabled,reset?.title],sameRow:reset?.parentElement===drag?.parentElement,
   look:(()=>{const s=getComputedStyle(reset),o=getComputedStyle(drag);return [s.borderRadius===o.borderRadius,s.fontSize===o.fontSize,s.height===o.height];})()};
- document.body.classList.add('megulit-anchored');await w(100);out.enabled=[reset.disabled,reset.title,getComputedStyle(reset).opacity];
+ document.body.classList.add('megulit-anchored');await w(100);out.enabled=[reset.disabled,reset.title];
  const y=q('[name=galY]');y.value='43';y.dispatchEvent(new Event('input',{bubbles:true}));await w(50);out.offsetBefore=b.galPreferences().anchorDY;
  let saved=null;b.saveGameProfileFromMenu=pr=>{saved=pr;return true;};reset.click();await w(50);
  out.after={anchorDX:b.galPreferences().anchorDX,anchorDY:b.galPreferences().anchorDY,fields:[q('[name=galX]').value,y.value],saved:saved&&[saved.anchorDX,saved.anchorDY],global:(()=>{try{return JSON.parse(localStorage.getItem('tomoyo-gal-settings')||'{}').anchorDY;}catch{return 'err';}})()};
@@ -32,9 +32,9 @@ test('校准: 回到游戏原字位置 is greyed without engine places; with the
   assert.ok(ready,'reader page loaded');
   await cdp.evaluate(`(()=>{window.__tomoyoMode.set('translation');document.body.classList.add('tomoyo-gal-bound');setTimeout(()=>dispatchEvent(new CustomEvent('tome-region-applied',{detail:{surfaceWidth:innerWidth*devicePixelRatio,surfaceHeight:innerHeight*devicePixelRatio}})),0);window.__tomoyoChinese.toggleGalMenu();return 1})()`);
   await sleep(1500);const s=await cdp.evaluate(PROBE);
-  assert.equal(s.text,'回到游戏原字位置');assert.deepEqual(s.before,[true,'本作品尚无引擎坐标','0.45'],'greyed, the reason as tooltip');
+  assert.equal(s.text,'回到游戏原字位置');assert.deepEqual(s.before,[true,'本作品尚无引擎坐标'],'disabled, the reason as tooltip (the look is the menu-wide :disabled style)');
   assert.ok(s.sameRow,'in the row of 拖动文本框');assert.deepEqual(s.look,[true,true,true],'looks like 拖动文本框');
-  assert.deepEqual(s.enabled,[false,'','1'],'usable on engine places');assert.equal(s.offsetBefore,43,'a large offset was set');
+  assert.deepEqual(s.enabled,[false,''],'usable on engine places');assert.equal(s.offsetBefore,43,'a large offset was set');
   assert.deepEqual(s.after.saved,[0,0],'saved to the game profile as 0');assert.equal(s.after.anchorDX,0);assert.equal(s.after.anchorDY,0,'applied at once');
   assert.deepEqual(s.after.fields.map(Number),[0,0]);assert.equal(s.after.global,undefined,'the global preferences never hold an offset');
  }finally{cdp?.stop();server?.close();await sleep(400);try{fs.rmSync(temp,{recursive:true,force:true});}catch{}}
