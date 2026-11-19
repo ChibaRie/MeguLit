@@ -121,6 +121,10 @@ internal static class EmbedTextPolicy {
     // the constructs, blanks and line breaks stay exactly as they were. The capture compositor finds the marks.
     [ThreadStatic] static bool Marking;
     public static string Mark(string value) { Marking = true; try { return Hide(value); } finally { Marking = false; } }
+    /* 2026-11-19 a short all-hiragana piece (「なるほど」, BGI 「たばこと」) is a label to Hide but a line to the reader; the reader
+       shows it, so the game's copy is blanked too (the bridge uses this one rule for both sides). */
+    public static bool ShortSpoken(string value) { return Regex.IsMatch((value ?? "").Trim(), "^[ぁ-ゖー～っ]+$"); }
+    public static string HideSpoken(string value) { return ShortSpoken(value) ? Blank(value) : ""; }
     public static string Hide(string value) {
         // An empty reply tells LunaHook to skip writeback entirely, including its own re-encoding.
         // E560 (月に寄りそう乙女の作法, Unity UI.Text): rich-text tags (<size=36>…</size>, small-size ruby) are layout, not script
