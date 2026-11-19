@@ -136,7 +136,7 @@
    const mask=names.some(x=>/^gal(Mask|Scan|Blur|Fast|Hook|HideWait|RelocateWait|WaitCover)/.test(x))||n.hasAttribute('data-gal-hook-options')||n.classList.contains('tomoyo-mask-state')||(n.tagName==='SMALL'&&/遮罩|局部模糊|扫描/.test(n.textContent));
    if(mask){panels.mask.append(n);continue;}
    if(n.classList.contains('tome-game-style-sync')){calibration.prepend(n);continue;}
-   const pos=names.some(x=>/^gal(X|Y|Width|Height|Preset|Game|LivePosition)$/.test(x))||['bind','unbind','refresh','drag'].some(k=>n.hasAttribute('data-gal-'+k))||n.classList.contains('tome-position-sync')||n.classList.contains('tomoyo-gal-state');
+   const pos=names.some(x=>/^gal(X|Y|Width|Height|Preset|Game|LivePosition)$/.test(x))||['bind','unbind','refresh','drag'].some(k=>n.hasAttribute('data-gal-'+k))||!!n.querySelector('[data-gal-drag]')||n.classList.contains('tome-position-sync')||n.classList.contains('tomoyo-gal-state');
    if(n.hasAttribute('data-gal-window-bind')||n.classList.contains('tomoyo-gal-state')||n.hasAttribute('data-gal-bind-hint')){windowBind.append(n);continue;}
    if(pos){if(names.includes('galPreset'))position.prepend(n);else position.append(n);continue;}
    if(n.classList.contains('tomoyo-gal-spacing')){unwrap(n,spacing);continue;}

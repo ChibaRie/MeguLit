@@ -100,7 +100,7 @@
   style.textContent = `
     .tome-island-layout-hint { display:none; }
     body.tome-island-active .tome-island-layout-hint { display:block; }
-    body.tome-island-active label:has(>select[name=galPreset]),body.tome-island-active [data-gal-drag],body.tome-island-active [data-gal-position-sync],body.tome-island-active .tome-live-position,body.tome-island-active .tome-manual-region-hint { display:none!important; }
+    body.tome-island-active label:has(>select[name=galPreset]),body.tome-island-active [data-gal-drag],body.tome-island-active [data-gal-anchor-reset],body.tome-island-active [data-gal-position-sync],body.tome-island-active .tome-live-position,body.tome-island-active .tome-manual-region-hint { display:none!important; }
     .sentence-window .sentence-text.tomoyo-furigana {
       --megulit-ruby-line:var(--tomoyo-gal-ruby-line-height,2.55);
       line-height:calc(var(--megulit-ruby-line) * 1em)!important;
@@ -437,6 +437,9 @@
     const root = document.documentElement.style;
     const scaled = value => (value * gameScale).toFixed(2) + 'px';
     root.setProperty('--tomoyo-gal-jp-size', scaled(preferences.japaneseSize));
+    /* the anchored offset is on the root too: text-place re-pins on a root style change, so a new offset (slider, calibration,
+       回到游戏原字位置) moves the line at once even when nothing else changed */
+    root.setProperty('--megulit-anchor-offset', (Number(preferences.anchorDX) || 0) + ' ' + (Number(preferences.anchorDY) || 0));
     root.setProperty('--tomoyo-gal-cn-size', scaled(preferences.translationSize));
     const insets=appearance.insets(preferences);
     root.setProperty('--tomoyo-gal-pad-x', scaled(insets.padX));
@@ -542,7 +545,7 @@
     for (const key of Object.values(map).concat('japaneseOutline')) if (cleaned[key] !== preferences[key]) changed[key] = cleaned[key];
     if (changed.textColor) try { localStorage.setItem('tome-previous-text-color', preferences.textColor); } catch {}
     if(commitSynchronizedStyle)commitSynchronizedStyle(changed);syncOpenForm(changed);
-    preferences = cleaned; localStorage.setItem('tomoyo-gal-settings', JSON.stringify({...preferences,translationPrompt:undefined})); send({ type:'galConfigure',
+    preferences = cleaned; localStorage.setItem('tomoyo-gal-settings', JSON.stringify({...preferences,translationPrompt:undefined,anchorDX:undefined,anchorDY:undefined})); send({ type:'galConfigure',
      settings:preferences }); apply();
     return changed;
   };
@@ -560,7 +563,7 @@
   const styleOnly = values => { const { interfaceMode, bindEnabled, gameProcess, ...rest } = values || {}; return rest; };
   bridge.applyGalPreferences = (values = {}, options = {}) => { values = styleOnly(values); preferences = appearance.clean({ ...preferences, ...values }); const applied = {
    }; for (const key of Object.keys(values)) if (preferences[key] !== undefined) applied[key] = preferences[key]; if (!options.preview&&commitSynchronizedStyle) commitSynchronizedStyle(applied);
-   syncOpenForm(applied); if(!options.preview)localStorage.setItem('tomoyo-gal-settings', JSON.stringify({...preferences,translationPrompt:undefined})); if(options.preview)send({
+   syncOpenForm(applied); if(!options.preview)localStorage.setItem('tomoyo-gal-settings', JSON.stringify({...preferences,translationPrompt:undefined,anchorDX:undefined,anchorDY:undefined})); if(options.preview)send({
    type:'galPreview',settings:preferences});else if(options.persist!==false)send({ type:'galConfigure', settings:preferences }); apply(); return { ...preferences };
    };
   bridge.galPreferences = () => ({ ...preferences });
@@ -663,7 +666,7 @@
        <small class="tomoyo-hotkey-hint" data-gal-bind-hint>先开游戏后开 MeguLit，或 MeguLit 重开后，用这里或 Alt+M 重新连接</small>
        <div class="tome-window-bind-list"><label>游戏窗口<select name="galGame"><option value="">点击刷新选择窗口</option></select></label><button type="button" data-gal-refresh>刷新窗口</button><button type="button" data-gal-bind>绑定此窗口</button><button type="button" data-gal-unbind>解除绑定</button></div></div>
       <div class="tomoyo-cn-grid"><label>文本框左边距<input type="number" name="galX" min="0" max="95" step="0.1"></label><label>文本框上边距<input type="number" name="galY" min="0" max="95" step="0.1"></label><label>文字换行宽度<input type="number" name="galWidth" min="20" max="100" step="0.1"></label><input type="hidden" name="galHeight"><small class="tome-manual-region-hint">显示区域随实际文字增长，高度自动调整</small><small class="tome-island-layout-hint">按原文位置排布，文字可自然延伸到游戏窗口外</small></div>
-      <button type="button" data-gal-drag>拖动文本框</button>
+      <div class="tome-window-bind-row" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap"><button type="button" data-gal-drag>拖动文本框</button><button type="button" data-gal-anchor-reset>回到游戏原字位置</button></div>
       <div class="tome-position-sync"><button type="button" data-gal-position-sync>同步位置</button><small data-position-state></small></div>
       <div class="tome-game-style-sync"><label class="tome-auto-style-switch"><input type="checkbox" name="galAutoGameStyle">自动同步游戏原文样式</label><button type="button" data-game-style-sync>从游戏同步</button><small data-game-style-state></small></div>
       <label>原文替换方式<select name="galMaskMode"><option value="hook">Hook 引擎与原文替换内嵌</option></select></label>
@@ -840,10 +843,23 @@
        y 79.7); the next line was anchored and dragging the wrap width wrote those numbers as an offset. A change of mode while
        the menu is open fills the fields again for the new meaning; nothing is ever read in the other one. */
     let fieldsAreOffset = false;
+    /* 2026-11-19 (user, 素晴らしき日々: 「默认的位置贼偏」): 回到游戏原字位置 clears this game's anchored offset at once and saves it to
+       the game's style profile (not an undo of unsaved edits); it needs the engine's glyph places, so without them it is greyed with the reason as its tooltip (the position state line below already says 本作品尚无引擎坐标) */
+    const anchorReset = group.querySelector('[data-gal-anchor-reset]'),
+     anchorResetWords = {zh:['回到游戏原字位置','本作品尚无引擎坐标'],en:['Back to the game text position','No engine positions for this game yet'],ja:['ゲームの文字位置に戻す','この作品はまだエンジン座標がありません']};
+    const paintAnchorReset = () => { const w = anchorResetWords[(window.__tomeI18n?.get?.()||'zh').slice(0,2)] || anchorResetWords.zh, on = anchoredNow(); anchorReset.dataset.noI18n = '';
+     anchorReset.textContent = w[0]; anchorReset.disabled = !on; anchorReset.title = on ? '' : w[1]; anchorReset.setAttribute('aria-disabled', String(!on)); };
     const fillPosition = () => { fieldsAreOffset = anchoredNow(); if (fieldsAreOffset) { f('galX').value = Number(preferences.anchorDX) || 0; f('galY').value = Number(preferences.anchorDY) || 0; f('galX').min = f('galY').min = '-95'; } else { f('galX').value = preferences.x; f('galY').value = preferences.y; f('galX').min = f('galY').min = '0'; } };
     fillPosition();
-    const modeWatch = new MutationObserver(() => { if (anchoredNow() !== fieldsAreOffset && document.body.contains(dialog)) { const was = syncingForm; syncingForm = true; try { fillPosition(); } finally { syncingForm = was; } } });
+    const modeWatch = new MutationObserver(() => { if (anchoredNow() !== fieldsAreOffset && document.body.contains(dialog)) { const was = syncingForm; syncingForm = true; try { fillPosition(); } finally { syncingForm = was; } } paintAnchorReset(); });
+    paintAnchorReset();
     modeWatch.observe(document.body, { attributes: true, attributeFilter: ['class'] }); dialog.addEventListener('close', () => modeWatch.disconnect(), { once: true });
+    /* 2026-11-19 (user): with the text following the game's own glyph place there is no text box to pad: the two padding controls are greyed out with a one-line reason, and come back in box mode */
+    const syncPadding = () => { const off = anchoredNow(), labels = ['galPaddingX', 'galPaddingY'].map(n => f(n)?.closest('label')).filter(Boolean); if (!labels.length) return;
+      for (const l of labels) { l.classList.toggle('tome-pad-off', off); l.style.opacity = off ? '.45' : ''; l.style.pointerEvents = off ? 'none' : ''; for (const i of l.querySelectorAll('input')) i.disabled = off; }
+      let note = dialog.querySelector('.tome-pad-note'); if (!note) { note = document.createElement('small'); note.className = 'tome-pad-note'; note.textContent = '正文跟随游戏原字位置时不生效'; note.style.cssText = 'display:block;opacity:.7;font-size:11.5px;margin:2px 0 6px'; labels.at(-1).insertAdjacentElement('afterend', note); }
+      note.hidden = !off; };
+    queueMicrotask(syncPadding); const padWatch = new MutationObserver(syncPadding); padWatch.observe(document.body, { attributes: true, attributeFilter: ['class'] }); dialog.addEventListener('close', () => padWatch.disconnect(), { once: true });
     const sliderOutputs = [];
     for(const input of group.querySelectorAll('input[type=number]')){
       const output=document.createElement('output');output.className='tomoyo-slider-value';output.htmlFor=input.name;
@@ -877,7 +893,7 @@
     const save = event => { if(bridge.gameStyleCommitReady?.()===false){event?.preventDefault();event?.stopImmediatePropagation();return;}preferences = current();
      if(event?.type==='submit'&&dialog.dataset.menuTab==='calibrate'&&bridge.saveGameProfileFromMenu){event.preventDefault();event.stopImmediatePropagation();bridge.saveGameProfileFromMenu(preferences);
      return;} if(preferences.textColor.toLowerCase()!==committed.textColor.toLowerCase()){previousColor=committed.textColor;localStorage.setItem(colorHistoryKey,
-     previousColor);colorUndo.disabled=false;} committed = { ...preferences }; localStorage.setItem('tomoyo-gal-settings', JSON.stringify({...preferences,translationPrompt:undefined}));
+     previousColor);colorUndo.disabled=false;} committed = { ...preferences }; localStorage.setItem('tomoyo-gal-settings', JSON.stringify({...preferences,translationPrompt:undefined,anchorDX:undefined,anchorDY:undefined}));
      send({ type: 'galConfigure', settings: preferences }); bridge.saveGameProfileFromMenu?.(preferences); apply(); };
     const updateMaskForm = () => { group.querySelector('[data-gal-full-color]').hidden = f('galMaskMode').value !== 'full';group.querySelector('[data-gal-hook-options]').hidden=f('galMaskMode').value!=='hook';
      };
@@ -893,7 +909,7 @@
       if (!f('galGame').value) { dialogFields.state.textContent = '先刷新并选择游戏窗口'; return; }
       preferences = current(); preferences.bindEnabled = true;
       committed = { ...preferences };
-      localStorage.setItem('tomoyo-gal-settings', JSON.stringify({...preferences,translationPrompt:undefined}));
+      localStorage.setItem('tomoyo-gal-settings', JSON.stringify({...preferences,translationPrompt:undefined,anchorDX:undefined,anchorDY:undefined}));
       const picked = f('galGame').selectedOptions[0];
       send({ type: 'galBind', hwnd: f('galGame').value, settings: preferences, title: picked?.dataset.title || '', processName: picked?.dataset.processName || '' });
     };
@@ -923,6 +939,9 @@
      };
     dragButton.onclick = () => { const on = !document.body.classList.contains('tome-box-dragging'); dragMode(on); if (!on) save(); };
     dragLabel(false); dialog.addEventListener('close', () => dragMode(false), { once:true });
+    anchorReset.onclick = () => { if (!anchoredNow()) return; if (bridge.gameStyleCommitReady?.() === false) return; preferences = { ...current(), anchorDX: 0, anchorDY: 0 };
+     if (fieldsAreOffset) { const was = syncingForm; syncingForm = true; try { f('galX').value = 0; f('galY').value = 0; for (const update of sliderOutputs) update(); } finally { syncingForm = was; } }
+     committed = { ...preferences }; send({ type: 'galConfigure', settings: preferences }); bridge.saveGameProfileFromMenu?.(preferences); apply(); };
     form.addEventListener('submit', save, true);
     dialog.addEventListener('close', () => { if(previewFrame){cancelAnimationFrame(previewFrame);previewFrame=0;}preferences = {...committed,interfaceMode:preferences.interfaceMode};
      dialogFields = null;commitSynchronizedStyle=null;/* 2026-11-16 Alt+T: closing only drops the menu's unsaved edits; re-sending the snapshot as a preview turned the embed off */if(bound)send({type:'galPreviewEnd'});setTimeout(()=>send({ type: 'galMenu', open: !!document.querySelector('.tomoyo-cn-dialog[open],.tome-backlog[data-open],.tomoyo-cn-dialog[data-leaving],.tome-backlog[data-leaving]') }),

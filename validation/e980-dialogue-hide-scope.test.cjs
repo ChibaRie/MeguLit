@@ -56,10 +56,10 @@ test('saved Chinese content metadata and chinese-only script verdict reach the h
   refresh.call({root:'H:\\fixture',gal:{hooks},prefs:()=>({})},{exe:'H:\\fixture\\game.exe'});
   return {hooks,sent};
  }
- assert.equal(run({contentLanguage:'zh'},null).sent[0]?.value,'zh');
+ assert.equal(run({contentLanguage:'zh'},null).sent[0]?.value,'zh!','the library knows the build is Chinese');
  assert.equal(run({},false).sent[0]?.value,'zh','chinese-only script verdict also blocks default hiding');
  assert.equal(run({contentLanguage:'ja',originalExecutableVerified:true},true).sent[0]?.value,'ja');
  assert.equal(run({},null).sent.length,0,'unknown language grants no Chinese/Japanese override');
- const f=run({contentLanguage:'zh'},false);f.hooks.setSourceLanguage('zh');assert.equal(f.sent.length,1,'unchanged metadata cannot undo live Japanese confirmation');
+ const f=run({contentLanguage:'zh'},false);f.hooks.setSourceLanguage('zh!');assert.equal(f.sent.length,1,'unchanged metadata cannot undo live Japanese confirmation');
  f.hooks.setSourceLanguage('ja');assert.equal(f.sent.at(-1)?.value,'ja','restoring Japanese changes the live bridge policy');
 });

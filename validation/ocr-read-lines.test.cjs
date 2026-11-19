@@ -123,3 +123,13 @@ test('the periodic scan never uses PrintWindow; ocrReadLines can be turned off (
  g.send=m=>sent.push(m);g.state={bound:true};g.hooks={artScanState:()=>({on:true,dialog:'',speaker:'',band:false})};
  g.preferences=gs.clean({ocrReadLines:false});g.artScan();assert.equal(sent[0].on,false,'turned off: no scan without artText');
 });
+test('MeguLit menu over a corner of the game: its own windows are painted out before the scan reads (only the quote is read)',()=>{
+ const p=fs.readFileSync(path.join(__dirname,'..','native','PageLocator.cs'),'utf8'),o=fs.readFileSync(path.join(__dirname,'..','native','OwnCover.cs'),'utf8'),g=fs.readFileSync(path.join(__dirname,'..','native','GalWindowBridge.cs'),'utf8');
+ const run=p.slice(p.indexOf(' void ScanRun()'),p.indexOf(' static List<List<Row>> SplitForeign('));
+ assert.ok(run.indexOf('OwnCover.Paint(image, OwnCover.Parts(target, w, h, OwnPids));')>0&&run.indexOf('OwnCover.Paint(')<run.indexOf('thumb = Thumb(image);'),'painted before the picture is compared or read');
+ assert.match(g,/PageLocate\.OwnPids=new uint\[\]\{\(uint\)OverlayPid,\(uint\)System\.Diagnostics\.Process\.GetCurrentProcess\(\)\.Id\};/,'MeguLit and the bridge itself');
+ assert.match(o,/if \(win == root\) return false;/,'only windows above the game');assert.match(o,/GetWindowRgn\(win, rgn\)/,'the window region: what the reader really paints');
+ for(const f of ['native/Build-GalWindowBridge.ps1','native/native-builds.json','tools/build-reader-bridge.ps1'])assert.match(fs.readFileSync(path.join(__dirname,'..',f),'utf8'),/OwnCover\.cs/,f);
+ const exe=path.join(__dirname,'..','native','GalWindowBridge.exe');
+ if(fs.existsSync(exe)){const out=require('child_process').execFileSync(exe,['--art-scan-mask-test'],{windowsHide:true,encoding:'utf8',timeout:60000});assert.match(out,/PASS art scan mask|SKIP/,out);}
+});
