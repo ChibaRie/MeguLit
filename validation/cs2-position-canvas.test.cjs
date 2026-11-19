@@ -6,14 +6,14 @@
    an ADV canvas until a calibration exists. */
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
 const read=f=>fs.readFileSync(path.join(__dirname,'..',f),'utf8');const gs=require('../core/game-style.js');
-function loadTextPosition(layout){
+function loadTextPosition(layout,source=read('web/reader/modules/text-position.js')){
  const classes=new Set(),vars={};
  const doc={readyState:'complete',addEventListener(){},querySelector:()=>null,body:{classes,classList:{toggle:(c,on)=>{if(on)classes.add(c);else classes.delete(c);return on;},contains:c=>classes.has(c)}},
   documentElement:{style:{setProperty:(k,v)=>{vars[k]=v;},removeProperty:k=>{delete vars[k];}}},vars};
  const prefs={textColor:'#ffffff',autoGameStyle:true};
  const b={previewed:[],galPreferences:()=>prefs,galLayoutInfo:()=>layout,previewGalPosition:v=>b.previewed.push(v)};
  const ctx={window:{__tomoyoChinese:b,TomoyoGameStyle:gs,devicePixelRatio:1,__tomoyoTranslateRequest(){}},document:doc,getComputedStyle:()=>({getPropertyValue:()=>'',fontSize:'26px'}),Date,Math,Number,String,Map,JSON,Object};
- vm.runInNewContext(read('web/reader/modules/text-position.js'),ctx);return {api:ctx.window.__tomeTextPosition,b};}
+ vm.runInNewContext(source,ctx);return {api:ctx.window.__tomeTextPosition,b};}
 
 test('an ISLAND line follows its canvas position without a calibration map',()=>{
  const {api,b}=loadTextPosition({clientWidth:1280,clientHeight:720});
@@ -30,4 +30,17 @@ test('a scaled game window keeps the canvas aspect (letterbox) and a calibrated 
  api.setMap({engine:'cs2_screen_v3',s:1,bx:100,by:0,dx:0,dy:0,cw:1920,ch:1080});
  b.textPosition({type:'hookTextPos',engine:'cs2_screen_v2',line:2,token:8,x0:234,y0:598,x1:416,y1:598,size:26,count:8,color:'#b0e2ff'});
  assert.ok(Math.abs(b.previewed.at(-1).x-Math.round(((297+100)*100/1920)*10)/10)<0.11,'calibrated map: '+JSON.stringify(b.previewed.at(-1)));
+});
+
+test('texture-slot coordinates (y0 4364+, the same hook reports both forms) map like canvas ones without a map',()=>{
+ const {b}=loadTextPosition({clientWidth:1280,clientHeight:720});
+ b.textPosition({type:'hookTextPos',engine:'cs2_screen_v2',line:3,token:9,x0:234,y0:4320+598,x1:416,y1:4320+598,size:26,count:8,color:'#b0e2ff'});
+ const p=b.previewed.at(-1);assert.ok(Math.abs(p.y-Math.round((606*100/720)*10)/10)<0.11,JSON.stringify(p));
+});
+test('with a calibrated map the box lands exactly where v1.4.16 put it (regression guard)',()=>{
+ const old=require('node:child_process').execFileSync('git',['show','v1.4.16:web/reader/modules/text-position.js'],{cwd:path.join(__dirname,'..'),encoding:'utf8'});
+ const map={engine:'cs2_screen_v3',s:1.2,bx:40,by:-12,dx:5,dy:3,cw:1536,ch:864};const out=[];
+ for(const src of [old,undefined]){const {api,b}=loadTextPosition({clientWidth:1536,clientHeight:864},src);api.setMap(map);
+  for(const [i,y] of [[1,598],[2,4320+560],[3,630]])b.textPosition({type:'hookTextPos',engine:'cs2_screen_v2',line:i,token:100+i,x0:234,y0:y,x1:600,y1:y,size:26,count:14,color:'#b0e2ff'});out.push(JSON.stringify(b.previewed));}
+ assert.equal(out[1],out[0]);
 });
