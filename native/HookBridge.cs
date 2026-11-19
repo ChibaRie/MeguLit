@@ -493,10 +493,20 @@ static void Deactivate(string reason){if(WaitHook!=null)WaitHook.Disable();lock(
     its lines were written back hidden, so the renderer drew nothing and the glyph colour had nothing to read. 死に逝く君 kept its
     lines and its colours. Now: a hidden=1 confirmation proves pass-through for this run; while the engine hide is switched on and
     nothing is proven yet, one trial line is passed (as for GDI), and a next line without a confirmation ends the trial for this run. */
- static volatile bool EngineHideProven,EngineTrialFailed;static int EngineHideOn;static DateTime EngineTrialAt;static string EngineTrialText;
- static void EngineHideProof(string by){if(EngineHideProven)return;EngineHideProven=true;EngineTrialFailed=false;Diagnostic("engine pass-through proven ("+by+"): the game side draws its lines invisible");}
+ /* The proof has to stay true: a passed line that the game side does not hide is the original on screen under MeguLit's own text (the
+    double text fixed in 4e2bd3f8). While the engine hide is on, every passed line is expected to be confirmed; two lines in a row
+    without a confirmation take the proof back for the run and lines are written back hidden again, as before this change. With the
+    engine hide off (MeguLit's layer is not over the game) the game draws its lines itself on purpose and nothing is counted.
+    Only the dialogue stream goes through here: menus and settings pages are neither passed nor written back (script.inc trOwn, E980). */
+ static volatile bool EngineHideProven,EngineTrialFailed,EnginePassConfirmed;static int EngineHideOn,EngineUnconfirmed;static DateTime EngineTrialAt;static string EngineTrialText,EnginePassText;
+ static void EngineHideProof(string by){EnginePassConfirmed=true;EngineUnconfirmed=0;if(EngineHideProven||EngineTrialFailed&&EngineTrialText==null)return;EngineHideProven=true;EngineTrialFailed=false;Diagnostic("engine pass-through proven ("+by+"): the game side draws its lines invisible");}
  static bool EngineAllOk(string text){
-  if(EngineHideProven)return true;if(EngineTrialFailed||Volatile.Read(ref EngineHideOn)<=0)return false;DateTime now=DateTime.UtcNow;
+  if(EngineHideProven){
+   if(Volatile.Read(ref EngineHideOn)>0&&!(text==EnginePassText||TypewriterStep(EnginePassText,text))){
+    if(EnginePassText!=null&&!EnginePassConfirmed){if(++EngineUnconfirmed>=2){EngineHideProven=false;EngineTrialFailed=true;EngineTrialText=null;EnginePassText=null;Diagnostic("engine pass-through off: two lines in a row were not confirmed hidden by the game side; lines are written back hidden");return false;}}
+    EnginePassText=text??"";EnginePassConfirmed=false;}
+   return true;}
+  if(EngineTrialFailed||Volatile.Read(ref EngineHideOn)<=0)return false;DateTime now=DateTime.UtcNow;
   if(EngineTrialText==null){EngineTrialAt=now;EngineTrialText=text??"";Diagnostic("engine pass-through trial line chars="+EngineTrialText.Length);return true;}
   if(text==EngineTrialText||TypewriterStep(EngineTrialText,text)||(now-EngineTrialAt).TotalMilliseconds<400)return true;
   EngineTrialFailed=true;Diagnostic("engine pass-through off: the trial line was not confirmed hidden by the game side");return false;}
@@ -513,14 +523,20 @@ static void Deactivate(string reason){if(WaitHook!=null)WaitHook.Disable();lock(
   GlyphAllFailed=true;GlyphAllNoted=false;GlyphSave(new Dictionary<string,object>{{"allFailed",GlyphVersion},{"at",now.ToString("o")}});GlyphAllNote("the trial line brought no glyph report");return false;}
  /// <summary>HookBridge --self-test: pass-through only with proof; no GDI glyphs = write-back; one trial line, then write-back; proof turns it on.</summary>
  /// <summary>HookBridge --self-test: no engine hide = no trial; engine hide on = one trial line, its redraw passes, a second line without a confirmation ends it; a confirmation proves it.</summary>
- public static bool EngineAllSelfTest(){bool p=EngineHideProven,f=EngineTrialFailed;int on=EngineHideOn;DateTime ta=EngineTrialAt;string tt=EngineTrialText;try{
-   EngineHideProven=false;EngineTrialFailed=false;EngineHideOn=0;EngineTrialText=null;
+ public static bool EngineAllSelfTest(){bool p=EngineHideProven,f=EngineTrialFailed,pc=EnginePassConfirmed;int on=EngineHideOn,un=EngineUnconfirmed;DateTime ta=EngineTrialAt;string tt=EngineTrialText,pt=EnginePassText;try{
+   EngineHideProven=false;EngineTrialFailed=false;EngineHideOn=0;EngineTrialText=null;EnginePassText=null;EnginePassConfirmed=false;EngineUnconfirmed=0;
    if(EngineAllOk("一行目。"))return false; /* the engine hide is not on: nothing to wait for */
    EngineHideOn=1;if(!EngineAllOk("一行目。")||!EngineAllOk("一行目。"))return false; /* trial line and its redraw */
    EngineTrialAt=DateTime.UtcNow.AddSeconds(-1);if(EngineAllOk("二行目。")||!EngineTrialFailed||EngineAllOk("三行目。"))return false; /* not confirmed by the next line: off for this run */
    EngineTrialFailed=false;EngineTrialText=null;if(!EngineAllOk("一行目。"))return false;EngineHideProof("self-test");EngineTrialAt=DateTime.UtcNow.AddSeconds(-1);if(!EngineAllOk("二行目。")||!EngineAllOk("三行目。"))return false; /* confirmed: every line passes */
-   EngineHideOn=0;if(!EngineAllOk("四行目。"))return false; /* proof holds for the run */
-   return true;}finally{EngineHideProven=p;EngineTrialFailed=f;EngineHideOn=on;EngineTrialAt=ta;EngineTrialText=tt;}}
+   EngineHideOn=0;if(!EngineAllOk("四行目。")||!EngineAllOk("五行目。")||!EngineAllOk("六行目。"))return false; /* hide off: the game draws on purpose, nothing is counted */
+   /* confirmed lines keep the proof; two unconfirmed lines in a row take it back, and it stays off for the run */
+   EngineHideOn=1;EnginePassText=null;EngineUnconfirmed=0;
+   if(!EngineAllOk("七行目。"))return false;EngineHideProof("self-test");if(!EngineAllOk("八行目。"))return false;EngineHideProof("self-test");
+   if(!EngineAllOk("九行目。")||!EngineAllOk("九行目。")||!EngineAllOk("十行目。"))return false; /* 九 unconfirmed: one miss is tolerated, its redraw is not a new line */
+   if(EngineAllOk("十一行目。")||EngineHideProven||!EngineTrialFailed)return false; /* 十 unconfirmed too: proof taken back */
+   if(EngineAllOk("十二行目。"))return false;EngineHideProof("late");if(EngineHideProven||EngineAllOk("十三行目。"))return false; /* a late confirmation does not bring it back in this run */
+   return true;}finally{EngineHideProven=p;EngineTrialFailed=f;EnginePassConfirmed=pc;EngineHideOn=on;EngineUnconfirmed=un;EngineTrialAt=ta;EngineTrialText=tt;EnginePassText=pt;}}
  public static bool GlyphAllSelfTest(){bool p=GlyphProven,g=GdiFontSeen,f=GlyphAllFailed,c=GlyphCached,n=GlyphAllNoted;int fv=GlyphAllFailedVersion,gv=GlyphVersion;DateTime ta=GlyphTrialAt;string tt=GlyphTrialText,file=GlyphFile;try{GlyphFile="";GlyphCached=false;GlyphProven=false;GdiFontSeen=false;GlyphAllFailed=false;GlyphAllFailedVersion=-1;GlyphVersion=3;GlyphTrialText=null;
    if(GpuWanted())return true; /* a layer is armed in this process: nothing to judge */
    if(GlyphAllOk("一行目。"))return false; /* SoftPal case: no GDI glyphs, writable stream = write-back */

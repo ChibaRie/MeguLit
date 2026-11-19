@@ -154,3 +154,8 @@ test('an engine-side hidden confirmation keeps the line in the game: the glyph c
  assert.ok(hb.includes('line.IndexOf(" hidden=1 ",StringComparison.Ordinal)>0)EngineHideProof(label);'),'ToMe_CHARS hidden=1 is the proof');
  const ok=hb.slice(hb.indexOf('public static bool GlyphAllOk(string text){'));assert.ok(ok.indexOf('if(EngineAllOk(text))return true;')>0&&ok.indexOf('if(EngineAllOk(text))return true;')<ok.indexOf('if(GlyphCached)'),'checked before the GDI-only reasons to write back');
  assert.ok(hb.includes('if(want)Interlocked.Increment(ref EngineHideOn);else Interlocked.Decrement(ref EngineHideOn);')&&hb.includes('if(!EngineAllSelfTest())'));});
+test('pass-through by engine confirmation can be taken back: unconfirmed lines return to write-back hidden, menus are not on this path',()=>{const hb=read('native/HookBridge.cs'),s=read('native/krkrtext/script.inc');
+ assert.ok(hb.includes('if(++EngineUnconfirmed>=2){EngineHideProven=false;EngineTrialFailed=true;'),'two unconfirmed lines in a row end it for the run');
+ assert.ok(hb.includes('if(Volatile.Read(ref EngineHideOn)>0&&!(text==EnginePassText||TypewriterStep(EnginePassText,text))){'),'counted only while the engine hide is on, a redraw is not a new line');
+ /* the dialogue-only ownership gate of the engine hide is untouched (4e2bd3f8 / E980): a renderer bound to no layer is the dialogue's only while KAG writes to that message layer */
+ assert.ok(s.includes("return typeof inst.textLayer=='undefined' && L===this.kag.current;"));});
