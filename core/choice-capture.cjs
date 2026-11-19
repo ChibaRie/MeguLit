@@ -33,6 +33,10 @@ function numbered(raw){const t=String(raw||'').trim(),re=/([0-9０-９])[.．、
  while((m=re.exec(t))){const c=m[1].charCodeAt(0),d=c>=0xff10?c-0xff10:c-48;if(d===cuts.length+1&&(cuts.length||m.index===0))cuts.push(m.index);}
  if(cuts.length<2)return null;const parts=cuts.map((c,i)=>t.slice(c,i+1<cuts.length?cuts[i+1]:t.length).trim()).filter(Boolean);return parts.length>=2?parts:null;}
 function halves(key){/* X+X (X at least 2 chars) -> X; also X+X+X */for(const n of [2,3]){if(key.length%n)continue;const x=key.slice(0,key.length/n);if(x.length>=2&&x.repeat(n)===key)return x;}return key;}
+/* 2026-11-19 (千恋＊万花 settings page: 「オオ」「テテ」) one katakana glyph twice, or every glyph drawn twice in a row (オオーートト,
+   4 glyphs or more), is a double-drawn typing fragment, not an option; 「ここ」 stays an option */
+function doubledGlyphs(key){const c=[...String(key||'')];if(c.length<2)return false;if(c.length===2)return c[0]===c[1]&&/[ァ-ヺー]/.test(c[0]);if(c.length%2)return false;for(let i=0;i<c.length;i+=2)if(c[i]!==c[i+1])return false;return true;}
+function balanced(line){let d=0;for(const c of String(line||'')){if('「『（(【'.includes(c))d++;else if('」』）)】'.includes(c)){if(--d<0)return false;}}return d===0;}
 function stripNames(line){let s=line,prev;do{prev=s;s=s.replace(/^【([^】]{1,16})】\1?/,'');}while(s!==prev&&s);return s;}
 class ChoiceCapture{
  constructor(now=()=>Date.now()){this.now=now;this.items=[];this.active=false;this.at=0;this.lines=[];this.names=new Set();this.dialogue='';this.grewAt=0;this.order=null;}
@@ -51,7 +55,9 @@ class ChoiceCapture{
   if(plain(speaker))this.names.add(plain(speaker));
   const added=[];
   for(const m of String(text||'').matchAll(/【([^】]{1,16})】/g))this.names.add(m[1]);/* bracketed names on any stream are speaker names */
-  const pieces=ChoiceCapture.pieces(text);
+  /* 2026-11-19 (千恋＊万花: 「■自動車（車内／走行）」 split at ■ and ／ into the "options" 「自動車（車内」「走行）」) a whole script stage note
+     ■label（detail） is no choice; it goes before the bullet split */
+  const pieces=ChoiceCapture.pieces(String(text||'').replace(/[■□◆][^■□◆「『（()\r\n]{1,24}（[^（）\r\n]{0,30}）/gu,''));
   if(pieces.filter(p=>p.list).length>=2){const keys=pieces.filter(p=>p.list).map(p=>plain(p.line)).filter(Boolean);if(keys.length>=2&&keys.length<=8)this.order=keys;}
   for(const {line,doubled} of pieces){
    const key=plain(line);const symbolic=SYMBOLIC.test(key);
@@ -61,6 +67,7 @@ class ChoiceCapture{
    /* 2026-11-13 (ファタモルガーナの館: a stream glued the maid's last line to the options) text already read in a recent dialogue line is not an option */if(key.length>6&&this.lines.some(l=>l!==key&&l.includes(key)))continue;
    if(NAME.test(key)){this.names.add(key.slice(1,-1));continue;}/* a bracketed name teaches the name too */
    if(/^[「『]/.test(key)&&this.lines.includes(key)||partOf(line,dialogue||this.dialogue))continue;
+   /* 2026-11-19 a piece with an opening or closing bracket left unmatched is a cut piece of a longer text (a stage note split at ／) */if(!balanced(line)||!symbolic&&doubledGlyphs(key))continue;{const nm=require('./line-once.js').nameStack(key);if(nm){this.names.add(nm);continue;}}/* names glued while skipping (美亜美亜…血塗れの男血塗れの男…) are names, not options */
    /* 2026-11-15 a per-glyph stream's typewriter dump (「公公園公園で公園での…」, growing prefixes glued) is no option */if(require('./language-tracks.cjs').typedOut(line))continue;
    if(/^[\x00-\x7f]+$/.test(line)||/[{}<>\\\/=_]|\.(png|ogg|wav|bmp|txt|ks|ybn)$/i.test(line))continue;
    const old=this.items.find(x=>x.key===key);if(old){old.at=now;continue;}

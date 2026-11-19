@@ -335,11 +335,8 @@ LR"MGLT((function(){
       chColor, so the record carries the colour the glyphs really have: the most common opaque pixel inside the first
       characters' boxes of the (possibly opacity-0) text layer, sampled once the typewriter has drawn them. */
    st.trSample=function(){
-    if(this.trRec===void || this.trPts===void || this.trOwner===void) return;
+    if(this.trRec===void || this.trCol!==void || this.trPts===void || this.trOwner===void) return;
     if(this.trTry===void) this.trTry=0;if(++this.trTry>40) return;
-    /* a first sample is not final: the outline or shadow pass may be all that is drawn yet, or a fade is running. It is taken again
-       0.6 s and 1.4 s into the sentence and sent again when the colour moved */
-    if(this.trCol!==void && this.trTry!=6 && this.trTry!=14) return;
     var T=this.trOwner.textLayer;if(typeof T!='Object' || T===void || T===null) return;
     /* a text layer that is not a child of its message layer is that layer's own buffer, laid at the message layer's origin */
     var at=T.parent===this.trOwner?this.abs(T):this.trAbsL,cnt=%[],rep=%[],best='',bn=0,bestL='',bnL=0,lit=0,lv=-1,lb=0,w=+T.imageWidth,hh=+T.imageHeight,amin=this.trTry>10?0x40:0xc0,need=this.trPts.count<=4?3:6;
@@ -357,18 +354,22 @@ LR"MGLT((function(){
       if(((px>>24)&255)<amin) continue;
       var k=''+(((rgb>>19)&31)<<10 | ((rgb>>11)&31)<<5 | ((rgb>>3)&31)),c=cnt[k];if(c===void) {c=0;rep[k]=rgb;}c++;cnt[k]=c;if(c>bn) {bn=c;best=''+rep[k];}
       /* the most common colour that is not near black, kept apart: a dark outline can outnumber a thin fill */
-      {var q=+rep[k];if(((q>>16)&255)+((q>>8)&255)+(q&255)>=144 && c>bnL) {bnL=c;bestL=''+rep[k];}}
+      if(((rgb>>16)&255)+((rgb>>8)&255)+(rgb&255)>=144 && c>bnL) {bnL=c;bestL=''+rep[k];}
      }
     }
     /* opaque glyph pixels already have their final colour: taken at the first tick (live 死に逝く君: 父親が死んだ。 was on screen for
        170 ms and got none); the brightest-pixel fallback still waits for the typewriter and any fade-in */
-    this.trWhy='try '+this.trTry+' opaque '+bn+'/'+need+' lit '+lit; /* shown in the status line: why a line has no colour yet */
+    /* ToMe_KRKR colorlog: one diagnostic record a sentence, what the sampler saw (HookBridge writes it to the log). Its own
+       record: the status line is left alone (a status change stopped this path on live 千恋＊万花, see the report). */
+    if(this.trTry==20 && bn<need && lit<3) this.report('ToMe_KRKR colorlog line='+this.trRec[1]+' col=- try=20 opaque='+bn+'/'+need+' lit='+lit);
     if(bn<need && (lit<3 || this.trTry<3)) return; /* a few ticks in: the typewriter and any fade-in have drawn the first glyphs */
-    var h='',v=bn>=need?+best:lb;
-    if(bn>=need && bestL!='' && bnL*3>=bn) {var d=+best;if(((d>>16)&255)+((d>>8)&255)+(d&255)<144) v=+bestL;}
-    var nv=v;for(var i=0;i<6;i++) {h='0123456789abcdef'.charAt(v&15)+h;v=v>>4;}
-    if(this.trCol!==void) {var o=this.trColV,dr=((o>>16)&255)-((nv>>16)&255),dg=((o>>8)&255)-((nv>>8)&255),db=(o&255)-(nv&255);if((dr<0?-dr:dr)+(dg<0?-dg:dg)+(db<0?-db:db)<40) return;}
-    this.trColV=nv;this.trCol=h;var r=this.trRec;r[2]=this.trTailA+' color='+h+this.trTailB;this.trKey='';
+    var h='',v=bn>=need?+best:lb,dk=0;
+    /* the outline or shadow pass is drawn first and is near black; the reader drops a near-black colour as an outline, which
+       leaves the sentence with no colour at all. A brighter colour holding a third as many pixels is the text. */
+    if(bn>=need && bestL!='' && bnL*3>=bn) {var bd=+best;if(((bd>>16)&255)+((bd>>8)&255)+(bd&255)<144) {v=+bestL;dk=1;}}
+    for(var i=0;i<6;i++) {h='0123456789abcdef'.charAt(v&15)+h;v=v>>4;}
+    this.report('ToMe_KRKR colorlog line='+this.trRec[1]+' col='+h+' try='+this.trTry+' opaque='+bn+'/'+need+' lit='+lit+' bright='+bnL+' dark='+dk);
+    this.trCol=h;var r=this.trRec;r[2]=this.trTailA+' color='+h+this.trTailB;this.trKey='';
     this.report('ToMe_CHARS engine=krkr line='+r[1]+' hidden='+r[0]+r[2]);
    } incontextof st;
    st.trWrap=function(){
@@ -391,7 +392,7 @@ LR"MGLT((function(){
    st.vis=function(){
     try {this.trHide();} catch(e) {}
     try {this.fade();} catch(e) {}
-    try {this.trSample();} catch(e) {this.trTry=99;this.trWhy='threw '+e.message;}
+    try {this.trSample();} catch(e) {this.trTry=99;}
     try {
      var r=this.active;if(r===void || r===null || !isvalid r.target) return;
      var v=this.shown(r.target);
@@ -431,7 +432,7 @@ LR"MGLT((function(){
       if(typeof ms!='Object' || ms===void || ms===null) continue;
       for(var j=0;j<ms.count && j<32;j++) this.install(ms[j]);
      }
-     return 'ok layers='+this.recs.count+' lines='+this.line+' wait='+(this.oldLB!==void?1:0)+(this.oldPB!==void?1:0)+' wrapped='+this.wrapped.count+' draws='+this.calls+' hidden='+this.hid+' art='+this.art+' artLayers='+this.artSeen.count+' font='+this.fontNow()+' chars='+this.charsSent+' col='+(this.trCol!==void?this.trCol:'-')+(typeof this.trWhy=='String'?'('+this.trWhy+')':'')+(this.charsErr!=''?' charsErr='+this.charsErr:'')+' skipped='+this.skipped+(this.skippedCls!=''?'('+this.skippedCls+')':'');
+     return 'ok layers='+this.recs.count+' lines='+this.line+' wait='+(this.oldLB!==void?1:0)+(this.oldPB!==void?1:0)+' wrapped='+this.wrapped.count+' draws='+this.calls+' hidden='+this.hid+' art='+this.art+' artLayers='+this.artSeen.count+' font='+this.fontNow()+' chars='+this.charsSent+(this.charsErr!=''?' charsErr='+this.charsErr:'')+' skipped='+this.skipped+(this.skippedCls!=''?'('+this.skippedCls+')':'');
     } catch(e) {return 'error '+e.message;}
    } incontextof st;
    global.__megulitKrkrState=st;
