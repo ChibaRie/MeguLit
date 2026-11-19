@@ -771,6 +771,7 @@ static Rect SurfaceBounds(Rect reader,Rect game,System.Drawing.Rectangle scan){r
         if(args.Length>=1&&args[0]=="--page-locator-ocr-test"){string r=PageLocator.OcrSelfTest(args.Length>1?args[1]:null);Console.WriteLine(r=="0"?"PASS page locator OCR: three drawn paragraphs found, wrapped where they were drawn, boxes at the drawn margin":(r.StartsWith("skip")?"SKIP "+r:"FAIL page locator OCR: "+r));return r=="0"||r.StartsWith("skip")?0:13;}
         if(args.Length==3&&args[0]=="--choice-file"){Console.OutputEncoding=Encoding.UTF8;Console.Write(PageLocator.ChoiceFile(args[1],args[2]));return 0;}
 if(args.Length==2&&args[0]=="--art-scan-file"){Console.OutputEncoding=Encoding.UTF8;Console.Write(PageLocator.ScanFile(args[1]));return 0;}
+        if(args.Length>=1&&args[0]=="--art-scan-mask-test"){string r=PageLocator.ScanMaskSelfTest(args.Length>1?args[1]:null);Console.WriteLine(r=="0"?"PASS art scan mask: MeguLit's menu over a corner painted out, only the game's quote read":r.StartsWith("skip")?"SKIP "+r:"FAIL art scan mask: "+r);return r=="0"||r.StartsWith("skip")?0:1;}
         if(args.Length>=2&&args[0]=="--art-scan-image"){Console.OutputEncoding=new System.Text.UTF8Encoding(false);Console.WriteLine(PageLocator.ScanImage(args[1],args.Length>2?args[2]:null));return 0;}
         if(args.Length>=1&&args[0]=="--art-scan-ocr-test"){string r=PageLocator.ScanOcrSelfTest(args.Length>1?args[1]:null);Console.WriteLine(r=="0"?"PASS art scan OCR: centred opening lines read and grouped, the text box with its name and dialogue left out":(r.StartsWith("skip")?"SKIP "+r:"FAIL art scan OCR: "+r));return r=="0"||r.StartsWith("skip")?0:15;}
         if(args.Length==1&&args[0]=="--art-scan-self-test"){string r=PageLocator.ScanSelfTest();Console.WriteLine(r=="0"?"PASS art scan: Japanese rows outside the dialogue grouped, shown after two reads, hidden after two misses":"FAIL art scan: "+r);return r=="0"?0:14;}
@@ -814,7 +815,7 @@ if(args.Length==2&&args[0]=="--art-scan-file"){Console.OutputEncoding=Encoding.U
         }
         if((args.Length!=1&&args.Length!=2)||!Int32.TryParse(args[0],out OverlayPid))return 2;
         if(args.Length==2){long handle;if(!Int64.TryParse(args[1],out handle))return 2;PreferredOverlay=new IntPtr(handle);uint owner;GetWindowThreadProcessId(PreferredOverlay,out owner);if(owner!=OverlayPid)return 2;}
-        HookVerifier=new GameHookVerifier(Emit);MaskLayer=new NativeMaskLayer();TextMask=new GameTextMask(MaskOutput);PageLocate=new PageLocator(Emit);
+        HookVerifier=new GameHookVerifier(Emit);MaskLayer=new NativeMaskLayer();TextMask=new GameTextMask(MaskOutput);PageLocate=new PageLocator(Emit);PageLocate.OwnPids=new uint[]{(uint)OverlayPid,(uint)System.Diagnostics.Process.GetCurrentProcess().Id};
         WaitMarker=new GameWaitMarker(Emit);
         try{SetProcessDpiAwarenessContext(new IntPtr(-4));}catch{}
         PointerGate=new ReaderPointerGate(Emit);
