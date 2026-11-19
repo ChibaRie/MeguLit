@@ -17,7 +17,7 @@
   refresh(){if(last)b.textPosition(last,true);},
   mapExtent(m){if(!plausibleMap(map)||map.engine!==m.engine)return null;const l=b.galLayoutInfo?.(),kx=(l?.clientWidth||map.cw)/map.cw,ky=(l?.clientHeight||map.ch)/map.ch;return {x:(map.s*m.x0+map.bx)*kx,y:(map.s*m.y0+map.by)*ky,width:map.s*(m.x1-m.x0+m.size)*kx,size:map.s*m.size*ky};},
   getMap:()=>map?{...map}:null,
-  state:()=>({source:!!last&&Date.now()-lastAt<15*60*1000,calibrated:!!map&&(!last||map.engine===last.engine)||/_adv_v1$/.test(String(last?.engine||''))&&last.sw>0&&last.sh>0,following}),
+  state:()=>({source:!!last&&Date.now()-lastAt<15*60*1000,calibrated:!!map&&(!last||map.engine===last.engine)||/_adv_v1$|^cs2_screen_v3$/.test(String(last?.engine||''))&&last.sw>0&&last.sh>0,following}),
   setMap(value){map=plausibleMap(value)?value:null;repaint();},
   startCalibration(){cal={x0:Infinity,y0:Infinity,x1:-Infinity,y1:-Infinity,size:0,engine:'',lines:new Map()};},
   cancelCalibration(){cal=null;},
@@ -41,7 +41,7 @@
  // seen for one on-screen page), and the message layer is drawn about 63 px right and 8 px down on the 1280x720
  // canvas (measured against the game's own screenshots). Normalized coordinates are reported as cs2_screen_v3, so
  // position maps calibrated on the old raw values are never applied to them.
- const cs2Canvas=m=>{if(m?.engine!=='cs2_screen_v2'||![m.y0,m.y1,m.x0,m.x1].every(Number.isFinite))return m;const slot=Math.floor(m.y0/720)*720;return {...m,engine:'cs2_screen_v3',x0:m.x0+63,x1:m.x1+63,y0:m.y0-slot+8,y1:m.y1-slot+8};};
+ const cs2Canvas=m=>{if(m?.engine!=='cs2_screen_v2'||![m.y0,m.y1,m.x0,m.x1].every(Number.isFinite))return m;const slot=Math.floor(m.y0/720)*720;return {...m,engine:'cs2_screen_v3',x0:m.x0+63,x1:m.x1+63,y0:m.y0-slot+8,y1:m.y1-slot+8,sw:1280,sh:720};};
  /* E550 (user, ファタモルガーナの館: calibration failed, the box sat at the default place, every line white). An engine that
     reports its own canvas size with a line (sw/sh, ADV mode: <engine>_adv_v1) needs no calibration: canvas pixels map to the
     client by the uniform scale the engine uses (letterbox centred), and the box is placed so its first glyph lands on the
@@ -50,7 +50,10 @@
   root=getComputedStyle(document.documentElement),rx=parseFloat(root.getPropertyValue('--tomoyo-reader-x')),ry=parseFloat(root.getPropertyValue('--tomoyo-reader-y'));
   if(!r.width||!Number.isFinite(rx)||!Number.isFinite(ry))return {x:0,y:0};const size=parseFloat(getComputedStyle(tok).fontSize)||r.height,dpr=Math.max(.5,Number(window.devicePixelRatio)||1);
   return {x:(r.left-rx)*dpr,y:(r.top+Math.max(0,r.height-size)/2-ry)*dpr};};
- const canvasMap=(m,layout,ink)=>{if(!/_adv_v1$/.test(String(m?.engine||''))||!(m.sw>0&&m.sh>0))return null;const cw=layout?.clientWidth,ch=layout?.clientHeight;if(!(cw>0&&ch>0))return null;
+ /* 2026-11-19 (ISLAND with its own hook, rig2 live: every line sat at the style box's default place, next to the name plate,
+    because no calibration had ever stored a map) the CatSystem2 lines are canvas pixels too (1280x720 after cs2Canvas): they
+    map like an ADV canvas until a calibration exists */
+ const canvasMap=(m,layout,ink)=>{if(!/_adv_v1$|^cs2_screen_v3$/.test(String(m?.engine||''))||!(m.sw>0&&m.sh>0))return null;const cw=layout?.clientWidth,ch=layout?.clientHeight;if(!(cw>0&&ch>0))return null;
   const s=Math.min(cw/m.sw,ch/m.sh);return {engine:m.engine,s,bx:(cw-s*m.sw)/2,by:(ch-s*m.sh)/2,dx:ink?.x||0,dy:ink?.y||0,cw,ch,implicit:true};};
  api.canvasMap=canvasMap;
  /* E550 per-line colour: the colour the engine drew this line with (KiriKiri chColor: narration grey, speech white), else the
