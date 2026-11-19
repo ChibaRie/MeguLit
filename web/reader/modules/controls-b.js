@@ -12,7 +12,12 @@
  const css=String.raw`
 ${R} body{
  & .tomoyo-cn-dialog,& .tomoyo-selection-card,& .tome-backlog{
-  & :is(button,summary,input,select,textarea,[role=tab]):focus-visible{outline:var(--mgc-focus)!important;outline-offset:2px!important;box-shadow:var(--mgc-focus-halo)!important}
+  /* 2026-11-19 (user: alt+t 菜单选中的高亮做和谐点, 太割裂): keyboard focus is a soft warm-gold hairline with a faint glow, not a bright orange box; the shape follows the element; a mouse click shows nothing (:focus-visible only) */
+  & :is(button,summary,input,select,textarea,[role=tab]):focus-visible{outline:1px solid color-mix(in srgb,var(--mgc-gold) 40%,transparent)!important;outline-offset:1px!important;box-shadow:0 0 0 3px color-mix(in srgb,var(--mgc-gold) 12%,transparent),0 0 14px color-mix(in srgb,var(--mgc-gold) 16%,transparent)!important}
+  & summary:focus-visible{outline:none!important;border-radius:10px;background-color:color-mix(in srgb,var(--mgc-gold) 5%,transparent)!important;box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--mgc-gold) 26%,transparent),0 0 14px color-mix(in srgb,var(--mgc-gold) 10%,transparent)!important}
+  & [role=tab]:focus-visible{border-radius:8px;background-color:color-mix(in srgb,var(--mgc-gold) 7%,transparent)!important}
+  & input[type=range]:focus-visible{outline:none!important;box-shadow:none!important}
+  & input[type=range]:focus-visible{filter:drop-shadow(0 0 3px color-mix(in srgb,var(--mgc-gold) 70%,transparent)) drop-shadow(0 0 8px color-mix(in srgb,var(--mgc-gold) 30%,transparent))}
  }
 
  /* ---------- Alt+T rail: a hairline spine, the current page gets the red rule and the diamond ---------- */
