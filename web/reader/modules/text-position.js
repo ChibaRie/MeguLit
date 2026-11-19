@@ -58,7 +58,7 @@
  api.canvasMap=canvasMap;
  /* E550 per-line colour: the colour the engine drew this line with (KiriKiri chColor: narration grey, speech white), else the
     colour learned for its kind (speech in 「」 or narration) at calibration, else the text colour. */
- // A colour belongs to a draw transaction, never to a wall-clock cache. Source can arrive on either side of begin.
+ /* A colour belongs to a draw transaction, never to a wall-clock cache. Source can arrive on either side of begin. */
  let colorSource='',colorSequence=null,colorDraw=null,latestDraw=null,retiredDraw=null,waitingDraw=false;
  const sourceToken=text=>text?window.TomeIslandSource?.token(text)??null:null;
  /* Read styles: every sentence is painted from its own evidence (the engine's draw call, else the game's pixels: fill, opacity,
@@ -112,7 +112,7 @@
   if(m.phase==='end'&&!same&&!Number.isSafeInteger(m.sourceToken))return;
   if(retiredDraw?.engine===m.engine&&retiredDraw.line===m.line)return;
   if(!same||!colorDraw&&matches){latestDraw={engine:m.engine,line:m.line};colorDraw={...latestDraw,claimed:waitingDraw,color:'',style:null,sourceToken:null};waitingDraw=false;}
-  // A late end for the previous source cannot recolour a sentence waiting for its own begin.
+  /* A late end for the previous source cannot recolour a sentence waiting for its own begin. */
   if(!colorDraw||colorDraw.engine!==m.engine||colorDraw.line!==m.line)return;
   if(typeof m.color==='string'&&/^#[0-9a-f]{6}$/i.test(m.color))colorDraw.color=m.color;
   if(m.style&&typeof m.style==='object'&&/^#[0-9a-f]{6}$/i.test(m.style.fill||'')){

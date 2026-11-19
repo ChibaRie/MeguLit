@@ -46,7 +46,7 @@ class Immersion{
  // CS2 re-sends the current line's text several times per line and again on redraws: only a different line counts as
  // a new line, or a repeat would cancel every pending hide (OP, CG) right after the sprite went off.
  input(){this.inputAt=this.now();}
- // A game may stop drawing its waiting marker while unfocused or under our menu; that is not a hidden dialogue box.
+ /* A game may stop drawing its waiting marker while unfocused or under our menu; that is not a hidden dialogue box. */
  context(active){if(typeof active!=='boolean'||active===this.contextActive)return;this.contextActive=active;this.markerPresent=false;this.thawAt=active?Math.max(this.thawAt,this.now()+SETTLE):0;this.forget();}
  /* Issue 127 (user: with blurred translations, hovering back and forth over them sometimes lost the subtitles). The pointer on
     MeguLit's own text means the line is being read: a marker that left meanwhile (many engines drop it while the pointer
