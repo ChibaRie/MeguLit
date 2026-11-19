@@ -844,6 +844,12 @@
     fillPosition();
     const modeWatch = new MutationObserver(() => { if (anchoredNow() !== fieldsAreOffset && document.body.contains(dialog)) { const was = syncingForm; syncingForm = true; try { fillPosition(); } finally { syncingForm = was; } } });
     modeWatch.observe(document.body, { attributes: true, attributeFilter: ['class'] }); dialog.addEventListener('close', () => modeWatch.disconnect(), { once: true });
+    /* 2026-11-19 (user): with the text following the game's own glyph place there is no text box to pad: the two padding controls are greyed out with a one-line reason, and come back in box mode */
+    const syncPadding = () => { const off = anchoredNow(), labels = ['galPaddingX', 'galPaddingY'].map(n => f(n)?.closest('label')).filter(Boolean); if (!labels.length) return;
+      for (const l of labels) { l.classList.toggle('tome-pad-off', off); l.style.opacity = off ? '.45' : ''; l.style.pointerEvents = off ? 'none' : ''; for (const i of l.querySelectorAll('input')) i.disabled = off; }
+      let note = dialog.querySelector('.tome-pad-note'); if (!note) { note = document.createElement('small'); note.className = 'tome-pad-note'; note.textContent = '正文跟随游戏原字位置时不生效'; note.style.cssText = 'display:block;opacity:.7;font-size:11.5px;margin:2px 0 6px'; labels.at(-1).insertAdjacentElement('afterend', note); }
+      note.hidden = !off; };
+    queueMicrotask(syncPadding); const padWatch = new MutationObserver(syncPadding); padWatch.observe(document.body, { attributes: true, attributeFilter: ['class'] }); dialog.addEventListener('close', () => padWatch.disconnect(), { once: true });
     const sliderOutputs = [];
     for(const input of group.querySelectorAll('input[type=number]')){
       const output=document.createElement('output');output.className='tomoyo-slider-value';output.htmlFor=input.name;
