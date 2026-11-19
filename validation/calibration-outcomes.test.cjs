@@ -133,7 +133,7 @@ test('taking the glyph pass-through back tells the user once what to do about th
 test('after the pass-through is taken back the font layer gets no more lines of the writable stream, and the verdict outlives a new build',()=>{const hb=read('native/HookBridge.cs');
  /* log 08:46:05.63 verdict; 08:46:13 "glyph hide line seq=5 chars=24 placed=0 hidden=0 requested=2", 08:46:19 "seq=7 placed=1 requested=1": still served */
  assert.ok(hb.includes('static bool GlyphLeakStandDown(Candidate c){return GlyphPassLeaked&&c!=null&&c.embed&&!c.hideOnly;}'));
- const wanted=hb.slice(hb.indexOf(' static bool GlyphWanted(){'));assert.ok(wanted.slice(0,wanted.indexOf('\n')).includes('&&!GlyphLeakStandDown(c)&&'),'no LINE to the font layer: no blank glyphs into the cache, no one-character places for the reader');
+ assert.ok(hb.includes('GpuLine(text);if(GlyphWanted()&&!GlyphLeakDown()){lock(GlyphGate){GlyphSent=true;}'),'no LINE to the font layer: no blank glyphs into the cache, no one-character places for the reader');
  assert.ok(hb.includes('else if(d.ContainsKey("leak")){')&&hb.indexOf('else if(d.ContainsKey("leak")){')<hb.indexOf('else if(here&&d.TryGetValue("allFailed",out v)){'),'the leak is read before the build-bound verdicts, and before the remembered face that used to prove the pass-through at launch');
  assert.ok(hb.includes('{"leak",why}'),'what is saved');});
 test('dark text never gets a dark outline, whatever set the two colours; the translation follows the sentence\'s own outline',()=>{const gal=read('web/reader/modules/gal.js');

@@ -55,7 +55,7 @@ for(const f of fixtures)test('read-style replay: '+f,t=>{const rows=rowsOf(f),me
 test('the four cases are present: colour switch, no distinction, dimming, flag + pixels',()=>{for(const n of ['colour-read-to-unread','no-distinction','no-evidence','dim-read-to-unread','flag-and-pixels'])assert.ok(fixtures.includes(n+'.jsonl'),n);});
 test('furigana and the base text read the same per-line variables',()=>{const css=read('web/reader/modules/gal.js');
  assert.ok(css.includes('.megulit-ruby-base[data-tomoyo-reading]::before { -webkit-text-fill-color:var(--tomoyo-gal-color'));
- assert.ok(css.includes('body.tome-line-edge .sentence-window:not(.tome-island-page) { --tomoyo-jp-stroke-color:var(--tomoyo-gal-line-edge); --tomoyo-ruby-stroke-color:var(--tomoyo-gal-line-edge); }'));});
+ assert.ok(css.includes('body.tome-line-edge .sentence-window:not(.tome-island-page) { --tomoyo-jp-stroke-color:var(--tomoyo-gal-line-edge); --tomoyo-ruby-stroke-color:var(--tomoyo-gal-line-edge); --tomoyo-cn-stroke-color:var(--tomoyo-gal-line-edge); }'));});
 test('a read sample never paints an unread sentence and the memory ends with the game session',t=>{const r=reader(t);
  r.play({t:'status',hookSourceRead:true,hookSourceReadOrigin:'engine',text:'既読の一行目の文章です。'});r.play({t:'sample',text:'既読の一行目の文章です。',style:{fill:'#b0e2ff',alpha:.5,edge:'#102030',edgeAlpha:1}});
  assert.deepEqual(r.paint(),{color:'#b0e2ff80',edge:'#102030'});
