@@ -79,7 +79,7 @@ class HookNative{
    // Every engine toggles hiding in place (E215): the bridge only flips its replacement switch. Detaching and
    // re-injecting the same game process on each mode change (calibration, preflight) made the overlay flicker and
    // crashed CLANNAD HD (Siglus) without an error; it also dropped the first line after calibration.
-   if(true){this.trace('render mode switched in place '+this.route+' -> '+route);this.enabled=enabled;this.route=route;this.verified=false;if(enabled&&!this.posSuspended)this.send({type:'enable'});else if(enabled)this.send({type:'disable',reason:'no-positions'});else this.send({type:'disable',reason:preferences.hookProfile==='read'?'reader-profile':this.preflight?'reader-preflight':state.bound!==true?'reader-unbound':'cover-disabled'});}
+   if(true){this.trace('render mode switched in place '+this.route+' -> '+route);this.enabled=enabled;this.route=route;this.verified=false;if(enabled)this.send({type:'enable'});else this.send({type:'disable',reason:preferences.hookProfile==='read'?'reader-profile':this.preflight?'reader-preflight':state.bound!==true?'reader-unbound':'cover-disabled'});}
    else{this.trace('render mode changed; detach then reconnect');this.stop(false);this.retryAt=this.now()+2500;return;}}if(!this.process&&this.now()>=this.retryAt)this.start(this.target);this.syncMarker();this.syncEmbedMode();this.syncGlyphMode();}
  setSourceLanguage(value){const language=value==='zh'||value==='ja'?value:'';if(language===this.sourceLanguage)return;this.sourceLanguage=language;if(this.process&&language)this.send({type:'sourceLanguage',value:language});}
  syncTextMarks(){if(!this.process||this.marksOn)return;const sel=(this.state.hookThreads||[]).find(t=>t.selected)||(this.state.hookThreads||[]).find(t=>this.selectedId&&t.id===this.selectedId);if(this.compositedFn?.()===true&&!this.textPathActive&&sel&&(this.noDotLines||0)>=2){this.marksOn=true;this.send({type:'textMarks',on:true});this.trace?.('text marks on: stream '+sel.id+(sel.embeddable===true?' (write-back)':' (per-character argument hook in the DLL)')+' gets no glyph dots');}}
@@ -206,7 +206,7 @@ class HookNative{
   else if(pending.length)next.dots=[...pending];
   if(m.state==='dots'&&Array.isArray(m.dots)){const dots=[...next.dots];for(const d of m.dots.slice(0,1024))if(d&&Number.isInteger(d.i)&&typeof d.ch==='string'&&/^[dcprb]$/.test(d.k)&&!dots.some(o=>o.i===d.i&&o.k===d.k&&(d.i>=0||o.ch===d.ch&&o.h===d.h)))dots.push({i:d.i,ch:d.ch.slice(0,2),h:d.h|0,b:d.b|0,a:d.a|0,x:d.x|0,y:d.y|0,s:d.s|0,k:d.k,path:String(m.path||'').slice(0,8),...(d.at&&typeof d.at.space==='string'&&/^(c|g|[mt]\d{1,5}x\d{1,5})$/.test(d.at.space)?{at:{x:d.at.x|0,y:d.at.y|0,space:d.at.space}}:{})});next.dots=dots.slice(0,2048);}
   this.state={...this.state,hookGlyphDots:this.state.hookGlyphPos?fillPlaces(next,this.state.hookGlyphPos):next};this.emit(m);}
- charRects(raw){const tp=require('./text-paths.cjs'),rec=tp.parseChars(raw);if(!rec)return;if(rec.engine==='krkr'){const pid=Number(this.state?.gameProcessId)||0;if(this.krkrChars?.pid!==pid)this.krkrChars={pid,n:0};this.krkrChars.n++;this.positionsCame();}const gate=this.charGates||(this.charGates=new Map());if(!gate.has(rec.engine))gate.set(rec.engine,new tp.HiddenGate());rec.hidden=gate.get(rec.engine).report(rec)&&rec.hidden;rec.at=this.now();if(!this.textPathActive&&(rec.engine==='unity'||rec.engine==='web')){this.textPathActive=true;this.syncGlyphMode?.();}this.emit(rec);}
+ charRects(raw){const tp=require('./text-paths.cjs'),rec=tp.parseChars(raw);if(!rec)return;if(rec.engine==='krkr'){const pid=Number(this.state?.gameProcessId)||0;if(this.krkrChars?.pid!==pid)this.krkrChars={pid,n:0};this.krkrChars.n++;}const gate=this.charGates||(this.charGates=new Map());if(!gate.has(rec.engine))gate.set(rec.engine,new tp.HiddenGate());rec.hidden=gate.get(rec.engine).report(rec)&&rec.hidden;rec.at=this.now();if(!this.textPathActive&&(rec.engine==='unity'||rec.engine==='web')){this.textPathActive=true;this.syncGlyphMode?.();}this.emit(rec);}
  glyphHide(m){if(!m||!['ready','hit','key','cached'].includes(m.state))return;const v={hookGlyphHide:m.state==='key'||m.state==='ready'?(this.state.hookGlyphHide||'learning'):m.state};if(m.state==='ready'&&Number.isFinite(m.version))v.hookGlyphVersion=Number(m.version);if(m.state==='hit'&&typeof m.path==='string')v.hookGlyphPath=m.path.slice(0,16);if(m.state==='key'&&typeof m.face==='string'&&Number.isFinite(m.size))v.hookGlyphFont={face:m.face.slice(0,64),size:Number(m.size)};this.trace('glyph hide '+m.state+(m.path?' '+String(m.path).slice(0,16):'')+(m.size?' '+Number(m.size)+'px':''));this.notify(v);}
  markScriptSource(){try{if(this.state&&!this.state.scriptSource)this.notify({scriptSource:true});}catch{}}
  resolveSource(text){const provider=this.originalText;if(!provider||!text)return null;const key=String(text).replace(/\s+/g,'');this.sourceCache??=new Map();if(this.sourceCache.has(key)&&this.sourceCache.get(key).provider===provider)return this.sourceCache.get(key).r;const r=provider.resolve(text);this.sourceCache.set(key,{provider,r});if(this.sourceCache.size>200)this.sourceCache.delete(this.sourceCache.keys().next().value);return r;}
@@ -678,15 +678,13 @@ class HookNative{
  static leaveLabel(x){return !!x&&x.length<=24&&x.split(/\s+/).length<=4&&/[\p{L}]{2,}/u.test(x)&&!/[。．.!?！？…」』"”]\s*$/.test(x);}
  /* 2026-11-19 (rig2 千恋＊万花 bound after the game was already on its title: its TextRender renderers existed before MeguLit's
     script wrapped the class, so no line reported its character boxes and the reader stayed in its own box at the left edge;
-    the same since v1.4.16). A game on the TextRender plugin whose dialogue stream gives three lines without one character
-    record can neither be placed nor have its colour read: hiding steps back (the game's own text shows, like read mode)
-    until boxes come, and a game MeguLit did not start itself is told once how to get them. The first box resumes hiding. */
- positionsCheck(){const pid=Number(this.state?.gameProcessId)||0;if(!pid||this.trSeen!==pid)return;const P=this.posCheck&&this.posCheck.pid===pid?this.posCheck:(this.posCheck={pid,lines:0,said:false});
-  if(this.posSuspended||(this.krkrChars?.pid===pid&&this.krkrChars.n>0))return;if(!/krkr|kirikiri|textrender/i.test(String(this.dialogueHook||'')))return;
-  if(++P.lines<3)return;
-  if(this.process&&this.enabled){this.posSuspended=true;this.trace('positions: no character records from the TextRender game after '+P.lines+' lines, hiding steps back until they come');this.send({type:'disable',reason:'no-positions'});}
-  if(!P.said&&this.launchedPid!==pid){P.said=true;this.notify({hookNotice:'这款游戏要从 MeguLit 游戏库启动（或重启游戏）后，文字位置和隐藏才完整',hookNoticeAt:this.now()});}}
- positionsCame(){if(!this.posSuspended)return;this.posSuspended=false;if(this.process&&this.enabled&&!this.suspended){this.trace('positions: character records arrived, hiding resumes');this.send({type:'enable'});}}
+    the same since v1.4.16). A game on the TextRender plugin that MeguLit did not start itself and whose dialogue stream gives
+    three lines without one character record is told once how to get them. Hiding is left as it is: the game's text stays
+    hidden by the other layers, only the place is missing (stepping back would show it under the reader's text). */
+ positionsCheck(){const pid=Number(this.state?.gameProcessId)||0;if(!pid||this.trSeen!==pid||this.launchedPid===pid)return;const P=this.posCheck&&this.posCheck.pid===pid?this.posCheck:(this.posCheck={pid,lines:0,said:false});
+  if(P.said||(this.krkrChars?.pid===pid&&this.krkrChars.n>0))return;if(!/krkr|kirikiri|textrender/i.test(String(this.dialogueHook||'')))return;
+  if(++P.lines<3)return;P.said=true;this.trace('positions: no character records from the TextRender game after '+P.lines+' lines (started before MeguLit)');
+  this.notify({hookNotice:'这款游戏要从 MeguLit 游戏库启动（或重启游戏）后，文字位置和隐藏才完整',hookNoticeAt:this.now()});}
  emitSource(text,origin,engine='',nativeLine=0){this.positionsCheck?.();
   try{this.textPath?.want(text);}catch{}
   /* E501 every source path (native line, merged batch, skip burst) meets the same frame-dump filter as the aux entries */
@@ -734,7 +732,7 @@ class HookNative{
     generic GDI / glyph hide never ran): while hiding is wanted the selected read-only stream is switched on in the game anyway; the hook
     reports a hidden draw and only then the stream becomes hide-only (hookThreads embeddable+hideOnly) and the normal hide path takes over. */
  probeHide(on){on=on===true;if(!this.process||this.probing===on)return;this.probing=on;this.trace('hide probe '+(on?'on':'off'));this.send({type:'probe',on});}
- suspendReplacement(on){if(!this.process||!this.enabled)return;if(on&&!this.suspended){this.suspended=true;this.trace('replacement paused for style sampling');this.send({type:'disable',reason:'style-sampling'});}else if(!on&&this.suspended){this.suspended=false;this.trace('replacement resumed after style sampling');if(!this.posSuspended)this.send({type:'enable'});}}
+ suspendReplacement(on){if(!this.process||!this.enabled)return;if(on&&!this.suspended){this.suspended=true;this.trace('replacement paused for style sampling');this.send({type:'disable',reason:'style-sampling'});}else if(!on&&this.suspended){this.suspended=false;this.trace('replacement resumed after style sampling');this.send({type:'enable'});}}
  /* Text architecture ③ (core/text-paths-launch.cjs): a web / Unity engine path follows the same replacement switch and gets each source line to find the dialogue */
  attachTextPath(p){this.textPath=p;try{p.hide(this.enabled===true);}catch{}}
  send(v){if(v&&(v.type==='enable'||v.type==='disable'))try{this.textPath?.hide(v.type==='enable');}catch{}if(this.process?.stdin.writable)this.process.stdin.write(JSON.stringify(v)+'\n');}
