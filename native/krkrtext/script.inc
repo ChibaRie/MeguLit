@@ -319,7 +319,7 @@ LR"MGLT((function(){
     if(this.trTry===void) this.trTry=0;if(++this.trTry>40) return;
     var T=this.trOwner.textLayer;if(typeof T!='Object' || T===void || T===null) return;
     /* a text layer that is not a child of its message layer is that layer's own buffer, laid at the message layer's origin */
-    var at=T.parent===this.trOwner?this.abs(T):this.trAbsL,cnt=%[],best='',bn=0,lit=0,lv=-1,lb=0,w=+T.imageWidth,hh=+T.imageHeight;
+    var at=T.parent===this.trOwner?this.abs(T):this.trAbsL,cnt=%[],rep=%[],best='',bn=0,lit=0,lv=-1,lb=0,w=+T.imageWidth,hh=+T.imageHeight,amin=this.trTry>10?0x40:0xc0,need=this.trPts.count<=4?3:6;
     for(var i=0;i<this.trPts.count;i++) {
      var p=this.trPts[i];
      for(var gy=1;gy<=6;gy++) for(var gx=1;gx<=6;gx++) {
@@ -328,12 +328,15 @@ LR"MGLT((function(){
       var px=T.getMainPixel(x,y),rgb=px&0xffffff;
       /* a buffer drawn with holdAlpha keeps alpha 0: there the glyph body is its brightest pixel (edges blend to the background) */
       if(rgb!=0) {lit++;var lum=((rgb>>16)&255)+((rgb>>8)&255)+(rgb&255);if(lum>lv) {lv=lum;lb=rgb;}}
-      if(((px>>24)&255)<0xc0) continue;
-      var k=''+(px&0xffffff),c=cnt[k];c=(c===void?0:c)+1;cnt[k]=c;if(c>bn) {bn=c;best=k;}
+      /* a short sentence that fades in (live 死に逝く君: 窃盗。 器物破損。 got no colour) has few glyph pixels, still half transparent,
+         in several anti-aliased shades: after a second half-transparent pixels count too (their colour is already the glyph's),
+         and near shades are one colour (5 bits a channel, reported as the first full value seen) */
+      if(((px>>24)&255)<amin) continue;
+      var k=''+(((rgb>>19)&31)<<10 | ((rgb>>11)&31)<<5 | ((rgb>>3)&31)),c=cnt[k];if(c===void) {c=0;rep[k]=rgb;}c++;cnt[k]=c;if(c>bn) {bn=c;best=''+rep[k];}
      }
     }
-    if(bn<6 && lit<3 || this.trTry<3) return; /* a few ticks in: the typewriter and any fade-in have drawn the first glyphs */
-    var h='',v=bn>=6?+best:lb;for(var i=0;i<6;i++) {h='0123456789abcdef'.charAt(v&15)+h;v=v>>4;}
+    if(bn<need && lit<3 || this.trTry<3) return; /* a few ticks in: the typewriter and any fade-in have drawn the first glyphs */
+    var h='',v=bn>=need?+best:lb;for(var i=0;i<6;i++) {h='0123456789abcdef'.charAt(v&15)+h;v=v>>4;}
     this.trCol=h;var r=this.trRec;r[2]=this.trTailA+' color='+h+this.trTailB;this.trKey='';
     this.report('ToMe_CHARS engine=krkr line='+r[1]+' hidden='+r[0]+r[2]);
    } incontextof st;
