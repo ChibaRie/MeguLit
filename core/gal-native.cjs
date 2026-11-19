@@ -49,7 +49,7 @@ class GalNative {
       if(message.type==='hookChoiceBoxes'){this.hooks.choiceBoxes?.(message);return;}
       if(message.type==='pageLocateStatus'){this.hooks.trace?.('ocr page '+message.status);return;}
       /* 2026-11-19 (素晴らしき日々: the opening quotes are pictures) what the art scan reads becomes a read-only line of the reader (hook-native ocrLine); drawing it over the picture stays with 文字图片翻译 (artText) */
-      if(message.type==='artText'){if(this.preferences?.artText===true)this.onEvent(message);this.hooks.ocrLine(message);return;}
+      if(message.type==='artText'){if(this.preferences?.artText===true&&message.once!==true)this.onEvent(message);this.hooks.ocrLine(message);return;}
       if(message.type==='markerTarget'){this.hooks.markerTarget(message);this.onEvent({type:'markerDebug',markerDebug:message.active?`found at ${message.x},${message.y} ${message.width}x${message.height} in ${message.clientWidth}x${message.clientHeight}`:'not active'});return;}
       if (message.type === 'layout') { this.notify({ layout:message }); return; }
       this.notify(message);

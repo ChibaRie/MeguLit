@@ -319,14 +319,14 @@ class HookNative{
   if(m.visible!==true||typeof m.text!=='string'){O.shown.delete(m.id);return;}
   /* a group is taken once, when its reading has stopped changing (a fade in or out reads as garble); later readings of the same group are ignored */
   if(O.done.has(m.id))return;const was=O.shown.get(m.id),now=this.now();
-  O.shown.set(m.id,{id:m.id,text:m.text,rows:Array.isArray(m.rows)?m.rows:[],sw:+m.sw||0,sh:+m.sh||0,dialogSeen:m.dialogSeen===true,others:+m.others||0,changedAt:was&&was.text===m.text?was.changedAt:now});
+  O.shown.set(m.id,{id:m.id,text:m.text,rows:Array.isArray(m.rows)?m.rows:[],sw:+m.sw||0,sh:+m.sh||0,dialogSeen:m.dialogSeen===true,others:+m.others||0,once:m.once===true,changedAt:m.once===true?now-OCR_LINE_SETTLE_MS:was&&was.text===m.text?was.changedAt:now});/* once: read a single time and already gone (a card that faded within a second): taken at once, under the stricter once rule */
   this.ocrSchedule(OCR_LINE_SETTLE_MS);}catch{}}
  ocrSchedule(ms){const O=this.ocr;clearTimeout(O.timer);O.timer=setTimeout(()=>this.ocrFlush(),ms);O.timer.unref?.();}
  ocrFlush(){const O=this.ocr;if(!O)return;const now=this.now(),items=[...O.shown.values()].filter(it=>!O.done.has(it.id));
   if(items.length>=OCR_LINE_MAX_BLOCKS){this.trace('ocr lines skipped: '+items.length+' text groups at once (menu or settings page)');return;}
   let wait=0;const take=[];
   for(const it of items){const age=now-it.changedAt;if(age<OCR_LINE_SETTLE_MS){wait=Math.max(wait,OCR_LINE_SETTLE_MS-age);continue;}
-   O.done.add(it.id);if(O.done.size>400)O.done.delete(O.done.values().next().value);
+   O.done.add(it.id);if(O.done.size>400)O.done.delete(O.done.values().next().value);if(it.once)O.shown.delete(it.id);
    const why=this.ocrLineRefused(it,now);if(why){this.trace('ocr line refused ('+why+') '+JSON.stringify(it.text.slice(0,40)));continue;}
    const flat=HookNative.flat(it.text);O.said.set(flat,now);if(O.said.size>200)O.said.delete(O.said.keys().next().value);take.push(it);}
   /* 2026-11-19 (素晴らしき日々, live: the notice screen's three paragraphs came as three lines in 30 ms, the reader kept only the last):
@@ -341,8 +341,11 @@ class HookNative{
   const line=String(this.lastSource||'').trim();if(line&&line!==O.lastText&&this.engineDialog!==false&&now-(this.lastSourceAt||0)<OCR_LINE_QUIET_MS)return 'a hook line is current';
   /* a title or menu screen: three or more rows on the picture that are no Japanese group (START, LOAD, CONFIG, a copyright line) */
   if(it.others>=3)return 'a title or menu screen';
+  if(it.once&&(!kana||n<4))return 'read once, too short or without kana';
   if(n<2||n>120)return 'length';if(f.artJunk(t,it.rows,it.sh))return 'logo or OCR noise';if(f.artList(it.rows))return 'a list';
   if(require('./text-sanity.cjs').garbledSource(t,{controls:false}))return 'unreadable';
+  /* radicals the OCR guesses inside a logo (Novectacle read as 「ノベクタク丿レ」): no word uses them alone */
+  if(/[丨丶丿乀乁亅冂冖冫凵勹匚匸卩厂厶廴弋彡彳⺀-⻿⼀-⿟]/u.test(flat))return 'OCR noise';
   /* kanji without kana: a chapter card when large and short, else a logo fragment or a guess (「不連在」 13 px on 963) */
   if(!kana){const tall=Math.max(0,...it.rows.map(r=>+r?.h||0));if(n>8||n<2||(it.sh>0&&tall<it.sh/50))return 'kanji fragment';}
   if(line&&line!==O.lastText){const l=HookNative.flat(line);if(l.includes(flat)||flat.includes(l))return 'part of the hook line';}
@@ -452,7 +455,8 @@ class HookNative{
      and was read as a story line, and one line once arrived twice in one piece. Text without any Japanese is menu/help text here, and a line made of
      the same sentence twice is that sentence. */
   if(this.flowPage)this.syncEmbedMode();
-  if(this.flowPage){if(!this.flowStory(text)){
+  /* 2026-11-19 (ファタモルガーナの館 live: 「館がある」 read from the picture went back to the art path and was shown nowhere with artText off) a line the art scan read is already a card: it is shown as it is */
+  if(this.flowPage&&m.origin!=='ocr'){if(!this.flowStory(text)){
     /* E532 (user: ファタモルガーナの館 opening 「館がある」「聖なるかな」 stayed Japanese only): a short Japanese card with no sentence stop is
        opening/title-card text, not menu help. It goes to the art path (located on the picture, translated in the original's style)
        and the selected stream stays: switching on every card made the streams flip every 2 s and resend the story line. */

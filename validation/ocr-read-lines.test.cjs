@@ -73,13 +73,25 @@ test('a notice screen of three paragraphs is one line, top to bottom (live: thre
   const ids=r.show(screen,{at:2000});r.show(screen,{ids,at:2400});r.run(5000);
   assert.deepEqual(r.lines(),['本作品に登場するキャラクターは全て18歳以上です。'+String.fromCharCode(10)+'本作品はフィクションです。登場する人物名は全て架空のものです。']);
  }finally{r.done();}});
+test('ファタモルガーナの館 live: a card read once before it faded is a line; a once read without kana or too short is not; a logo with OCR radicals never; a flow page shows OCR lines as they are',()=>{
+ const r=rig();try{
+  r.h.flowPage=true;
+  const card=(t,id,at,once)=>{r.run(at);r.h.ocrLine({type:'artText',source:'ocr',id,text:t,visible:true,once,rows:[{text:t,x:200,y:300,w:400,h:30}],sw:800,sh:600,dialogSeen:false,others:0});};
+  card('館がある',1,1000,false);card('館がある',1,1400,false);r.run(3000);
+  card('鬱蒼と茂る闇の森をかき分けると',2,5000,true);r.run(6000);
+  card('館',3,8000,true);card('第一章',4,9000,true);card('ノベクタク丿レ',5,10000,false);card('ノベクタク丿レ',5,10400,false);r.run(13000);
+  assert.deepEqual(r.lines(),['館がある','鬱蒼と茂る闇の森をかき分けると'],JSON.stringify(r.traces.filter(t=>t.startsWith('ocr')||t.startsWith('flow'))));
+  assert.ok(r.traces.some(t=>/refused \(read once, too short or without kana\)/.test(t)));assert.ok(r.traces.some(t=>/refused \(OCR noise\) "ノベクタク丿レ"/.test(t)));
+  assert.ok(!r.traces.some(t=>/title card to art/.test(t)),'an OCR line is not sent back to the art path');
+ }finally{r.done();}});
 test('wiring: the scan runs without artText (5 s quiet), artText only decides the drawing over the picture; the scan reports dialogSeen and others',()=>{
  const g=fs.readFileSync(path.join(__dirname,'..','core','gal-native.cjs'),'utf8');
- assert.match(g,/if\(message\.type==='artText'\)\{if\(this\.preferences\?\.artText===true\)this\.onEvent\(message\);this\.hooks\.ocrLine\(message\);return;\}/);
+ assert.match(g,/if\(message\.type==='artText'\)\{if\(this\.preferences\?\.artText===true&&message\.once!==true\)this\.onEvent\(message\);this\.hooks\.ocrLine\(message\);return;\}/);
  assert.match(g,/const art=this\.preferences\?\.artText===true,read=this\.preferences\?\.ocrReadLines!==false;const s=this\.state\.bound===true&&\(art\|\|read\)\?this\.hooks\.artScanState\(undefined,art\?2000:5000\)/);
  const p=fs.readFileSync(path.join(__dirname,'..','native','PageLocator.cs'),'utf8');
+ assert.match(p,/else if \(x\.Seen == 1 && !x\.Foreign\) ScanEmit\(x, w, h, true, true\);/,'a group read once and gone goes out once');
  assert.match(p,/ScanDialogSeen = dialog != null && Find\(rows, dialog\) != null;/);
- assert.match(p,/dialogSeen = ScanDialogSeen, others = ScanOthers, at =/);
+ assert.match(p,/dialogSeen = ScanDialogSeen, others = ScanOthers, once = once, at =/);
  assert.match(p,/Priority = ThreadPriority\.BelowNormal/,'the scan stays a low-priority thread');
  assert.match(g,/if\(!art\)s\.slow=true;/,'read lines only: the slow rate');assert.match(p,/Thread\.Sleep\(busy \? 400 : ScanSlow \? 1500 : 700\)/);
  assert.match(p,/forced = last != null && !Changed\(last, thumb\) && !pending;\s*if \(forced && !darkRecheck\) continue;/,'OCR only when the picture changed');

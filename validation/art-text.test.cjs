@@ -20,7 +20,7 @@ test('the page draws art text as invisible, readable characters plus the transla
 });
 test('the art request reaches PageLocator and its answer the page, with a translation',()=>{
  assert.match(read('core/gal-native.cjs'),/this\.hooks\.artLocate=text=>\{[^}]*type:'pageLocate',text,art:true/);
- /* 2026-11-19 drawn over the picture only with artText on; read lines go to the reader either way (ocr-read-lines.test.cjs) */assert.match(read('core/gal-native.cjs'),/message\.type==='artText'\)\{if\(this\.preferences\?\.artText===true\)this\.onEvent\(message\);this\.hooks\.ocrLine\(message\)/);
+ /* 2026-11-19 drawn over the picture only with artText on; read lines go to the reader either way (ocr-read-lines.test.cjs) */assert.match(read('core/gal-native.cjs'),/message\.type==='artText'\)\{if\(this\.preferences\?\.artText===true&&message\.once!==true\)this\.onEvent\(message\);this\.hooks\.ocrLine\(message\)/);
  assert.match(read('native/GalWindowBridge.cs'),/PageLocate\.Request\(Target,Str\(d,"text"\),Bool\(d,"art"\)\)/);
  assert.match(read('native/PageLocator.cs'),/void LocateArt\(/);
  assert.match(read('services/reader.cjs'),/message\.type==='artText'\)\{this\.artText\(message\)/);

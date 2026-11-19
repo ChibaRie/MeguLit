@@ -367,14 +367,17 @@ public sealed class PageLocator : IDisposable {
   }
   for (int i = ScanItems.Count - 1; i >= 0; i--) {
    var x = ScanItems[i]; if (matched.Contains(x)) continue;
-   if (++x.Misses >= 2 || !x.Shown) { if (x.Shown) ScanEmit(x, w, h, false); ScanItems.RemoveAt(i); }
+   /* 2026-11-19 (ファタモルガーナの館 live: 「鬱蒼と茂る闇の森をかき分けると」 faded out after one read and was never sent): a Japanese group read
+      once and gone goes out once for the reader's read lines (once: true; the art layer never draws it) */
+   if (++x.Misses >= 2 || !x.Shown) { if (x.Shown) ScanEmit(x, w, h, false); else if (x.Seen == 1 && !x.Foreign) ScanEmit(x, w, h, true, true); ScanItems.RemoveAt(i); }
   }
  }
- void ScanEmit(ScanItem it, int w, int h, bool visible) {
+ void ScanEmit(ScanItem it, int w, int h, bool visible) { ScanEmit(it, w, h, visible, false); }
+ void ScanEmit(ScanItem it, int w, int h, bool visible, bool once) {
   var parts = new List<object>();
   if (visible) foreach (var r in it.Rows) parts.Add(new { text = r.Text, x = r.Box.Left, y = r.Box.Top, w = r.Box.Width, h = r.Box.Height, color = r.Color, glow = r.Glow });
   string alt = null; if (it.Foreign) foreach (var r in it.Rows) if (r.Alt != null) { alt = r.Alt; break; }
-  Emit(new { type = "artText", id = it.Id, text = it.Text, visible = visible, source = "ocr", foreign = it.Foreign, alt = alt, rows = parts, sw = w, sh = h, dialogSeen = ScanDialogSeen, others = ScanOthers, at = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() });
+  Emit(new { type = "artText", id = it.Id, text = it.Text, visible = visible, source = "ocr", foreign = it.Foreign, alt = alt, rows = parts, sw = w, sh = h, dialogSeen = ScanDialogSeen, others = ScanOthers, once = once, at = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() });
  }
  void ScanClear() { foreach (var x in ScanItems) if (x.Shown) ScanEmit(x, 0, 0, false); ScanItems.Clear(); }
 
