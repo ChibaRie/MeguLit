@@ -70,6 +70,19 @@ const A = '全く意味のわからない話だったが、', B = 'それが今�
         regions: window.__regions.length
       };
     }, { A, B });
+    /* 千恋＊万花 08:42:31 (seq 31): the frame held 「で？　１人？」 twice and the start of a third copy; the game placed 7 characters.
+       Then the same line redrawn from its start (a shorter piece, same sequence). The reader shows the sentence once, whole. */
+    const repeat = await page.evaluate(async () => {
+      const b = window.__tomoyoChinese, frame = () => new Promise(r => requestAnimationFrame(() => r())), wait = async ms => { const end = performance.now() + ms; while (performance.now() < end) await frame(); };
+      const L = '「で？　１人？」', shown = () => [...document.querySelectorAll('.tomoyo-hook-reader .sentence-text .char-token')].map(t => t.textContent).join('');
+      const rects = n => [...L.replace(/\s|　/g, '')].map((c, i) => i < n ? [300 + i * 30, 640, 29, 29] : null);
+      b.galStatus({ hookActive: true, hookSource: L + L + '「で？', hookSequence: 31 }); b.textPlace({ text: L.replace(/　/g, ''), client: [1600, 900], rects: rects(7) }); await wait(600);
+      const first = shown();
+      b.galStatus({ hookActive: true, hookSource: '「で？', hookSequence: 31 }); await wait(200);
+      return { first, redrawn: shown(), status: b.hookReaderStatus() };
+    });
+    assert.strictEqual(repeat.first, '「で？　１人？」', 'a frame holding the line twice and a piece is the line once');
+    assert.strictEqual(repeat.redrawn, '「で？　１人？」', 'the same line redrawn from its start keeps the whole line');
     assert.ok(result.allShown, 'every character of the line was shown');
     assert.deepStrictEqual(result.typedTwice, [], 'each character is typed once');
     assert.deepStrictEqual(result.lost, [], 'a shown character never hides again');
