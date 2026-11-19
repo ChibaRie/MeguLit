@@ -125,7 +125,7 @@
  const firstRunPage=Date.now().toString(36);
  b.cancelGameSettings=()=>{if(saving)return false;stopMeasurement();importing=null;for(const select of document.querySelectorAll('[data-import-select]')){if(select.value){
   select.value='';select.dispatchEvent(new Event('change',{bubbles:true}));}}for(const button of document.querySelectorAll('[data-import-save]'))button.disabled=true;
-  const before=session.cancel();apply(before.prefs,before.map);message=t('cancelled');last={...last,gameStyleState:'cancelled'};paint();return true;};
+  const before=session.cancel();apply(before.prefs,before.map);/* the colour painted on the current sentence from a sample taken during the discarded calibration goes with it */b.lineColorReset?.();message=t('cancelled');last={...last,gameStyleState:'cancelled'};paint();return true;};
  function restore(id){if(saving)return;const version=session.select(id);if(!version)return;stopMeasurement();apply(version.prefs,version.map);message=t('historyPreview');
   last={...last,gameStyleState:'measured'};paint();}
  function resync(part='all'){
