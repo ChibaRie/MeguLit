@@ -24,7 +24,7 @@ LR"MGLT((function(){
      KiriKiri builds; typeof does not */
   var st=(typeof global.__megulitKrkrState=='Object')?global.__megulitKrkrState:void;
   if(st===void) {
-   st=%['skipped'=>0,'charsSent'=>0,'charsErr'=>'','trWrapped'=>0,'trLine'=>0,'trText'=>'','trKey'=>'','trOp'=>void,'trT'=>void,'trOwner'=>void,'trRec'=>void,'skippedCls'=>'','lastFont'=>'','pfontName'=>void,'art'=>0,'artText'=>'','artSeen'=>[],'calls'=>0,'hid'=>0,'wrapped'=>[],'recs'=>[],'active'=>void,'lastVis'=>-1,'timer'=>void,'line'=>0,'report'=>global.__megulitKrkrReport,'kag'=>k,'hooked'=>0,'oldLB'=>void,'oldPB'=>void,'oldPBC'=>void];
+   st=%['skipped'=>0,'drawArgs'=>void,'drawOp'=>0,'lastEnd'=>void,'charsSent'=>0,'charsErr'=>'','trWrapped'=>0,'trLine'=>0,'trText'=>'','trKey'=>'','trOp'=>void,'trT'=>void,'trOwner'=>void,'trRec'=>void,'skippedCls'=>'','lastFont'=>'','pfontName'=>void,'art'=>0,'artText'=>'','artSeen'=>[],'calls'=>0,'hid'=>0,'wrapped'=>[],'recs'=>[],'active'=>void,'lastVis'=>-1,'timer'=>void,'line'=>0,'report'=>global.__megulitKrkrReport,'kag'=>k,'hooked'=>0,'oldLB'=>void,'oldPB'=>void,'oldPBC'=>void];
    st.screen=function(){
     var sw=+this.kag.scWidth,sh=+this.kag.scHeight;
     if(!(sw>0) || !(sh>0)) {sw=+this.kag.primaryLayer.width;sh=+this.kag.primaryLayer.height;}
@@ -38,8 +38,37 @@ LR"MGLT((function(){
    st.send=function(kind,rec,x0,x1){
     var s='ToMe_KRKR '+kind+' line='+rec.line+' same='+rec.same+' nvl='+rec.nvl+' x0='+int(x0)+' y0='+int(rec.y0)+' x1='+int(x1)+' y1='+int(rec.y1)+' size='+int(rec.size)+' sw='+int(rec.sw)+' sh='+int(rec.sh)+' n='+rec.n;
     if(rec.color>=0) {var h='',v=rec.color;for(var i=0;i<6;i++) {h='0123456789abcdef'.charAt(v&15)+h;v=v>>4;} s+=' color='+h;}
+    if(typeof rec.paint=='String' && rec.paint!='') s+=' paint='+rec.paint;
     if(kind=='end') s+=' text='+rec.text;
     this.report(s);
+   } incontextof st;
+   /* What this sentence is really drawn with, for the reader to paint it the same (read / unread colours, dimming, outline):
+      paint=f:rrggbbaa[,e:rrggbbaa:width][,s:rrggbbaa:dx:dy]. From the arguments of the line layer's own drawText call
+      (this.drawArgs, kept by __megulitDraw before anything is changed); a layer that is not wrapped reports the KAG fields
+      processCh draws from (chColor, edge / edgeColor / edgeExtent / edgeEmphasis, shadow / shadowColor). */
+   st.hex=function(v,n){var h='';v=int(v);for(var i=0;i<n;i++) {h='0123456789abcdef'.charAt(v&15)+h;v=v>>4;} return h;} incontextof st;
+   st.paintOf=function(L){
+    try {
+     var a=this.drawArgs;this.drawArgs=void;
+     if(a!==void && a.count>=4) {
+      /* a game that fades each character in draws it several times with a rising opacity: the sentence's opacity is the
+         highest one it was drawn with (a dimmed read line is drawn at one constant opacity) */
+      var op=a.count>4?+a[4]:255;if(op<this.drawOp) op=this.drawOp;if(op<0) op=0;if(op>255) op=255;
+      var s='f:'+this.hex(+a[3]&0xffffff,6)+this.hex(op,2);
+      var lv=a.count>6?+a[6]:0;if(lv>255) lv=255;
+      if(lv>0) {
+       var sc=a.count>7?(+a[7]&0xffffff):0,sw=a.count>8?+a[8]:0,ox=a.count>9?+a[9]:0,oy=a.count>10?+a[10]:0;
+       if(ox==0 && oy==0) s+=',e:'+this.hex(sc,6)+this.hex(lv,2)+':'+int(sw);
+       else s+=',s:'+this.hex(sc,6)+this.hex(lv,2)+':'+int(ox)+':'+int(oy);
+      }
+      return s;
+     }
+     if(typeof L.chColor!='Integer') return '';
+     var s='f:'+this.hex(L.chColor&0xffffff,6)+'ff';
+     if(L.edge && typeof L.edgeColor=='Integer') {var em=(typeof L.edgeEmphasis=='Integer')?+L.edgeEmphasis:255;if(em>255) em=255;if(em>0) s+=',e:'+this.hex(L.edgeColor&0xffffff,6)+this.hex(em,2)+':'+((typeof L.edgeExtent=='Integer')?int(L.edgeExtent):1);}
+     else if(L.shadow && typeof L.shadowColor=='Integer') s+=',s:'+this.hex(L.shadowColor&0xffffff,6)+'ff:2:2';
+     return s;
+    } catch(e) {return '';}
    } incontextof st;
    st.track=function(rec,ch,lm,p0,oy){
     var L=rec.target;
@@ -64,7 +93,8 @@ LR"MGLT((function(){
      this.fontReport(L);
      rec.line=++this.line;this.active=rec;rec.x0=cx;rec.y0=cy;rec.x1=cx;rec.y1=cy;rec.size=size;rec.text='';rec.sw=sw;rec.sh=sh;
      rec.nvl=L.height>=sh*0.45?1:0;rec.same=rec.cleared?0:1;rec.cleared=false;rec.rs='';rec.cn=0;rec.hc=0;rec.ct='';
-     rec.color=-1; /* a missing colour belongs to this sentence, never the previous draw */
+     rec.color=-1;rec.paint=''; /* a missing colour belongs to this sentence, never the previous draw */
+     {var pt=this.paintOf(L);if(pt!='') rec.paint=pt;}
      if(typeof L.chColor=='Integer') rec.color=L.chColor&0xffffff; /* E550: begin carries the colour too (narration grey / speech white), before the line is shown */
      var right=a[0]+L.width-(+L.marginR)-size;
      if(!(right>cx)) right=cx;
@@ -78,6 +108,7 @@ LR"MGLT((function(){
     }
     rec.ly=cy;
     rec.n++;
+    {var pt=this.paintOf(L);if(pt!='') rec.paint=pt;}
     if(typeof L.chColor=='Integer') rec.color=L.chColor&0xffffff;
     if(cx<rec.x0) rec.x0=cx;
     if(cx>rec.x1) rec.x1=cx;
@@ -95,8 +126,20 @@ LR"MGLT((function(){
    } incontextof st;
 )MGLT" LR"MGLT(
    st.flush=function(rec){
-    if(rec.n>0) {this.send('end',rec,rec.x0,rec.x1);try {this.chars(rec);} catch(e) {this.charsErr=e.message;}}
-    rec.n=0;rec.text='';rec.rs='';rec.cn=0;rec.hc=0;rec.ct='';
+    if(rec.n>0) {this.send('end',rec,rec.x0,rec.x1);
+     /* kept for st.fade: a game that fades characters in is still raising their opacity after the click wait began */
+     try {this.lastEnd=%['line'=>rec.line,'same'=>rec.same,'nvl'=>rec.nvl,'y0'=>rec.y0,'y1'=>rec.y1,'size'=>rec.size,'sw'=>rec.sw,'sh'=>rec.sh,'n'=>rec.n,'color'=>rec.color,'paint'=>rec.paint,'text'=>rec.text,'x0'=>rec.x0,'x1'=>rec.x1,'op'=>this.drawOp];} catch(e) {this.lastEnd=void;}
+     try {this.chars(rec);} catch(e) {this.charsErr=e.message;}}
+    rec.n=0;rec.text='';rec.rs='';rec.cn=0;rec.hc=0;rec.ct='';this.drawOp=0;
+   } incontextof st;
+   /* the finished sentence was drawn again with a higher opacity (fade-in still running): its end record is sent again with the
+      opacity it has now, so the reader never keeps a sentence at the faint first step */
+   st.fade=function(){
+    var r=this.lastEnd;if(r===void || r===null) return;
+    if(this.active!==void && this.active!==null && this.active.n>0) {this.lastEnd=void;return;}
+    var p=''+r.paint;if(this.drawOp<=r.op || p.length<10 || p.substring(0,2)!='f:') return;
+    r.op=this.drawOp;r.paint=p.substring(0,8)+this.hex(r.op>255?255:r.op,2)+p.substring(10);
+    this.send('end',r,r.x0,r.x1);
    } incontextof st;
    st.flushAll=function(){for(var i=0;i<this.recs.count;i++) this.flush(this.recs[i]);} incontextof st;
    /* 2026-11-12 (user: the game must think it draws its text while the output is ours): while MeguLit asks for it
@@ -115,6 +158,7 @@ LR"MGLT((function(){
      if(typeof st=='Object' && st!==void) {
       if(self.__mgKind=='msg') {
        st.calls++;
+       {var d=[];d.assign(args);st.drawArgs=d;var o=d.count>4?+d[4]:255;if(o>st.drawOp) st.drawOp=o;}
        if(st.hideOn()) {
         var a=[];a.assign(args);
         while(a.count<7) a.add(a.count==4?255:(a.count==5?true:0));
@@ -157,7 +201,7 @@ LR"MGLT((function(){
     try {if(typeof L.lineLayer=='Object') this.wrapDraw(L.lineLayer);} catch(e) {}
     for(var i=0;i<this.recs.count;i++) if(this.recs[i].target===L) return;
     if(typeof L.processCh!='Object') return;
-    var rec=%['target'=>L,'st'=>this,'oldCh'=>L.processCh,'oldClear'=>void,'n'=>0,'text'=>'','line'=>0,'same'=>0,'cleared'=>true,'nvl'=>0,'x0'=>0,'y0'=>0,'x1'=>0,'y1'=>0,'size'=>0,'sw'=>0,'sh'=>0,'ly'=>0,'color'=>-1];
+    var rec=%['target'=>L,'st'=>this,'oldCh'=>L.processCh,'oldClear'=>void,'n'=>0,'text'=>'','line'=>0,'same'=>0,'cleared'=>true,'nvl'=>0,'x0'=>0,'y0'=>0,'x1'=>0,'y1'=>0,'size'=>0,'sw'=>0,'sh'=>0,'ly'=>0,'color'=>-1,'paint'=>''];
     rec.ch=function(ch){
      var L=this.target,lm=false,p0=0,oy=0;
      try {
@@ -275,7 +319,7 @@ LR"MGLT((function(){
     if(this.trTry===void) this.trTry=0;if(++this.trTry>40) return;
     var T=this.trOwner.textLayer;if(typeof T!='Object' || T===void || T===null) return;
     /* a text layer that is not a child of its message layer is that layer's own buffer, laid at the message layer's origin */
-    var at=T.parent===this.trOwner?this.abs(T):this.trAbsL,cnt=%[],best='',bn=0,lit=0,lv=-1,lb=0,w=+T.imageWidth,hh=+T.imageHeight;
+    var at=T.parent===this.trOwner?this.abs(T):this.trAbsL,cnt=%[],rep=%[],best='',bn=0,lit=0,lv=-1,lb=0,w=+T.imageWidth,hh=+T.imageHeight,amin=this.trTry>10?0x40:0xc0,need=this.trPts.count<=4?3:6;
     for(var i=0;i<this.trPts.count;i++) {
      var p=this.trPts[i];
      for(var gy=1;gy<=6;gy++) for(var gx=1;gx<=6;gx++) {
@@ -284,12 +328,17 @@ LR"MGLT((function(){
       var px=T.getMainPixel(x,y),rgb=px&0xffffff;
       /* a buffer drawn with holdAlpha keeps alpha 0: there the glyph body is its brightest pixel (edges blend to the background) */
       if(rgb!=0) {lit++;var lum=((rgb>>16)&255)+((rgb>>8)&255)+(rgb&255);if(lum>lv) {lv=lum;lb=rgb;}}
-      if(((px>>24)&255)<0xc0) continue;
-      var k=''+(px&0xffffff),c=cnt[k];c=(c===void?0:c)+1;cnt[k]=c;if(c>bn) {bn=c;best=k;}
+      /* a short sentence that fades in (live 死に逝く君: 窃盗。 器物破損。 got no colour) has few glyph pixels, still half transparent,
+         in several anti-aliased shades: after a second half-transparent pixels count too (their colour is already the glyph's),
+         and near shades are one colour (5 bits a channel, reported as the first full value seen) */
+      if(((px>>24)&255)<amin) continue;
+      var k=''+(((rgb>>19)&31)<<10 | ((rgb>>11)&31)<<5 | ((rgb>>3)&31)),c=cnt[k];if(c===void) {c=0;rep[k]=rgb;}c++;cnt[k]=c;if(c>bn) {bn=c;best=''+rep[k];}
      }
     }
-    if(bn<6 && lit<3 || this.trTry<3) return; /* a few ticks in: the typewriter and any fade-in have drawn the first glyphs */
-    var h='',v=bn>=6?+best:lb;for(var i=0;i<6;i++) {h='0123456789abcdef'.charAt(v&15)+h;v=v>>4;}
+    /* opaque glyph pixels already have their final colour: taken at the first tick (live 死に逝く君: 父親が死んだ。 was on screen for
+       170 ms and got none); the brightest-pixel fallback still waits for the typewriter and any fade-in */
+    if(bn<need && (lit<3 || this.trTry<3)) return; /* a few ticks in: the typewriter and any fade-in have drawn the first glyphs */
+    var h='',v=bn>=need?+best:lb;for(var i=0;i<6;i++) {h='0123456789abcdef'.charAt(v&15)+h;v=v>>4;}
     this.trCol=h;var r=this.trRec;r[2]=this.trTailA+' color='+h+this.trTailB;this.trKey='';
     this.report('ToMe_CHARS engine=krkr line='+r[1]+' hidden='+r[0]+r[2]);
    } incontextof st;
@@ -312,6 +361,7 @@ LR"MGLT((function(){
 )MGLT" LR"MGLT(
    st.vis=function(){
     try {this.trHide();} catch(e) {}
+    try {this.fade();} catch(e) {}
     try {this.trSample();} catch(e) {this.trTry=99;}
     try {
      var r=this.active;if(r===void || r===null || !isvalid r.target) return;
