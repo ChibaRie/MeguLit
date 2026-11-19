@@ -24,7 +24,7 @@ LR"MGLT((function(){
      KiriKiri builds; typeof does not */
   var st=(typeof global.__megulitKrkrState=='Object')?global.__megulitKrkrState:void;
   if(st===void) {
-   st=%['skipped'=>0,'charsSent'=>0,'charsErr'=>'','trWrapped'=>0,'trLine'=>0,'trText'=>'','trKey'=>'','trOp'=>void,'trT'=>void,'trOwner'=>void,'trRec'=>void,'skippedCls'=>'','lastFont'=>'','pfontName'=>void,'art'=>0,'artText'=>'','artSeen'=>[],'calls'=>0,'hid'=>0,'wrapped'=>[],'recs'=>[],'active'=>void,'lastVis'=>-1,'timer'=>void,'line'=>0,'report'=>global.__megulitKrkrReport,'kag'=>k,'hooked'=>0,'oldLB'=>void,'oldPB'=>void,'oldPBC'=>void];
+   st=%['skipped'=>0,'drawArgs'=>void,'charsSent'=>0,'charsErr'=>'','trWrapped'=>0,'trLine'=>0,'trText'=>'','trKey'=>'','trOp'=>void,'trT'=>void,'trOwner'=>void,'trRec'=>void,'skippedCls'=>'','lastFont'=>'','pfontName'=>void,'art'=>0,'artText'=>'','artSeen'=>[],'calls'=>0,'hid'=>0,'wrapped'=>[],'recs'=>[],'active'=>void,'lastVis'=>-1,'timer'=>void,'line'=>0,'report'=>global.__megulitKrkrReport,'kag'=>k,'hooked'=>0,'oldLB'=>void,'oldPB'=>void,'oldPBC'=>void];
    st.screen=function(){
     var sw=+this.kag.scWidth,sh=+this.kag.scHeight;
     if(!(sw>0) || !(sh>0)) {sw=+this.kag.primaryLayer.width;sh=+this.kag.primaryLayer.height;}
@@ -38,8 +38,35 @@ LR"MGLT((function(){
    st.send=function(kind,rec,x0,x1){
     var s='ToMe_KRKR '+kind+' line='+rec.line+' same='+rec.same+' nvl='+rec.nvl+' x0='+int(x0)+' y0='+int(rec.y0)+' x1='+int(x1)+' y1='+int(rec.y1)+' size='+int(rec.size)+' sw='+int(rec.sw)+' sh='+int(rec.sh)+' n='+rec.n;
     if(rec.color>=0) {var h='',v=rec.color;for(var i=0;i<6;i++) {h='0123456789abcdef'.charAt(v&15)+h;v=v>>4;} s+=' color='+h;}
+    if(typeof rec.paint=='String' && rec.paint!='') s+=' paint='+rec.paint;
     if(kind=='end') s+=' text='+rec.text;
     this.report(s);
+   } incontextof st;
+   /* What this sentence is really drawn with, for the reader to paint it the same (read / unread colours, dimming, outline):
+      paint=f:rrggbbaa[,e:rrggbbaa:width][,s:rrggbbaa:dx:dy]. From the arguments of the line layer's own drawText call
+      (this.drawArgs, kept by __megulitDraw before anything is changed); a layer that is not wrapped reports the KAG fields
+      processCh draws from (chColor, edge / edgeColor / edgeExtent / edgeEmphasis, shadow / shadowColor). */
+   st.hex=function(v,n){var h='';v=int(v);for(var i=0;i<n;i++) {h='0123456789abcdef'.charAt(v&15)+h;v=v>>4;} return h;} incontextof st;
+   st.paintOf=function(L){
+    try {
+     var a=this.drawArgs;this.drawArgs=void;
+     if(a!==void && a.count>=4) {
+      var op=a.count>4?+a[4]:255;if(op<0) op=0;if(op>255) op=255;
+      var s='f:'+this.hex(+a[3]&0xffffff,6)+this.hex(op,2);
+      var lv=a.count>6?+a[6]:0;if(lv>255) lv=255;
+      if(lv>0) {
+       var sc=a.count>7?(+a[7]&0xffffff):0,sw=a.count>8?+a[8]:0,ox=a.count>9?+a[9]:0,oy=a.count>10?+a[10]:0;
+       if(ox==0 && oy==0) s+=',e:'+this.hex(sc,6)+this.hex(lv,2)+':'+int(sw);
+       else s+=',s:'+this.hex(sc,6)+this.hex(lv,2)+':'+int(ox)+':'+int(oy);
+      }
+      return s;
+     }
+     if(typeof L.chColor!='Integer') return '';
+     var s='f:'+this.hex(L.chColor&0xffffff,6)+'ff';
+     if(L.edge && typeof L.edgeColor=='Integer') {var em=(typeof L.edgeEmphasis=='Integer')?+L.edgeEmphasis:255;if(em>255) em=255;if(em>0) s+=',e:'+this.hex(L.edgeColor&0xffffff,6)+this.hex(em,2)+':'+((typeof L.edgeExtent=='Integer')?int(L.edgeExtent):1);}
+     else if(L.shadow && typeof L.shadowColor=='Integer') s+=',s:'+this.hex(L.shadowColor&0xffffff,6)+'ff:2:2';
+     return s;
+    } catch(e) {return '';}
    } incontextof st;
    st.track=function(rec,ch,lm,p0,oy){
     var L=rec.target;
@@ -64,7 +91,8 @@ LR"MGLT((function(){
      this.fontReport(L);
      rec.line=++this.line;this.active=rec;rec.x0=cx;rec.y0=cy;rec.x1=cx;rec.y1=cy;rec.size=size;rec.text='';rec.sw=sw;rec.sh=sh;
      rec.nvl=L.height>=sh*0.45?1:0;rec.same=rec.cleared?0:1;rec.cleared=false;rec.rs='';rec.cn=0;rec.hc=0;rec.ct='';
-     rec.color=-1; /* a missing colour belongs to this sentence, never the previous draw */
+     rec.color=-1;rec.paint=''; /* a missing colour belongs to this sentence, never the previous draw */
+     {var pt=this.paintOf(L);if(pt!='') rec.paint=pt;}
      if(typeof L.chColor=='Integer') rec.color=L.chColor&0xffffff; /* E550: begin carries the colour too (narration grey / speech white), before the line is shown */
      var right=a[0]+L.width-(+L.marginR)-size;
      if(!(right>cx)) right=cx;
@@ -78,6 +106,7 @@ LR"MGLT((function(){
     }
     rec.ly=cy;
     rec.n++;
+    {var pt=this.paintOf(L);if(pt!='') rec.paint=pt;}
     if(typeof L.chColor=='Integer') rec.color=L.chColor&0xffffff;
     if(cx<rec.x0) rec.x0=cx;
     if(cx>rec.x1) rec.x1=cx;
@@ -115,6 +144,7 @@ LR"MGLT((function(){
      if(typeof st=='Object' && st!==void) {
       if(self.__mgKind=='msg') {
        st.calls++;
+       {var d=[];d.assign(args);st.drawArgs=d;}
        if(st.hideOn()) {
         var a=[];a.assign(args);
         while(a.count<7) a.add(a.count==4?255:(a.count==5?true:0));
@@ -157,7 +187,7 @@ LR"MGLT((function(){
     try {if(typeof L.lineLayer=='Object') this.wrapDraw(L.lineLayer);} catch(e) {}
     for(var i=0;i<this.recs.count;i++) if(this.recs[i].target===L) return;
     if(typeof L.processCh!='Object') return;
-    var rec=%['target'=>L,'st'=>this,'oldCh'=>L.processCh,'oldClear'=>void,'n'=>0,'text'=>'','line'=>0,'same'=>0,'cleared'=>true,'nvl'=>0,'x0'=>0,'y0'=>0,'x1'=>0,'y1'=>0,'size'=>0,'sw'=>0,'sh'=>0,'ly'=>0,'color'=>-1];
+    var rec=%['target'=>L,'st'=>this,'oldCh'=>L.processCh,'oldClear'=>void,'n'=>0,'text'=>'','line'=>0,'same'=>0,'cleared'=>true,'nvl'=>0,'x0'=>0,'y0'=>0,'x1'=>0,'y1'=>0,'size'=>0,'sw'=>0,'sh'=>0,'ly'=>0,'color'=>-1,'paint'=>''];
     rec.ch=function(ch){
      var L=this.target,lm=false,p0=0,oy=0;
      try {

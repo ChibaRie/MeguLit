@@ -45,7 +45,7 @@ function event(message){if(!loaded){queued.push(message);return;}if(message.type
  if(message.type==='call'){deliver({replies:[message]});return;}
  /* Alt+M bound the window in front, or said why not (services/bind-hotkey.cjs) */
  if(message.type==='bindHotkeyResult'){b.bindHotkeyResult?.(message);return;}
- const method={glassFrame:'glassFrame',gameStyleStatus:'gameStyleStatus',hookTextPos:'textPosition',textPlace:'textPlace',textPlaceMode:'textPlaceMode',textPlaceExtra:'textPlaceExtra',textPlacePage:'textPlacePage',artText:'artText',enginePreferences:'enginePreferences',hookPage:'hookPage',waitMarkerFrame:'waitMarkerFrame',maskFrame:'galMaskFrame'}[message.type];
+ const method={glassFrame:'glassFrame',gameStyleStatus:'gameStyleStatus',hookTextPos:'textPosition',lineStyleSample:'lineStyleSample',textPlace:'textPlace',textPlaceMode:'textPlaceMode',textPlaceExtra:'textPlaceExtra',textPlacePage:'textPlacePage',artText:'artText',enginePreferences:'enginePreferences',hookPage:'hookPage',waitMarkerFrame:'waitMarkerFrame',maskFrame:'galMaskFrame'}[message.type];
  if(method){b[method]?.(message);return;}
  if(message.type==='workTranslationPrompt'){b.workTranslationPrompt?.(message.key,message.prompt);return;}
  if(typeof message.hookNativeLog==='boolean'){document.body.classList.toggle('megulit-native-log',message.hookNativeLog);window.__tomoyoHitRegionsRefresh?.(true);}

@@ -13,7 +13,7 @@
  const unit=v=>Number.isFinite(v)&&Math.abs(v)<=20000;
  const plausibleMap=v=>!!v&&[v.s,v.bx,v.by,v.dx,v.dy].every(Number.isFinite)&&v.s>.1&&v.s<10&&Math.abs(v.bx)<=20000&&Math.abs(v.by)<=20000&&Math.abs(v.dx)<=20000&&Math.abs(v.dy)<=20000&&v.cw>0&&v.ch>0;
  const api={
-  resetSession(nextIdentity){map=last=cal=null;lastAt=0;following=false;applied='';if(nextIdentity!==undefined)identity=String(nextIdentity);b.lineColorReset?.();repaint();},
+  resetSession(nextIdentity){stateStyle.clear();readState='';map=last=cal=null;lastAt=0;following=false;applied='';if(nextIdentity!==undefined)identity=String(nextIdentity);b.lineColorReset?.();repaint();},
   refresh(){if(last)b.textPosition(last,true);},
   mapExtent(m){if(!plausibleMap(map)||map.engine!==m.engine)return null;const l=b.galLayoutInfo?.(),kx=(l?.clientWidth||map.cw)/map.cw,ky=(l?.clientHeight||map.ch)/map.ch;return {x:(map.s*m.x0+map.bx)*kx,y:(map.s*m.y0+map.by)*ky,width:map.s*(m.x1-m.x0+m.size)*kx,size:map.s*m.size*ky};},
   getMap:()=>map?{...map}:null,
@@ -34,7 +34,7 @@
    if(!plausibleMap(next))return;map=next;if(options.persist!==false)send({type:'textPosMapSave',map:next,key:b.gameProfileKey?.()});repaint();return next;}
  };
  window.__tomeTextPosition=api;
- const priorStatus=b.galStatus;b.galStatus=m=>{if(m.type==='gameClosed'){api.resetSession('');}else if(m.hookSource===null||typeof m.hookSource==='string'&&!m.hookSource.trim())b.lineColorReset?.();else if(typeof m.hookSource==='string')b.lineColorFor?.(m.hookSource,m.hookSequence);else if(m.gameStarted||m.gameProcessId){const old=identity.split('|'),next=String(m.gameProcessId||old[0]||'')+'|'+String(m.gameStarted||old[1]||'');if(identity&&next!==identity)api.resetSession(next);identity=next;}return priorStatus?.(m);};
+ const priorStatus=b.galStatus;b.galStatus=m=>{if(typeof m.hookSourceRead==='boolean')readState=m.hookSourceReadOrigin==='engine'?(m.hookSourceRead?'read':'unread'):'';else if(typeof m.hookSource==='string')readState='';if(m.type==='gameClosed'){api.resetSession('');}else if(m.hookSource===null||typeof m.hookSource==='string'&&!m.hookSource.trim())b.lineColorReset?.();else if(typeof m.hookSource==='string')b.lineColorFor?.(m.hookSource,m.hookSequence);else if(m.gameStarted||m.gameProcessId){const old=identity.split('|'),next=String(m.gameProcessId||old[0]||'')+'|'+String(m.gameStarted||old[1]||'');if(identity&&next!==identity)api.resetSession(next);identity=next;}return priorStatus?.(m);};
  // ISLAND (CS2) reports dialogue in its message texture: pages sit in 720-high slots of a tall texture (y 4364-4837
  // seen for one on-screen page), and the message layer is drawn about 63 px right and 8 px down on the 1280x720
  // canvas (measured against the game's own screenshots). Normalized coordinates are reported as cs2_screen_v3, so
@@ -56,13 +56,23 @@
  // A colour belongs to a draw transaction, never to a wall-clock cache. Source can arrive on either side of begin.
  let colorSource='',colorSequence=null,colorDraw=null,latestDraw=null,retiredDraw=null,waitingDraw=false;
  const sourceToken=text=>text?window.TomeIslandSource?.token(text)??null:null;
- const paintLine=(color,text)=>{const gs=window.TomoyoGameStyle,p=b.galPreferences?.()||{},c=gs?.lineColor?gs.lineColor(p,text||'',color):'',root=document.documentElement.style;
-  const on=!!c;document.body.classList.toggle('tome-line-color',on);if(on)root.setProperty('--tomoyo-gal-line-color',c);else root.removeProperty('--tomoyo-gal-line-color');};
+ /* Read styles: every sentence is painted from its own evidence (the engine's draw call, else the game's pixels: fill, opacity,
+    outline). A sentence with none takes the last reliable sample of the same engine-reported read state, never the other state's
+    and never a guess; with no state or no sample the saved colours apply. Furigana reads the same variables. */
+ const stateStyle=new Map();let readState='',pixelPaint=null;
+ const paintLine=(color,text,style)=>{const gs=window.TomoyoGameStyle,p=b.galPreferences?.()||{},root=document.documentElement.style;
+  let paint=gs?.linePaint?gs.linePaint(p,text||'',color,style||null):null;if(!gs?.linePaint&&gs?.lineColor){const c=gs.lineColor(p,text||'',color);paint=c?{color:c,edge:'',sampled:!!color}:null;}
+  if(paint?.sampled&&readState)stateStyle.set(readState,paint);
+  else if(!color&&!style&&text&&readState&&p.autoGameStyle!==false&&stateStyle.has(readState))paint=stateStyle.get(readState);
+  const on=!!paint?.color,edge=on&&!!paint.edge;document.body.classList.toggle('tome-line-color',on);document.body.classList.toggle('tome-line-edge',edge);
+  if(on)root.setProperty('--tomoyo-gal-line-color',paint.color);else root.removeProperty('--tomoyo-gal-line-color');
+  if(edge)root.setProperty('--tomoyo-gal-line-edge',paint.edge);else root.removeProperty('--tomoyo-gal-line-edge');};
+ api.lineStyleState=()=>({readState,states:Object.fromEntries(stateStyle),pixel:pixelPaint});
  api.paintLine=paintLine;
- b.lineColorReset=()=>{colorSource='';colorSequence=null;colorDraw=latestDraw=retiredDraw=null;waitingDraw=false;paintLine('','');};
+ b.lineColorReset=()=>{pixelPaint=null;colorSource='';colorSequence=null;colorDraw=latestDraw=retiredDraw=null;waitingDraw=false;paintLine('','');};
  b.lineColorFor=(text,sequence)=>{const next=String(text||''),seq=Number.isSafeInteger(sequence)?sequence:null;
-  if(next===colorSource&&(seq===null||seq===colorSequence))return;colorSource=next;colorSequence=seq;
-  if(colorDraw&&!colorDraw.claimed&&colorDraw.sourceToken!=null&&colorDraw.sourceToken===sourceToken(next)){colorDraw.claimed=true;waitingDraw=false;paintLine(colorDraw.color,next);return;}
+  if(next===colorSource&&(seq===null||seq===colorSequence))return;colorSource=next;colorSequence=seq;pixelPaint=null;
+  if(colorDraw&&!colorDraw.claimed&&colorDraw.sourceToken!=null&&colorDraw.sourceToken===sourceToken(next)){colorDraw.claimed=true;waitingDraw=false;paintLine(colorDraw.color,next,colorDraw.style);return;}
   /* A draw already claimed by the previous sequence is retired: a late end for it must not recolour this one, even with the same text. */
   retiredDraw=colorDraw?.claimed?{engine:colorDraw.engine,line:colorDraw.line}:null;colorDraw=null;waitingDraw=true;paintLine('',next);
  };
@@ -73,13 +83,18 @@
   const matches=Number.isSafeInteger(m.sourceToken)&&m.sourceToken===sourceToken(colorSource);
   if(m.phase==='end'&&!same&&!Number.isSafeInteger(m.sourceToken))return;
   if(retiredDraw?.engine===m.engine&&retiredDraw.line===m.line)return;
-  if(!same||!colorDraw&&matches){latestDraw={engine:m.engine,line:m.line};colorDraw={...latestDraw,claimed:waitingDraw,color:'',sourceToken:null};waitingDraw=false;}
+  if(!same||!colorDraw&&matches){latestDraw={engine:m.engine,line:m.line};colorDraw={...latestDraw,claimed:waitingDraw,color:'',style:null,sourceToken:null};waitingDraw=false;}
   // A late end for the previous source cannot recolour a sentence waiting for its own begin.
   if(!colorDraw||colorDraw.engine!==m.engine||colorDraw.line!==m.line)return;
   if(typeof m.color==='string'&&/^#[0-9a-f]{6}$/i.test(m.color))colorDraw.color=m.color;
+  if(m.style&&typeof m.style==='object'&&/^#[0-9a-f]{6}$/i.test(m.style.fill||''))colorDraw.style=m.style;
   if(Number.isSafeInteger(m.sourceToken)){colorDraw.sourceToken=m.sourceToken;colorDraw.claimed=matches;}
-  if(colorDraw.claimed)paintLine(colorDraw.color,colorSource);
+  if(colorDraw.claimed)paintLine(colorDraw.color||pixelPaint?.color||'',colorSource,colorDraw.style||(colorDraw.color?null:pixelPaint?.style));
  };
+ /* The game's own pixels for the sentence on screen (core/line-pixels.cjs): used when the engine's draw call said nothing for it. */
+ b.lineStyleSample=m=>{if(!colorSource||!Number.isSafeInteger(m.sourceToken)||m.sourceToken!==sourceToken(colorSource))return;
+  const style=m.style&&typeof m.style==='object'&&/^#[0-9a-f]{6}$/i.test(m.style.fill||'')?m.style:null;if(!style)return;pixelPaint={color:style.fill,style};
+  if(colorDraw?.claimed&&(colorDraw.color||colorDraw.style))return;paintLine(style.fill,colorSource,style);};
  b.textPosition=(m,refresh=false)=>{m=cs2Canvas(m);
   if(!m||![m.x0,m.y0,m.x1,m.y1].every(unit)||m.x1<m.x0||m.y1<m.y0||!Number.isFinite(m.size)||m.size<=0||m.size>256)return;const firstSource=!last;last=m;lastAt=Date.now();
   if(!refresh)lineColor(m);

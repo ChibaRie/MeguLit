@@ -109,6 +109,19 @@ if(typeof value.rubyRowOffsetsX==='string')result.rubyRowOffsetsX=value.rubyRowO
     const kind = lineKind(text), learned = kind && settings[kind + 'TextColor'];
     return hex(learned) ? learned.toLowerCase() : '';
   }
+  /* What to paint one sentence with, from what the game drew it with (style: fill, alpha, edge... from the engine's draw call or
+     the game's pixels). color: #rrggbb or #rrggbbaa (the game dims or fades read text), edge: the outline colour or ''.
+     sampled: the fill is this sentence's own evidence, not a learned or saved colour. null: nothing to override. */
+  function linePaint(settings, text='', engineColor='', style=null) {
+    const hex = c => /^#[0-9a-f]{6}$/i.test(String(c || '')), drawn = style && hex(style.fill) ? String(style.fill).toLowerCase() : '';
+    const fill = lineColor(settings, text, drawn || engineColor);
+    if (!fill) return null;
+    const aa = a => Math.round(Math.max(0, Math.min(1, a)) * 255).toString(16).padStart(2, '0');
+    const own = !!drawn && fill === drawn, sampled = own || hex(engineColor) && fill === String(engineColor).toLowerCase();
+    const alpha = own && Number.isFinite(style.alpha) && style.alpha > .02 && style.alpha < .98 ? style.alpha : 1;
+    const edge = own && hex(style.edge) && style.edge.toLowerCase() !== fill ? style.edge.toLowerCase() + (style.edgeAlpha > .02 && style.edgeAlpha < .98 ? aa(style.edgeAlpha) : '') : '';
+    return { color: fill + (alpha < 1 ? aa(alpha) : ''), edge, sampled };
+  }
   function paintFor(settings, read=false, engineColor='') {
     // An actual engine colour takes priority over a learned/manual gradient for that sentence.
     // Saved read colours can come from calibration; they must not suppress this sentence's draw evidence.
@@ -227,5 +240,5 @@ if(typeof value.rubyRowOffsetsX==='string')result.rubyRowOffsetsX=value.rubyRowO
     if (!dark) return shadows[kind] || shadows.outline;
     return kind === 'soft' ? '0 1px 3px #fff9' : '-1px 0 0 #fff9,1px 0 0 #fff9,0 -1px 0 #fff9,0 1px 0 #fff9';
   }
-  return { defaults, clean, lineKind, lineColor, paintFor, paintVariables, lineHeightFor, insets, scaleForViewport, gameScaleFor, fonts, shadows, shadowFor, japaneseFonts,chineseFonts,englishFonts,fontOptions,outlineFor };
+  return { defaults, clean, lineKind, lineColor, linePaint, paintFor, paintVariables, lineHeightFor, insets, scaleForViewport, gameScaleFor, fonts, shadows, shadowFor, japaneseFonts,chineseFonts,englishFonts,fontOptions,outlineFor };
 });

@@ -450,7 +450,7 @@ class HookNative{
   if(!m.nvl){if(this.pageMode?.mode==='nvl')this.trace(engine+' page mode off');this.pageMode={mode:'adv',engine,at:now};this.releasePageHeld();
    /* E550 ADV sentence: where the engine draws it (canvas pixels, with the canvas size) and its colour, so the reader places and
       paints each line like the game without calibration (web text-position.js, <engine>_adv_v1). */
-   if(engine!=='ocr'&&m.sw>0&&m.sh>0){const sourceToken=m.phase==='end'?this.drawSourceToken(m.text):null;this.emit({type:'hookTextPos',engine:engine+'_adv_v1',line:m.line,token:m.line,phase:m.phase,x0:m.x0,y0:m.y0,x1:m.x1,y1:m.y1,size:m.size,sw:m.sw,sh:m.sh,count:m.count,...(sourceToken!==null?{sourceToken}:{}),...(typeof m.color==='string'&&/^#[0-9a-f]{6}$/i.test(m.color)?{color:m.color}:{}),at:now});}
+   if(engine!=='ocr'&&m.sw>0&&m.sh>0){const sourceToken=m.phase==='end'?this.drawSourceToken(m.text):null;this.emit({type:'hookTextPos',engine:engine+'_adv_v1',line:m.line,token:m.line,phase:m.phase,x0:m.x0,y0:m.y0,x1:m.x1,y1:m.y1,size:m.size,sw:m.sw,sh:m.sh,count:m.count,...(sourceToken!==null?{sourceToken}:{}),...(typeof m.color==='string'&&/^#[0-9a-f]{6}$/i.test(m.color)?{color:m.color}:{}),...HookNative.paintField(m.paint),at:now});}
    /* 2026-11-13 (adapt/krkr-bgi, live 女王蜂の王房 めのう編): the engine line carries the whole sentence it drew, but the text stream
       the hook picked (a name-entry label) said nothing for it, so the reader stayed on 「めのう輝夜」. When no hook source arrived
       while this line was drawn, its drawn text is the line (same-text dedupe in emitSource keeps a late hook copy out). */
@@ -468,9 +468,16 @@ class HookNative{
   if(!text){this.trace(engine+' page line '+m.line+' had no readable text');return;}
   const token=IslandSource.token(text),line=m.line*2;
   this.emit({type:'hookPage',engine,line,same:e.same,token,at:now});
-  this.emit({type:'hookTextPos',engine:engine+'_screen_v1',line,token,x0:m.x0,y0:m.y0,x1:m.x1,y1:m.y1,size:m.size,sw:m.sw,sh:m.sh,count:m.count,...(typeof m.color==='string'&&/^#[0-9a-f]{6}$/i.test(m.color)?{color:m.color}:{}),at:now});
+  this.emit({type:'hookTextPos',engine:engine+'_screen_v1',line,token,x0:m.x0,y0:m.y0,x1:m.x1,y1:m.y1,size:m.size,sw:m.sw,sh:m.sh,count:m.count,...(typeof m.color==='string'&&/^#[0-9a-f]{6}$/i.test(m.color)?{color:m.color}:{}),...HookNative.paintField(m.paint),at:now});
   this.emitSource(text,e.origin==='history'?'live':e.origin,engine,line);
  }
+ /* What the game really drew this line with (any engine path may report it): paint=f:rrggbbaa[,e:rrggbbaa:width][,s:rrggbbaa:dx:dy]
+    f = glyph fill and its opacity, e = outline, s = drop shadow. Missing parts were not drawn; a malformed field is dropped. */
+ static paint(v){if(typeof v!=='string'||!v||v.length>120)return null;const out={};
+  for(const part of v.split(',')){const a=part.split(':'),m=/^([0-9a-f]{6})([0-9a-f]{2})$/i.exec(a[1]||'');if(!m)return null;const color='#'+m[1].toLowerCase(),alpha=Math.round(parseInt(m[2],16)/255*1000)/1000,n=i=>{const x=Number(a[i]);return Number.isFinite(x)&&Math.abs(x)<=64?x:0;};
+   if(a[0]==='f'&&a.length===2){out.fill=color;out.alpha=alpha;}else if(a[0]==='e'&&a.length<=3){if(alpha>0){out.edge=color;out.edgeAlpha=alpha;out.edgeWidth=Math.abs(n(2));}}else if(a[0]==='s'&&a.length<=4){if(alpha>0){out.shadow=color;out.shadowAlpha=alpha;out.shadowX=n(2);out.shadowY=n(3);}}else return null;}
+  return out.fill?out:null;}
+ static paintField(v){const style=HookNative.paint(v);return style?{style}:{};}
  // The drawn text keeps the game's rows; the hook's text is the original when they differ (same length: re-broken there).
  static flat(v){return String(v||'').replace(/[ \u3000\r\n]/g,'');}
  static pageText(drawn,hook){const flat=v=>v.replace(/[ \u3000\r\n]/g,''),own=drawn.replace(/^\n+|\n+$/g,'');
