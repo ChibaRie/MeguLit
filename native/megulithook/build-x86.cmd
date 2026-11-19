@@ -16,7 +16,9 @@ copy /y "%~dp0..\shared\MeguLitSafeUnhook.h" "%MEGULIT_HOOK_TREE%\src\src\Native
 rem the crash witness (native\shared\MeguLitCrashWitness.h), armed by main.cc
 copy /y "%~dp0..\shared\MeguLitCrashWitness.h" "%MEGULIT_HOOK_TREE%\src\src\NativeImpl\LunaHook\LunaHook\MeguLitCrashWitness.h" >nul || exit /b 1
 rem the changed engine files go to engine32 (copied by hand before; the YU-RIS in-place marks need Yuris.cpp built)
-for %%F in (BGI.cpp Siglus.cpp Yuris.cpp Pal.cpp) do copy /y "%~dp0%%F" "%MEGULIT_HOOK_TREE%\src\src\NativeImpl\LunaHook\LunaHook\engine32\%%F" >nul || exit /b 1
+for %%F in (BGI.cpp Siglus.cpp Yuris.cpp Pal.cpp ToMeIslandDraw.h ToMeIslandFlow.h ToMeTextPos.h) do copy /y "%~dp0%%F" "%MEGULIT_HOOK_TREE%\src\src\NativeImpl\LunaHook\LunaHook\engine32\%%F" >nul || exit /b 1
+rem one hook runtime (2026-11-19): the exact-program adapters (ISLAND) are engines our enginecollection32.cpp lists first;
+for %%F in (enginecollection32.cpp MeguLitEngines.h MeguLitMatch.h) do copy /y "%~dp0%%F" "%MEGULIT_HOOK_TREE%\src\src\NativeImpl\LunaHook\LunaHook\%%F" >nul || exit /b 1
 rem Configured every time: the cache keeps the MinHook path of the checkout that configured it last (a removed worktree broke the build).
 cmake -S "%MEGULIT_HOOK_TREE%\src\src\NativeImpl\LunaHook" -B "%MEGULIT_HOOK_TREE%\build-x86-vs" -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_HOST=OFF -DBUILD_HOOK=ON -DWIN10ABOVE=ON -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DCMAKE_C_COMPILER=cl -DCMAKE_CXX_COMPILER=cl -DFETCHCONTENT_SOURCE_DIR_MINHOOK="%~dp0..\..\preserved\source\lunahoook-adapted\third_party\minhook" -DFETCHCONTENT_FULLY_DISCONNECTED=ON || exit /b 1
 cmake --build "%MEGULIT_HOOK_TREE%\build-x86-vs" --target LunaHook --parallel 8

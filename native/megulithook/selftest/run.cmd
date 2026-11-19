@@ -26,3 +26,11 @@ echo [64-bit]
 for %%D in (MeguLitHook32.dll MeguLitHook64.dll) do (
  findstr /m /c:"MeguLit_GDIHIDE armed version=2" "%~dp0..\%%D" >nul && (echo PASS %%D carries MeguLit_GDIHIDE armed version=2) || (echo FAIL %%D lacks the GDI hide version marker & exit /b 1)
 )
+rem exact adapter match (MeguLitMatch.h): no other MAGES or CatSystem2 program reaches an adapter
+cmd /c "call "%MEGULIT_VS%" -arch=x86 -host_arch=x64 -no_logo >nul && cl /nologo /O2 /EHsc /std:c++17 /utf-8 match.cpp /Fe:"%TEMP%\megulit-gdihide32\match.exe" /Fo"%TEMP%\megulit-gdihide32\\" >nul" || exit /b 1
+"%TEMP%\megulit-gdihide32\match.exe"
+ if errorlevel 1 exit /b 1
+rem one hook runtime (2026-11-19): the ISLAND adapter is part of MeguLitHook32
+for %%M in (ToMeCS2_DRAW) do (
+ findstr /m /c:"%%M" "%~dp0..\MeguLitHook32.dll" >nul && (echo PASS MeguLitHook32.dll carries %%M) || (echo FAIL MeguLitHook32.dll lacks %%M & exit /b 1)
+)
