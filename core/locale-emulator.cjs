@@ -60,21 +60,19 @@ class LocaleEmulator{
  }
  async prepare(){
   const cache=path.join(this.root,'cache');fs.mkdirSync(cache,{recursive:true});
-  const zip=path.join(cache,'Locale.Emulator.'+RELEASE+'.zip'),part=zip+'.part';
+  const zip=path.join(cache,'Locale.Emulator.'+RELEASE+'.zip');
   const stage=this.dir+'.stage-'+crypto.randomUUID();
   try{
    let bytes=null;const cached=fs.existsSync(zip)?fs.readFileSync(zip):null;
    if(cached&&cached.length===SIZE&&crypto.createHash('sha256').update(cached).digest('hex')===SHA256)bytes=cached;
-   for(const url of bytes?[]:SOURCES){
-    try{
-     this.job.received=0;const response=await this.fetch(url,{signal:AbortSignal.timeout(60000)});if(!response.ok||!response.body)throw Error('HTTP '+response.status);
-     const chunks=[];for await(const chunk of response.body){this.job.received+=chunk.length;if(this.job.received>5000000)throw Error('LE_PACKAGE_INVALID');chunks.push(chunk);}
-     const got=Buffer.concat(chunks);if(got.length!==SIZE||got.readUInt32LE(0)!==0x04034b50||crypto.createHash('sha256').update(got).digest('hex')!==SHA256)throw Error('LE_PACKAGE_INVALID');
-     bytes=got;break;
-    }catch(e){try{fs.appendFileSync(path.join(this.root,'logs','locale-emulator.log'),new Date().toISOString()+' download '+new globalThis.URL(url).hostname+' '+String(e.message||e)+'\n');}catch{}}
+   /* 2026-11-19: core/fast-download.cjs asks every source at once and keeps the fastest (the file is small, the
+      measurement usually brings all of it); size, zip header and SHA-256 still decide */
+   if(!bytes){
+    try{await require('./fast-download.cjs').download({urls:SOURCES,dest:zip,size:SIZE,sha256:SHA256,fetch:this.fetch,onProgress:p=>{this.job.received=p.received;},log:line=>{try{fs.appendFileSync(path.join(this.root,'logs','locale-emulator.log'),new Date().toISOString()+' download '+line+'\n');}catch{}}});
+     const got=fs.readFileSync(zip);if(got.readUInt32LE(0)!==0x04034b50){fs.rmSync(zip,{force:true});throw Error('LE_PACKAGE_INVALID');}bytes=got;}
+    catch(e){try{fs.appendFileSync(path.join(this.root,'logs','locale-emulator.log'),new Date().toISOString()+' result '+(/^(HASH|SIZE)_MISMATCH$/.test(e.code||'')?'LE_PACKAGE_INVALID':String(e.message||e))+'\n');}catch{}}
    }
    if(!bytes)throw Error('LE_DOWNLOAD_FAILED');
-   if(bytes!==cached){fs.writeFileSync(part,bytes);fs.renameSync(part,zip);}
    this.job.state='extracting';
    const script=`import sys,zipfile,pathlib\nz=zipfile.ZipFile(sys.argv[1]); root=pathlib.Path(sys.argv[2]).resolve(); root.mkdir(parents=True)\nfor e in z.infolist():\n p=(root/e.filename).resolve()\n if not p.is_relative_to(root) or e.file_size>20000000 or (e.external_attr>>16)&0o170000==0o120000: raise ValueError('Unsafe archive entry')\nz.extractall(root)\n`;
    const python=path.join(this.root,'runtime','python','python.exe');
@@ -87,7 +85,7 @@ class LocaleEmulator{
    fs.writeFileSync(path.join(stage,'LEConfig.xml'),XML,'utf8');
    fs.writeFileSync(path.join(stage,'TOME-INSTALL.json'),JSON.stringify({version:RELEASE,publisher:'xupefei / Locale-Emulator',initialized:true,initialization:'official installer embedded resources',url:URL,sha256:crypto.createHash('sha256').update(bytes).digest('hex'),installedAt:new Date().toISOString()},null,2));
    fs.mkdirSync(path.dirname(this.dir),{recursive:true});if(fs.existsSync(this.dir))fs.renameSync(this.dir,this.dir+'.backup-'+Date.now());fs.renameSync(stage,this.dir);
-  }finally{try{fs.rmSync(part,{force:true});}catch{}if(path.dirname(stage)===path.dirname(this.dir)&&stage.startsWith(this.dir+'.stage-'))try{fs.rmSync(stage,{recursive:true,force:true});}catch{}}
+  }finally{if(path.dirname(stage)===path.dirname(this.dir)&&stage.startsWith(this.dir+'.stage-'))try{fs.rmSync(stage,{recursive:true,force:true});}catch{}}
  }
  async processes(exe){const output=await new Promise((resolve,reject)=>execFile(path.join(this.root,'native','GalWindowBridge.exe'),['--process-status',exe],{windowsHide:true,timeout:2500,encoding:'utf8'},(error,out)=>error?reject(Error('LE_PROCESS_CHECK_FAILED')):resolve(out)));const result=JSON.parse(output.trim());if(result.type!=='gameProcesses'||!Array.isArray(result.processes))throw Error('LE_PROCESS_CHECK_FAILED');return result.processes;}
  async launch(exe,{trace=()=>{},alsoExe=''}={}){

@@ -3,7 +3,7 @@
 // with its download URLs, SHA-256, download size and unpacked size. The first-launch window installs
 // "base" (and optionally the rest); this store lets Settings install the remaining packs later.
 'use strict';
-const fs=require('node:fs'),path=require('node:path'),{createHash}=require('node:crypto'),{spawn}=require('node:child_process');
+const fs=require('node:fs'),path=require('node:path'),{spawn}=require('node:child_process');
 
 /* E383 a mirror template may use {url} (whole GitHub URL), or {tag} and {file} (release tag and file name) for our own mirror dl.megulit.com */
 function mirrorUrl(template,url){const parts=String(url).split('/'),file=parts.pop()||'',tag=parts.pop()||'';return template.replace('{url}',url).replace('{tag}',tag).replace('{file}',file);}
@@ -47,21 +47,19 @@ class RuntimePacks{
   const dest=path.resolve(this.root,p.dest);if(!dest.startsWith(path.resolve(this.root,'runtime')+path.sep))throw Error('PACK_DEST_OUTSIDE');fs.rmSync(dest,{recursive:true,force:true});delete this.jobs[id];return this.status();}
  cancel(){for(const job of Object.values(this.jobs)){if(['queued','downloading'].includes(job.state)){job.state='cancelled';job.controller?.abort();}}return this.status();}
  async install(id,pack,job){
-  const part=path.join(this.root,'runtime-'+id+'.part'),stage=path.join(this.root,'runtime-'+id+'.unpack');
-  let lastError=null;
-  // Mainland China (by time zone / locale, no IP lookup): try GitHub mirrors first. SHA-256 still has to match.
+  const part=path.join(this.root,'runtime-'+id+'.zip'),stage=path.join(this.root,'runtime-'+id+'.unpack');
+  /* 2026-11-19 (hundreds of mainland players: downloads crawled, stuck on dl.megulit.com): core/fast-download.cjs measures
+     every source at once and pulls Range pieces from the fast ones in parallel; a slow or silent connection is moved to
+     another source, finished pieces survive a retry (runtime-<id>.zip.part.json). Mainland China (time zone / locale, no IP
+     lookup) still lists the mirrors first; SHA-256 has to match. */
   const direct=pack.urls||[],mirrored=(this.manifest().mirrors||[]).flatMap(m=>direct.map(u=>mirrorUrl(m,u)));
-  const tz=Intl.DateTimeFormat().resolvedOptions().timeZone||'',china=['Asia/Shanghai','Asia/Chongqing','Asia/Harbin','Asia/Urumqi','PRC'].includes(tz);
-  for(const url of china?[...mirrored,...direct]:[...direct,...mirrored]){
-   job.state='downloading';job.stage='download';job.received=0;job.controller=new AbortController();
-   try{
-    const digest=await fetchTo(url,part,job);
-    if(digest.toLowerCase()!==String(pack.sha256).toLowerCase())throw Error('文件校验失败');
-    lastError=null;break;
-   }catch(error){lastError=error;try{fs.rmSync(part,{force:true});}catch{}if(job.state==='cancelled')throw error;}
-  }
-  if(lastError)throw lastError;
   if(!direct.length&&!mirrored.length)throw Error('没有下载地址');
+  const china=require('./fast-download.cjs').inChina();
+  job.state='downloading';job.stage='download';job.received=0;job.controller=new AbortController();
+  try{
+   await require('./fast-download.cjs').download({urls:china?[...mirrored,...direct]:[...direct,...mirrored],china,dest:part,size:pack.size||0,sha256:pack.sha256,signal:job.controller.signal,userAgent:'MeguLit-runtime',
+    onProgress:p=>{job.received=p.received;if(p.total)job.total=p.total;},log:line=>{try{fs.mkdirSync(path.join(this.root,'logs'),{recursive:true});fs.appendFileSync(path.join(this.root,'logs','runtime-download.log'),new Date().toISOString()+' '+id+' '+line+'\n');}catch{}}});
+  }catch(error){throw /^(HASH|SIZE)_MISMATCH$/.test(error.code||'')?Error('文件校验失败'):error.code==='ABORTED'?error:Error(String(error.message||error).replace(/^DOWNLOAD_FAILED /,''));}
   job.stage='unpack';
   try{
   fs.rmSync(stage,{recursive:true,force:true});fs.mkdirSync(stage,{recursive:true});
@@ -79,22 +77,5 @@ class RuntimePacks{
   }catch(error){/* a failed unpack leaves no half folder or archive behind; the next try starts clean */fs.rmSync(stage,{recursive:true,force:true});fs.rmSync(part,{force:true});throw error;}
   if(!this.installed(id))throw Error('安装不完整');
  }
-}
-// node:http(s) instead of fetch: follows GitHub's CDN redirects and streams with normal backpressure.
-function fetchTo(url,file,job,hops=0){
- return new Promise((resolve,reject)=>{
-  const lib=url.startsWith('https:')?require('node:https'):require('node:http');
-  const req=lib.get(url,{headers:{'User-Agent':'MeguLit-runtime'},signal:job.controller.signal},res=>{
-   if([301,302,303,307,308].includes(res.statusCode)&&res.headers.location){res.resume();if(hops>8)return reject(Error('重定向过多'));return resolve(fetchTo(new URL(res.headers.location,url).toString(),file,job,hops+1));}
-   if(res.statusCode!==200){res.resume();return reject(Error('HTTP '+res.statusCode));}
-   job.total=Number(res.headers['content-length'])||job.total;
-   const hash=createHash('sha256'),out=fs.createWriteStream(file);
-   res.on('data',chunk=>{hash.update(chunk);job.received+=chunk.length;});
-   res.on('error',e=>{out.destroy();reject(e);});out.on('error',reject);
-   out.on('finish',()=>{if(job.total&&job.received<job.total)return reject(Error('下载不完整'));resolve(hash.digest('hex'));});
-   res.pipe(out);
-  });
-  req.on('error',reject);
- });
 }
 module.exports={RuntimePacks,MARKERS,ON_DEMAND_FILES,mirrorUrl};
