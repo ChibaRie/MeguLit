@@ -427,14 +427,24 @@ class HookNative{
   // LOG: those lines are neither read nor recorded and the reader hides; it returns after 1.5 s without replays or at
   // the first new line. A single repeated line (a script repeating itself) is read as usual.
   {const L=this.nativeLog||(this.nativeLog={seen:new Map(),hits:[],active:false,timer:null}),now=this.now(),key=text.replace(/\s+/g,'');
-   const current=key===String(this.lastSource||'').replace(/\s+/g,''),replay=L.seen.has(key)&&(!current||L.active||!!L.held);L.hits=L.hits.filter(t=>now-t<1000);if(replay)L.hits.push(now);
+   /* 2026-11-19 (ISLAND with its own hook: a page relayout sends the page's earlier lines again, 「わお…」 after 「いやっほう…」, a
+      whole NVL page after its newest line; 96 false LOGs paused reading and 14 of 20 lines were never shown, also in v1.4.16) the
+      LOG is told by evidence, not by any repeat: earlier lines read lately (the last 40) arriving while the story has not moved
+      on for 2 s. A line that moves on (new, or the one read after the current line: a new game or a skip through text read
+      before) is progress, and so is any line read; earlier lines within 2 s of that are the page being laid out again
+      and are read as usual. */
+   const recent=L.order||(L.order=[]),c=recent.length-1,at=recent.lastIndexOf(key),seen=L.seen.has(key);
+   const anchor=L.lastKey!==undefined?L.lastKey:recent[c],before=recent.lastIndexOf(anchor,anchor===key?-1:recent.length-1),repeatCurrent=c>=0&&at===c,forward=!seen||at<0||repeatCurrent&&!L.active&&!L.held||before>=0&&recent[before+1]===key;
+   if(forward&&!repeatCurrent)L.progressAt=now;
+   const current=key===String(this.lastSource||'').replace(/\s+/g,''),settled=now-(L.progressAt||0)>=2000;
+   const replay=seen&&!forward&&(L.active||settled)&&(!current||L.active||!!L.held);L.hits=L.hits.filter(h=>now-h.at<1000);if(replay&&!L.hits.some(h=>h.key===key))L.hits.push({at:now,key});
    const end=()=>{if(!L.active)return;L.active=false;clearTimeout(L.timer);L.timer=null;this.trace('native log closed');this.notify({hookNativeLog:false});};
    if(L.bypass===key)L.bypass=null;
    else if(replay&&(L.active||L.hits.length>=2)){if(!L.active){L.active=true;L.held=null;this.trace('native log detected; reading paused');this.notify({hookNativeLog:true});}
     clearTimeout(L.timer);L.timer=setTimeout(end,1500);L.timer.unref?.();return;}
    // The first earlier line waits 0.4 s: a LOG sends the next one at once, a script repeating one line does not.
    else if(replay){const held=L.held={m,name};const timer=setTimeout(()=>{if(L.held!==held)return;L.held=null;L.bypass=key;this.source(m,name);},400);timer.unref?.();return;}
-   if(!replay)end();L.seen.delete(key);L.seen.set(key,now);if(L.seen.size>3000)L.seen.delete(L.seen.keys().next().value);}
+   if(!replay)end();L.lastKey=key;L.progressAt=now;if(forward&&!repeatCurrent){recent.push(key);if(recent.length>40)recent.shift();}L.seen.delete(key);L.seen.set(key,now);if(L.seen.size>3000)L.seen.delete(L.seen.keys().next().value);}
   // Scene/chapter keys and asset ids ("10_1", "bg_01.png", "Chapter2") from engine string streams are never dialogue.
   if(identifierNoise(text)){this.trace('drop identifier text '+JSON.stringify(text.slice(0,60)));return;}
   if(ruby.length){const map=this.sourceRuby||(this.sourceRuby=new Map());map.set(text,ruby);if(map.size>64)map.delete(map.keys().next().value);}
