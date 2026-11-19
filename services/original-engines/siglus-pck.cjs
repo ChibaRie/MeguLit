@@ -3,6 +3,8 @@
 const fs=require('node:fs');
 const kit=require('./kit.cjs');
 const siglusSource=require('./siglus-source.cjs');
+const siglusKey=require('./siglus-key.cjs');
+const path=require('node:path');
 
 /* SiglusEngine Scene*.pck reader (compiled scenes without an exe key, plus OS-section .ss sources).
    Format references (read, not copied): Jirehlov/SiglusSceneScriptUtility (Unlicense OR 0BSD; pck.py, const.py, disam.py).
@@ -10,7 +12,9 @@ const siglusSource=require('./siglus-source.cjs');
      lzss (kit.lzDistance), decode UTF-16LE strings XORed by (0x7087 * index) & 0xffff, then walk CD_PUSH(20, sid) followed
      by CD_NAME(50) / CD_TEXT(49) in bytecode order.
    - OS-section .ss sources via siglus-source.cjs (works even when scn_data_exe_angou_mod != 0; no exe key needed).
-   - When scn_data_exe_angou_mod != 0 and no OS .ss sources exist, unsupported() reports SIGLUS_EXE_KEY (no key guessing). */
+   - When scn_data_exe_angou_mod != 0 the scenes carry a second 16-byte XOR (exe_el): siglus-key.cjs finds it from 暗号.dat,
+     the SiglusEngine exe, or the scenes themselves (known plaintext). Only when all three fail, and no OS .ss sources exist,
+     unsupported() reports SIGLUS_EXE_KEY. */
 const EASY_ANGOU_CODE=Buffer.from('70f8a6b0a1a5284fb52f48fae1e94bdeb74f62958be00380e7cf0f6b9201ebf8a288ce630438d26d8cd28876a792718f4eb68d017988830af9e92cdb67db9114d59a4e79172308960e1d15f9a5a06f5817c8a946da22fffd871242fba9b8676c916764f9d11ee450646ff20bde40e747f103cc2aad7f3421a06426986ced69f4b523086e7d92f6eb93f07a895ef9f87aafe8a948c2ac116b2b33a7400ddc7da75bcfc831d177528d82ac41b873a54f267c0f39da5b374adea4490b7c17a343ae77066473c043a3185a0f9f024c7e8b019f2dae725413ff96ae0b3458cfe30078bee3f561e4877cfc80afc48d463a5dd036bce5607768084fbbabe27807e873bf','hex');
 const STRING_XOR_MULT=0x7087,PACK_HDR_SIZE=92,SCN_HDR_SIZE=132;
 const {stat}=require('./file-key.cjs');
@@ -40,19 +44,40 @@ function decodeSceneNames(buf,h){
  }
  return names;
 }
-function compiledScenes(buf,h){
+/* scene i with the easy layer removed (exe layer still on), or null when out of range / zeroed (partial probe copies) */
+function sceneBlob(buf,h,i){
+ const a=buf.readInt32LE(h.scnDataIdxOfs+i*8),s=buf.readInt32LE(h.scnDataIdxOfs+i*8+4);
+ if(a<0||s<=8||h.scnDataOfs+a+s>buf.length)return null;
+ const raw=buf.subarray(h.scnDataOfs+a,h.scnDataOfs+a+s);
+ if(raw.subarray(0,16).every(x=>!x))return null;
+ return kit.xor(raw,EASY_ANGOU_CODE);
+}
+function compiledScenes(buf,h,exeKey=null){
  const names=decodeSceneNames(buf,h),out=[];
  for(let i=0;i<h.scnDataCnt;i++){
-  const a=buf.readInt32LE(h.scnDataIdxOfs+i*8),s=buf.readInt32LE(h.scnDataIdxOfs+i*8+4);
-  if(a<0||s<=8||h.scnDataOfs+a+s>buf.length)continue;
   try{
-   const dat=siglusSource._internal.lzss(kit.xor(buf.subarray(h.scnDataOfs+a,h.scnDataOfs+a+s),EASY_ANGOU_CODE));
+   let c=sceneBlob(buf,h,i);if(!c)continue;
+   if(exeKey)c=kit.xor(c,exeKey);
+   const dat=siglusSource._internal.lzss(c);
    if(!isSiglusDat(dat))continue;
    const name=(names[i]||('scene'+i))+'.dat';
    out.push({name,read:()=>dat});
   }catch{}
  }
  return out;
+}
+/* exe_el for an encrypted pack: 暗号.dat (packed source or beside the pck), the engine exe, then known plaintext */
+function sceneKey(file,buf,h){
+ const blobs=[];for(let i=0;i<h.scnDataCnt&&blobs.length<64;i++){try{const c=sceneBlob(buf,h,i);if(c)blobs.push(c);}catch{}}
+ if(!blobs.length)return null;
+ const fits=k=>{if(!k)return false;let ok=0;for(const c of blobs.slice(0,3)){try{if(isSiglusDat(siglusSource._internal.lzss(kit.xor(c,k))))ok++;else return false;}catch{return false;}}return ok>0;};
+ const dir=path.dirname(file),tried=[];
+ try{for(const s of siglusSource.sources(file))if(/(^|[\\/])暗号\.dat$/i.test(s.name))tried.push(['angou',siglusKey.angouDatKey(s.raw)]);}catch{}
+ try{for(const n of fs.readdirSync(dir))if(/^暗号\.dat$/i.test(n))tried.push(['angou',siglusKey.angouDatKey(fs.readFileSync(path.join(dir,n)))]);}catch{}
+ for(const [source,k] of tried)if(fits(k))return {key:k,source};
+ for(const f of siglusKey.exeCandidates(dir)){try{const k=siglusKey.exeKey(fs.readFileSync(f));if(fits(k))return {key:k,source:'exe'};}catch{}}
+ const k=siglusKey.solveKey(blobs,{check:isSiglusDat});
+ return fits(k)?{key:k,source:'plaintext'}:null;
 }
 function parseCompiledDat(buf){
  if(!isSiglusDat(buf))return {lines:[],anchors:[]};
@@ -78,6 +103,7 @@ function parseCompiledDat(buf){
    else if(nextOp===49){if(strs[sid]){lines.push(strs[sid]);speakers.push(speaker);}speaker='';p+=13;}
   }
  }
+ if(buf.namae instanceof Map)for(let i=0;i<speakers.length;i++)if(buf.namae.has(speakers[i]))speakers[i]=buf.namae.get(speakers[i]);
  return speakers.some(Boolean)?{lines,anchors:[],speakers}:{lines,anchors:[]};
 }
 
@@ -160,6 +186,12 @@ function parseSs(buf){
  return speakers.some(Boolean)?{lines,anchors:[],speakers}:{lines,anchors:[]};
 }
 
+function namaeMap(dir,exeKey){
+ const m=new Map(),f=siglusKey.gameexeFile(dir);if(!f)return m;
+ let t='';try{const b=fs.readFileSync(f);t=siglusKey.gameexeText(b,b.length>=8&&b.readInt32LE(4)===0?null:exeKey);}catch{}
+ for(const line of t.split(/\r?\n/)){const r=line.match(/^\s*#NAMAE\s*=\s*"([^"]*)"\s*,\s*"([^"]*)"/);if(r&&r[1]&&r[2]&&!m.has(r[1]))m.set(r[1],r[2]);}
+ return m;
+}
 function loadPck(dir){
  const file=siglusSource.scenePck(dir);
  if(!file)return null;
@@ -171,6 +203,9 @@ function loadPck(dir){
   res.hdr=h;
   if(h){
    if(h.exeAngouMod===0&&h.scnDataCnt>0)res.scenes=compiledScenes(buf,h);
+   else if(h.scnDataCnt>0){const k=sceneKey(file,buf,h);if(k){res.key=k;res.scenes=compiledScenes(buf,h,k.key);}}
+   /* #NAMAE "tag","shown name": compiled scenes name speakers by tag (吉野＿体験版); the window shows the second column */
+   if(res.scenes.length){const namae=namaeMap(path.dirname(file),res.key?.key||null);if(namae.size)res.scenes=res.scenes.map(sc=>({name:sc.name,read:()=>{const d=sc.read();d.namae=namae;return d;}}));}
    if(!res.scenes.length&&h.osHeaderSize>0)res.scenes=siglusSource.sources(file).filter(s=>/\.ss$/i.test(s.name)).map(s=>({name:s.name,read:()=>s.raw}));
   }
  }catch{}
@@ -192,6 +227,7 @@ const engine={
   if(!h||h.exeAngouMod===0)return '';
   return loadPck(dir)?.scenes.length?'':'SIGLUS_EXE_KEY';
  },
- REASONS:{SIGLUS_EXE_KEY:'这个 SiglusEngine 游戏的 Scene.pck 用了按作品的 exe 密钥加密，且没有附带源码段，暂时读不了'},
+ REASONS:{SIGLUS_EXE_KEY:'这个 SiglusEngine 游戏的 Scene.pck 用了按作品的 exe 密钥加密，从 exe 和剧本本身都没能取到密钥（或 Scene.pck 不完整），暂时读不了'},
+ gameexe(dir){const f=siglusKey.gameexeFile(dir);if(!f)return '';try{const b=fs.readFileSync(f);if(b.readInt32LE(4)===0)return siglusKey.gameexeText(b,null);return siglusKey.gameexeText(b,loadPck(dir)?.key?.key||null);}catch{return '';}},
 };
-module.exports={engine,parseHeader,isSiglusDat,compiledScenes,parseCompiledDat,parseSs,_internal:{EASY_ANGOU_CODE,stripLineComment}};
+module.exports={engine,parseHeader,isSiglusDat,compiledScenes,sceneKey,parseCompiledDat,parseSs,_internal:{EASY_ANGOU_CODE,stripLineComment}};

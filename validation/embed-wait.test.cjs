@@ -1,0 +1,31 @@
+'use strict';
+/* 2026-11-19 (アマカノ2 / CatSystem2 "挂上以后卡卡的"): the game thread waits for the bridge's embed answer. The replay itself is
+   native/megulithook/selftest/embedwait.cpp (run.cmd); this checks that the hook and the bridge keep using it. */
+const test=require('node:test');const assert=require('node:assert');const fs=require('fs');const path=require('path');
+const read=f=>fs.readFileSync(path.join(__dirname,'..',f),'utf8');
+test('hook: the answer event exists before the line goes out, every answer is cached per generation, only waiting streams clear the answer buffer',()=>{
+ const h=read('native/megulithook/MeguLitEmbedWait.h');
+ assert.match(h,/const ULONGLONG UnchangedTtlMs = 500;/);
+ assert.match(h,/bool unchanged = answer\.empty\(\);/);
+ const e=read('native/megulithook/embed_util.cc');
+ assert.match(e,/static_assert\(offsetof\(CommonSharedMem, hash\) == 16/);
+ assert.match(e,/int MeguLitEmbedArm\(HookParam &hp, TextBuffer &buff, const ThreadParam &tp\)\s*\{\s*if \(!check_embed_able\(tp\)\)\s*return -1;/,'a stream that is not selected returns before anything else');
+ assert.match(e,/ZeroMemory\(commonsharedmem->text[^;]*;[^\n]*\n[^\n]*\n\s*MeguLitEmbed::Arm\(/,'the buffer is cleared and the event made just before the line goes out');
+ assert.match(e,/translatecache\.Put\(hash, generation, GetTickCount64\(\), translate\);\s*if \(\(translate\.size\(\) == 0\)\)\s*return false;/,'an empty answer is cached too');
+ const t=read('native/megulithook/texthook.cc');
+ assert.match(t,/int armed = MeguLitEmbedArm\(hp, buff, tp\);/);
+ assert.match(t,/if \(armed > 0 \|\| armed == -2\)\s*buffer->type &= \(~EMBED_ABLE\);/,'never strips EMBED_ABLE from a stream that is not selected');
+ assert.doesNotMatch(t,/checktranslatedok\(buff\)/);
+ for(const f of ['build-x86.cmd','build-x64.cmd'])assert.match(read('native/megulithook/'+f),/MeguLitEmbedWait\.h texthook\.cc/,f);
+ const r=read('native/megulithook/selftest/run.cmd');
+ assert.match(r,/embedwait\.exe" --old >nul\r?\n if not errorlevel 1 \(echo FAIL/,'the replay must fail on the old waiting');});
+test('bridge: hide waits at most 100 ms, no fixed sleep before the answer, generation bumped on every state change, log off the hot path',()=>{
+ const b=read('native/HookBridge.cs');
+ assert.match(b,/const uint HideWaitMs=100;/);
+ assert.doesNotMatch(b,/Thread\.Sleep\(8\)/);
+ assert.match(b,/GlyphLine\(text\);GlyphDrain\(8\);try\{Luna_EmbedCallback\(tp,text,text\);\}/);
+ assert.match(b,/MemoryMappedFile\.OpenExisting\("EMBED_SHARED_MEM"\+Pid\);EmbedView=EmbedMem\.CreateViewAccessor\(16,8\);/);
+ assert.match(b,/static void OnEmbed\(string text,ThreadParam tp\)\{SyncEmbedGeneration\(\);/);
+ assert.match(b,/Heartbeat\(\);SyncEmbedGeneration\(\);Thread\.Sleep\(40\);/);
+ for(const k of ['Selected','ReplacementEnabled','TranslateMode','MarksMode','GlyphAll','SkipHeld','EngineDialogHidden','HookTarget.ChineseText','c.hideOnly'])assert.ok(b.includes('static string EmbedStateKey(){')&&b.slice(b.indexOf('static string EmbedStateKey(){')).split('\n')[0].includes(k),k);
+ assert.match(b,/static void Diagnostic\(string value\)\{DiagQueue\.Enqueue\(/);});

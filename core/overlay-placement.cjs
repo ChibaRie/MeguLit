@@ -55,7 +55,7 @@ class OverlayPlacement {
       if (m.hidden !== true && m.engine !== 'gpu' && this.current && !this.current.fallback && this.current.id === id && this.current.text === flat.join('')) return; /* GPU hiding is decided per frame: there, not hidden is the game showing it */
       if (m.hidden !== true) { if (this.current?.id === id) this.clear(); const vis = flat.join(''); if (vis && vis !== this.visibleKey) { this.visibleKey = vis; this.send({ type: 'textPlace', visible: true, text: vis }); } return; }
       this.visibleKey = '';
-      this.emitLine({ id, engine: m.engine, text: flat.join(''), rects, client: this.client.slice() });
+      this.emitLine({ id, engine: m.engine, text: flat.join(''), rects, client: this.client.slice(), ...(m.color ? { color: m.color } : {}) });
     }
   }
   /* ① MeguLitFont blank mode (record spec 3): the current line's table (hook-native state.hookGlyphDots) with a cell
@@ -223,7 +223,7 @@ class OverlayPlacement {
   emitLine(line) {
     if (!line.fallback) {
       const rects = OverlayPlacement.sane(line.rects, line.client);
-      line = rects ? { ...line, rects } : { id: line.id, engine: line.engine, text: line.text, fallback: true, client: line.client };
+      line = rects ? { ...line, rects } : { id: line.id, engine: line.engine, text: line.text, fallback: true, client: line.client, ...(line.color ? { color: line.color } : {}) };
       if (rects && !line.approx) this.learn(rects);
     }
     const key = JSON.stringify(line);

@@ -25,7 +25,7 @@ function libraryGames(db){try{return db.prepare("SELECT id,title,executable FROM
 /* the zero-latency side of a game: pairing of the Chinese script against the Japanese one (counts only) */
 function pairingOf(root,id){try{const s=readJSON(path.join(root,'data','config','original-text.json'))?.[id];const p=s?.patchAlignment?.pairing;
  const out={brief:require('./original-text.cjs').brief(root,id),status:String(s?.status||''),patchStatus:String(s?.patchStatus||'')};
- if(p&&Number.isFinite(p.total)&&p.total>0)Object.assign(out,{total:p.total,paired:p.paired|0,unpaired:p.unpaired|0,rate:Math.round(p.paired/p.total*10000)/10000,reasons:Object.fromEntries(Object.entries(p.reasons||{}).filter(([k,v])=>/^[a-z-]{1,40}$/.test(k)&&Number.isFinite(v)).slice(0,12))});
+ if(p&&Number.isFinite(p.total)&&p.total>0)Object.assign(out,{total:p.total,paired:p.paired|0,unpaired:p.unpaired|0,added:p.added?.count|0,rate:Math.round(p.paired/p.total*10000)/10000,reasons:Object.fromEntries(Object.entries(p.reasons||{}).filter(([k,v])=>/^[a-z-]{1,40}$/.test(k)&&Number.isFinite(v)).slice(0,12))});
  return out;}catch{return null;}}
 const LOW_PAIRING=.98;
 function finish(root,game,result){const pairing=pairingOf(root,game.id);const r={...result,pairing};
@@ -67,16 +67,30 @@ async function loop(root,live){
   const now=load(root);if(!now.run)return;now.results[next.id]=finish(root,next,result);now.run.done.push(next.id);now.run.updatedAt=Date.now();now.run.usedMs=Date.now()-began;save(root,now);
   live.current=null;await new Promise(r=>setTimeout(r,150));}
 }
+/* S5 what a worker killed on the budget had done: its last progress (adapter-probe-core.cjs probeGame report) as a
+   result. A reader that already read text decides the step as usual; otherwise 'timeout' with the stage it was in. */
+function partialResult(progress){const empty={schema:'megulit.probe-result',version:1,step:'timeout',detail:'PER_GAME_BUDGET',engines:[],inventory:{files:0,bytes:0,ext:{},archives:[]},lines:0,japaneseLines:0};
+ if(!progress||typeof progress!=='object')return empty;
+ const engines=Array.isArray(progress.engines)?progress.engines:[],inventory=progress.inventory||empty.inventory,stage=String(progress.stage||'').slice(0,40);
+ const base={...empty,engines,inventory,tried:engines.map(e=>e.id).slice(0,24),budgetMs:progress.budgetMs||0,timedOut:stage||true,detail:'PER_GAME_BUDGET'+(stage?':'+stage:'')};
+ if(!engines.some(e=>e.lines>0))return base;
+ try{const core=require('./adapter-probe-core.cjs'),c=core.classify({engines,inventory,unsupported:null,preparing:null,title:progress.title});const best=engines.find(e=>e.id===c.detected);
+  return {...base,step:c.step,detail:c.detail,detected:c.detected,lines:best?.lines||0,japaneseLines:best?.japaneseLines||0,dialogueLines:best?.dialogueLines||0,chineseLines:best?.chineseLines||0};}catch{return base;}}
+const readProgress=file=>{try{return JSON.parse(fs.readFileSync(file,'utf8'));}catch{return null;}};
 function probeOne(live,{dir,executable,title},perGameMs){
  return new Promise(resolve=>{
   if(!live.child||live.child.exitCode!==null||live.child.killed)live.child=spawnWorker();
-  const child=live.child,id=Math.random().toString(36).slice(2);let settled=false;
-  const done=r=>{if(settled)return;settled=true;clearTimeout(timer);child.off('message',onMessage);child.off('exit',onExit);resolve(r);};
+  const child=live.child,id=Math.random().toString(36).slice(2),began=Date.now(),progressFile=path.join(os.tmpdir(),'megulit-probe-'+process.pid+'-'+id+'.json');let settled=false,timer=null;
+  const done=r=>{if(settled)return;settled=true;clearTimeout(timer);child.off('message',onMessage);child.off('exit',onExit);try{fs.rmSync(progressFile,{force:true});}catch{}resolve(r);};
   const onMessage=m=>{if(m?.type==='result'&&m.id===id)done(m.result);};
   const onExit=()=>{live.child=null;done({schema:'megulit.probe-result',version:1,step:live.cancelled?'cancelled':'parse-failed',detail:'WORKER_EXIT',engines:[],inventory:{files:0,bytes:0,ext:{},archives:[]},lines:0,japaneseLines:0});};
-  const timer=setTimeout(()=>{try{child.kill();}catch{}live.child=null;done({schema:'megulit.probe-result',version:1,step:'timeout',detail:'PER_GAME_BUDGET',engines:[],inventory:{files:0,bytes:0,ext:{},archives:[]},lines:0,japaneseLines:0});},perGameMs);
+  /* the worker may grow its own budget with the size of the game (scaledBudget): one extension to that, then kill */
+  const expire=()=>{const p=readProgress(progressFile),limit=(p?.budgetMs||0)+5000,used=Date.now()-began;
+   if(used<limit&&!settled){timer=setTimeout(expire,limit-used);live.timer=timer;return;}
+   try{child.kill();}catch{}live.child=null;done(partialResult(p&&{...p,title}));};
+  timer=setTimeout(expire,perGameMs);
   live.timer=timer;child.on('message',onMessage);child.once('exit',onExit);
-  try{child.send({type:'probe',id,dir,executable,title,budgetMs:Math.max(5000,perGameMs-5000)});}catch{done({schema:'megulit.probe-result',version:1,step:'parse-failed',detail:'WORKER_SEND',engines:[],inventory:{files:0,bytes:0,ext:{},archives:[]},lines:0,japaneseLines:0});}
+  try{child.send({type:'probe',id,dir,executable,title,progressFile,budgetMs:Math.max(5000,perGameMs-5000)});}catch{done({schema:'megulit.probe-result',version:1,step:'parse-failed',detail:'WORKER_SEND',engines:[],inventory:{files:0,bytes:0,ext:{},archives:[]},lines:0,japaneseLines:0});}
  });}
 /* one job in a fresh worker (structural samples for the upload): resolves its answer, or null on timeout / crash */
 function inWorker(message,timeout=120000){return new Promise(resolve=>{let child;try{child=spawnWorker();}catch{return resolve(null);}const id=Math.random().toString(36).slice(2);
@@ -94,4 +108,4 @@ function resumeLater(root,openDb,{delay=180000}={}){if(process.env.NODE_TEST_CON
 function problems(root){return Object.entries(results(root)).filter(([,r])=>r.step&&r.step!=='ok'&&r.step!=='no-script'&&r.step!=='preparing').map(([id,r])=>({id,title:r.title||'',step:r.step,detail:r.detail||''}));}
 /* one row for the 适配总览 dialog: {step,detail,lines,pairing,at} or null */
 function brief(root,id){const r=results(root)[String(id)];if(!r)return null;return {step:r.step,detail:r.detail||'',engine:r.detected||null,lines:r.lines||0,japaneseLines:r.japaneseLines||0,pairing:r.pairing?.rate??null,at:r.at||null};}
-module.exports={inWorker,sampleInWorker,fullInWorker,start,resume,cancel,status,results,problems,brief,resumeLater,load,fileOf,LOW_PAIRING,finish,pairingOf,libraryGames};
+module.exports={partialResult,inWorker,sampleInWorker,fullInWorker,start,resume,cancel,status,results,problems,brief,resumeLater,load,fileOf,LOW_PAIRING,finish,pairingOf,libraryGames};

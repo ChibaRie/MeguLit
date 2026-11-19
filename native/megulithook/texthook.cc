@@ -4,6 +4,7 @@
 #include "lunarpc.h"
 #include "MeguLitGdiHide.h"
 #include "MeguLitMarks.h"
+int MeguLitEmbedArm(HookParam &hp, TextBuffer &buff, const ThreadParam &tp);
 extern WinMutex viewMutex;
 
 // - Unnamed helpers -
@@ -384,14 +385,15 @@ void TextHook::Send(hook_context *context)
 				buffer->type &= (~EMBED_ABLE);
 				canembed = false;
 			}
-			else if (checktranslatedok(buff))
-			{
-				buffer->type &= (~EMBED_ABLE);
-				canembed = true;
-			}
 			else
 			{
-				canembed = true;
+				/* MeguLit 2026-11-19 (MeguLitEmbedWait.h): a stream that is not selected never waits and leaves the shared answer
+				   buffer alone; a cached line (also one the bridge left unchanged) is not asked again; the answer event exists
+				   before the line goes out, so a fast answer is never lost */
+				int armed = MeguLitEmbedArm(hp, buff, tp);
+				if (armed > 0 || armed == -2)
+					buffer->type &= (~EMBED_ABLE); /* never for a stream that is not selected: its first line creates the thread, and the bridge must still see it as writable */
+				canembed = armed >= 0;
 			}
 		}
 

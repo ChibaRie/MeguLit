@@ -20,6 +20,7 @@ const ENGINES=[
  /* E578 or a data*.dat / *.lib that opens as a Malie archive (plain LIB / LIBU, or LIBP with one of the known title keys) */
  {name:'Malie',hook:true,test:f=>f.has(/^malie\.ini$/i)||f.has(/\.lib$/i)&&f.has(/^malie.*\.exe$/i)||(f.has(/^data\d*\.dat$|\.lib$/i)||f.sub('data',/^data\d*\.dat$|\.lib$/i))&&require('./malie.cjs').probe(f.dir)},
  {name:'AdvHD / WillPlus',hook:true,test:f=>f.has(/^rio\.arc$/i)||f.has(/^advhd\.exe$/i)},
+ {name:'Kogado (HyPack)',hook:null,test:f=>f.magicAny(/\.pak$/i,'HyPack')},
  {name:'Majiro',hook:true,test:f=>f.has(/^scenario\.arc$/i)&&f.has(/\.arc$/i)},
  {name:'QLIE',hook:true,test:f=>f.sub('GameData',/\.pack$/i)},
  /* E568 Softpal keeps PAL.dll in dll\ (時計仕掛けのレイライン); its archives start "PAC " (NeXAS: "PAC" + a version byte) */
@@ -90,6 +91,8 @@ const ENGINES=[
  {name:'AST',hook:null,test:f=>f.magicAny(/^[A-Za-z0-9_]{1,16}$/,'ARC2',8)||f.magicAny(/^[A-Za-z0-9_]{1,16}$/,'ARC1',8)},
  /* E585 no-magic archives are recognised by their index: Tmr-Hiro srp.pac (.pac with a script entry), Interheart .fpk, NekoSDK NEKOPACK4 .pak / 0xCACACA .dat (ADVSCRIPT2) */
  {name:'Tmr-Hiro ADV',hook:null,test:f=>f.probe(/\.pac$/i,p=>require('./tmrhiro.cjs').isPac(p))},
+ /* E700 FPD containers (fz engine: Fate/stay night REMASTERED obb/*.bin) */
+ {name:'FPD (fz engine)',hook:null,test:f=>require('./fpd.cjs').archives(f.dir).length>0},
  {name:'Interheart (FPK)',hook:null,test:f=>f.magicAny(/\.fpk$/i,'FPK 2.00')||f.probe(/\.fpk$/i,p=>require('./interheart.cjs').isArchive(p))},
  {name:'NekoSDK',hook:null,test:f=>f.magicAny(/\.pak$/i,'NEKOPACK4')||f.probe(/\.dat$/i,p=>require('./nekosdk.cjs').isArchive(p))},
  {name:'KaGuYa',hook:null,test:f=>f.has(/\.ari$/i)&&f.has(/\.arc$/i)||f.peek('message.dat',/^\[SCR-MESSAGE\]/,16)||f.peek('params.dat',/^\[SCR-PARAMS\]/,16)||f.magicAny(/\.arc$/i,'WFL1')||f.magicAny(/\.arc$/i,'LINK')},
@@ -199,7 +202,7 @@ const READERS={"BGI / Ethornell":["bgi"],
  "CatSystem2":["catsystem2"],
  "Artemis":["artemis"],
  "Malie":["malie"],
- "AdvHD / WillPlus":["advhd"],
+ "AdvHD / WillPlus":["advhd"],"Kogado (HyPack)":["kogado"],
  "Majiro":["majiro"],
  "QLIE":["qlie"],
  "SoftPal":["softpal"],
@@ -230,6 +233,7 @@ const READERS={"BGI / Ethornell":["bgi"],
  "AST":["ast"],
  "Tmr-Hiro ADV":["tmrhiro"],
  "Interheart (FPK)":["interheart"],
+ "FPD (fz engine)":["fpd"],
  "NekoSDK":["nekosdk"],
  "KaGuYa":["kaguya"],
  "Lucifen":["lucifen"],

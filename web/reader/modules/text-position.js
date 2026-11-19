@@ -69,12 +69,26 @@
   if(edge)root.setProperty('--tomoyo-gal-line-edge',paint.edge);else root.removeProperty('--tomoyo-gal-line-edge');};
  api.lineStyleState=()=>({readState,states:Object.fromEntries(stateStyle),pixel:pixelPaint});
  api.paintLine=paintLine;
- b.lineColorReset=()=>{pixelPaint=null;colorSource='';colorSequence=null;colorDraw=latestDraw=retiredDraw=null;waitingDraw=false;paintLine('','');};
+ /* The game's own pixels for a sentence, one slot for both ways of seeing them: the engine side reading the glyphs it just drew
+    (ToMe_CHARS color, live 死に逝く君、館に芽吹く憎悪: TextRender, read yellow -> new white, chColor white for both) and the helper
+    measuring the game window (core/game-style-sync.cjs lineStyle). Used when no engine draw call claimed the sentence.
+    The source may carry ruby readings, a speaker name or stage notes the game does not draw, and a page that grew by a sentence
+    draws the earlier ones too: most characters of either text found in the other is a match. */
+ const compact=t=>String(t||'').replace(/\s+/g,''),sameText=(src,drawn)=>{const a=[...compact(src)],d=[...compact(drawn)];if(!a.length||!d.length)return false;
+  const left=new Map();for(const c of a)left.set(c,(left.get(c)||0)+1);let hit=0;for(const c of d){const n=left.get(c);if(n){hit++;left.set(c,n-1);}}return hit>=Math.ceil(Math.min(a.length,d.length)*.8);};
+ const pixelFor=src=>pixelPaint&&src&&(pixelPaint.token!=null?pixelPaint.token===sourceToken(src):sameText(src,pixelPaint.text))?pixelPaint:null;let pixelEarly=null;
+ /* a sample that is not the current sentence's is either late (dropped at the next source) or early (its source comes next): it waits
+    beside the current one and never replaces it */
+ const matchesSample=(x,src)=>!!x&&!!src&&(x.token!=null?x.token===sourceToken(src):sameText(src,x.text));
+ const pixelSeen=(sample)=>{if(matchesSample(sample,colorSource)||!pixelFor(colorSource))pixelPaint=sample;else pixelEarly=sample;const own=pixelFor(colorSource);if(own&&!(colorDraw?.claimed&&(colorDraw.color||colorDraw.style)))paintLine(own.color,colorSource,own.style);};
+ b.lineColorDrawn=(text,color)=>{if(!/^#[0-9a-f]{6}$/i.test(String(color)))return;pixelSeen({text:String(text||''),token:null,color,style:null});};
+ b.lineStyleSample=m=>{const style=m.style&&typeof m.style==='object'&&/^#[0-9a-f]{6}$/i.test(m.style.fill||'')?m.style:null;if(!style||!Number.isSafeInteger(m.sourceToken))return;pixelSeen({text:'',token:m.sourceToken,color:style.fill,style});};
+ b.lineColorReset=()=>{pixelPaint=pixelEarly=null;colorSource='';colorSequence=null;colorDraw=latestDraw=retiredDraw=null;waitingDraw=false;paintLine('','');};
  b.lineColorFor=(text,sequence)=>{const next=String(text||''),seq=Number.isSafeInteger(sequence)?sequence:null;
-  if(next===colorSource&&(seq===null||seq===colorSequence))return;colorSource=next;colorSequence=seq;pixelPaint=null;
+  if(next===colorSource&&(seq===null||seq===colorSequence))return;colorSource=next;colorSequence=seq;if(!pixelFor(next))pixelPaint=matchesSample(pixelEarly,next)?pixelEarly:null;pixelEarly=null; /* pixels seen before their source arrived stay; another sentence's never carry over */
   if(colorDraw&&!colorDraw.claimed&&colorDraw.sourceToken!=null&&colorDraw.sourceToken===sourceToken(next)){colorDraw.claimed=true;waitingDraw=false;paintLine(colorDraw.color,next,colorDraw.style);return;}
   /* A draw already claimed by the previous sequence is retired: a late end for it must not recolour this one, even with the same text. */
-  retiredDraw=colorDraw?.claimed?{engine:colorDraw.engine,line:colorDraw.line}:null;colorDraw=null;waitingDraw=true;paintLine('',next);
+  retiredDraw=colorDraw?.claimed?{engine:colorDraw.engine,line:colorDraw.line}:null;colorDraw=null;waitingDraw=true;{const own=pixelFor(next);paintLine(own?.color||'',next,own?.style);}
  };
  const lineColor=m=>{
   if(!/_adv_v1$/.test(String(m.engine||''))||!Number.isSafeInteger(m.line))return;
@@ -91,12 +105,8 @@
    /* A game that fades characters in starts each one faint: the opacity at the first character is not the sentence's (live ファタモルガーナの館: begin 20 %, end opaque). Until the end says so it counts only when the last finished sentence was dimmed the same. */
    const a=Number(m.style.alpha);if(m.phase==='end')endAlpha=Number.isFinite(a)?a:1;colorDraw.style=m.phase!=='end'&&a<.98&&!(Math.abs(a-endAlpha)<.03)?{...m.style,alpha:1}:m.style;} /* the engine side sends the end again when the opacity rises after it */
   if(Number.isSafeInteger(m.sourceToken)){colorDraw.sourceToken=m.sourceToken;colorDraw.claimed=matches;}
-  if(colorDraw.claimed)paintLine(colorDraw.color||pixelPaint?.color||'',colorSource,colorDraw.style||(colorDraw.color?null:pixelPaint?.style));
+  if(colorDraw.claimed){const own=colorDraw.color||colorDraw.style?null:pixelFor(colorSource);paintLine(colorDraw.color||own?.color||'',colorSource,colorDraw.style||own?.style);}
  };
- /* The game's own pixels for the sentence on screen (core/line-pixels.cjs): used when the engine's draw call said nothing for it. */
- b.lineStyleSample=m=>{if(!colorSource||!Number.isSafeInteger(m.sourceToken)||m.sourceToken!==sourceToken(colorSource))return;
-  const style=m.style&&typeof m.style==='object'&&/^#[0-9a-f]{6}$/i.test(m.style.fill||'')?m.style:null;if(!style)return;pixelPaint={color:style.fill,style};
-  if(colorDraw?.claimed&&(colorDraw.color||colorDraw.style))return;paintLine(style.fill,colorSource,style);};
  b.textPosition=(m,refresh=false)=>{m=cs2Canvas(m);
   if(!m||![m.x0,m.y0,m.x1,m.y1].every(unit)||m.x1<m.x0||m.y1<m.y0||!Number.isFinite(m.size)||m.size<=0||m.size>256)return;const firstSource=!last;last=m;lastAt=Date.now();
   if(!refresh)lineColor(m);

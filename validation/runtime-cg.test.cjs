@@ -54,7 +54,7 @@ test('R18 filter: memory CGs (never rated) are left out',()=>{
 // End to end with the native self-test output, when run.ps1 has run on this machine with the Cg case (it leaves cg.log).
 const selfOut=path.join(process.env.MEGULIT_WORK||'H:\\MeguLit-Work','runtime-dump-selftest','out64');
 const hasCgRun=()=>{try{return fs.readdirSync(selfOut).some(k=>fs.existsSync(path.join(selfOut,k,'cg.log')));}catch{return false;}};
-test('native self-test output: shown CGs readable, the preloaded one absent',{skip:!hasCgRun()},()=>{
+test('native self-test output: shown CGs readable, the preloaded one absent',{skip:!hasCgRun()&&'environment: no native CG self-test output on this PC (run the runtime-cg self-test first)'},()=>{
  const work=path.join(process.env.MEGULIT_WORK||'H:\\MeguLit-Work','runtime-dump-selftest');
  process.env.MEGULIT_RUNTIME_DUMP=path.join(work,'out64');delete require.cache[require.resolve('../services/runtime-dump.cjs')];delete require.cache[require.resolve('../services/runtime-cg.cjs')];
  const cg=require('../services/runtime-cg.cjs');cg.settle(require('../services/runtime-dump.cjs').dirFor(path.join(work,'game64')));
