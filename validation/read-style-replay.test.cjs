@@ -8,6 +8,7 @@
      status  a reader status message (hookSourceRead + hookSourceReadOrigin; with text it also carries that sentence)
      sample  the game's own pixels for the sentence on screen (core/line-pixels.cjs result)
      expect  what the reader paints now: color (#rrggbb / #rrggbbaa, null = no override), edge (null = the saved outline)
+     gline / gcolor  a blank-glyph line and the colour of its draw (GDI text colour, brush, or the GPU glyph trace), as HookBridge emits them
      expectPos live recordings: the game's pixel colour of that step (pixel), which the colour handed to the reader must match
      expectNot a colour the reader must not show now
    A live recording is replayed by the same driver. */
@@ -36,6 +37,8 @@ function reader(t,prefs={}){
    else if(row.t==='source'){now+=1000;hook.source({text:row.text,sourceName:'KiriKiriZ',origin:'live'},'');}
    else if(row.t==='status'){const {t:_,text,...m}=row;now+=1000;if(typeof text==='string')route({...m,hookSource:text,hookSequence:Math.round(now/1000)});else route(m);}
    else if(row.t==='drawn')b.lineColorDrawn(row.text,row.color); /* ToMe_CHARS color: the engine side read its own glyphs */
+   else if(row.t==='gline'){hook.glyphDots({type:'hookGlyphDots',state:'line',seq:row.seq,text:row.text});hook.glyphColorFlush();} /* blank-glyph line announced (ToMe_GLYPHDOT line) */
+   else if(row.t==='gcolor')hook.glyphColor({type:'hookGlyphColor',seq:row.seq,color:row.color,alpha:row.alpha,src:row.src}); /* its draw colour (ToMe_GLYPHDOT color / ToMe_GLYPHCOL) */
    else if(row.t==='sample')route({type:'lineStyleSample',sourceToken:window.TomeIslandSource.token(row.text),style:row.style});
    else if(row.t==='expect'){const p=paint();assert.equal(p.color,row.color,'fill of line '+row.line);assert.equal(p.edge,row.edge,'outline of line '+row.line);return 1;}
    else if(row.t==='expectPos'){/* live recordings: the colour the reader is given for the sentence equals the game's pixels of that step */
@@ -108,3 +111,8 @@ test('opacity rule: animated opacity is never painted, settled opacity is, the p
  const ctx={};vm.createContext(ctx);vm.runInContext(read('web/reader/modules/game-style.js'),ctx);const gs=ctx.TomoyoGameStyle,p={autoGameStyle:true,textColor:'#fffaf2'};
  assert.equal(gs.linePaint(p,'',"",{fill:'#ffffff',alpha:.2,animated:true}).color,'#ffffff');assert.equal(gs.linePaint(p,'','',{fill:'#ffffff',alpha:.5}).color,'#ffffff80');
  const s=read('native/krkrtext/script.inc');assert.ok(s.includes("return op<255?s+',a:1':s;")&&s.includes('this.drawLo==this.drawOp')&&s.includes('r.lo==r.op'),'the engine side settles a sub-opaque opacity only when every draw had it and nothing moved for three ticks');});
+test('draw-colour evidence of blank-glyph lines is wired end to end: font DLL, bridge, node',()=>{
+ const font=read('native/fontprobe/FontProbe.cpp'),bridge=read('native/HookBridge.cs'),node=read('core/hook-native.cjs');
+ for(const call of ['ColorOfDc(seq, dc)','ColorOfGdipBrush(seq, brush)','ColorOfGdipBrush(seq, br)','ColorOfD2DBrush(seq, "d2d", brush)','ColorOfD2DBrush(seq, "run", brush)'])assert.ok(font.includes(call),call);
+ assert.ok(font.includes('"ToMe_GLYPHDOT color seq=%ld rgb=%06x a=%02x src=%s"')&&bridge.includes(String.raw`^color seq=(\d{1,9}) rgb=([0-9a-f]{6}) a=([0-9a-f]{2}) src=(\w{1,8})$`));
+ assert.ok(node.includes("if(m.type==='hookGlyphColor'){this.glyphColor(m);return;}")&&node.includes("this.glyphDots(m);this.glyphColorFlush();"));});

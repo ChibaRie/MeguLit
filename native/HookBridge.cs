@@ -542,6 +542,8 @@ static void Deactivate(string reason){if(WaitHook!=null)WaitHook.Disable();lock(
   /* extra lines (names, choices; records 4): announced once per id, then their own records */
   var ex=System.Text.RegularExpressions.Regex.Match(s,@"^extra id=(\d{1,9}) kind=([no]) text=(.*)$");if(ex.Success){Emit(new{type="hookGlyphExtra",state="line",id=Int64.Parse(ex.Groups[1].Value),kind=ex.Groups[2].Value,text=ex.Groups[3].Value});return;}
   var xd=System.Text.RegularExpressions.Regex.Match(s,@"^xdots id=(\d{1,9}) path=(\w{1,8}) list=(.*)$");if(xd.Success){Emit(new{type="hookGlyphExtra",state="dots",id=Int64.Parse(xd.Groups[1].Value),path=xd.Groups[2].Value,dots=GlyphList(xd.Groups[3].Value)});return;}
+  /* the colour the game hands the text API for the line (native/fontprobe ServeColor): evidence that survives the blank glyphs */
+  var col=System.Text.RegularExpressions.Regex.Match(s,@"^color seq=(\d{1,9}) rgb=([0-9a-f]{6}) a=([0-9a-f]{2}) src=(\w{1,8})$");if(col.Success){Emit(new{type="hookGlyphColor",seq=Int64.Parse(col.Groups[1].Value),color="#"+col.Groups[2].Value,alpha=Convert.ToInt32(col.Groups[3].Value,16),src=col.Groups[4].Value});return;}
   var line=System.Text.RegularExpressions.Regex.Match(s,@"^line seq=(\d{1,9}) text=(.*)$");if(line.Success){Emit(new{type="hookGlyphDots",state="line",seq=Int64.Parse(line.Groups[1].Value),text=line.Groups[2].Value});return;}
   var dots=System.Text.RegularExpressions.Regex.Match(s,@"^dots seq=(\d{1,9}) path=(\w{1,8}) list=(.*)$");if(dots.Success){var list=GlyphList(dots.Groups[3].Value);if(list.Count>0)GlyphAllProof("dots");
    Emit(new{type="hookGlyphDots",state="dots",seq=Int64.Parse(dots.Groups[1].Value),path=dots.Groups[2].Value,dots=list});return;}

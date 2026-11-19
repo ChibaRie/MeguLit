@@ -82,7 +82,8 @@
  const matchesSample=(x,src)=>!!x&&!!src&&(x.token!=null?x.token===sourceToken(src):sameText(src,x.text));
  const pixelSeen=(sample)=>{if(matchesSample(sample,colorSource)||!pixelFor(colorSource))pixelPaint=sample;else pixelEarly=sample;const own=pixelFor(colorSource);if(own&&!(colorDraw?.claimed&&(colorDraw.color||colorDraw.style)))paintLine(own.color,colorSource,own.style);};
  b.lineColorDrawn=(text,color)=>{if(!/^#[0-9a-f]{6}$/i.test(String(color)))return;pixelSeen({text:String(text||''),token:null,color,style:null});};
- b.lineStyleSample=m=>{const style=m.style&&typeof m.style==='object'&&/^#[0-9a-f]{6}$/i.test(m.style.fill||'')?m.style:null;if(!style||!Number.isSafeInteger(m.sourceToken))return;pixelSeen({text:'',token:m.sourceToken,color:style.fill,style});};
+ b.lineStyleSample=m=>{const style=m.style&&typeof m.style==='object'&&/^#[0-9a-f]{6}$/i.test(m.style.fill||'')?m.style:null,byText=typeof m.text==='string'&&!!m.text.trim();if(!style||!Number.isSafeInteger(m.sourceToken)&&!byText)return;
+  pixelSeen(Number.isSafeInteger(m.sourceToken)?{text:'',token:m.sourceToken,color:style.fill,style}:{text:m.text,token:null,color:style.fill,style});}; /* by text: the draw colour of a blank-glyph / GPU-hidden line (core/hook-native.cjs glyphColor) */
  b.lineColorReset=()=>{pixelPaint=pixelEarly=null;colorSource='';colorSequence=null;colorDraw=latestDraw=retiredDraw=null;waitingDraw=false;paintLine('','');};
  b.lineColorFor=(text,sequence)=>{const next=String(text||''),seq=Number.isSafeInteger(sequence)?sequence:null;
   if(next===colorSource&&(seq===null||seq===colorSequence))return;colorSource=next;colorSequence=seq;if(!pixelFor(next))pixelPaint=matchesSample(pixelEarly,next)?pixelEarly:null;pixelEarly=null; /* pixels seen before their source arrived stay; another sentence's never carry over */

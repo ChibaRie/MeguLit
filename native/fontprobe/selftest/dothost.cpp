@@ -280,6 +280,9 @@ int wmain(int argc, wchar_t **argv) {
     else chars = false; a = b + 1; } }
   bool all = count.size() == l.size(); for (auto &c : count) all = all && c.second == 1;
   Check(line && all && chars && path, "report " + tag + "(" + SeqPath[seq] + (Placed.count(seq) ? ", place " + Placed[seq].sp : "") + "): line text, every index once, character and kind d, " + (Placed.count(seq) ? "no dot, cell origin in the right space" : "dot side 3"));
+  // the colour of the draw itself, for the reader to paint the hidden line with (read / unread colours): the host draws black, opaque
+  { const std::string &pth = SeqPath[seq]; bool want = pth == "text" || pth == "gdip" || pth == "d2d" || pth == "run"; bool any = Got.find("ToMe_GLYPHDOT color " + tag) != std::string::npos;
+   Check(want ? Got.find("ToMe_GLYPHDOT color " + tag + "rgb=000000 a=ff src=" + pth) != std::string::npos : !any, "colour " + tag + "(" + pth + "): " + (want ? "the draw's colour reported (black, opaque)" : "none from GetGlyphOutline, the engine tints the bitmap itself")); }
  }
  printf(Failed ? "FAIL %d\n" : "PASS\n", Failed); return Failed ? 1 : 0;
 }
