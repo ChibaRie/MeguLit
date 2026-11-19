@@ -30,7 +30,8 @@ test('update: background download reports real progress, verifies and reuses the
  const info=await u.check('1.1.0',fetcher);assert.equal(info.newer,true);assert.equal(info.delta,1000);
  const done=await u.start(root,'1.1.0',fetcher);assert.equal(done.phase,'ready');assert.equal(done.received,zip.length);
  assert.ok(seen.some(n=>n>0&&n<zip.length),'progress moves during the download');
- u.reset();const again=await u.start(root,'1.1.0',fetcher);assert.equal(again.phase,'ready');assert.equal(downloads,1,'a verified package is reused');
+ /* every source is measured at once (core/fast-download.cjs), so the first run asks each once */const first=downloads;assert.ok(first>=1);
+ u.reset();const again=await u.start(root,'1.1.0',fetcher);assert.equal(again.phase,'ready');assert.equal(downloads,first,'a verified package is reused');
  u.reset();fs.rmSync(root,{recursive:true,force:true});
 });
 test('v1.1.2: the update script is started by Windows (WMI), and a failed launch keeps MeguLit open',async()=>{
@@ -107,10 +108,13 @@ test('update: a download cut off near the end resumes with a range request',asyn
  const rel={tag_name:'v9.9.9',assets:[{name:'MeguLit-v9.9.9-win-x64.zip',size:zip.length,digest:'sha256:'+digest,browser_download_url:'https://github.com/ilynthn/MeguLit/releases/download/v9.9.9/MeguLit-v9.9.9-win-x64.zip'}]};
  const root=fs.mkdtempSync(path.join(os.tmpdir(),'upd-'));u.reset();const ranges=[];
  const stream=(data,fail)=>{let sent=false;return {getReader:()=>({read:async()=>{if(!sent){sent=true;return {done:false,value:data};}if(fail)throw Error('ECONNRESET');return {done:true};}})};};
+ /* 2026-11-19 core/fast-download.cjs asks in Range pieces from the start; the piece cut off at 8000 bytes is asked again from 8000 */
+ let cut=true;
  const r=await u.start(root,'1.0.0',async(url,opts)=>{if(url.endsWith('/latest'))return {ok:true,json:async()=>rel};const range=opts?.headers?.Range;ranges.push(range||'');
-  if(!range)return {ok:true,status:200,url,body:stream(zip.subarray(0,8000),true)};
-  const from=Number(/bytes=(\d+)-/.exec(range)[1]);return {ok:true,status:206,url,body:stream(zip.subarray(from),false)};});
- assert.equal(r.phase,'ready');assert.equal(r.sha256,digest);assert.deepEqual(ranges,['','bytes=8000-']);
+  const m=/bytes=(\d+)-(\d*)/.exec(range||''),from=m?Number(m[1]):0,to=m&&m[2]?Number(m[2])+1:zip.length;
+  if(cut&&from<8000&&to>8000){cut=false;return {ok:true,status:206,url,headers:{'content-range':'bytes '+from+'-'+(to-1)+'/'+zip.length},body:stream(zip.subarray(from,8000),true)};}
+  return {ok:true,status:206,url,headers:{'content-range':'bytes '+from+'-'+(to-1)+'/'+zip.length},body:stream(zip.subarray(from,to),false)};});
+ assert.equal(r.phase,'ready');assert.equal(r.sha256,digest);assert.ok(ranges.some(x=>/^bytes=8000-/.test(x)),'the rest is asked from 8000: '+ranges.join(' '));
  u.reset();fs.rmSync(root,{recursive:true,force:true});
 });
 
