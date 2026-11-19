@@ -129,11 +129,11 @@ static void Project(Dev &v, const float *p, bool rhw, float &sx, float &sy) {
 // Where position and texture coordinate 0 sit in a vertex. mode 0: untransformed (fixed-function world x view x
 // projection), 1: pixels (XYZRHW / POSITIONT), 2: decided per draw (a vertex shader does the transform: NDC when every
 // corner lies within [-1, 1], else pixels).
-struct Layout9 { unsigned pos = 0, uv = 0, stride = 0; int mode = 0; };
-struct DeclInfo { bool ok; unsigned pos, uv, stride; bool posT; };
+struct Layout9 { unsigned pos = 0, uv = 0, stride = 0; int mode = 0; unsigned col1 = 0; }; // col1: offset of the D3DCOLOR diffuse + 1 (0 = none)
+struct DeclInfo { bool ok; unsigned pos, uv, stride; bool posT; unsigned col1; };
 static std::map<void *, DeclInfo> Decls; // vertex declaration -> layout (read with GetDeclaration when it is set)
 static DeclInfo ParseDecl(IDirect3DVertexDeclaration9 *x) {
- DeclInfo d = { false, 0, 0, 0, false }; D3DVERTEXELEMENT9 e[MAXD3DDECLLENGTH + 1]; UINT n = MAXD3DDECLLENGTH + 1; if (FAILED(x->GetDeclaration(e, &n))) return d;
+ DeclInfo d = { false, 0, 0, 0, false, 0 }; D3DVERTEXELEMENT9 e[MAXD3DDECLLENGTH + 1]; UINT n = MAXD3DDECLLENGTH + 1; if (FAILED(x->GetDeclaration(e, &n))) return d;
  bool pos = false, uv = false;
  for (UINT i = 0; i < n && e[i].Stream != 0xFF; i++) {
   if (e[i].Stream != 0) continue; unsigned sz = e[i].Type == D3DDECLTYPE_FLOAT1 ? 4 : e[i].Type == D3DDECLTYPE_FLOAT2 ? 8 : e[i].Type == D3DDECLTYPE_FLOAT3 ? 12 : e[i].Type == D3DDECLTYPE_FLOAT4 ? 16 : 4;
@@ -141,27 +141,30 @@ static DeclInfo ParseDecl(IDirect3DVertexDeclaration9 *x) {
   bool f2 = e[i].Type == D3DDECLTYPE_FLOAT2 || e[i].Type == D3DDECLTYPE_FLOAT3 || e[i].Type == D3DDECLTYPE_FLOAT4;
   if (!pos && f2 && e[i].UsageIndex == 0 && (e[i].Usage == D3DDECLUSAGE_POSITION || e[i].Usage == D3DDECLUSAGE_POSITIONT)) { pos = true; d.pos = e[i].Offset; d.posT = e[i].Usage == D3DDECLUSAGE_POSITIONT; }
   if (!uv && e[i].Type == D3DDECLTYPE_FLOAT2 && e[i].Usage == D3DDECLUSAGE_TEXCOORD && e[i].UsageIndex == 0) { uv = true; d.uv = e[i].Offset; }
+  if (!d.col1 && e[i].Type == D3DDECLTYPE_D3DCOLOR && e[i].Usage == D3DDECLUSAGE_COLOR && e[i].UsageIndex == 0) d.col1 = e[i].Offset + 1;
  }
  d.ok = pos && uv; return d;
 }
 static bool LayoutOf(Dev &v, Layout9 &L) {
- if (v.decl) { auto it = Decls.find(v.declPtr); if (it == Decls.end() || !it->second.ok) return false; const DeclInfo &d = it->second; L.pos = d.pos; L.uv = d.uv; L.stride = d.stride; L.mode = d.posT ? 1 : v.vs ? 2 : 0; return true; }
- unsigned posSize; bool rhw; if (!PosLayout(v.fvf, posSize, rhw, L.uv, L.stride)) return false; L.pos = 0; L.mode = rhw ? 1 : v.vs ? 2 : 0; return true;
+ if (v.decl) { auto it = Decls.find(v.declPtr); if (it == Decls.end() || !it->second.ok) return false; const DeclInfo &d = it->second; L.pos = d.pos; L.uv = d.uv; L.stride = d.stride; L.col1 = d.col1; L.mode = d.posT ? 1 : v.vs ? 2 : 0; return true; }
+ unsigned posSize; bool rhw; if (!PosLayout(v.fvf, posSize, rhw, L.uv, L.stride)) return false; L.pos = 0; L.mode = rhw ? 1 : v.vs ? 2 : 0;
+ if (v.fvf & D3DFVF_DIFFUSE) L.col1 = posSize + ((v.fvf & D3DFVF_NORMAL) ? 12 : 0) + ((v.fvf & D3DFVF_PSIZE) ? 4 : 0) + 1;
+ return true;
 }
 // Turns one draw into quads (two triangles each). Vertex fetch: vtx(i) -> pointer to vertex i of the draw.
 template <class F> static bool Quads(Dev &v, D3DPRIMITIVETYPE pt, UINT prims, F vtx, std::vector<Quad> &out) {
  Layout9 L; if (!LayoutOf(v, L)) return false;
  if (L.mode == 0 && !v.mSet[2]) return false; // transforms set before we arrived: positions unknown
  UINT n; if (pt == D3DPT_TRIANGLELIST) { if (prims % 2) return false; n = prims * 3; } else if ((pt == D3DPT_TRIANGLESTRIP || pt == D3DPT_TRIANGLEFAN) && prims == 2) n = 4; else return false;
- std::vector<float> c(n * 4); bool ndc = true;
+ std::vector<float> c(n * 4); std::vector<unsigned> vc(L.col1 ? n : 0); bool ndc = true;
  for (UINT i = 0; i < n; i++) { const unsigned char *p = vtx(i); if (!p) return false; const float *ps = (const float *)(p + L.pos), *uv = (const float *)(p + L.uv);
-  float x, y; if (L.mode == 0) Project(v, ps, false, x, y); else { x = ps[0]; y = ps[1]; }
+  float x, y; if (L.mode == 0) Project(v, ps, false, x, y); else { x = ps[0]; y = ps[1]; } if (L.col1) memcpy(&vc[i], p + L.col1 - 1, 4);
   if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(uv[0]) || !std::isfinite(uv[1])) return false;
   if (std::fabs(x) > 1.01f || std::fabs(y) > 1.01f) ndc = false; c[i * 4] = x; c[i * 4 + 1] = y; c[i * 4 + 2] = uv[0]; c[i * 4 + 3] = uv[1]; }
  if (L.mode == 2 && ndc) for (UINT i = 0; i < n; i++) { c[i * 4] = v.vp.X + (c[i * 4] + 1) * 0.5f * v.vp.Width; c[i * 4 + 1] = v.vp.Y + (1 - c[i * 4 + 1]) * 0.5f * v.vp.Height; }
  auto quad = [&](UINT a, UINT k, UINT first) { Quad q; q.x0 = q.y0 = q.u0 = q.v0 = 1e30f; q.x1 = q.y1 = q.u1 = q.v1 = -1e30f; q.first = first;
   for (UINT i = a; i < a + k; i++) { q.x0 = (std::min)(q.x0, c[i * 4]); q.y0 = (std::min)(q.y0, c[i * 4 + 1]); q.x1 = (std::max)(q.x1, c[i * 4]); q.y1 = (std::max)(q.y1, c[i * 4 + 1]); q.u0 = (std::min)(q.u0, c[i * 4 + 2]); q.v0 = (std::min)(q.v0, c[i * 4 + 3]); q.u1 = (std::max)(q.u1, c[i * 4 + 2]); q.v1 = (std::max)(q.v1, c[i * 4 + 3]); }
-  out.push_back(q); };
+  if (L.col1) { q.col = vc[a]; q.hasCol = true; } out.push_back(q); };
  if (pt == D3DPT_TRIANGLELIST) { for (UINT t = 0; t < prims; t += 2) quad(t * 3, 6, t); } else quad(0, 4, 0);
  return true;
 }
@@ -186,7 +189,7 @@ static void DiagDraw(Dev &v, const char *kind, D3DPRIMITIVETYPE pt, UINT prims, 
 // Glyph trace (GlyphTrace.h): quads from a texture that holds traced GetGlyphOutline cells give those characters' places.
 static void TraceDraw(void *tex, unsigned tw, unsigned th, void *rt, unsigned rtW, unsigned rtH, const std::vector<Quad> &q) {
  if (!Trace.seq || !Trace.Known(tex)) return; std::vector<GlyphTrace::Q> t; t.reserve(q.size());
- for (auto &x : q) t.push_back(GlyphTrace::Q{ x.x0, x.y0, x.x1, x.y1, x.u0, x.v0, x.u1, x.v1 });
+ for (auto &x : q) { GlyphTrace::Q g{ x.x0, x.y0, x.x1, x.y1, x.u0, x.v0, x.u1, x.v1 }; g.col = x.col; g.hasCol = x.hasCol; t.push_back(g); }
  Trace.Draw(tex, tw, th, t, [&](float *r) { GlyphLearner::Rect rr{ r[0], r[1], r[2], r[3] }; if (!Learner.ToScreen(rt, rtW, rtH, rr)) return false; r[0] = rr.x0; r[1] = rr.y0; r[2] = rr.x1; r[3] = rr.y1; return true; }, GetTickCount());
 }
 static std::vector<int> Decide(Dev &v, std::vector<Quad> &q) {
@@ -360,7 +363,8 @@ static void TexUnlocking(void *tex, UINT level) {
   TexLock k = TexLocks[i]; TexLocks.erase(TexLocks.begin() + i); if (GtTexel((const unsigned char *)k.ptr, 0, k.fmt) < 0) return;
   // pBits points at the locked rectangle's top-left: texel (x, y) of the texture is at (x - k.x, y - k.y) from it
   auto read = [&](int x, int y) -> int { int lx = x - k.x, ly = y - k.y; if (lx < 0 || ly < 0 || lx >= k.w || ly >= k.h) return -1; return GtTexel((const unsigned char *)k.ptr + (size_t)ly * k.pitch, lx, k.fmt); };
-  Trace.Write(tex, k.x, k.y, k.w, k.h, k.whole, read, GetTickCount()); return; }
+  auto rgb = [&](int x, int y) -> int { int lx = x - k.x, ly = y - k.y; if (lx < 0 || ly < 0 || lx >= k.w || ly >= k.h) return -1; return GtTexelRgb((const unsigned char *)k.ptr + (size_t)ly * k.pitch, lx, k.fmt); };
+  Trace.Write(tex, k.x, k.y, k.w, k.h, k.whole, read, rgb, GetTickCount()); return; }
 }
 static HRESULT WINAPI HTexLock(IDirect3DTexture9 *t, UINT level, D3DLOCKED_RECT *lr, const RECT *r, DWORD f) {
  HRESULT hr = ORIG(HRESULT(WINAPI *)(IDirect3DTexture9 *, UINT, D3DLOCKED_RECT *, const RECT *, DWORD), t, 19)(t, level, lr, r, f);

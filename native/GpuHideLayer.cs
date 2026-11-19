@@ -40,6 +40,8 @@ public static partial class HookBridge {
   if(s.StartsWith("ToMe_CHARS ",StringComparison.Ordinal)){Emit(new{type="hookChars",line=s});Diagnostic("gpu chars "+(s.Length>90?s.Substring(0,90):s));return;}
   // glyph trace (GlyphTrace.h): where the GetGlyphOutline glyphs of the line were drawn; core/gpu-glyph-pos.cjs reads it
   if(s.StartsWith("ToMe_GLYPHPOS ",StringComparison.Ordinal)){Emit(new{type="hookGlyphPos",line=s});return;}
+  // glyph trace colour (GlyphTrace.h LineColor): what the line's glyphs are painted with, texel tint times vertex colour
+  if(s.StartsWith("ToMe_GLYPHCOL ",StringComparison.Ordinal)){var gc=System.Text.RegularExpressions.Regex.Match(s,@"^ToMe_GLYPHCOL line=(\d{1,9}) rgb=([0-9a-f]{6}) a=([0-9a-f]{2}) n=(\d{1,4}) of=(\d{1,4})$");if(gc.Success)Emit(new{type="hookGlyphColor",seq=Int64.Parse(gc.Groups[1].Value),color="#"+gc.Groups[2].Value,alpha=Convert.ToInt32(gc.Groups[3].Value,16),src="gpu",n=Int32.Parse(gc.Groups[4].Value),of=Int32.Parse(gc.Groups[5].Value)});return;}
   if(!s.StartsWith("ToMe_GPUHIDE ",StringComparison.Ordinal))return;s=s.Substring(13);Diagnostic("gpu hide "+s);
   /* page model: this engine draws a glyph for every blank; kept with the calibration so the next run knows from its first line */
   var blanks=System.Text.RegularExpressions.Regex.Match(s,@"^blanks gh=([0-9.]+) rt=(\d+)x(\d+)");if(blanks.Success){GpuCalibrationSave(blanks.Groups[1].Value+" "+blanks.Groups[2].Value+" "+blanks.Groups[3].Value+" b");return;}

@@ -116,3 +116,9 @@ test('draw-colour evidence of blank-glyph lines is wired end to end: font DLL, b
  for(const call of ['ColorOfDc(seq, dc)','ColorOfGdipBrush(seq, brush)','ColorOfGdipBrush(seq, br)','ColorOfD2DBrush(seq, "d2d", brush)','ColorOfD2DBrush(seq, "run", brush)'])assert.ok(font.includes(call),call);
  assert.ok(font.includes('"ToMe_GLYPHDOT color seq=%ld rgb=%06x a=%02x src=%s"')&&bridge.includes(String.raw`^color seq=(\d{1,9}) rgb=([0-9a-f]{6}) a=([0-9a-f]{2}) src=(\w{1,8})$`));
  assert.ok(node.includes("if(m.type==='hookGlyphColor'){this.glyphColor(m);return;}")&&node.includes("this.glyphDots(m);this.glyphColorFlush();"));});
+test('draw-colour evidence of GPU-hidden lines is wired end to end: glyph trace, D3D9 decode, bridge',()=>{
+ const trace=read('native/gpuhide/GlyphTrace.h'),gpu=read('native/gpuhide/GpuHide.cpp'),layer=read('native/GpuHideLayer.cs');
+ assert.ok(trace.includes('"ToMe_GLYPHCOL line=%u rgb=%06x a=%02x n=%d of=%d"')&&layer.includes(String.raw`^ToMe_GLYPHCOL line=(\d{1,9}) rgb=([0-9a-f]{6}) a=([0-9a-f]{2}) n=(\d{1,4}) of=(\d{1,4})$`));
+ assert.ok(gpu.includes('Trace.Write(tex, k.x, k.y, k.w, k.h, k.whole, read, rgb, GetTickCount())')&&gpu.includes('g.col = x.col; g.hasCol = x.hasCol;'));
+ /* the tint never searches the written image: a bounded number of texel reads under the glyph's own coverage */
+ const tint=trace.slice(trace.indexOf('static uint32_t Tint'),trace.indexOf('template <class R> void Write'));assert.ok(tint.includes('n < 8')&&!/for \(int y/.test(tint));});

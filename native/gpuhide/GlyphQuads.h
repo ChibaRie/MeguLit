@@ -24,7 +24,7 @@
 #include <cmath>
 #include <stdio.h>
 
-struct Quad { float x0, y0, x1, y1, u0, v0, u1, v1; unsigned first; };
+struct Quad { float x0, y0, x1, y1, u0, v0, u1, v1; unsigned first; unsigned col = 0xffffffffu; bool hasCol = false; }; // col: vertex colour 0xAARRGGBB of the quad's first vertex
 
 static inline bool GlyphLike(const Quad &q, unsigned tw, unsigned th) {
  if (tw < 32 || th < 32) return false;
