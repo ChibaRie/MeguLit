@@ -102,6 +102,7 @@ class OverlayPlacement {
        exactly placed line of this game, or an outside locator: anchor()), one advance per character, wrapping at the
        anchor's width; only characters the game has drawn so far (typing). Without an anchor: fallback. */
     /* glyph-dots' locating marks learned this game's text position (core/glyph-locate-host.cjs) */
+    if (this.offFrame) { this.why('gsurf:' + id + ':' + this.offFrame, 'glyph line ' + (Number(table.seq) || 0) + ' drawn on a surface that is not the frame (' + this.offFrame + ', client ' + this.client.join('x') + '): its boxes are no screen position, laid out from the anchor'); }
     const located = this.locator?.(table, typed);
     if (Array.isArray(located) && located.length === chars.length && located.some(Boolean)) return this.emitLine({ id, engine: 'glyph', text: table.text, rects: located, client: this.client.slice(), located: true });
     if (this.anchorBox) return this.emitLine({ id, engine: 'glyph', text: table.text, rects: this.estimate(chars, drawn, sizes), client: this.client.slice(), approx: true });
@@ -122,6 +123,7 @@ class OverlayPlacement {
   /* one box per character of a glyph table (null = no record / no device position); kinds: record kinds that count */
   rectsOf(table, accept) {
     const chars = [...table.text], rects = new Array(chars.length).fill(null), kinds = new Array(chars.length).fill(''), [cw, ch] = this.client;
+    this.offFrame = '';
     const drawn = new Set(), sizes = [];
     for (const d of Array.isArray(table.dots) ? table.dots : []) {
       if (!d || !accept.includes(d.k) || !(d.i >= 0 && d.i < chars.length)) continue;
@@ -130,7 +132,13 @@ class OverlayPlacement {
       if (!d.at || kinds[d.i] === accept[0]) continue; /* first kind-d record of an index wins (shadow / outline passes, redraws) */
       const sp = String(d.at.space || ''), m = /^[mt](\d+)x(\d+)$/.exec(sp);
       let kx = 1, ky = 1;
-      if (m) { const w = +m[1], h = +m[2]; if (!(w > 0 && h > 0 && cw > 0 && ch > 0)) continue; kx = cw / w; ky = ch / h; }
+      /* 2026-11-19 (素晴らしき日々, voiced 「」 lines at the top of the game): a memory surface stands for the screen only when it
+         is the frame (the game's back buffer: the client's shape, any scale). Any other surface (a line or name sprite the
+         game blits somewhere later) has its own origin: its boxes are no screen position, the line is laid out from the
+         anchor of the last exactly placed line like an engine without device positions. */
+      if (m) { const w = +m[1], h = +m[2]; if (!(w > 0 && h > 0 && cw > 0 && ch > 0)) continue;
+        if (Math.abs(w / h - cw / ch) > 0.03 * (cw / ch)) { this.offFrame = sp; continue; }
+        kx = cw / w; ky = ch / h; }
       else if (sp !== 'c') continue;
       const hgt = d.h > 0 ? d.h : 0, adv = d.a > 0 ? d.a : hgt;
       if (!hgt) continue;
