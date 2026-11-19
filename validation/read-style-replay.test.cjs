@@ -9,6 +9,7 @@
      sample  the game's own pixels for the sentence on screen (core/line-pixels.cjs result)
      expect  what the reader paints now: color (#rrggbb / #rrggbbaa, null = no override), edge (null = the saved outline)
      gline / gcolor  a blank-glyph line and the colour of its draw (GDI text colour, brush, or the GPU glyph trace), as HookBridge emits them
+     dread   the game's own read flag for a line, carried by its record; a status row with hookSourceRead + origin engine and no text is the same flag as a separate note
      expectPos live recordings: the game's pixel colour of that step (pixel), which the colour handed to the reader must match
      expectNot a colour the reader must not show now
    A live recording is replayed by the same driver. */
@@ -36,11 +37,12 @@ function reader(t,prefs={}){
    if(row.t==='line'){const m=pageInfo(row.raw);assert.ok(m,'unparsed engine record: '+row.raw);hook.pageLine(m);}
    else if(row.t==='source'){now+=1000;hook.source({text:row.text,sourceName:'KiriKiriZ',origin:'live'},'');}
    else if(row.t==='status'){const {t:_,text,...m}=row;now+=1000;if(typeof text==='string')route({...m,hookSource:text,hookSequence:Math.round(now/1000)});else route(m);}
+   else if(row.t==='dread')b.lineReadDrawn(row.text,row.read); /* ToMe_CHARS read=: the game's own read flag for that line */
    else if(row.t==='drawn')b.lineColorDrawn(row.text,row.color); /* ToMe_CHARS color: the engine side read its own glyphs */
    else if(row.t==='gline'){hook.glyphDots({type:'hookGlyphDots',state:'line',seq:row.seq,text:row.text});hook.glyphColorFlush();} /* blank-glyph line announced (ToMe_GLYPHDOT line) */
    else if(row.t==='gcolor')hook.glyphColor({type:'hookGlyphColor',seq:row.seq,color:row.color,alpha:row.alpha,src:row.src}); /* its draw colour (ToMe_GLYPHDOT color / ToMe_GLYPHCOL) */
    else if(row.t==='sample')route({type:'lineStyleSample',sourceToken:window.TomeIslandSource.token(row.text),style:row.style});
-   else if(row.t==='expect'){const p=paint();assert.equal(p.color,row.color,'fill of line '+row.line);assert.equal(p.edge,row.edge,'outline of line '+row.line);return 1;}
+   else if(row.t==='expect'){const p=paint();assert.equal(p.color,row.color,'fill of line '+row.line);assert.equal(p.edge,row.edge,'outline of line '+row.line);if(typeof row.readClass==='boolean')assert.equal(classes.has('tome-line-read'),row.readClass,'read class of line '+row.line);return 1;}
    else if(row.t==='expectPos'){/* live recordings: the colour the reader is given for the sentence equals the game's pixels of that step */
     assert.ok(lastPos,'no draw colour reached the reader for '+row.shot);const h=c=>[1,3,5].map(i=>parseInt(c.slice(i,i+2),16)),x=h(lastPos.style?.fill||lastPos.color),y=h(row.pixel),d=Math.abs(x[0]-y[0])+Math.abs(x[1]-y[1])+Math.abs(x[2]-y[2]);
     assert.ok(d<=48,row.shot+' '+row.text+': reader '+(lastPos.style?.fill||lastPos.color)+' vs game pixels '+row.pixel);if(lastPos.style)assert.equal(lastPos.style.fill,lastPos.color);return 1;}
@@ -132,3 +134,28 @@ test('the KiriKiri script never calls a bare global inside its state-bound funct
  /* live 死に逝く君 2026-11-19: every re-sample threw "(void) から Object へ型を変換できません" at Math.abs; the colour of the first sample stayed, the refinement never ran */
  const code=read('native/krkrtext/script.inc').split(/\r?\n/).filter(l=>!/^\s*(\/\/|\/\*|\*)/.test(l)).join('\n').replace(/\/\*[\s\S]*?\*\//g,'');
  assert.equal(/(^|[^.\w])Math\./.test(code),false,'use plain arithmetic or global.Math');});
+test('the engine read flag is wired: bridge note, node status, record field',()=>{
+ const bridge=read('native/HookBridge.cs'),node=read('core/hook-native.cjs'),TP=require('../core/text-paths.cjs');
+ assert.ok(bridge.includes('line=="ToMe_KRKR read v=0"||line=="ToMe_KRKR read v=1"')&&bridge.includes('type="hookEngineRead"'));
+ assert.ok(node.includes("this.emit({hookSourceRead:m.read,hookSourceReadOrigin:'engine'})"));
+ const rec=TP.parseChars(TP.formatChars({engine:'krkr',line:3,hidden:true,sw:1280,sh:720,rects:[[1,2,3,4]],text:'あ',color:'#eedefe',read:true}));assert.equal(rec.read,true);assert.equal(rec.color,'#eedefe');
+ assert.equal(TP.parseChars('ToMe_CHARS engine=krkr line=3 hidden=1 sw=1280 sh=720 vx=0 vy=0 vw=0 vh=0 n=1 rects=1,2,3,4 text=あ').read,undefined,'records without the field are as before');});
+test('KiriKiri reports the read flag at every click wait, in its own try, and only when the game has the method',()=>{const s=read('native/krkrtext/script.inc');
+ assert.equal(s.split('try {this.flushAll();} catch(e) {} try {this.readNote();} catch(e) {} return (this.old').length-1,3,'line break, page break, page break and clear');
+ assert.ok(s.includes("if(typeof k.getCurrentRead!='Object') return;this.report('ToMe_KRKR read v='+(k.getCurrentRead()?1:0));"));});
+test('the KiriKiri script fits the compiler: every raw literal piece and the whole concatenated literal',()=>{
+ /* MSVC: one string literal piece holds 16,380 bytes (8,190 UTF-16 units of a wide literal), the concatenated literal 65,535 bytes (32,767 units).
+    Over the first the build fails with C2026 and the self-test then passes against the previous DLLs (67d07978). */
+ const pieces=[...read('native/krkrtext/script.inc').matchAll(/LR"MGLT\(([\s\S]*?)\)MGLT"/g)].map(m=>m[1].length);
+ assert.ok(pieces.length>=5);assert.ok(Math.max(...pieces)<=8190,'largest piece '+Math.max(...pieces)+' units');
+ const total=pieces.reduce((a,b)=>a+b,0);assert.ok(total<32767,'whole script '+total+' units');});
+test('an engine-side hidden confirmation keeps the line in the game: the glyph colour has something to read',()=>{const hb=read('native/HookBridge.cs');
+ /* live 千恋＊万花 hide mode: lines were written back hidden (no GDI glyph proof), TextRender drew nothing, no colour; 死に逝く君 kept its lines and its colours */
+ assert.ok(hb.includes('line.IndexOf(" hidden=1 ",StringComparison.Ordinal)>0)EngineHideProof(label);'),'ToMe_CHARS hidden=1 is the proof');
+ const ok=hb.slice(hb.indexOf('public static bool GlyphAllOk(string text){'));assert.ok(ok.indexOf('if(EngineAllOk(text))return true;')>0&&ok.indexOf('if(EngineAllOk(text))return true;')<ok.indexOf('if(GlyphCached)'),'checked before the GDI-only reasons to write back');
+ assert.ok(hb.includes('if(want)Interlocked.Increment(ref EngineHideOn);else Interlocked.Decrement(ref EngineHideOn);')&&hb.includes('if(!EngineAllSelfTest())'));});
+test('pass-through by engine confirmation can be taken back: unconfirmed lines return to write-back hidden, menus are not on this path',()=>{const hb=read('native/HookBridge.cs'),s=read('native/krkrtext/script.inc');
+ assert.ok(hb.includes('if(++EngineUnconfirmed>=2){EngineHideProven=false;EngineTrialFailed=true;'),'two unconfirmed lines in a row end it for the run');
+ assert.ok(hb.includes('if(Volatile.Read(ref EngineHideOn)>0&&!(text==EnginePassText||TypewriterStep(EnginePassText,text))){'),'counted only while the engine hide is on, a redraw is not a new line');
+ /* the dialogue-only ownership gate of the engine hide is untouched (4e2bd3f8 / E980): a renderer bound to no layer is the dialogue's only while KAG writes to that message layer */
+ assert.ok(s.includes("return typeof inst.textLayer=='undefined' && L===this.kag.current;"));});

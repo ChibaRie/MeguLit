@@ -34,7 +34,9 @@
    if(!plausibleMap(next))return;map=next;if(options.persist!==false)send({type:'textPosMapSave',map:next,key:b.gameProfileKey?.()});repaint();return next;}
  };
  window.__tomeTextPosition=api;
- const priorStatus=b.galStatus;b.galStatus=m=>{if(typeof m.hookSourceRead==='boolean')readState=m.hookSourceReadOrigin==='engine'?(m.hookSourceRead?'read':'unread'):'';else if(typeof m.hookSource==='string')readState='';if(m.type==='gameClosed'){api.resetSession('');}else if(m.hookSource===null||typeof m.hookSource==='string'&&!m.hookSource.trim())b.lineColorReset?.();else if(typeof m.hookSource==='string')b.lineColorFor?.(m.hookSource,m.hookSequence);else if(m.gameStarted||m.gameProcessId){const old=identity.split('|'),next=String(m.gameProcessId||old[0]||'')+'|'+String(m.gameStarted||old[1]||'');if(identity&&next!==identity)api.resetSession(next);identity=next;}return priorStatus?.(m);};
+ const priorStatus=b.galStatus;b.galStatus=m=>{if(typeof m.hookSourceRead==='boolean')readState=m.hookSourceReadOrigin==='engine'?(m.hookSourceRead?'read':'unread'):'';else if(typeof m.hookSource==='string')readState='';
+  /* the engine named the state of the sentence already on screen (no new source with it): paint it again under that state */
+  if(typeof m.hookSourceRead==='boolean'&&m.hookSourceReadOrigin==='engine'&&typeof m.hookSource!=='string'&&colorSource)repaintCurrent();if(m.type==='gameClosed'){api.resetSession('');}else if(m.hookSource===null||typeof m.hookSource==='string'&&!m.hookSource.trim())b.lineColorReset?.();else if(typeof m.hookSource==='string')b.lineColorFor?.(m.hookSource,m.hookSequence);else if(m.gameStarted||m.gameProcessId){const old=identity.split('|'),next=String(m.gameProcessId||old[0]||'')+'|'+String(m.gameStarted||old[1]||'');if(identity&&next!==identity)api.resetSession(next);identity=next;}return priorStatus?.(m);};
  // ISLAND (CS2) reports dialogue in its message texture: pages sit in 720-high slots of a tall texture (y 4364-4837
  // seen for one on-screen page), and the message layer is drawn about 63 px right and 8 px down on the 1280x720
  // canvas (measured against the game's own screenshots). Normalized coordinates are reported as cs2_screen_v3, so
@@ -84,9 +86,17 @@
  b.lineColorDrawn=(text,color)=>{if(!/^#[0-9a-f]{6}$/i.test(String(color)))return;pixelSeen({text:String(text||''),token:null,color,style:null});};
  b.lineStyleSample=m=>{const style=m.style&&typeof m.style==='object'&&/^#[0-9a-f]{6}$/i.test(m.style.fill||'')?m.style:null,byText=typeof m.text==='string'&&!!m.text.trim();if(!style||!Number.isSafeInteger(m.sourceToken)&&!byText)return;
   pixelSeen(Number.isSafeInteger(m.sourceToken)?{text:'',token:m.sourceToken,color:style.fill,style}:{text:m.text,token:null,color:style.fill,style});}; /* by text: the draw colour of a blank-glyph / GPU-hidden line (core/hook-native.cjs glyphColor) */
- b.lineColorReset=()=>{pixelPaint=pixelEarly=null;colorSource='';colorSequence=null;colorDraw=latestDraw=retiredDraw=null;waitingDraw=false;paintLine('','');};
+ /* The game's own read flag for a line (ToMe_CHARS read=, KAG getCurrentRead): which of the game's two looks the sentence has, also
+    when the line is written back hidden and nothing of it is ever drawn (live 千恋＊万花, hide mode: no pixels, no colour, the reader
+    stayed white on read lines). It sets the read state of the matching sentence: the sentence then takes the last real sample of that
+    state, else the saved read / unread colours, and a sample that does arrive is remembered under the right state. */
+ let engineRead=null;
+ const repaintCurrent=()=>{if(!colorSource)return;if(colorDraw?.claimed&&(colorDraw.color||colorDraw.style)){paintLine(colorDraw.color,colorSource,colorDraw.style);return;}const own=pixelFor(colorSource);paintLine(own?.color||'',colorSource,own?.style);};
+ const applyRead=()=>{if(!engineRead||!colorSource||!sameText(colorSource,engineRead.text))return false;readState=engineRead.read?'read':'unread';document.body.classList.toggle('tome-line-read',engineRead.read);return true;};
+ b.lineReadDrawn=(text,read)=>{if(typeof read!=='boolean')return;engineRead={text:String(text||''),read};if(applyRead())repaintCurrent();};
+ b.lineColorReset=()=>{engineRead=null;pixelPaint=pixelEarly=null;colorSource='';colorSequence=null;colorDraw=latestDraw=retiredDraw=null;waitingDraw=false;paintLine('','');};
  b.lineColorFor=(text,sequence)=>{const next=String(text||''),seq=Number.isSafeInteger(sequence)?sequence:null;
-  if(next===colorSource&&(seq===null||seq===colorSequence))return;colorSource=next;colorSequence=seq;if(!pixelFor(next))pixelPaint=matchesSample(pixelEarly,next)?pixelEarly:null;pixelEarly=null; /* pixels seen before their source arrived stay; another sentence's never carry over */
+  if(next===colorSource&&(seq===null||seq===colorSequence))return;colorSource=next;colorSequence=seq;applyRead();if(!pixelFor(next))pixelPaint=matchesSample(pixelEarly,next)?pixelEarly:null;pixelEarly=null; /* pixels seen before their source arrived stay; another sentence's never carry over */
   if(colorDraw&&!colorDraw.claimed&&colorDraw.sourceToken!=null&&colorDraw.sourceToken===sourceToken(next)){colorDraw.claimed=true;waitingDraw=false;paintLine(colorDraw.color,next,colorDraw.style);return;}
   /* A draw already claimed by the previous sequence is retired: a late end for it must not recolour this one, even with the same text. */
   retiredDraw=colorDraw?.claimed?{engine:colorDraw.engine,line:colorDraw.line}:null;colorDraw=null;waitingDraw=true;{const own=pixelFor(next);paintLine(own?.color||'',next,own?.style);}
