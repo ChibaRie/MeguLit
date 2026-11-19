@@ -20,13 +20,13 @@ const html = `<!doctype html><html><head><meta charset="utf-8"><style>
     const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
     await page.setContent(html); await page.addScriptTag({ content: code });
     const frame = () => page.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
-    const cn = () => page.evaluate(() => { const r = document.querySelector('.tomoyo-cn-row'); const b = r.getBoundingClientRect(); return { top: Math.round(b.top), bottom: Math.round(b.bottom), size: parseFloat(getComputedStyle(r).fontSize), onUi: r.classList.contains('megulit-cn-on-ui') }; });
+    const cn = () => page.evaluate(() => { const r = document.querySelector('.tomoyo-cn-row'); const b = r.getBoundingClientRect(); return { top: Math.round(b.top), bottom: Math.round(b.bottom), size: parseFloat(getComputedStyle(r).fontSize), onUi: r.classList.contains('megulit-cn-on-ui') || getComputedStyle(r).textShadow.includes('0px 0px 5px') }; });
     const at = (y, text) => page.evaluate(([y, text]) => { document.querySelector('.tomoyo-cn-row').textContent = text; window.__tomoyoChinese.textPlace({ text: '今日は晴れ', client: [1456, 819], rects: [0, 1, 2, 3, 4].map(i => [300 + i * 40, y, 40, 40]) }); }, [y, text]);
     await page.evaluate(() => { const b = window.__tomoyoChinese; b.galLayoutInfo = () => ({ clientX: 200, clientY: 100, clientWidth: 1456, clientHeight: 819, workBottom: 1040 }); b.textPlaceMode({ on: true }); b.textPlaceAnchor(true); });
     /* the game's text near the bottom of its window (client bottom = 919 on the overlay): the translation goes below it at full size */
     await at(760, '你好，出租车师傅。'); await frame();
     const a = await cn(); assert.strictEqual(a.size, 30, 'full size while the monitor has room ' + JSON.stringify(a)); assert.ok(a.bottom > 919 - 52, 'it may sit over or below the game\'s bottom bar ' + JSON.stringify(a)); assert.ok(a.bottom <= 1040, 'inside the work area');
-    assert.strictEqual(a.onUi, true, 'over the game\'s bar: stronger outline');
+    assert.strictEqual(a.onUi, false, 'over the game bar too: no automatic shadow, only the user own outline (user: 为啥译文一直有投影，很重很烦还关不掉)');
     /* a long translation that does not fit above the work-area bottom: smaller once, never under 60 %, then moved up just enough */
     await at(700, '在百货商店购物，在餐厅用餐，在公园悠闲地度过……'.repeat(6)); await frame();
     const c = await cn(); assert.ok(c.size >= 18 && c.size < 30, 'smaller, not under 60 % ' + JSON.stringify(c)); assert.ok(c.bottom <= 1032 + 1, 'fully visible ' + JSON.stringify(c));
