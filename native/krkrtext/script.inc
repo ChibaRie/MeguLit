@@ -243,14 +243,9 @@ LR"MGLT((function(){
     if(typeof L.clear=='Object') {rec.oldClear=L.clear;L.clear=rec.clr;}
     this.recs.add(rec);
    } incontextof st;
-)MGLT" LR"MGLT(
-   /* The game's own read flag at a click wait (KAG getCurrentRead: the label being shown was read before): ToMe_KRKR read v=0|1.
-      The sentence on screen is read / new also when it was written back hidden and nothing of it is drawn, so the reader can
-      still give it the game's read or unread look. A game without the method sends nothing. */
-   st.readNote=function(){var k=this.kag;if(typeof k.getCurrentRead!='Object') return;this.report('ToMe_KRKR read v='+(k.getCurrentRead()?1:0));} incontextof st;
-   st.lb=function(){if(typeof this.oldLB!='Object') return (global.KAGWindow.showLineBreak incontextof this)(...);try {this.flushAll();} catch(e) {} try {this.readNote();} catch(e) {} return (this.oldLB incontextof this.kag)(...);} incontextof st;
-   st.pb=function(){if(typeof this.oldPB!='Object') return (global.KAGWindow.showPageBreak incontextof this)(...);try {this.flushAll();} catch(e) {} try {this.readNote();} catch(e) {} return (this.oldPB incontextof this.kag)(...);} incontextof st;
-   st.pbc=function(){if(typeof this.oldPBC!='Object') return (global.KAGWindow.showPageBreakAndClear incontextof this)(...);try {this.flushAll();} catch(e) {} try {this.readNote();} catch(e) {} return (this.oldPBC incontextof this.kag)(...);} incontextof st;
+   st.lb=function(){if(typeof this.oldLB!='Object') return (global.KAGWindow.showLineBreak incontextof this)(...);try {this.flushAll();} catch(e) {} return (this.oldLB incontextof this.kag)(...);} incontextof st;
+   st.pb=function(){if(typeof this.oldPB!='Object') return (global.KAGWindow.showPageBreak incontextof this)(...);try {this.flushAll();} catch(e) {} return (this.oldPB incontextof this.kag)(...);} incontextof st;
+   st.pbc=function(){if(typeof this.oldPBC!='Object') return (global.KAGWindow.showPageBreakAndClear incontextof this)(...);try {this.flushAll();} catch(e) {} return (this.oldPBC incontextof this.kag)(...);} incontextof st;
    /* 2026-11-12 (user, ファタモルガーナの館: the last line stayed on screen through the opening, where the game had hidden its
       text window): every 100 ms the layer of the latest sentence is checked on the front page, itself and every parent
       visible and not transparent; a change is reported as ToMe_DIALOG engine=krkr visible=0|1. */
