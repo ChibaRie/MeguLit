@@ -76,7 +76,7 @@ LR"MGLT((function(){
     var scr=this.screen(),sw=scr[0],sh=scr[1];
     if(!(sw>0) || !(sh>0) || L.height<sh*0.2) return;
     var size=+L.fontSize;
-    if(!(size>0)) size=Math.abs(+L.font.height);
+    if(!(size>0)) {size=+L.font.height;if(size<0) size=-size;} /* no Math here: in a function bound to the state dictionary a bare global name reads as void */
     if(!(size>0)) return;
     var cx,cy;
     if(lm) {
@@ -367,7 +367,7 @@ LR"MGLT((function(){
     var h='',v=bn>=need?+best:lb;
     if(bn>=need && bestL!='' && bnL*3>=bn) {var d=+best;if(((d>>16)&255)+((d>>8)&255)+(d&255)<144) v=+bestL;}
     var nv=v;for(var i=0;i<6;i++) {h='0123456789abcdef'.charAt(v&15)+h;v=v>>4;}
-    if(this.trCol!==void) {var o=this.trColV,df=Math.abs(((o>>16)&255)-((nv>>16)&255))+Math.abs(((o>>8)&255)-((nv>>8)&255))+Math.abs((o&255)-(nv&255));if(df<40) return;}
+    if(this.trCol!==void) {var o=this.trColV,dr=((o>>16)&255)-((nv>>16)&255),dg=((o>>8)&255)-((nv>>8)&255),db=(o&255)-(nv&255);if((dr<0?-dr:dr)+(dg<0?-dg:dg)+(db<0?-db:db)<40) return;}
     this.trColV=nv;this.trCol=h;var r=this.trRec;r[2]=this.trTailA+' color='+h+this.trTailB;this.trKey='';
     this.report('ToMe_CHARS engine=krkr line='+r[1]+' hidden='+r[0]+r[2]);
    } incontextof st;

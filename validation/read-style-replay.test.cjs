@@ -128,3 +128,7 @@ test('a screen line reported with its own colour paints that sentence in the sin
  pos('次に出てくる未読の台詞です。','#ffffff');assert.equal(r.paint().color,'#b0e2ff',"the next line's colour waits for its sentence");
  r.play({t:'status',text:'次に出てくる未読の台詞です。'});assert.equal(r.paint().color,'#ffffff');
  r.play({t:'status',text:'色の報告が無い台詞です。'});assert.equal(r.paint().color,null);});
+test('the KiriKiri script never calls a bare global inside its state-bound functions (Math reads as void there)',()=>{
+ /* live 死に逝く君 2026-11-19: every re-sample threw "(void) から Object へ型を変換できません" at Math.abs; the colour of the first sample stayed, the refinement never ran */
+ const code=read('native/krkrtext/script.inc').split(/\r?\n/).filter(l=>!/^\s*(\/\/|\/\*|\*)/.test(l)).join('\n').replace(/\/\*[\s\S]*?\*\//g,'');
+ assert.equal(/(^|[^.\w])Math\./.test(code),false,'use plain arithmetic or global.Math');});
