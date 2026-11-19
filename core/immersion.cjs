@@ -17,7 +17,7 @@
    after the game is back) an inference can neither hide nor show the layer and collects no evidence: opening or closing
    the Alt+T menu changes focus, z-order and the picture the probes read, and each earlier fix closed only the one probe
    that had just misread it. */
-const FACT=new Set(['engine','hook','line','choices','config','bind','input']),SETTLE=500;
+const FACT=new Set(['engine','hook','line','choices','config','bind','input','return']),SETTLE=500;
 class Immersion{
  constructor(emit,now=Date.now){this.emit=emit;this.now=now;this.thawAt=0;this.deferred={};this.visible=true;this.pending=null;this.enabled=false;this.mode='hook';this.target='';this.markerPresent=false;this.resetLine();}
  // markerPresent mirrors the screen and is kept: the native side reports only changes, and a new line's marker is
@@ -30,7 +30,14 @@ class Immersion{
  menu(open){this.menuOpen=open===true;this.freeze();}
  freeze(ms=900){this.thawAt=Math.max(this.thawAt,this.now()+ms);this.forget();}
  forget(){this.markerSeen=false;this.markerGoneAt=0;this.drawnAt=0;this.inputAt=null;if(this.pending&&!FACT.has(this.pending.source))this.pending=null;}
- thaw(){this.thawAt=0;this.forget();const d=this.deferred;this.deferred={};if('window' in d)this.window(true,d.window);if('scene' in d)this.scene(true,d.scene);if(this.markerPresent)this.marker(true);}
+ /* 2026-11-19 16:17 (user: back from another window, nothing was left). A hide that rested only on a missing wait marker
+    (the weakest inference) does not outlive leaving and coming back: its evidence was thrown away when the context
+    froze, so nothing could ever lift it again before the next line. The player coming back is a fact: the current line
+    shows; the probes start over and may hide it again on fresh evidence. A hide the engine, the scene or the text
+    window asked for stays, and so does one while the player holds skip. */
+ thaw(){this.thawAt=0;this.forget();const d=this.deferred;this.deferred={};if('window' in d)this.window(true,d.window);if('scene' in d)this.scene(true,d.scene);
+  if(!this.visible&&this.hiddenByMarker&&!this.sceneHidden&&!this.windowHidden&&this.skipAt==null&&!(this.engineLive()&&this.engineSignal===false)){this.hiddenByMarker=false;this.set(true,'','return');}
+  if(this.markerPresent)this.marker(true);}
  configure(v){const enabled=v.immersion===true,mode=['hook','visual','marker'].includes(v.dialogDetection)?v.dialogDetection:'hook';if(enabled!==this.enabled||mode!==this.mode){this.enabled=enabled;this.mode=mode;this.pending=null;this.skipAt=null;this.sceneHidden=false;this.resetLine();if(enabled&&this.engineSignal===false)this.evidence(false,'engine');else this.set(true,'','config');}}
  bind(target){if(target!==this.target){this.target=target;this.resumeAt=0;this.pending=null;this.markerPresent=false;this.engineSignal=null;this.engineText=undefined;this.skipAt=null;this.sceneHidden=false;this.thawAt=0;this.menuOpen=false;this.deferred={};this.resetLine();this.set(true,'','bind');}}
  /* 2026-11-13 choices on screen (hookChoices): MeguLit draws over them, so the reader is not hidden while they are up */
