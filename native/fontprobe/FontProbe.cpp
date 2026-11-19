@@ -239,6 +239,32 @@ void ServeDot(long seq, const char *path, const Dot &d) {
   if (++DotCount >= 48) DotFlushLocked(); }
  ReleaseSRWLockExclusive(&DotLock);
 }
+// The colour the game hands the text API for the current line (read / unread colours, dimming), reported per line because the
+// blank glyphs leave nothing of it on screen: ToMe_GLYPHDOT color seq=<n> rgb=<rrggbb> a=<aa> src=<text|gdip|d2d|run>.
+// Taken from the draw call itself (DC text colour, GDI+ / Direct2D solid brush); GetGlyphOutline has no colour (the engine
+// tints the bitmap itself: the GPU glyph trace reports those). Sent when it differs from the line's last one, 4 times a line at most.
+long ColSeq = -1; unsigned ColVal = 0; bool ColHas = false; int ColSent = 0;
+void ServeColor(long seq, const char *path, unsigned rgb, unsigned alpha) {
+ unsigned v = (rgb & 0xffffff) | ((alpha & 255) << 24); bool send = false;
+ AcquireSRWLockExclusive(&DotLock);
+ if (seq != ColSeq) { ColSeq = seq; ColHas = false; ColSent = 0; }
+ if ((!ColHas || v != ColVal) && ColSent < 4) { ColHas = true; ColVal = v; ColSent++; send = true; }
+ ReleaseSRWLockExclusive(&DotLock);
+ if (send) { char e[112]; sprintf_s(e, "ToMe_GLYPHDOT color seq=%ld rgb=%06x a=%02x src=%s", seq, rgb & 0xffffff, alpha & 255, path); Send(e); }
+}
+void ColorOfDc(long seq, HDC dc) { COLORREF c = GetTextColor(dc); if (c != CLR_INVALID) ServeColor(seq, "text", ((unsigned)GetRValue(c) << 16) | ((unsigned)GetGValue(c) << 8) | GetBValue(c), 255); }
+void ColorOfGdipBrush(long seq, const void *brush) {
+ typedef int(WINAPI *GBT)(void *, int *); typedef int(WINAPI *GSC)(void *, unsigned *); static GBT type; static GSC solid; static bool tried;
+ if (!tried) { tried = true; HMODULE gp = GetModuleHandleW(L"gdiplus.dll"); if (gp) { type = (GBT)GetProcAddress(gp, "GdipGetBrushType"); solid = (GSC)GetProcAddress(gp, "GdipGetSolidFillColor"); } }
+ int t = -1; unsigned argb = 0; if (!brush || !type || !solid || type((void *)brush, &t) || t != 0 || solid((void *)brush, &argb)) return;
+ ServeColor(seq, "gdip", argb & 0xffffff, argb >> 24);
+}
+void ColorOfD2DBrush(long seq, const char *path, ID2D1Brush *brush) {
+ ID2D1SolidColorBrush *s = NULL; if (!brush || FAILED(brush->QueryInterface(__uuidof(ID2D1SolidColorBrush), (void **)&s)) || !s) return;
+ D2D1_COLOR_F c = s->GetColor(); float op = s->GetOpacity(); s->Release();
+ auto ch = [](float v) { int n = (int)(v * 255.f + .5f); return (unsigned)(n < 0 ? 0 : n > 255 ? 255 : n); };
+ ServeColor(seq, path, (ch(c.r) << 16) | (ch(c.g) << 8) | ch(c.b), ch(c.a * op));
+}
 void AnnounceLine(long seq, const std::wstring &text) {
  AcquireSRWLockExclusive(&DotLock); if (seq != DotSeq) { DotFlushLocked(); DotSeq = seq; DotSeen.clear(); }
  if (seq != DotAnnounced) { DotAnnounced = seq; Send("ToMe_GLYPHDOT line seq=" + std::to_string(seq) + " text=" + Utf8(text)); }
@@ -404,6 +430,7 @@ BOOL Dotted(HDC dc, int x, int y, UINT o, const RECT *r, const std::wstring &tex
    int ox = 0, oy = 0, bx = adv[i], by = tm.tmHeight; if (g != GDI_ERROR) { ox = gm.gmptGlyphOrigin.x; oy = tm.tmAscent - gm.gmptGlyphOrigin.y; bx = (int)gm.gmBlackBoxX; by = (int)gm.gmBlackBoxY; }
    RECT d = {pen + ox, top - rise + oy, pen + ox + (std::min)(side, bx), top - rise + oy + (std::min)(side, by)};
    if (paint && (!(o & ETO_CLIPPED) || !r || IntersectRect(&d, &d, r))) OExtTextOutW(dc, 0, 0, ETO_OPAQUE, &d, L"", 0, NULL);
+   if (sv[i].kind == 'd') ColorOfDc(seq, dc);
    ServeDot(seq, "text", Dot{sv[i].index, text[i], (int)tm.tmHeight, (int)tm.tmAscent, adv[i], ox, oy, side, sv[i].kind, PlaceLogical(dc, pen, top - rise)}); }
   pen += adv[i]; if (pdy) rise += dx[2 * i + 1];
  }
@@ -559,6 +586,7 @@ void GdipDots(void *g, const WCHAR *s, int len, void *font, const GpRectF *rc, c
    for (size_t j = 0; j < k; j++) { GpRectF box{}; int i = which[at + j]; if (!regions[j] || Gp.GetRegionBounds(regions[j], g, &box) || box.Width <= 0) continue;
     float x = (float)(int)(box.X + .5f), y = (float)(int)(box.Y + .5f); if (paint) Gp.FillRectangle(g, (void *)brush, x, y, (float)side, (float)side);
     Where at; at.x = (int)x; at.y = (int)y; strcpy_s(at.sp, "g");
+    if (sv[i].kind == 'd') ColorOfGdipBrush(seq, brush);
     ServeDot(seq, "gdip", Dot{sv[i].index, s[i], h, b, (int)(box.Width + .5f), 0, 0, side, sv[i].kind, at}); }
   for (void *r : regions) if (r) Gp.DeleteRegion(r);
  }
@@ -580,6 +608,7 @@ int WINAPI HGdipDrawDriverString(void *g, const UINT16 *s, INT n, const void *fo
     bool paint = PaintDots != 0; const float *p = (const float *)pos; int h = 0, b = 0; GdipCell(g, font, h, b); int side = paint ? DotSide(h) : 0, smoothing = 0; Gp.GetSmoothing(g, &smoothing); if (paint) Gp.SetSmoothing(g, 3);
     for (int i = 0; i < len; i++) if (sv[i].kind) { float x = (float)(int)(p[2 * i] + .5f), y = (float)(int)(p[2 * i + 1] - b + .5f); if (paint) Gp.FillRectangle(g, (void *)br, x, y, (float)side, (float)side);
      Where at; at.x = (int)x; at.y = (int)y; strcpy_s(at.sp, "g");
+     if (sv[i].kind == 'd') ColorOfGdipBrush(seq, br);
      ServeDot(seq, "gdip", Dot{sv[i].index, (wchar_t)s[i], h, b, i + 1 < len ? (int)(p[2 * i + 2] - p[2 * i] + .5f) : 0, 0, 0, side, sv[i].kind, at}); }
     if (paint) Gp.SetSmoothing(g, smoothing); }
    return 0; } }
@@ -638,6 +667,7 @@ void LayoutDots(ID2D1RenderTarget *rt, D2D1_POINT_2F at, IDWriteTextLayout *layo
   float base = ht.height * .8f, top = 0; for (UINT32 l = 0; l < lines; l++) { if (ht.top < top + lm[l].height - .01f) { base = lm[l].baseline; break; } top += lm[l].height; }
   int h = (int)(ht.height * dy / 96.f + .5f), side = PaintDots ? DotSide(h) : 0; float x = Snap(at.x + ht.left, dx), y = Snap(at.y + ht.top, dy);
   if (side) rt->FillRectangle(D2D1::RectF(x, y, x + side * 96.f / dx, y + side * 96.f / dy), brush);
+  if (sv[i].kind == 'd') ColorOfD2DBrush(seq, "d2d", brush);
   ServeDot(seq, "d2d", Dot{sv[i].index, text[i], h, (int)(base * dy / 96.f + .5f), (int)(ht.width * dx / 96.f + .5f), 0, 0, side, sv[i].kind, PlaceTarget(rt, at.x + ht.left, at.y + ht.top)}); }
  rt->SetAntialiasMode(mode);
 }
@@ -679,6 +709,7 @@ void STDMETHODCALLTYPE HDrawGlyphRun(ID2D1RenderTarget *rt, D2D1_POINT_2F at, co
     D2D1_ANTIALIAS_MODE mode = rt->GetAntialiasMode(); rt->SetAntialiasMode(D2D1_ANTIALIAS_MODE_ALIASED);
     for (UINT32 i = 0; i < run->glyphCount; i++) { if (sv[i].kind) { float ox = run->glyphOffsets ? run->glyphOffsets[i].advanceOffset : 0, oy = run->glyphOffsets ? run->glyphOffsets[i].ascenderOffset : 0;
       float x = Snap(pen + ox, dx), y = Snap(at.y - asc - oy, dy); if (side) rt->FillRectangle(D2D1::RectF(x, y, x + side * 96.f / dx, y + side * 96.f / dy), brush);
+      if (sv[i].kind == 'd') ColorOfD2DBrush(seq, "run", brush);
       ServeDot(seq, "run", Dot{sv[i].index, text[i], h, (int)(asc * dy / 96.f + .5f), (int)(run->glyphAdvances[i] * dx / 96.f + .5f), 0, 0, side, sv[i].kind, PlaceTarget(rt, pen + ox, at.y - asc - oy)}); }
      pen += run->glyphAdvances[i]; }
     rt->SetAntialiasMode(mode); }
