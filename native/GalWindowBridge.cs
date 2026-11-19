@@ -393,8 +393,8 @@ public class GalWindowBridge {
            result: asked, looked at, and when the layer is still under the game it is put directly above it in the normal
            band (the same call that keeps it there while another program is in front), every pass until it holds. */
         string how=ReaderLayerPolicy.Raise(new LayerZ(gameRoot,gameTop),Layer.Float);
-        bool above=!BelowGame(gameRoot,gameTop);topmost=(GetWindowLong(Overlay,-20)&8)!=0;
-        if(how!=LastRaise){LastRaise=how;Emit(new{type="layerRaise",how=how,above=above,topmost=topmost});}
+        bool aboveGame=!BelowGame(gameRoot,gameTop);topmost=(GetWindowLong(Overlay,-20)&8)!=0;
+        if(how!=LastRaise){LastRaise=how;Emit(new{type="layerRaise",how=how,above=aboveGame,topmost=topmost});}
         if(below)Emit(new{type="coverDebug",text=menu?"Alt+T 菜单打开：阅读层固定到游戏上方":"阅读层已移到前台游戏上方"});}
     static string LastRaise="";
     static bool BelowGame(IntPtr gameRoot,IntPtr gameTop){int steps=0;for(IntPtr h=GetWindow(Overlay,3);h!=IntPtr.Zero&&steps<400;h=GetWindow(h,3),steps++)if(h==gameRoot||h==gameTop)return true;return false;}
