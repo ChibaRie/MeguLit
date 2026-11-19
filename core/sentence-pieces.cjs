@@ -16,14 +16,19 @@ function continues(piece){const t=String(piece||'').replace(/^\n+/,'');return !!
 class SentencePieces{
  constructor(now=()=>Date.now(),{within=60000,max=400}={}){this.now=now;this.within=within;this.max=max;this.last=null;}
  /* The line to deliver for this piece: the grown sentence, or the piece itself. speaker: the name the engine gave with it. */
- take(stream,piece,speaker=''){const now=this.now(),L=this.last,p=String(piece??''),who=String(speaker||'');let out=p;
-  if(L&&L.stream===stream&&now-L.at<this.within&&!(who&&who!==L.speaker)&&unfinished(L.text)&&continues(p)){const a=flat(L.text),b=flat(p);
+ take(stream,piece,speaker='',speakerAt=Infinity){const now=this.now(),L=this.last,p=String(piece??''),who=String(speaker||'');let out=p;
+  /* 2026-11-19 (installed 1.4.17, 素晴らしき日々, pieces 1.8 s apart): the name of the previous piece came after that piece and was still
+     recent, so it read as a new speaker and the line did not grow. Only a name that came after the previous piece is a new one. */
+  const newName=who&&L&&speakerAt>L.at&&who!==L.speaker;
+  if(L&&L.stream===stream&&now-L.at<this.within&&!newName&&unfinished(L.text)&&continues(p)){const a=flat(L.text),b=flat(p);
    if(b.startsWith(a))out=p; /* the engine sent the grown sentence itself */
    else if(a.endsWith(b))out=L.text; /* the last piece again (a redraw): nothing new */
    else if(L.text.length+p.length<=this.max)out=L.text+p;}
   const grew=out!==p&&!!L;this.last={stream,text:out,at:now,speaker:grew?L.speaker||who:who,pieces:grew?(out===L.text?L.pieces:[...L.pieces,p]):[p]};return out;}
  /* The pieces the current grown line was made of (for a translation pieced together when the whole line has none), or null. */
  piecesOf(text){const L=this.last;return L&&L.pieces.length>1&&flat(L.text)===flat(text)?L.pieces.slice():null;}
+ /* A name given just after a line (a name stream flushed later than the text) belongs to that line. */
+ nameAfter(name,at=this.now()){const L=this.last;if(L&&!L.speaker&&name&&at-L.at>=0&&at-L.at<=1000)L.speaker=String(name);}
  reset(){this.last=null;}
 }
 module.exports={SentencePieces,unfinished,continues};
