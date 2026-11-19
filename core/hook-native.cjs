@@ -476,9 +476,9 @@ class HookNative{
   this.emitSource(text,e.origin==='history'?'live':e.origin,engine,line);
  }
  /* What the game really drew this line with (any engine path may report it): paint=f:rrggbbaa[,e:rrggbbaa:width][,s:rrggbbaa:dx:dy]
-    f = glyph fill and its opacity, e = outline, s = drop shadow. Missing parts were not drawn; a malformed field is dropped. */
+    f = glyph fill and its opacity, e = outline, s = drop shadow, a:1 = the opacity is not settled yet (a fade-in may be running). Missing parts were not drawn; a malformed field is dropped. */
  static paint(v){if(typeof v!=='string'||!v||v.length>120)return null;const out={};
-  for(const part of v.split(',')){const a=part.split(':'),m=/^([0-9a-f]{6})([0-9a-f]{2})$/i.exec(a[1]||'');if(!m)return null;const color='#'+m[1].toLowerCase(),alpha=Math.round(parseInt(m[2],16)/255*1000)/1000,n=i=>{const x=Number(a[i]);return Number.isFinite(x)&&Math.abs(x)<=64?x:0;};
+  for(const part of v.split(',')){if(part==='a:1'){out.animated=true;continue;}const a=part.split(':'),m=/^([0-9a-f]{6})([0-9a-f]{2})$/i.exec(a[1]||'');if(!m)return null;const color='#'+m[1].toLowerCase(),alpha=Math.round(parseInt(m[2],16)/255*1000)/1000,n=i=>{const x=Number(a[i]);return Number.isFinite(x)&&Math.abs(x)<=64?x:0;};
    if(a[0]==='f'&&a.length===2){out.fill=color;out.alpha=alpha;}else if(a[0]==='e'&&a.length<=3){if(alpha>0){out.edge=color;out.edgeAlpha=alpha;out.edgeWidth=Math.abs(n(2));}}else if(a[0]==='s'&&a.length<=4){if(alpha>0){out.shadow=color;out.shadowAlpha=alpha;out.shadowX=n(2);out.shadowY=n(3);}}else return null;}
   return out.fill?out:null;}
  static paintField(v){const style=HookNative.paint(v);return style?{style}:{};}

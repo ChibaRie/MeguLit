@@ -24,7 +24,7 @@ LR"MGLT((function(){
      KiriKiri builds; typeof does not */
   var st=(typeof global.__megulitKrkrState=='Object')?global.__megulitKrkrState:void;
   if(st===void) {
-   st=%['skipped'=>0,'drawArgs'=>void,'drawOp'=>0,'lastEnd'=>void,'charsSent'=>0,'charsErr'=>'','trWrapped'=>0,'trLine'=>0,'trText'=>'','trKey'=>'','trOp'=>void,'trT'=>void,'trOwner'=>void,'trRec'=>void,'skippedCls'=>'','lastFont'=>'','pfontName'=>void,'art'=>0,'artText'=>'','artSeen'=>[],'calls'=>0,'hid'=>0,'wrapped'=>[],'recs'=>[],'active'=>void,'lastVis'=>-1,'timer'=>void,'line'=>0,'report'=>global.__megulitKrkrReport,'kag'=>k,'hooked'=>0,'oldLB'=>void,'oldPB'=>void,'oldPBC'=>void];
+   st=%['skipped'=>0,'drawArgs'=>void,'drawOp'=>0,'drawLo'=>256,'drawQuiet'=>0,'lastEnd'=>void,'charsSent'=>0,'charsErr'=>'','trWrapped'=>0,'trLine'=>0,'trText'=>'','trKey'=>'','trOp'=>void,'trT'=>void,'trOwner'=>void,'trRec'=>void,'skippedCls'=>'','lastFont'=>'','pfontName'=>void,'art'=>0,'artText'=>'','artSeen'=>[],'calls'=>0,'hid'=>0,'wrapped'=>[],'recs'=>[],'active'=>void,'lastVis'=>-1,'timer'=>void,'line'=>0,'report'=>global.__megulitKrkrReport,'kag'=>k,'hooked'=>0,'oldLB'=>void,'oldPB'=>void,'oldPBC'=>void];
    st.screen=function(){
     var sw=+this.kag.scWidth,sh=+this.kag.scHeight;
     if(!(sw>0) || !(sh>0)) {sw=+this.kag.primaryLayer.width;sh=+this.kag.primaryLayer.height;}
@@ -61,7 +61,7 @@ LR"MGLT((function(){
        if(ox==0 && oy==0) s+=',e:'+this.hex(sc,6)+this.hex(lv,2)+':'+int(sw);
        else s+=',s:'+this.hex(sc,6)+this.hex(lv,2)+':'+int(ox)+':'+int(oy);
       }
-      return s;
+      return op<255?s+',a:1':s; /* not settled until st.fade says so */
      }
      if(typeof L.chColor!='Integer') return '';
      var s='f:'+this.hex(L.chColor&0xffffff,6)+'ff';
@@ -98,6 +98,7 @@ LR"MGLT((function(){
      if(typeof L.chColor=='Integer') rec.color=L.chColor&0xffffff; /* E550: begin carries the colour too (narration grey / speech white), before the line is shown */
      var right=a[0]+L.width-(+L.marginR)-size;
      if(!(right>cx)) right=cx;
+     rec.bx0=cx;rec.bx1=right;rec.settled=0;
      this.send('begin',rec,cx,right);
     }
     if(ch!='\n' && ch!='\r') {
@@ -108,7 +109,7 @@ LR"MGLT((function(){
     }
     rec.ly=cy;
     rec.n++;
-    {var pt=this.paintOf(L);if(pt!='') rec.paint=pt;}
+    {var pt=this.paintOf(L);if(rec.settled && this.drawLo!=this.drawOp) rec.settled=0;if(pt!='') rec.paint=rec.settled?this.settle(pt):pt;}
     if(typeof L.chColor=='Integer') rec.color=L.chColor&0xffffff;
     if(cx<rec.x0) rec.x0=cx;
     if(cx>rec.x1) rec.x1=cx;
@@ -126,20 +127,39 @@ LR"MGLT((function(){
    } incontextof st;
 )MGLT" LR"MGLT(
    st.flush=function(rec){
-    if(rec.n>0) {this.send('end',rec,rec.x0,rec.x1);
-     /* kept for st.fade: a game that fades characters in is still raising their opacity after the click wait began */
-     try {this.lastEnd=%['line'=>rec.line,'same'=>rec.same,'nvl'=>rec.nvl,'y0'=>rec.y0,'y1'=>rec.y1,'size'=>rec.size,'sw'=>rec.sw,'sh'=>rec.sh,'n'=>rec.n,'color'=>rec.color,'paint'=>rec.paint,'text'=>rec.text,'x0'=>rec.x0,'x1'=>rec.x1,'op'=>this.drawOp];} catch(e) {this.lastEnd=void;}
-     try {this.chars(rec);} catch(e) {this.charsErr=e.message;}}
-    rec.n=0;rec.text='';rec.rs='';rec.cn=0;rec.hc=0;rec.ct='';this.drawOp=0;
+    /* kept for st.fade: a game that fades characters in is still raising their opacity after the click wait began */
+    if(rec.n>0) {try {this.lastEnd=%['line'=>rec.line,'same'=>rec.same,'nvl'=>rec.nvl,'y0'=>rec.y0,'y1'=>rec.y1,'size'=>rec.size,'sw'=>rec.sw,'sh'=>rec.sh,'n'=>rec.n,'color'=>rec.color,'paint'=>rec.paint,'text'=>rec.text,'x0'=>rec.x0,'x1'=>rec.x1,'op'=>this.drawOp,'lo'=>this.drawLo,'q'=>0,'done'=>(this.drawOp>=255 || rec.settled)?1:0];} catch(e) {this.lastEnd=void;}}
+    if(rec.n>0) {this.send('end',rec,rec.x0,rec.x1);try {this.chars(rec);} catch(e) {this.charsErr=e.message;}}
+    rec.n=0;rec.text='';rec.rs='';rec.cn=0;rec.hc=0;rec.ct='';rec.settled=0;this.drawOp=0;this.drawLo=256;this.drawQuiet=0;
    } incontextof st;
    /* the finished sentence was drawn again with a higher opacity (fade-in still running): its end record is sent again with the
       opacity it has now, so the reader never keeps a sentence at the faint first step */
+   /* Is a sentence drawn below full opacity dimmed (read text) or still fading in? One draw cannot tell, so the paint carries
+      a:1 ("opacity not settled") until it is known, and the reader paints such a sentence opaque:
+        - draws at different opacities = a fade-in: it settles only at full opacity;
+        - every draw at one opacity and nothing drawn for three ticks (0.3 s) = dimmed: settled, a:1 dropped, sent again
+          (as a begin while the sentence is still being typed, as an end after its click wait began).
+      Run every 100 ms from the visibility timer. */
+   st.settle=function(p){p=''+p;var n=p.length;return (n>4 && p.substring(n-4)==',a:1')?p.substring(0,n-4):p;} incontextof st;
    st.fade=function(){
+    var a=this.active;
+    if(a!==void && a!==null && a.n>0) {
+     this.lastEnd=void;
+     if(this.drawQuiet<1000) this.drawQuiet++;
+     if(!a.settled && this.drawQuiet>=3 && this.drawOp>0 && this.drawOp<255 && this.drawLo==this.drawOp && (''+a.paint).substring(0,2)=='f:') {a.settled=1;a.paint=this.settle(a.paint);this.send('begin',a,a.bx0,a.bx1);}
+     return;
+    }
     var r=this.lastEnd;if(r===void || r===null) return;
-    if(this.active!==void && this.active!==null && this.active.n>0) {this.lastEnd=void;return;}
-    var p=''+r.paint;if(this.drawOp<=r.op || p.length<10 || p.substring(0,2)!='f:') return;
-    r.op=this.drawOp;r.paint=p.substring(0,8)+this.hex(r.op>255?255:r.op,2)+p.substring(10);
-    this.send('end',r,r.x0,r.x1);
+    var p=''+r.paint;if(p.length<10 || p.substring(0,2)!='f:') return;
+    if(this.drawOp>0) {
+     if(this.drawLo<r.lo) r.lo=this.drawLo;
+     var up=this.drawOp>r.op;if(up) r.op=this.drawOp;
+     this.drawOp=0;this.drawLo=256;r.q=0;
+     if(up) {p=this.settle(p);r.paint=p.substring(0,8)+this.hex(r.op>255?255:r.op,2)+p.substring(10)+(r.op<255?',a:1':'');r.done=r.op>=255?1:0;this.send('end',r,r.x0,r.x1);}
+     return;
+    }
+    if(r.done) return;
+    if(++r.q>=3 && r.op<255 && r.lo==r.op) {r.done=1;r.paint=this.settle(p);this.send('end',r,r.x0,r.x1);}
    } incontextof st;
    st.flushAll=function(){for(var i=0;i<this.recs.count;i++) this.flush(this.recs[i]);} incontextof st;
    /* 2026-11-12 (user: the game must think it draws its text while the output is ours): while MeguLit asks for it
@@ -158,7 +178,7 @@ LR"MGLT((function(){
      if(typeof st=='Object' && st!==void) {
       if(self.__mgKind=='msg') {
        st.calls++;
-       {var d=[];d.assign(args);st.drawArgs=d;var o=d.count>4?+d[4]:255;if(o>st.drawOp) st.drawOp=o;}
+       {var d=[];d.assign(args);st.drawArgs=d;var o=d.count>4?+d[4]:255;if(o>st.drawOp) st.drawOp=o;if(o<st.drawLo) st.drawLo=o;st.drawQuiet=0;}
        if(st.hideOn()) {
         var a=[];a.assign(args);
         while(a.count<7) a.add(a.count==4?255:(a.count==5?true:0));
