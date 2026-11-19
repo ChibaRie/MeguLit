@@ -63,8 +63,5 @@
     if(runs.length&&runs[runs.length-1][0]===u)continue;const r=go(i+k*L,[...runs,[u,k]]);if(r)return r;}
    return null;};
   const runs=go(0,[]);return runs?runs[runs.length-1][0]:'';}
- /* settings / menu preview text (千恋＊万花 「テキスト速度のサンプルと…」, ISLAND 「テキスト表示サンプル」 typed out of order): the letters of
-    サンプル together with テキスト or 表示/文字/速度 in one short frame are the preview of a settings page, not dialogue */
- function samplePreview(input){const t=key(input);if(!t||t.length>120)return false;const has=w=>[...w].every(c=>t.includes(c));return has('サンプル')&&(has('テキスト')||/表示|文字|速度/.test(t)||has('表示'));}
- return {variant,collapse,stripStageNotes,key,nameStack,samplePreview};
+ return {variant,collapse,stripStageNotes,key,nameStack};
 });

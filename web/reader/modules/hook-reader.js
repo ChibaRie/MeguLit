@@ -31,10 +31,15 @@
   }
   if(pending&&pending.token===null)decide(m.same);else early={same:m.same,at:Date.now()};
  };
- const previous=b.galStatus;b.galStatus=m=>{previous(m);if(typeof m.hookSourceRead==='boolean')document.body.classList.toggle('tome-line-read',m.hookSourceRead);if(b.islandPage?.accept(m)){active=recovering=false;text='';resetPage();root?.remove();root=null;return;}
+ /* 2026-11-19 (千恋＊万花 / ISLAND settings page: the page's typed-out preview text went into the reader) by state, not by content:
+    a line that arrives while the game's dialogue box has been hidden for a while (a settings or menu page) is no dialogue; it
+    neither enters the page nor is drawn when the box comes back. A line arriving just as the box hides is still the line. */
+ let hiddenAt=0;const HIDDEN_HOLD_MS=800;
+ const previous=b.galStatus;b.galStatus=m=>{previous(m);if(typeof m.dialogVisible==='boolean')hiddenAt=m.dialogVisible&&!m.choiceOnly?0:m.dialogVisible?hiddenAt:(hiddenAt||Date.now());if(typeof m.hookSourceRead==='boolean')document.body.classList.toggle('tome-line-read',m.hookSourceRead);if(b.islandPage?.accept(m)){active=recovering=false;text='';resetPage();root?.remove();root=null;return;}
   if(m.type==='gameClosed'||m.hookSource===null){document.body.classList.toggle('tome-line-read',false);resetPage();text='';}
   if(typeof m.hookActive==='boolean')active=m.hookActive;if(typeof m.hookRecovering==='boolean')recovering=m.hookRecovering;
   if(typeof m.hookSourceEngine==='string'&&m.hookSourceEngine!==engine){if(engine)resetPage();engine=m.hookSourceEngine;}
+  if(typeof m.hookSource==='string'&&hiddenAt&&Date.now()-hiddenAt>=HIDDEN_HOLD_MS&&m.hookSource!==text){b.hookHiddenDropped=(b.hookHiddenDropped||0)+1;return;}
   if(typeof m.hookSource==='string'){const next=once(b.splitDialogue(m.hookSource).text),old=text,oldSequence=sequence;sequence=Number.isSafeInteger(m.hookSequence)?m.hookSequence:next===text?sequence:sequence+1;text=next;
    if(sequence!==oldSequence){if(pending)decide(false);const key=/^(?:cs2|krkr|renpy|ocr)$/.test(engine)?token(next):null,report=key!==null?reports.get(key):early&&Date.now()-early.at<300?early:null;early=null;
     if(report&&Date.now()-report.at<5000){if(key!==null)reports.delete(key);page=report.same&&old?join(page,old,next):[];}
