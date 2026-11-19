@@ -233,6 +233,7 @@ std::vector<ENGINE *> check_engines()
 {
     return {
         new ToMeIsland,
+        new ToMeSteinsGate,
         new LovaGame,
         new PPSSPPWindows,
         new VanillawareGC,
