@@ -100,6 +100,8 @@ class HookNative{
   if(hide&&!this.glyphNoted){this.glyphNoted=true;this.trace?.('embed fallback: the game font has no glyphs for the translation; the game hides the line and MeguLit draws it');}
   this.notify({embedTranslating:!hide,embedLine:{source:String(o?.source||''),text:hide?'':String(o?.text||trans||''),drawn:!hide}});}
  tick(){if(this.process&&this.now()-this.lastHeartbeat>12000){const old=this.process;this.process=null;++this.serial;old.kill();this.retry('Hook 通信无响应');}if(!this.process&&this.wanted&&this.target&&this.now()>=this.retryAt)this.start(this.target);}
+ /* the engine's text window state (ToMe_DIALOG); lines held during a moment's hide are dialogue when it comes back */
+ dialogState(visible){this.engineDialog=visible;this.engineDialogAt=this.now();if(visible&&this.boxBlink){const b=this.boxBlink;this.boxBlink=null;clearTimeout(b.timer);this.trace('line kept as dialogue: the text window was hidden only for a moment');for(const x of b.lines)this.source(x.m,x.name);}}
  retry(message){this.pageReset();this.islandSources.clear();this.islandDraw=null;this.islandDraws=[];this.islandDelivered=0;clearTimeout(this.islandTimer);clearTimeout(this.sourceTimer);clearTimeout(this.sourceDeadline);this.sourceDeadline=null;this.pendingSource=null;this.verified=false;this.enabled=false;this.retryAt=this.now()+Math.min(30000,1000*2**Math.min(this.attempt++,5));this.notify({hookActive:false,processAttached:false,streamSelected:false,receivedText:false,replacementState:'unverified',hookSource:this.lastSource||null,hookRecovering:!!this.lastSource,hookThreads:[],hookMessage:message+'；正在自动重连'});}
  start({pid,hwnd,name,started}){if(!/^[A-Za-z0-9_\-. \u0080-\uffff]{1,100}$/.test(name)||!/^\d{10,20}$/.test(started))return;
   // Do not keep re-attaching to a game process that has exited; wait for the window bridge to bind the new one.
@@ -131,7 +133,7 @@ class HookNative{
    if(m.type==='hookGpuPage'){const page=require('./overlay-placement.cjs').parsePage(m.line);/* #299/#307/#311 (Strawberry Nauts, FSN REMASTERED, ライムライト・レモネードジャム): a page the layer never located (gh=0, nothing awake, no places: the game draws its text another way) says nothing about the text window; taking it for 'window gone' hid the reader's line 0.1 s after each line came, so the box and the game's text were both gone */if(page&&!page.awake&&!(page.glyphHeight>0)&&!page.lines.some(l=>l.rects.length)){if(!this.unseenPageNoted){this.unseenPageNoted=true;this.trace?.('gpu page not located (gh=0): window state ignored');}return;}if(page){this.emit(page);/* the page on screen is the engine's own word on whether its text is shown (a wait marker leaving must not hide the reader's page; no page = text window gone, title) */if(page.armed&&(page.lines.some(l=>l.rects.length)||!page.awake)){/* only the reader's layer follows it: engineDialog stays untouched, or the first line of a page, handed over while the old page fades out, was taken for art text (2026-11-15: every page lost its first line) */this.emit({type:'hookDialog',visible:page.awake,engine:'gpupage'});}}return;}
    if(m.type==='hookTextPos'&&m.engine==='pal_sprite_v1'){this.palPosition(m);return;}
    /* 2026-11-12 the engine's own text window state (KiriKiri ToMe_DIALOG): a line arriving while it is hidden is art text */
-   if(m.type==='hookDialog'&&typeof m.visible==='boolean'){this.engineDialog=m.visible;this.engineDialogAt=this.now();}
+   if(m.type==='hookDialog'&&typeof m.visible==='boolean')this.dialogState(m.visible);
    if(m.type==='hookTextPos'||m.type==='hookPage'||m.type==='hookDialog'||m.type==='hookGameUi'||m.type==='hookFont'||m.type==='hookTextMarks'){this.emit(m);if(m.type==='hookPage')this.islandPage(m);return;}
    /* Translation written back into the game: the bridge holds a dialogue line and asks for its translation. */
    if(m.type==='embedRequest'&&Number.isSafeInteger(m.id)&&typeof m.text==='string'&&m.text.length<=4000){this.emit({type:'hookEmbedRequest',id:m.id,text:m.text});return;}
@@ -368,6 +370,10 @@ class HookNative{
   /* 2026-11-12 (ファタモルガーナの館: "……けれど……", drawn large in the middle of the opening, was hidden and shown as a subtitle
      at the bottom): while the engine says its text window is hidden, a line is art text. HookBridge leaves it to the game;
      here it goes to the art layer (invisible readable copy + translation where the game drew it), not to the subtitles. */
+  /* 2026-11-19 (ISLAND with its own hook, rig2 live: 「…………はぁ」 arrived 7 ms after the window reported hidden for a sprite change
+     and 0.3 s before it was shown again; taken as art text, the line was never shown) a line in the first 0.6 s of a hidden text
+     window waits: the window back within that time makes it dialogue, otherwise it is art text as before */
+  if(this.engineDialog===false&&typeof m.text==='string'&&m.text.trim()&&this.now()-(this.engineDialogAt||0)<600&&!m.boxBlinkTimedOut){const b=this.boxBlink||(this.boxBlink={lines:[],timer:null});if(!b.lines.some(x=>x.m.text===m.text))b.lines.push({m,name});if(!b.timer){const wait=Math.max(1,600-(this.now()-(this.engineDialogAt||0)));b.timer=setTimeout(()=>{if(this.boxBlink!==b)return;this.boxBlink=null;for(const x of b.lines)this.source({...x.m,boxBlinkTimedOut:true},x.name);},wait);b.timer.unref?.();}return;}
   if(this.engineDialog===false&&typeof m.text==='string'&&m.text.trim()){this.trace('art text (text window hidden) '+JSON.stringify(m.text.slice(0,40)));this.artSeen?.delete(HookNative.flat(m.text.trim()));this.artCandidate(m.text);return;}
   // The game's own ruby readings ride after the line as \x1d base \x1c reading pairs (ISLAND hook): split them off
   // before anything else sees the text, and attach them when this line is delivered (user, 2026-11-03).

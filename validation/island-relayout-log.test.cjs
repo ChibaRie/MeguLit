@@ -47,3 +47,17 @@ test('a new game started again from the title: its first lines are not lost even
  const read=f.read();const second=read.slice(pro.length);
  assert.deepEqual(second.filter(x=>pro.slice(0,3).includes(x)),pro.slice(0,3),'all three lines of the restarted run are read, in order: '+JSON.stringify(second));
 });
+
+test('a line arriving while the text window is hidden only for a moment (a sprite change) is dialogue, not art text',t=>{
+ const f=fixture(t);const art=[];f.hook.artCandidate=x=>art.push(x);
+ f.line('「あー待て待て、使用時にはもっと大きくなるはずだ、心配には及ばない」','CatSystem2');f.tick(3000);
+ f.hook.dialogState(false);f.tick(7);f.line('「…………はぁ」','CatSystem2');f.tick(340);f.hook.dialogState(true);f.tick(1000);
+ assert.equal(f.read().at(-1),'「…………はぁ」');assert.deepEqual(art,[]);
+});
+test('a line arriving while the text window stays hidden is art text as before (ファタモルガーナの館 opening)',t=>{
+ const f=fixture(t);const art=[];f.hook.artCandidate=x=>art.push(x);
+ f.line('前の行です。','CatSystem2');f.tick(3000);
+ f.hook.dialogState(false);f.tick(50);f.line('……けれど……','CatSystem2');f.tick(1000);
+ assert.deepEqual(art,['……けれど……']);assert.notEqual(f.read().at(-1),'……けれど……');
+ f.hook.dialogState(false);f.tick(2000);f.line('……それでも……','CatSystem2');assert.deepEqual(art,['……けれど……','……それでも……'],'a window hidden for long: at once');
+});
