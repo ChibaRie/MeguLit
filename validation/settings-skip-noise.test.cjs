@@ -86,9 +86,13 @@ test('HookBridge follows a new context of the selected hook only on a line that 
  assert.equal(Typing('','「あっ、はい。なんですか」'),false);
 });
 
-test('choice capture: double-drawn typing fragments are no options; 「ここ」 and ellipsis options stay',()=>{
- const n=()=>new ChoiceCapture(()=>1000);
- assert.deepEqual(n().add('オオ'),[]);assert.deepEqual(n().add('テテ'),[]);assert.deepEqual(n().add('オオーートト'),[]);
+test('choice capture: pieces of a line being typed (one capture, within 1.5 s) are fragments; a word arriving on its own is an option',()=>{
+ let t=1000;const C=new ChoiceCapture(()=>t);
+ for(const f of ['オ','オオ','オオー','オオーー','オオーートト']){C.add(f);t+=60;}
+ assert.deepEqual(C.items.map(x=>x.key),['オオーートト'],'only the longest form of the typed line is left');
+ for(const f of ['テ','テキ','テキス']){C.add(f);t+=60;}assert.ok(!C.items.some(x=>x.key==='テキ'));
+ const n=()=>new ChoiceCapture(()=>1);
+ assert.deepEqual(n().add('ママ'),['ママ']);assert.deepEqual(n().add('パパ／ココ'),['パパ','ココ']);assert.deepEqual(n().add('トト'),['トト']);
  assert.deepEqual(n().add('ねねさん／ここ'),['ねねさん','ここ']);assert.deepEqual(n().add('…………／ああ、行こう'),['…………','ああ、行こう']);
 });
 
