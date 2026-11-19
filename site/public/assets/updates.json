@@ -1,5 +1,11 @@
 [
  {
+  "date": "2026-11-20",
+  "text": "1.4.19：下载加速。运行组件、更新包、语音和模型下载会同时给所有下载源测速，分成小段用几个最快的源一起下；国内优先走国内线路，某个源变慢或卡住会自动换源；下载中断后接着下，不用从头再来。首次启动的运行组件下载窗口也用上了。仅在开发者本地测试过，如还有问题请在「关于 → 一键上传问题反馈」告诉我们，会持续跟进修复",
+  "text_en": "1.4.19: faster downloads. Runtime packs, updates, voices and models now test all download sources at once and fetch the file in small pieces from the fastest few together; users in China try the China route first, and a slow or stalled source is swapped out automatically; an interrupted download resumes instead of starting over. The first-launch runtime download uses it too. Tested only on the developer's machine so far; if anything still goes wrong, tell us via About → Report a problem and we will keep fixing it",
+  "text_ja": "1.4.19：ダウンロードを高速化。ランタイム、更新、音声、モデルのダウンロードで全ての配信元を同時に速度測定し、最も速い複数の配信元から小分けにまとめて取得します。中国では国内回線を優先し、遅い・止まった配信元は自動で切り替えます。中断したダウンロードは続きから再開します。初回起動時のランタイムのダウンロードにも対応。開発者の環境でのみテスト済みです。問題があれば「About → 問題を報告」からお知らせください。引き続き修正します"
+ },
+ {
   "date": "2026-11-19",
   "text": "1.4.18：修好了素晴らしき日々（美好的每一天）等游戏里有配音的台词飞到窗口顶上、位置一直乱跑的问题；快速点击时一句话不再被一段段替换；菜单和画面文字的翻译也会在一个来源没结果时换下一个；上传问题反馈的样本多一道文字检查。仅在开发者本地测试过，如还有问题请在「关于 → 一键上传问题反馈」告诉我们，会持续跟进修复",
   "text_en": "1.4.18: voiced lines in 素晴らしき日々 (Wonderful Everyday) and other games no longer fly to the top of the window or keep moving around; quick clicks no longer replace a sentence piece by piece; menu and on-screen text translations move on to the next source when one gives nothing; problem-report samples get one more text check. Tested only on the developer's machine so far; if anything still goes wrong, tell us via About → Report a problem and we will keep fixing it",
