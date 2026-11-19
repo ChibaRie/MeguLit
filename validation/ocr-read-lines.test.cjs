@@ -1,0 +1,78 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+'use strict';
+/* 2026-11-19 (素晴らしき日々: the opening quotes are pictures, sp0003a… CompressedBG, no stream carries them): what the art scan
+   reads becomes a read-only line of the reader (HookNative.ocrLine), in every engine, without 文字图片翻译 (artText).
+   The readings in helpers/ocr-read/ are GalWindowBridge --art-scan-image runs on screenshots of the game (client area; the
+   pictures stay outside the repository); the scan's own emission (shown after two reads, hidden after two misses, the same
+   group re-sent when its reading changes) is played by hand here. */
+const test=require('node:test'),assert=require('node:assert/strict'),fs=require('fs'),path=require('path');
+const {HookNative}=require('../core/hook-native.cjs');
+const read=f=>JSON.parse(fs.readFileSync(path.join(__dirname,'helpers','ocr-read','subahibi-'+f+'.json'),'utf8'));
+function rig(){
+ let now=1000;const timers=[],events=[],traces=[];
+ const h=new HookNative({native:__dirname,hook:__dirname,logs:'Z:/no-fixture-log'},m=>events.push(m),()=>{},()=>now);
+ h.trace=s=>traces.push(s);h.send=()=>{};
+ const realSet=global.setTimeout,realClear=global.clearTimeout;
+ global.setTimeout=(fn,ms)=>{const t={at:now+(ms||0),fn,unref(){}};timers.push(t);return t;};
+ global.clearTimeout=t=>{const i=timers.indexOf(t);if(i>=0)timers.splice(i,1);};
+ const run=t=>{for(;;){timers.sort((a,b)=>a.at-b.at);const n=timers[0];if(!n||n.at>t)break;timers.shift();now=n.at;try{n.fn();}catch{}}now=Math.max(now,t);};
+ let id=1000000;
+ /* one reading of the scan: every group of it goes out as artText (visible), with the scan's dialogSeen and others */
+ const show=(reading,{ids,at,dialogSeen=false}={})=>{run(at);const out=[];reading.groups.forEach((g,i)=>{const gid=ids?.[i]??++id;out.push(gid);h.ocrLine({type:'artText',source:'ocr',id:gid,text:g.text,visible:true,rows:g.rows,sw:reading.sw,sh:reading.sh,dialogSeen:dialogSeen||reading.dialogSeen,others:reading.others});});return out;};
+ const hide=(ids,at)=>{run(at);for(const gid of ids)h.ocrLine({type:'artText',source:'ocr',id:gid,visible:false});};
+ const lines=()=>events.filter(e=>typeof e?.hookSource==='string'&&e.hookSource).map(e=>e.hookSource).filter((s,i,a)=>a[i-1]!==s);
+ const done=()=>{global.setTimeout=realSet;global.clearTimeout=realClear;};
+ return {h,show,hide,run,lines,traces,done,at:()=>now};
+}
+test('fixtures: the scan reads the quotes and nothing else that looks like a line',()=>{
+ assert.equal(read('intro-1').groups[0].text,'私(あるいはこれを読むあなた)は世界に属さない。');
+ assert.match(read('intro-3').groups[0].text,/^世界の意義は世界の外になければならない、/);
+ assert.ok(read('title').others>=3,'the title screen has its menu rows');
+ assert.equal(read('intro-8').groups.length,0,'the Latin attribution is no Japanese group');});
+test('素晴らしき日々 opening: each quote once, a fade-out garble never, title, logo and chapter screen nothing',()=>{
+ const r=rig();try{
+  /* title screen: the logo 「不連続存在」 with START / LOAD / CONFIG / EXIT / copyright under it */
+  const title=r.show(read('title'),{at:2000});r.run(5000);r.hide(title,5200);
+  /* chapter screen: a 184 px logo guess and a 13 px kanji fragment */
+  const ch=r.show(read('chapters'),{at:6000});r.run(9000);r.hide(ch,9200);
+  assert.deepEqual(r.lines(),[],'title and chapter screens give no line');
+  /* quote 1 (shown after two reads), still there on the next screen shot, then gone */
+  const q1=r.show(read('intro-1'),{at:10000});r.show(read('intro-2'),{ids:q1,at:10400});r.hide(q1,13000);
+  /* quote 2, then the same group read during its fade-out (the scan re-sends a changed reading under the same id) */
+  const q2=r.show(read('intro-3'),{at:14000});r.show(read('intro-4'),{ids:q2,at:14400});r.show(read('intro-5'),{ids:q2,at:14800});
+  r.show(read('intro-6'),{ids:q2,at:17000});r.hide(q2,17800);
+  /* the attribution screen: no Japanese group */
+  r.show(read('intro-8'),{at:18500});
+  /* quote 2 again as a new group within a minute (the picture came back): not again */
+  const again=r.show(read('intro-3'),{at:21000});r.hide(again,24000);r.run(30000);
+  const L=r.lines();
+  assert.deepEqual(L,[read('intro-1').groups[0].text,read('intro-3').groups[0].text],JSON.stringify(L)+' '+JSON.stringify(r.traces.filter(t=>t.startsWith('ocr'))));
+  assert.ok(r.traces.some(t=>/refused \(a title or menu screen\)/.test(t)),'the title is refused as a menu screen');
+  assert.ok(r.traces.some(t=>/refused \((logo or OCR noise|kanji fragment)\)/.test(t)),'the chapter screen logo is refused');
+ }finally{r.done();}});
+test('dialogue: no OCR line while the dialogue line is on the picture or a hook line is current; settings page nothing',()=>{
+ const r=rig();try{
+  r.run(1000);r.h.sourcePage({type:'hookSource',text:'「おはよう、由岐」',sourceName:'EmbedBGI',sourceCode:'EXHSXN8:20@3B350:BGI.exe',hookActive:true},'BGI.exe');
+  const before=r.lines().length;
+  /* a sign in the background read while the line is current (1 s later) */
+  const sign=r.show({sw:1280,sh:720,others:0,groups:[{text:'喫茶店ひまわり、本日休業です',rows:[{text:'喫茶店ひまわり、本日休業です',x:100,y:80,w:300,h:24}]}]},{at:2000});r.run(4000);r.hide(sign,4100);
+  /* 8 s on the same line: the scan still sees the dialogue line on the picture */
+  const sign2=r.show({sw:1280,sh:720,others:0,groups:[{text:'商店街のお知らせが貼ってある',rows:[{text:'商店街のお知らせが貼ってある',x:100,y:80,w:300,h:24}]}]},{at:9000,dialogSeen:true});r.run(11000);r.hide(sign2,11100);
+  /* a settings page: its sample sentence among four other groups */
+  const page={sw:1280,sh:720,others:1,groups:['テキスト速度','オート速度','音量設定','既読スキップ','これはテキスト表示速度のサンプルです。'].map((t,i)=>({text:t,rows:[{text:t,x:100,y:100+i*60,w:200,h:24}]}))};
+  const cfg=r.show(page,{at:20000});r.run(23000);r.hide(cfg,23100);
+  assert.equal(r.lines().length,before,JSON.stringify(r.lines())+' '+JSON.stringify(r.traces.filter(t=>t.startsWith('ocr'))));
+  assert.ok(r.traces.some(t=>/a hook line is current/.test(t)));assert.ok(r.traces.some(t=>/dialogue line is on the picture/.test(t)));
+  assert.ok(r.traces.some(t=>/text groups at once \(menu or settings page\)/.test(t)));
+  assert.equal(r.h.dialogueHook,'EmbedBGI','an OCR line never becomes the dialogue stream');
+ }finally{r.done();}});
+test('wiring: the scan runs without artText (5 s quiet), artText only decides the drawing over the picture; the scan reports dialogSeen and others',()=>{
+ const g=fs.readFileSync(path.join(__dirname,'..','core','gal-native.cjs'),'utf8');
+ assert.match(g,/if\(message\.type==='artText'\)\{if\(this\.preferences\?\.artText===true\)this\.onEvent\(message\);this\.hooks\.ocrLine\(message\);return;\}/);
+ assert.match(g,/const art=this\.preferences\?\.artText===true,read=this\.preferences\?\.ocrReadLines!==false;const s=this\.state\.bound===true&&\(art\|\|read\)\?this\.hooks\.artScanState\(undefined,art\?2000:5000\)/);
+ const p=fs.readFileSync(path.join(__dirname,'..','native','PageLocator.cs'),'utf8');
+ assert.match(p,/ScanDialogSeen = dialog != null && Find\(rows, dialog\) != null;/);
+ assert.match(p,/dialogSeen = ScanDialogSeen, others = ScanOthers, at =/);
+ assert.match(p,/Priority = ThreadPriority\.BelowNormal/,'the scan stays a low-priority thread');
+ assert.match(g,/if\(!art\)s\.slow=true;/,'read lines only: the slow rate');assert.match(p,/Thread\.Sleep\(busy \? 400 : ScanSlow \? 1500 : 700\)/);
+ assert.match(p,/if \(last != null && !Changed\(last, thumb\) && !pending\) continue;/,'OCR only when the picture changed');});

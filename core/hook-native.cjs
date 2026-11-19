@@ -16,6 +16,8 @@ function speakerName(raw){const n=String(raw||'').replace(/[\x00-\x1f]/g,'').rep
    a quote with a line break, ideographic space or colon in between, and – for names already seen – 名前「…」 and a bare
    名前 line. Returns {name,text}; text is '' when the string was only a name. */
 /* side-stream text waits this long for the dialogue line of the same moment before it may be art text */const AUX_ART_DELAY_MS=120;
+/* OCR read lines (2026-11-19): a read group waits this long for the rest of the screen's groups; this many groups at once is a menu or settings page; a hook line this recent is current; the same text again within this long is the same screen */
+const OCR_LINE_SETTLE_MS=500,OCR_LINE_MAX_BLOCKS=4,OCR_LINE_QUIET_MS=5000,OCR_LINE_REPEAT_MS=60000;
 const QUOTE_OPEN='「『（(',QUOTE_CLOSE='」』）)';
 function splitSpeaker(raw,known){const s=String(raw||'');const t=s.replace(/^[\s　]+/,'');if(!t)return {name:'',text:s};
  const kn=n=>!!known&&typeof known.has==='function'&&known.has(n);
@@ -302,9 +304,44 @@ class HookNative{
     is hidden, or no hook line arrived for 2 s: PageLocator then reads the picture when it changes and sends Japanese rows
     that are not the current dialogue line (dialog, speaker; band = the lower text-box band is skipped while a line is
     current) as artText. OCR only reads; the game keeps drawing the text. */
- artScanState(now=this.now()){const hidden=this.engineDialog===false,line=String(this.lastSource||'').trim(),current=!!line&&!hidden;
-  const on=hidden||!line||now-(this.lastSourceAt||0)>2000;
+ artScanState(now=this.now(),quiet=2000){const hidden=this.engineDialog===false,line=String(this.lastSource||'').trim(),own=!!line&&this.ocr?.lastText===line,current=!!line&&!hidden&&!own;
+  const on=hidden||!line||own||now-(this.lastSourceAt||0)>quiet;
   return {on,dialog:current?line.slice(0,600):'',speaker:current?String(this.state?.hookSpeaker||'').slice(0,40):'',band:current,foreign:this.foreignArtReady()};}
+ /* 2026-11-19 (素晴らしき日々: the opening quotes 「私（あるいはこれを読むあなた）は世界に属さない。」 are pictures, no stream carries them; every
+    engine's title cards, chapter cards and picture monologues): a group the art scan read (PageLocator artText, source ocr) is a
+    line of its own for the reader: read-only, shown where the reader shows lines, never over the picture, never written to the
+    game. Refused: while the dialogue line is on the picture or a hook line is current, four or more groups at once (a menu, a
+    settings page with its sample text), logos and OCR noise (art-filter), stacked short rows (a list), unreadable text, a part
+    of the hook line, and the same text again within a minute. The line goes through source(), so line-once applies as to any line. */
+ ocrLine(m){try{if(!m||m.source!=='ocr'||m.foreign===true||m.id==null)return;const O=this.ocr||(this.ocr={shown:new Map(),said:new Map(),done:new Set(),timer:null,lastText:''});
+  if(m.visible!==true||typeof m.text!=='string'){O.shown.delete(m.id);return;}
+  /* a group is taken once, when its reading has stopped changing (a fade in or out reads as garble); later readings of the same group are ignored */
+  if(O.done.has(m.id))return;const was=O.shown.get(m.id),now=this.now();
+  O.shown.set(m.id,{id:m.id,text:m.text,rows:Array.isArray(m.rows)?m.rows:[],sw:+m.sw||0,sh:+m.sh||0,dialogSeen:m.dialogSeen===true,others:+m.others||0,changedAt:was&&was.text===m.text?was.changedAt:now});
+  this.ocrSchedule(OCR_LINE_SETTLE_MS);}catch{}}
+ ocrSchedule(ms){const O=this.ocr;clearTimeout(O.timer);O.timer=setTimeout(()=>this.ocrFlush(),ms);O.timer.unref?.();}
+ ocrFlush(){const O=this.ocr;if(!O)return;const now=this.now(),items=[...O.shown.values()].filter(it=>!O.done.has(it.id));
+  if(items.length>=OCR_LINE_MAX_BLOCKS){this.trace('ocr lines skipped: '+items.length+' text groups at once (menu or settings page)');return;}
+  let wait=0;
+  for(const it of items){const age=now-it.changedAt;if(age<OCR_LINE_SETTLE_MS){wait=Math.max(wait,OCR_LINE_SETTLE_MS-age);continue;}
+   O.done.add(it.id);if(O.done.size>400)O.done.delete(O.done.values().next().value);
+   const why=this.ocrLineRefused(it,now);if(why){this.trace('ocr line refused ('+why+') '+JSON.stringify(it.text.slice(0,40)));continue;}
+   const flat=HookNative.flat(it.text);O.said.set(flat,now);if(O.said.size>200)O.said.delete(O.said.keys().next().value);
+   const box=it.rows.reduce((b,r)=>{const x=+r?.x,y=+r?.y,w=+r?.w,h=+r?.h;if(![x,y,w,h].every(Number.isFinite))return b;return b?{x0:Math.min(b.x0,x),y0:Math.min(b.y0,y),x1:Math.max(b.x1,x+w),y1:Math.max(b.y1,y+h)}:{x0:x,y0:y,x1:x+w,y1:y+h};},null);
+   this.trace('ocr line '+JSON.stringify(it.text.slice(0,40)));O.lastText=it.text.trim();
+   this.source({type:'hookSource',text:it.text,origin:'ocr',hookActive:true,...(box&&it.sw&&it.sh?{ocrRect:{...box,sw:it.sw,sh:it.sh}}:{})},'ocr');}
+  if(wait>0)this.ocrSchedule(wait+20);}
+ ocrLineRefused(it,now){const f=require('./art-filter.cjs'),t=String(it.text||'').trim(),flat=HookNative.flat(t),n=[...flat].length,O=this.ocr,kana=/[぀-ヿ]/.test(flat);
+  if(it.dialogSeen)return 'the dialogue line is on the picture';
+  const line=String(this.lastSource||'').trim();if(line&&line!==O.lastText&&this.engineDialog!==false&&now-(this.lastSourceAt||0)<OCR_LINE_QUIET_MS)return 'a hook line is current';
+  /* a title or menu screen: three or more rows on the picture that are no Japanese group (START, LOAD, CONFIG, a copyright line) */
+  if(it.others>=3)return 'a title or menu screen';
+  if(n<2||n>120)return 'length';if(f.artJunk(t,it.rows,it.sh))return 'logo or OCR noise';if(f.artList(it.rows))return 'a list';
+  if(require('./text-sanity.cjs').garbledSource(t,{controls:false}))return 'unreadable';
+  /* kanji without kana: a chapter card when large and short, else a logo fragment or a guess (「不連在」 13 px on 963) */
+  if(!kana){const tall=Math.max(0,...it.rows.map(r=>+r?.h||0));if(n>8||n<2||(it.sh>0&&tall<it.sh/50))return 'kanji fragment';}
+  if(line&&line!==O.lastText){const l=HookNative.flat(line);if(l.includes(flat)||flat.includes(l))return 'part of the hook line';}
+  const last=O.said.get(flat);if(last!=null&&now-last<OCR_LINE_REPEAT_MS)return 'already shown';return '';}
  auxText(m,name){/* 2026-11-19 (素晴らしき日々: the black-screen quotes at a chapter start reached no stream) text a *SpriteText stream carries
     (art: true) is drawn outside the message window: a line of its own for the reader, placed where the game drew it like any
     line and shown once (line-once), never a choice; the dialogue stream stays the one it was */
