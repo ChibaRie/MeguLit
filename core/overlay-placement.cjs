@@ -202,11 +202,18 @@ class OverlayPlacement {
       if (!Array.isArray(r) || r.length < 4 || !r.every(Number.isFinite)) return null;
       let [x, y, w, h] = r;
       if (!(w > 0 && h > 0) || x >= cw || y >= ch || x + w <= 0 || y + h <= 0) return null;
+      /* 2026-11-19 (user, 素晴らしき日々 installed 1.4.17: 「一说话字就飞不见了，位置也一直乱跑」; every voiced 「」 line had its first glyph
+         exactly on the client's top edge, firstGlyphTop = clientY, also on the test copy): a box more than half above the
+         client is not a screen position (an off-screen buffer, a surface drawn at its own origin); clamping it put the line at
+         the top of the game and taught the anchor that place. Such a box has no place. */
+      if (y < -h / 2) return null;
       w = Math.min(w, cw); h = Math.min(h, ch); x = Math.min(Math.max(x, 0), cw - w); y = Math.min(Math.max(y, 0), ch - h);
       return [x, y, w, h];
     });
     const ok = out.filter(Boolean);
     if (!ok.length) return null;
+    /* every box on the client's very top row (y 0): a buffer drawn at its own origin, never a dialogue line on screen */
+    if (ok.every(r => r[1] <= 0.5)) return null;
     if (ok.length > 1 && ok.every(r => r[0] === ok[0][0] && r[1] === ok[0][1])) return null;
     return out;
   }
@@ -236,6 +243,7 @@ class OverlayPlacement {
   emitLine(line) {
     if (!line.fallback) {
       const rects = OverlayPlacement.sane(line.rects, line.client);
+      if (!rects) this.why('insane:' + line.id + ':' + line.text, 'not placed: ' + line.id + ' has no box on the game client (off the client, or all on its top edge: a buffer drawn at its own origin); the reader keeps its own box and the anchor is not taught');
       line = rects ? { ...line, rects } : { id: line.id, engine: line.engine, text: line.text, fallback: true, client: line.client, ...(line.color ? { color: line.color } : {}), ...(typeof line.read === 'boolean' ? { read: line.read } : {}) };
       if (rects && !line.approx) this.learn(rects);
     }
