@@ -132,10 +132,12 @@ function takeNotice(root,fp){if(!fp?.key)return false;const doc=read(root);if(!d
 
 /* ---- export --------------------------------------------------------------------------------------------------- */
 /* Writes the running game's record after a verified embed or a calibration save, then hands it to the relay. */
+/* the installed build (the appVersion option of exportFor shadows appVersion below) */
+function installedVersion(root){return appVersion(root);}
 function exportFor(root,{executable,engine='',library=null,hooks=null,styleSync=null,hookProfile='',appVersion='',sync=require('./shared-adaptation-sync.cjs')}={}){
  if(!executable||!enabled(root))return null;let fp;try{fp=fingerprint(executable,engine);}catch{return null;}if(!fp)return null;
  const profile=styleSync?.profile||null;
- const record=build({fingerprint:fp,stream:readStream(root,executable),embed:library?.hook,hookProfile,flowPage:hooks?.flowPage===true,profile,zeroLatency:zeroLatencyOf(root,executable),localeMode:library?.localeMode,appVersion});
+ const record=build({fingerprint:fp,stream:readStream(root,executable),embed:library?require('./hook-verdict.cjs').shown(library,installedVersion(root),''):undefined,hookProfile,flowPage:hooks?.flowPage===true,profile,zeroLatency:zeroLatencyOf(root,executable),localeMode:library?.localeMode,appVersion});
  const saved=save(root,record,'local');if(saved&&sync)Promise.resolve().then(()=>sync.push([saved],{root})).catch(()=>{});return saved;
 }
 function appVersion(root){try{const v=readJSON(path.join(root,'data','update-installed.json')).version;if(v)return String(v);}catch{}try{const m=/^version\s*=\s*"([^"]+)"/m.exec(fs.readFileSync(path.join(root,'desktop','Cargo.toml'),'utf8'));if(m)return m[1];}catch{}return '';}
