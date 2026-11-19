@@ -34,6 +34,7 @@ function scriptSource(text){
  return marker?text.slice(0,marker.index).trimEnd():text;
 }
 const IslandSource=require('./island-source.js');
+const LineOnce=require('./line-once.js');
 // Engines whose MeguLit DLL reports each sentence of a full-screen page (hookEngineLine): KiriKiri (E300), Ren'Py (E301),
 // and every other engine through the OCR page locator (E306, GalWindowBridge PageLocator.cs).
 const PAGE_ENGINES=new Set(['krkr','renpy','ocr']);
@@ -374,11 +375,14 @@ class HookNative{
   this.attempt=0;/* 2026-11-13 (user: DDLC Plus set to English showed nothing): a line in another language is first looked up in the
      game's own parallel language tables (foreignJapanese, original-text.cjs), so the reader gets the Japanese line */
   {const raw=scriptSource(cleanSource(m.text,name,String(m.sourceCode||'')));const ja=this.foreignJapanese(raw);if(ja){m={...m,text:ja};}}
-  const frame=require('./language-tracks.cjs').japaneseTrack(scriptSource(cleanSource(m.text,name,String(m.sourceCode||''))));let drawn=this.repeats.normalize(String(m.sourceCode||m.sourceName||name||''),frame);{const rc=require('./ruby-copies.cjs').collapse(drawn);if(rc){this.trace('source ruby copies folded ('+rc.copies+')');drawn=rc.text;}} /* 2026-11-19 千恋＊万花: copies of one ruby line, base and reading alternating */
+  /* 2026-11-19 (千恋＊万花: 「■自動車（車内／走行）」 in the reader) script stage notes are no dialogue (core/line-once.js) */const frame=require('./language-tracks.cjs').japaneseTrack(LineOnce.stripStageNotes(scriptSource(cleanSource(m.text,name,String(m.sourceCode||'')))));let drawn=this.repeats.normalize(String(m.sourceCode||m.sourceName||name||''),frame);{const rc=require('./ruby-copies.cjs').collapse(drawn);if(rc){this.trace('source ruby copies folded ('+rc.copies+')');/* the readings of the folded copies go to the furigana */for(const pair of LineOnce.collapse(drawn).ruby)if(!ruby.some(q=>q[0]===pair[0]))ruby.push(pair);drawn=rc.text;}} /* 2026-11-19 千恋＊万花: copies of one ruby line, base and reading alternating */
   /* E408 one frame holding the line twice (redraw), collapsed only on same-stream evidence.
      2026-11-15 (死に逝く君、館に芽吹く憎悪, Krkr2wcs draws every line twice 「X　X　」): judged on the frame as the stream drew it, before
      the script lookup, with the evidence taken from the frame before repeat-normalizer (core/double-line.cjs). */
   {const stream=String(m.sourceCode||m.sourceName||name||'');this.sourceStream=stream;if(typeof drawn==='string'){const dbl=(this.doubles||(this.doubles=new DoubleLine(()=>this.now()))).fix(stream,drawn,this.lastSource,typeof frame==='string'?frame:drawn);if(dbl.collapsed){this.trace('source doubled collapsed ('+dbl.reason+') chars='+drawn.length+'->'+dbl.text.length);drawn=dbl.text;}}}
+   /* 2026-11-19 (user: 「所有游戏都禁止复读」; 千恋＊万花 「志那都荘まで…」 drawn six times, ruby base and reading alternating): the same
+      sentence again in one frame (redraw, base/reading variant, whole run repeated) is one sentence; readings go to the ruby */
+   if(typeof drawn==='string'){const once=LineOnce.collapse(drawn);if(once.collapsed){this.trace('source repeat collapsed chars='+drawn.length+'->'+once.text.length);drawn=once.text;for(const pair of once.ruby)if(!ruby.some(q=>q[0]===pair[0]))ruby.push(pair);}}
   let text=String(this.originalTextFor(String(drawn??'').replace(/\n+$/,''))??'').replace(/\n+$/,'');
   if(!text.trim())return;
   /* 2026-11-13 multi-language container (サノバウィッチ 日简繁): the game's own Chinese track is this line's official translation */{const zh=require('./language-tracks.cjs').chineseTrack(scriptSource(cleanSource(m.text,name,String(m.sourceCode||''))),text);if(zh){const k=text.replace(/\s+/g,'');(this.trackPairs||(this.trackPairs=new Map())).set(k,zh);if(this.trackPairs.size>4000)this.trackPairs.delete(this.trackPairs.keys().next().value);}}
@@ -609,7 +613,7 @@ class HookNative{
     window repaints, seconds later (after a long voice) and sometimes with different line breaks. The same line (ignoring
     white space) right after itself is ignored until another line comes; very short lines such as …… keep the old
     650 ms so a script that repeats them still advances. */
- sameAsLast(text){const k=s=>String(s||'').replace(/\s+/g,''),key=k(text);if(!key||key!==k(this.lastSource))return false;const age=this.now()-(this.lastSourceAt||0);/* E408: the same line from another stream (two hooks on one line) within 2.5 s is the same line; from the same stream a short line is a real repeat after 650 ms */return key.length>=6||age<650||!!this.sourceStream&&!!this.lastSourceStream&&this.sourceStream!==this.lastSourceStream&&age<2500;}
+ sameAsLast(text){const k=s=>String(s||'').replace(/\s+/g,''),key=k(text);/* 2026-11-19 the ruby-reading form of the last line is the last line */if(!key||key!==k(this.lastSource)&&!(key.length>=6&&LineOnce.variant(key,this.lastSource)))return false;const age=this.now()-(this.lastSourceAt||0);/* E408: the same line from another stream (two hooks on one line) within 2.5 s is the same line; from the same stream a short line is a real repeat after 650 ms */return key.length>=6||age<650||!!this.sourceStream&&!!this.lastSourceStream&&this.sourceStream!==this.lastSourceStream&&age<2500;}
  /* E530 (DDLC Plus: the boot prompt "Press HELP key..." stayed in the reader on the main menu): the game left the dialogue
     screen when the stream that sent the shown line has been silent for 12 s while other streams changed to three or more
     different short labels (menu buttons, titles). Clock/number-only samples and prose do not count, so a player reading
@@ -630,6 +634,8 @@ class HookNative{
   try{this.textPath?.want(text);}catch{}
   /* E501 every source path (native line, merged batch, skip burst) meets the same frame-dump filter as the aux entries */
   if(require('./language-tracks.cjs').stuttered(text)){this.trace('drop typewriter/redraw frame '+JSON.stringify(String(text).slice(0,40)));return;}
+  /* last guard before the reader: every path (native line, merged batch, skip burst) draws a sentence once and no stage note */
+  {const bare=LineOnce.stripStageNotes(text);if(bare!==text){if(!bare.trim()){this.trace('drop stage note '+JSON.stringify(String(text).slice(0,40)));return;}text=bare;}const once=LineOnce.collapse(text);if(once.collapsed){this.trace('emit repeat collapsed chars='+text.length+'->'+once.text.length);text=once.text;}}
   {const sp=splitSpeaker(text,this.knownSpeakers);if(sp.name){this.speaker={text:sp.name,at:this.now()};this.noteSpeaker(sp.name);if(!sp.text.trim()){this.trace('speaker name split from the text flow');return;}text=sp.text;}}
   if(!engine&&!nativeLine&&this.flowPage)engine='nvl';
   if((origin==='history'&&this.state.receivedText)||(!nativeLine&&this.sameAsLast(text)&&this.state.hookActive&&this.state.receivedText&&!this.state.hookRecovering)){this.trace('source duplicate ignored chars='+text.length);return;}

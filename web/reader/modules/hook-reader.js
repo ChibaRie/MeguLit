@@ -13,8 +13,13 @@
  // turns the page. A new line waits up to 150 ms for that report so the earlier lines never flash away and back.
  let page=[],pending=null,pageEngineAt=0,early=null,engine='',lastPageLine=0;
  const reports=new Map();
+ /* 2026-11-19 (user: 「所有游戏都禁止复读」) last guard before the screen: a sentence (normalised, ruby base or reading form) already on
+    the page is never appended again, and one frame holding it several times shows it once (line-once.js) */
+ const once=src=>{const L=window.TomeLineOnce;if(!L)return src;const bare=L.stripStageNotes(src);return L.collapse(bare).text;};
+ const onPage=(list,s)=>{const L=window.TomeLineOnce;return !!s&&list.some(x=>L?L.variant(x,s):x.replace(/\s+/g,'')===s.replace(/\s+/g,''));};
+ const join=(list,old,next)=>!old||onPage(list,old)||onPage([next],old)?list.filter(x=>!onPage([next],x)):list.concat(old).filter(x=>!onPage([next],x));
  const token=value=>{value=value.replace(/[ \u3000\r\n]/g,'');let h=2166136261;for(let i=0;i<value.length;i++)h=Math.imul(h^value.charCodeAt(i),16777619);return h>>>0;};
- const decide=same=>{if(!pending)return;const p=pending;pending=null;clearTimeout(p.timer);page=same&&p.previous?p.page.concat(p.previous):[];paint();window.__tomeTextPosition?.refresh?.();};
+ const decide=same=>{if(!pending)return;const p=pending;pending=null;clearTimeout(p.timer);page=same&&p.previous?join(p.page,p.previous,text):[];paint();window.__tomeTextPosition?.refresh?.();};
  const resetPage=()=>{if(pending)clearTimeout(pending.timer);pending=null;page=[];early=null;reports.clear();lastPageLine=0;pageEngineAt=0;engine='';};
  b.hookPage=m=>{if(b.islandPage?.page(m))return;if(!m||typeof m.same!=='boolean')return;
   if(Number.isSafeInteger(m.line)){if(m.line<=lastPageLine)return;lastPageLine=m.line;}
@@ -30,13 +35,14 @@
   if(m.type==='gameClosed'||m.hookSource===null){document.body.classList.toggle('tome-line-read',false);resetPage();text='';}
   if(typeof m.hookActive==='boolean')active=m.hookActive;if(typeof m.hookRecovering==='boolean')recovering=m.hookRecovering;
   if(typeof m.hookSourceEngine==='string'&&m.hookSourceEngine!==engine){if(engine)resetPage();engine=m.hookSourceEngine;}
-  if(typeof m.hookSource==='string'){const next=b.splitDialogue(m.hookSource).text,old=text,oldSequence=sequence;sequence=Number.isSafeInteger(m.hookSequence)?m.hookSequence:next===text?sequence:sequence+1;text=next;
+  if(typeof m.hookSource==='string'){const next=once(b.splitDialogue(m.hookSource).text),old=text,oldSequence=sequence;sequence=Number.isSafeInteger(m.hookSequence)?m.hookSequence:next===text?sequence:sequence+1;text=next;
    if(sequence!==oldSequence){if(pending)decide(false);const key=/^(?:cs2|krkr|renpy|ocr)$/.test(engine)?token(next):null,report=key!==null?reports.get(key):early&&Date.now()-early.at<300?early:null;early=null;
-    if(report&&Date.now()-report.at<5000){if(key!==null)reports.delete(key);page=report.same&&old?page.concat(old):[];}
+    if(report&&Date.now()-report.at<5000){if(key!==null)reports.delete(key);page=report.same&&old?join(page,old,next):[];}
     else if((/^(?:cs2|krkr|renpy|ocr)$/.test(engine)||Date.now()-pageEngineAt<10*60*1000)&&next){pending={page,previous:old,token:key,timer:setTimeout(()=>decide(false),/^(?:cs2|krkr|renpy|ocr)$/.test(engine)?1200:150)};return;}else page=[];}}
   if(!pending){paint();window.__tomeTextPosition?.refresh?.();}};
  // Current native coordinates describe the current line. Earlier page lines occupy space above it in the DOM.
  b.pagePositionReady=()=>!pending;
+ b.hookPageLines=()=>page.slice();
  b.currentPageToken=()=>/^(?:cs2|krkr|renpy|ocr)$/.test(engine)?token(text):null;
  b.pageHistoryHeight=()=>{const host=root?.querySelector('.tome-page-lines');return host?.getBoundingClientRect?.().height||0;};
  function pageLines(sentence){let host=sentence.querySelector(':scope>.tome-page-lines');if(!page.length){host?.remove();return;}if(!host){host=document.createElement('div');host.className='tome-page-lines';host.__tomeKey='';}if(sentence.firstChild!==host)sentence.prepend(host);const key=page.join('\u0001');if(host.__tomeKey===key)return;host.__tomeKey=key;host.replaceChildren(...page.map(line=>{const d=document.createElement('div');d.textContent=line;return d;}));}
