@@ -29,3 +29,9 @@ test('bridge: hide waits at most 100 ms, no fixed sleep before the answer, gener
  assert.match(b,/Heartbeat\(\);SyncEmbedGeneration\(\);Thread\.Sleep\(40\);/);
  for(const k of ['Selected','ReplacementEnabled','TranslateMode','MarksMode','GlyphAll','SkipHeld','EngineDialogHidden','HookTarget.ChineseText','c.hideOnly'])assert.ok(b.includes('static string EmbedStateKey(){')&&b.slice(b.indexOf('static string EmbedStateKey(){')).split('\n')[0].includes(k),k);
  assert.match(b,/static void Diagnostic\(string value\)\{DiagQueue\.Enqueue\(/);});
+
+test('the hook reports how long the game thread waited for answers (histogram in the hook diagnostics every 30 s)',()=>{
+ const s=require('node:fs').readFileSync(require('node:path').join(__dirname,'../native/megulithook/embed_util.cc'),'utf8');
+ assert.match(s,/Msg::Log\("MeguLit embed waits ms <5:%d <20:%d <50:%d <100:%d <500:%d >=500:%d timeout:%d"/);
+ assert.match(s,/InterlockedCompareExchange\(&MeguLitWaitReported, now, last\) == last/,'one thread reports per period');
+});

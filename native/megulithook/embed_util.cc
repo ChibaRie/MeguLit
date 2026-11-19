@@ -227,13 +227,33 @@ bool check_embed_able(const ThreadParam &tp)
   return host_connected && check_is_thread_selected(tp) && ((isPauseKeyPressed() == false) ? true : !commonsharedmem->fastskipignore);
 }
 /* MeguLit 2026-11-19: the answer event comes from MeguLitEmbedArm (made before the line went out), see MeguLitEmbedWait.h */
+/* MeguLit 2026-11-19: how long the game thread waited for the bridge's answer, as a histogram in the hook diagnostics every
+   30 s (milliseconds: <5 <20 <50 <100 <500 >=500, and how many ran out); measures the stutter an embed stream costs */
+static volatile LONG MeguLitWaitBuckets[7];
+static volatile LONG MeguLitWaitReported;
 bool waitforevent(UINT32 timems, const ThreadParam &tp, const std::wstring &origin)
 {
+  LARGE_INTEGER f, t0, t1;
+  QueryPerformanceFrequency(&f);
+  QueryPerformanceCounter(&t0);
   HANDLE ev = MeguLitEmbed::Take(LUNA_EMBED_notify_event, GetCurrentProcessId(), simplehash::djb2_n2((const unsigned char *)(origin.c_str()), origin.size() * 2));
   bool ok = MeguLitEmbed::Wait(ev, timems, [&]()
                                { return check_embed_able(tp); });
   if (ev)
     CloseHandle(ev);
+  QueryPerformanceCounter(&t1);
+  double ms = (double)(t1.QuadPart - t0.QuadPart) * 1000.0 / (double)f.QuadPart;
+  InterlockedIncrement(&MeguLitWaitBuckets[ms < 5 ? 0 : ms < 20 ? 1 : ms < 50 ? 2 : ms < 100 ? 3 : ms < 500 ? 4 : 5]);
+  if (!ok)
+    InterlockedIncrement(&MeguLitWaitBuckets[6]);
+  LONG now = (LONG)(GetTickCount() / 1000), last = MeguLitWaitReported;
+  if (now - last >= 30 && InterlockedCompareExchange(&MeguLitWaitReported, now, last) == last)
+  {
+    LONG b[7];
+    for (int i = 0; i < 7; i++)
+      b[i] = InterlockedExchange(&MeguLitWaitBuckets[i], 0);
+    Msg::Log("MeguLit embed waits ms <5:%d <20:%d <50:%d <100:%d <500:%d >=500:%d timeout:%d", b[0], b[1], b[2], b[3], b[4], b[5], b[6]);
+  }
   return ok;
 }
 
