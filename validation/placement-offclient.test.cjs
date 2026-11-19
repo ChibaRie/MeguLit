@@ -32,3 +32,23 @@ test('hook path (char rects from the engine): boxes above the client are no plac
  p.hook({type:'hookCharRects',engine:'krkr',line:1,hidden:true,sw:1280,sh:720,rects:[[300,-60,28,28],[328,-60,28,28]],text:'お客'});
  assert.equal(lines().at(-1).fallback,true);
 });
+/* the lines of the 13:03Z run on the installed 1.4.17 (texts and order as logged); client 1920x1080, the game's back buffer
+   1280x720 (frame-shaped), the voiced lines drawn on a line sprite of their own (1024x96) */
+const C2=[1920,1080];
+function rig2(){const traces=[],sent=[];const p=new OverlayPlacement({send:m=>sent.push(m),trace:t=>traces.push(t)});p.wanted=()=>true;
+ p.configure({},{bound:true,layout:{clientWidth:C2[0],clientHeight:C2[1]}});return {p,traces,last:()=>sent.filter(m=>m.type==='textPlace'&&!m.clear).at(-1)};}
+const on=(text,x,y,space)=>[...text].map((ch,i)=>({i,ch,k:'d',h:20,a:20,at:{x:x+i*20,y,space}}));
+test('13:03Z run: narration on the back buffer is placed; voiced lines on a line sprite are laid out from its anchor, not at the top',()=>{
+ const {p,traces,last}=rig2();
+ p.glyph({seq:1,text:'　週の終わり、だからこそ',dots:on('　週の終わり、だからこそ',170,505,'m1280x720')});
+ const narr=last();assert.ok(narr.rects&&!narr.approx,'narration: exact');assert.equal(Math.round(narr.rects[0][1]),Math.round(505*1.5));
+ p.glyph({seq:2,text:'「ふぅ……」',dots:on('「ふぅ……」',0,0,'m1024x96')});
+ const v=last();assert.ok(v.rects&&v.approx,'voiced: laid out from the anchor '+JSON.stringify(v));assert.ok(Math.abs(v.rects[0][1]-narr.rects[0][1])<2,'on the dialogue row, not the top: '+v.rects[0][1]);
+ assert.ok(traces.some(t=>t.includes('not the frame (m1024x96')),JSON.stringify(traces));
+ p.glyph({seq:3,text:'「やっぱり……いい女には、',dots:on('「やっぱり……いい女には、',0,0,'m1024x96')});assert.ok(last().approx&&last().rects[0][1]>500,'next voiced line too');
+ p.glyph({seq:4,text:'　たばこの銘柄はマイナーなもの',dots:on('　たばこの銘柄はマイナーなもの',170,505,'m1280x720')});assert.ok(!last().approx,'narration exact again');
+});
+test('a scene that starts with a voiced line (no anchor yet) keeps the reader box, never the top of the game',()=>{
+ const {p,last}=rig2();
+ p.glyph({seq:1,text:'「ねぇ……」',dots:on('「ねぇ……」',0,0,'m1024x96')});assert.equal(last().fallback,true);
+});
