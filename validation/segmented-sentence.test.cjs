@@ -63,7 +63,7 @@ test('counter-examples: narration without a full stop, a new speaker, a closed �
   assert.deepEqual(shown.map(flat),['そこに覆い被さる重く真っ青な空は','いつでも当たり前の姿を私達に見せてくれる'],'two narration lines without 。 stay two lines');}
  {const {shown,feed}=rig();for(const piece of ['「ふぅ……」','「やっぱり……いい女には、'])feed(piece);
   assert.deepEqual(shown.map(flat),['「ふぅ……」','「やっぱり……いい女には、'],'a closed 」 then a new 「 is a new line');}
- {const {h,shown,feed}=rig();feed('「やっぱり……いい女には、');h.speaker={text:'希実香',at:h.now()};feed('たばこと');
+ {const {h,shown,feed}=rig();feed('「やっぱり……いい女には、');h.speaker={text:'希実香',at:h.now()+1200};feed('たばこと');
   assert.deepEqual(shown.map(flat),['「やっぱり……いい女には、','たばこと'],'a new speaker name before the piece starts a new line');}
  let t=0;const p=new SentencePieces(()=>t);
  assert.equal(p.take('s','「あのね、','由岐'),'「あのね、');t+=1000;assert.equal(p.take('s','明日は','希実香'),'明日は','another speaker');
@@ -100,4 +100,22 @@ test('live order with the embed lookups first: five stages, each with a translat
   const stages=shown.map(flat).slice(1);assert.equal(stages.length,4,JSON.stringify(shown));
   for(const s of stages)assert.ok(translations.get(s),(lost?'lost そして: ':'')+'no translation for '+s);
   assert.equal(translations.get(stages.at(-1)),lost?'「果然……好女人要有的是，烟、楼顶轻飘飘的衣服呀……」':'「果然……好女人要有的是，烟、楼顶……还有轻飘飘的衣服呀……」');}
+});
+
+/* 2026-11-19 installed 1.4.17 (素晴らしき日々, 13:03Z): the pieces came 1.8 s apart and the name stream flushed 由岐 just after the first
+   piece; that name was still recent at the second piece and read as a new speaker, so nothing grew and every piece replaced the
+   line (「挤牙膏」). In the test copy the pieces were 3.3 s apart and the stale name had expired. */
+test('a name flushed just after its piece belongs to that piece: quick clicks still grow one sentence',()=>{
+ const {h,shown,feed}=rig();
+ const name=(n,after)=>{const at=h.now()+after;h.speaker={text:n,at};h.sentencePieces?.nameAfter(n,at);};
+ feed('「やっぱり……いい女には、',1800);name('由岐',200);
+ feed('たばこと',1800);feed('屋上と',1150);feed('……そして\nヒラヒラ服だわね……」',1500);
+ assert.equal(flat(shown.at(-1)),'「やっぱり……いい女には、たばこと屋上と……そしてヒラヒラ服だわね……」',JSON.stringify(shown));
+ assert.equal(shown.length,4,'four stages of one line');
+ assert.match(fs.readFileSync(path.join(__dirname,'../core/hook-native.cjs'),'utf8'),/this\.noteSpeaker\(n\);\/\*[^*]*\*\/this\.sentencePieces\?\.nameAfter\(n,this\.speaker\.at\);/,'the name handler attaches a late name to its line');
+});
+test('a name that comes well after the previous piece (another speaker) still starts a new line',()=>{
+ let t=0;const p=new SentencePieces(()=>t);p.take('s','「あのね、');p.nameAfter('由岐',200);
+ t=1800;assert.equal(p.take('s','明日は','由岐',200),'「あのね、明日は','the late name of the same speaker');
+ t=3600;assert.equal(p.take('s','雨だよ','希実香',3000),'雨だよ','a new name after the previous piece');
 });
