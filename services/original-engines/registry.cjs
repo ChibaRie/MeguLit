@@ -90,6 +90,8 @@ const ENGINES=[
  {name:'AST',hook:null,test:f=>f.magicAny(/^[A-Za-z0-9_]{1,16}$/,'ARC2',8)||f.magicAny(/^[A-Za-z0-9_]{1,16}$/,'ARC1',8)},
  /* E585 no-magic archives are recognised by their index: Tmr-Hiro srp.pac (.pac with a script entry), Interheart .fpk, NekoSDK NEKOPACK4 .pak / 0xCACACA .dat (ADVSCRIPT2) */
  {name:'Tmr-Hiro ADV',hook:null,test:f=>f.probe(/\.pac$/i,p=>require('./tmrhiro.cjs').isPac(p))},
+ /* E700 FPD containers (fz engine: Fate/stay night REMASTERED obb/*.bin) */
+ {name:'FPD (fz engine)',hook:null,test:f=>require('./fpd.cjs').archives(f.dir).length>0},
  {name:'Interheart (FPK)',hook:null,test:f=>f.magicAny(/\.fpk$/i,'FPK 2.00')||f.probe(/\.fpk$/i,p=>require('./interheart.cjs').isArchive(p))},
  {name:'NekoSDK',hook:null,test:f=>f.magicAny(/\.pak$/i,'NEKOPACK4')||f.probe(/\.dat$/i,p=>require('./nekosdk.cjs').isArchive(p))},
  {name:'KaGuYa',hook:null,test:f=>f.has(/\.ari$/i)&&f.has(/\.arc$/i)||f.peek('message.dat',/^\[SCR-MESSAGE\]/,16)||f.peek('params.dat',/^\[SCR-PARAMS\]/,16)||f.magicAny(/\.arc$/i,'WFL1')||f.magicAny(/\.arc$/i,'LINK')},
@@ -230,6 +232,7 @@ const READERS={"BGI / Ethornell":["bgi"],
  "AST":["ast"],
  "Tmr-Hiro ADV":["tmrhiro"],
  "Interheart (FPK)":["interheart"],
+ "FPD (fz engine)":["fpd"],
  "NekoSDK":["nekosdk"],
  "KaGuYa":["kaguya"],
  "Lucifen":["lucifen"],

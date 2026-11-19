@@ -436,6 +436,22 @@ const kirikiriKs={
  japaneseKs,encryptedKs,
 };
 
+// ---- FPD containers (E700: Fate/stay night REMASTERED obb/pack*.bin, #396) ------------------------------------------------
+// fpd.cjs opens the archives with the key the program builds; scenario entries are KAG (.ks, parsed like KiriKiri) and
+// per-scene text lists (.tl, read as plain text lines). Both formats are unverified against real scenario bytes.
+const fpdLib=()=>require('./fpd.cjs');
+function fpdScenes(dir){const g=fpdLib().open(dir);if(!g)return [];
+ return [...g.files.entries()].filter(([n])=>/\.(ks|tl)$/i.test(n)).sort((a,b)=>a[0].localeCompare(b[0])).map(([name,x])=>({name,read:()=>fpdLib().read(x.file,x.entry,g.key.key)}));}
+function parseTl(buf){const lines=[],kana=/[ぁ-ゖァ-ヺ]/;for(const raw of decode(buf).split(/\r?\n/)){const t=raw.replace(/\[[^\]]*\]/g,'').trim();if(t&&kana.test(t))lines.push(t);}return {lines,anchors:[]};}
+const fpd={
+ id:'fpd',hint:'obb/pack*.bin（FPD）',
+ scenes:fpdScenes,
+ archives:()=>[],
+ sources:dir=>{const l=fpdLib();return [...l.archives(dir),...l.programs(dir).slice(0,1)];},
+ parse(buf){const ks=parseKs(buf);if(ks.lines.length)return ks;return parseTl(buf);},
+ test:()=>false,
+};
+
 // ---- HuneX (E304: 魔法使いの夜 / WITCH ON THE HOLY NIGHT, Steam) ------------------------------------------------------
 // Every line lives in per-language text tables inside the HFA archives (hunex.cjs); line i is the same line in each.
 // The whole table is one scene: Japanese lines, the release's Simplified (else Traditional) Chinese, and the game's ruby.
@@ -526,7 +542,7 @@ const eushully=require('./eushully.cjs').engine;
 const rugp=require('./rugp.cjs').engine;
 const F4A_SCAN=require('./archive-scan.cjs').ENGINES;
 const siglusPck=require('./siglus-pck.cjs').engine;
-const ENGINES={'adapter-pack':adapterPack,'nitroplus-n4':nitroplusN4,'kirikiri-lang':kirikiriLang,tyrano,kirikiri,artemis,renpy,siglus,'siglus-pck':siglusPck,'kirikiri-cx':kirikiriCx,'kirikiri-dump':kirikiriDump,'kirikiri-ks':kirikiriKs,hunex,yuris,aquaplus,'aquaplus-pck':aquaplusPck,nscripter,'unity-text':unityText,higurashi,mages,'capcom-msg':capcomMsg,'spike-wad':spikeWad,pwaat,naninovel,yarnspinner,utage,'mages-cpk':magesCpk,aokana,'unity-assets':unityAssets,drv3,catsystem2,rpgmaker,wolf,avg32,'nitro-npk':nitroNpk,'nitro-pak':nitroPak,'nitro-npa':nitroNpa,iga,paz,bruns,'re-pak':rePak,fvp,advhd,reallive,vgprompter,majiro,softpal,systemnnn,liar,rgss,silky,tmrhiro,nekosdk,ikura,exhibit,eagls,ast,seraph,interheart,nexas,malie,shiinario,cmvs,lucifen,kaguya,lcse,yuka,qlie,entis,alicesoft,marble,rugp,...webbundle,plaintext:require('./plaintext.cjs').engine,circus,whale,ddsystem,aoi,kid,...makers,escude,eushully,pjadv,luca,stuff,stcm2,slg:F4A_SCAN.slg,cpk:F4A_SCAN.cpk,evbox:F4A_SCAN.evbox,ism:F4A_SCAN.ism,glib2:F4A_SCAN.glib2,tanuki:F4A_SCAN.tanuki,yaneurao:F4A_SCAN.yaneurao,rits:F4A_SCAN.rits,bluegale:F4A_SCAN.bluegale,cyberworks:F4A_SCAN.cyberworks,dxlib:F4A_SCAN.dxlib,garbro};
+const ENGINES={'adapter-pack':adapterPack,'nitroplus-n4':nitroplusN4,'kirikiri-lang':kirikiriLang,tyrano,kirikiri,artemis,renpy,siglus,'siglus-pck':siglusPck,'kirikiri-cx':kirikiriCx,'kirikiri-dump':kirikiriDump,'kirikiri-ks':kirikiriKs,hunex,fpd,yuris,aquaplus,'aquaplus-pck':aquaplusPck,nscripter,'unity-text':unityText,higurashi,mages,'capcom-msg':capcomMsg,'spike-wad':spikeWad,pwaat,naninovel,yarnspinner,utage,'mages-cpk':magesCpk,aokana,'unity-assets':unityAssets,drv3,catsystem2,rpgmaker,wolf,avg32,'nitro-npk':nitroNpk,'nitro-pak':nitroPak,'nitro-npa':nitroNpa,iga,paz,bruns,'re-pak':rePak,fvp,advhd,reallive,vgprompter,majiro,softpal,systemnnn,liar,rgss,silky,tmrhiro,nekosdk,ikura,exhibit,eagls,ast,seraph,interheart,nexas,malie,shiinario,cmvs,lucifen,kaguya,lcse,yuka,qlie,entis,alicesoft,marble,rugp,...webbundle,plaintext:require('./plaintext.cjs').engine,circus,whale,ddsystem,aoi,kid,...makers,escude,eushully,pjadv,luca,stuff,stcm2,slg:F4A_SCAN.slg,cpk:F4A_SCAN.cpk,evbox:F4A_SCAN.evbox,ism:F4A_SCAN.ism,glib2:F4A_SCAN.glib2,tanuki:F4A_SCAN.tanuki,yaneurao:F4A_SCAN.yaneurao,rits:F4A_SCAN.rits,bluegale:F4A_SCAN.bluegale,cyberworks:F4A_SCAN.cyberworks,dxlib:F4A_SCAN.dxlib,garbro};
 // The engine whose running scripts this folder holds, if any can be read.
 function readable(id,dir){let scenes;try{scenes=ENGINES[id].scenes(dir);}catch{return false;}
  for(const s of scenes.slice(0,64)){try{if(ENGINES[id].parse(s.read()).lines.length)return true;}catch{}}return false;} /* 64: a game may open with many code-only scenes (女王蜂の王房 endings, first.ks) */
