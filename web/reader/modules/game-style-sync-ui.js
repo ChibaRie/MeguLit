@@ -186,7 +186,7 @@
   else if(m.gameStyleState==='positionMap'&&!dirty())window.__tomeTextPosition?.setMap?.(m.gameStylePositionMap);
   last={...last,...m};paint();
  };
- const oldStatus=b.galStatus;b.galStatus=m=>{oldStatus?.(m);if(typeof m.gameStylePreview==='boolean')document.body.classList.toggle('tome-style-probing',m.gameStylePreview);
+ const oldStatus=b.galStatus;b.galStatus=m=>{oldStatus?.(m);if(typeof m.gameStylePreview==='boolean')document.body.classList.toggle('tome-style-probing',m.gameStylePreview);if(typeof m.gameStyleReveal==='boolean')document.body.classList.toggle('megulit-original-shown',m.gameStyleReveal);
   if(m.type==='gameClosed'){measurementSerial++;clearInterval(correctionTimer);aligning=false;document.body.classList.remove('tome-style-probing');}};
  b.calibrationMenuOpened=dialog=>{if(!session.key)session.load('',session.name,values(),getMap(),0,[]);wire(dialog);buildImports(dialog);send({type:'gameStyleImportList'});
   paint();};
@@ -289,6 +289,7 @@
  .tome-calibration-version button{font-size:11.5px!important;margin:0!important}
  .tomoyo-cn-dialog footer{flex-wrap:wrap!important;gap:8px!important}
  body.tomoyo-ui-translation.tome-style-probing .sentence-window,body.tomoyo-ui-translation.tome-style-probing .tomoyo-native-mask{visibility:hidden!important}
+ body.megulit-original-shown .sentence-window,body.megulit-original-shown .tomoyo-native-mask,body.megulit-original-shown #megulit-page-ahead{visibility:hidden!important}
  /* the Alt+T menu stays: it never shows the source line, and the player is looking at it while calibrating (2026-11-19: it blinked on every sample) */
  /* The probe reads the screen (visible-client), overlays included. The backlog lists the current line too, so with it
     open the probe matched the source text inside the log and moved MeguLit's text onto it, again on every retry. Hide
