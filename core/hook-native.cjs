@@ -346,6 +346,8 @@ class HookNative{
   if(require('./text-sanity.cjs').garbledSource(t,{controls:false}))return 'unreadable';
   /* radicals the OCR guesses inside a logo (Novectacle read as 「ノベクタク丿レ」): no word uses them alone */
   if(/[丨丶丿乀乁亅冂冖冫凵勹匚匸卩厂厶廴弋彡彳⺀-⻿⼀-⿟]/u.test(flat))return 'OCR noise';
+  /* boxes and frames read as ロ/口, or a few Latin letters among them (ファタ title fading in: 「Dロ,ロ」) */
+  {const box=(flat.match(/[ロ口]/gu)||[]).length;if((n<=6&&/[A-Za-zＡ-Ｚａ-ｚ]/.test(flat))||(n<=8&&box*2>=n))return 'OCR noise';}
   /* kanji without kana: a chapter card when large and short, else a logo fragment or a guess (「不連在」 13 px on 963) */
   if(!kana){const tall=Math.max(0,...it.rows.map(r=>+r?.h||0));if(n>8||n<2||(it.sh>0&&tall<it.sh/50))return 'kanji fragment';}
   if(line&&line!==O.lastText){const l=HookNative.flat(line);if(l.includes(flat)||flat.includes(l))return 'part of the hook line';}

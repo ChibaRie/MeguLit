@@ -79,9 +79,9 @@ test('ファタモルガーナの館 live: a card read once before it faded is a
   const card=(t,id,at,once)=>{r.run(at);r.h.ocrLine({type:'artText',source:'ocr',id,text:t,visible:true,once,rows:[{text:t,x:200,y:300,w:400,h:30}],sw:800,sh:600,dialogSeen:false,others:0});};
   card('館がある',1,1000,false);card('館がある',1,1400,false);r.run(3000);
   card('鬱蒼と茂る闇の森をかき分けると',2,5000,true);r.run(6000);
-  card('館',3,8000,true);card('第一章',4,9000,true);card('ノベクタク丿レ',5,10000,false);card('ノベクタク丿レ',5,10400,false);r.run(13000);
+  card('館',3,8000,true);card('第一章',4,9000,true);card('ノベクタク丿レ',5,10000,false);card('ノベクタク丿レ',5,10400,false);card('Dロ,ロ',6,11000,false);card('Dロ,ロ',6,11400,false);r.run(13000);
   assert.deepEqual(r.lines(),['館がある','鬱蒼と茂る闇の森をかき分けると'],JSON.stringify(r.traces.filter(t=>t.startsWith('ocr')||t.startsWith('flow'))));
-  assert.ok(r.traces.some(t=>/refused \(read once, too short or without kana\)/.test(t)));assert.ok(r.traces.some(t=>/refused \(OCR noise\) "ノベクタク丿レ"/.test(t)));
+  assert.ok(r.traces.some(t=>/refused \(read once, too short or without kana\)/.test(t)));assert.ok(r.traces.some(t=>/refused \(OCR noise\) "ノベクタク丿レ"/.test(t)));assert.ok(r.traces.some(t=>/refused \(OCR noise\) "Dロ,ロ"/.test(t)));
   assert.ok(!r.traces.some(t=>/title card to art/.test(t)),'an OCR line is not sent back to the art path');
  }finally{r.done();}});
 test('wiring: the scan runs without artText (5 s quiet), artText only decides the drawing over the picture; the scan reports dialogSeen and others',()=>{
