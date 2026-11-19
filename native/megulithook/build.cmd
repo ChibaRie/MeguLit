@@ -14,6 +14,9 @@ for %%B in (32 64) do (
  if not exist "%BUILT%\LunaHook%%B.dll" (echo LunaHook%%B.dll was not produced & exit /b 1)
  findstr /m /c:"%MARK%" "%BUILT%\LunaHook%%B.dll" >nul || (echo LunaHook%%B.dll lacks "%MARK%": the GDI hide sources were not compiled & exit /b 1)
  copy /y "%BUILT%\LunaHook%%B.dll" "%~dp0MeguLitHook%%B.dll" >nul || exit /b 1
+ rem ninja leaves an up-to-date DLL unlinked and copy keeps its old time: a git checkout that only rewrote line endings
+ rem then made native-stale.cjs refuse a current build. The copy is stamped with this build's time.
+ copy /b "%~dp0MeguLitHook%%B.dll"+,, "%~dp0MeguLitHook%%B.dll" >nul
  echo MeguLitHook%%B.dll updated
 )
 endlocal
