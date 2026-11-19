@@ -12,7 +12,7 @@
   if (!b || !document.body) { document.addEventListener('DOMContentLoaded', install, { once: true }); return; }
   if (b.textPlace) return;
   let unmatched = null; const UNMATCHED_MS = 400;
-  let on = false, line = null, frame = 0, lastGeom = '', boxBottom = 0, boxKey = '', anchor = null, anchorLine = '', anchorLimit = NaN, anchorMode = true, drawnByGame = '', page = null; const clones = new Map();
+  let on = false, line = null, frame = 0, lastGeom = '', boxBottom = 0, boxKey = '', anchor = null, anchorLine = '', anchorLimit = NaN, anchorBase = null, anchorMode = true, drawnByGame = '', page = null; const clones = new Map();
   const style = document.createElement('style');
   style.textContent = [
     'body.megulit-placed .sentence-window.megulit-place-window{left:0!important;top:0!important;right:auto!important;bottom:auto!important;width:100vw!important;height:100vh!important;max-height:none!important;margin:0!important;padding:0!important;background:none!important;border:0!important;box-shadow:none!important;outline:0!important;backdrop-filter:none!important;overflow:visible!important;transform:none!important;pointer-events:none}',
@@ -75,7 +75,7 @@
   }
   b.textPlaceAlign = align;
   /* per-character placement on the game's boxes (the layout before 2026-11-16) instead of the anchored reader layout */
-  b.textPlaceAnchor = v => { anchorMode = v !== false; anchor = null; anchorLine = ''; schedule?.(); };
+  b.textPlaceAnchor = v => { anchorMode = v !== false; anchor = null; anchorLine = ''; anchorBase = null; schedule?.(); };
   const median = list => { const v = list.filter(n => n > 0).sort((x, y) => x - y); return v.length ? v[v.length >> 1] : 0; };
   function target() {
     const own = document.querySelector('.sentence-window.tomoyo-hook-reader');
@@ -87,7 +87,13 @@
     document.body.classList.add('megulit-anchored'); win.classList.add('megulit-anchor-window');
     for (const p of ['left', 'top']) win.style.removeProperty(p);
     const tok = sentence.querySelector('.char-token'), wr = win.getBoundingClientRect(), tr = tok?.getBoundingClientRect();
-    if (tr && tr.width) { set(win, 'left', (wr.left + anchor[0] - tr.left) + 'px'); set(win, 'top', (wr.top + anchor[1] - tr.top) + 'px'); set(win, 'right', 'auto'); set(win, 'bottom', 'auto'); set(win, 'margin', '0'); }
+    /* 2026-11-19 (user: 「左右留白和边距现在都调整不了文本框位置了」): in anchored mode the box position sliders (文本框左边距/上边距)
+       move the line from the game's own place: the change since anchoring began, in client %, is an offset (0 = on the game's
+       first character); a change re-pins at once (the root style observer below) */
+    const pr = b.galPreferences?.() || {}, info0 = b.galLayoutInfo?.(), dpr0 = devicePixelRatio || 1, cwc = info0?.clientWidth ? info0.clientWidth / dpr0 : innerWidth, chc = info0?.clientHeight ? info0.clientHeight / dpr0 : innerHeight;
+    if (!anchorBase && Number.isFinite(+pr.x) && Number.isFinite(+pr.y)) anchorBase = { x: +pr.x, y: +pr.y };
+    const offX = anchorBase && Number.isFinite(+pr.x) ? (+pr.x - anchorBase.x) / 100 * cwc : 0, offY = anchorBase && Number.isFinite(+pr.y) ? (+pr.y - anchorBase.y) / 100 * chc : 0;
+    if (tr && tr.width) { set(win, 'left', (wr.left + anchor[0] + offX - tr.left) + 'px'); set(win, 'top', (wr.top + anchor[1] + offY - tr.top) + 'px'); set(win, 'right', 'auto'); set(win, 'bottom', 'auto'); set(win, 'margin', '0'); }
     /* 2026-11-19 (user, windowed 千恋＊万花: 「不要再挤压我的汉字了 我窗口化呢 只要显示器上还有位置就不要这样」): the translation keeps the
        user's size and goes on below the game window as long as the monitor's work area has room (the overlay spans the desktop);
        only a sentence that does not fit above the work-area bottom is made smaller, once and never under 60 %, and if it still
@@ -453,5 +459,5 @@
   const markAll = root => { for (const t of (root.querySelectorAll ? root.querySelectorAll('.sentence-text .char-token:not(.megulit-dash)') : [])) markDash(t); };
   new MutationObserver(records => { for (const r of records) for (const n of r.addedNodes) if (n.nodeType === 1) { if (n.matches?.('.char-token') && n.closest('.sentence-text')) markDash(n); else markAll(n); } }).observe(document.documentElement, { subtree: true, childList: true });
   markAll(document);
-  addEventListener('resize', schedule);
+  addEventListener('resize', schedule); if (window.MutationObserver) new MutationObserver(() => { if (anchorMode && anchor) schedule(); }).observe(document.documentElement, { attributes: true, attributeFilter: ['style'] });
 })();
