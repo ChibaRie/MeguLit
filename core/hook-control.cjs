@@ -44,12 +44,14 @@ class HookControl{
    if(h.styleSync.publish?.())return;
    if(manual){this.styleFailures=(this.styleFailures||0)+1;if(this.styleFailures>=2)this.styleGiveUp=identity;this.finishStyleSync(false);this.styleRetryAt=this.now()+60000;return;}
    if(this.styleAutoFailKey!==identity){this.styleAutoFailKey=identity;this.styleAutoFailures=0;}this.styleAutoFailures++;
-   if(this.styleAutoFailures>=3){this.styleGiveUp=identity;this.finishStyleSync(false);h.styleSync.status('autoGaveUp');return;}
-   this.finishStyleSync(false);this.styleRetryLine=identity;this.styleRetryAt=0;};
+   /* 2026-11-19 (user, 素晴らしき日々: 「原文断断续续露出来」): a retry is at least 30 s after the miss, 3 at most; a game whose lines are
+      not on engine places (laid out in the reader's box) is tried once, then keeps the default box and says so */
+   if(this.styleAutoFailures>=3||!h.placement?.current){this.styleGiveUp=identity;this.finishStyleSync(false);h.styleSync.status('autoGaveUp');return;}
+   this.finishStyleSync(false);this.styleRetryLine=identity;this.styleRetryAt=this.now()+30000;};
   arm(lineAt?deadline:1000); /* automatic calibration pauses embedding: keep that pause short once the line is there (user: ISLAND showed the original for 90 s after every launch) */
  }
  finishStyleSync(success,cancel=false){
-  if(!this.styleCalibration)return;clearTimeout(this.styleTimer);this.styleTimer=null;this.styleCalibration=false;const h=this.host;h.hooks.calibrating=false;h.hooks.preflight=false;h.styleSync.calibrating=false;clearTimeout(h.styleSync.timer);if(cancel){h.styleSync.cancel?.();/* the calibration showed the original (hide paused): a cancelled one hides again at once, not at the next settings save */h.hooks.configure?.(h.preferences,h.state);}h.onEvent?.({gameStylePreview:false});
+  if(!this.styleCalibration)return;clearTimeout(this.styleTimer);this.styleTimer=null;this.styleCalibration=false;const h=this.host;if(this.styleRevealed){this.styleRevealed=false;h.onEvent?.({gameStyleReveal:false});}h.hooks.calibrating=false;h.hooks.preflight=false;h.styleSync.calibrating=false;clearTimeout(h.styleSync.timer);if(cancel){h.styleSync.cancel?.();/* the calibration showed the original (hide paused): a cancelled one hides again at once, not at the next settings save */h.hooks.configure?.(h.preferences,h.state);}h.onEvent?.({gameStylePreview:false});
   const same=this.styleIdentity===String(h.state.gameProcessId||'')+'|'+String(h.state.gameStarted||'');this.styleRetryAt=this.now()+15000;
   if(same&&!cancel){h.hooks.preflight=false;h.hooks.configure?.(h.preferences,h.state);this.styleAwaitLive=false;h.styleSync.status(success?'applied':'retrying');}
   if(!same||cancel||!this.styleRestore){this.styleAwaitLive=false;h.onEvent?.({gameStylePreview:false});}
@@ -57,6 +59,10 @@ class HookControl{
  check(){const h=this.host;if(!this.running){this.start(h.preferences.hookProfile==='off'?'read':h.preferences.hookProfile);return;}if(h.hooks.lastSource)this.source(h.hooks.lastSource);else this.status({hookCheckMessage:'还没有台词，请在游戏里推进一句'});}
  source(text){
   if(!this.running||!text.trim())return;
+  /* 2026-11-19 (user, 素晴らしき日々: double text while calibrating): from the first line the game draws in the original during a
+     calibration until the calibration ends, the reader's own Japanese and translation step aside (gameStyleReveal), so the
+     original is never covered by a second text; while the calibration only waits for that line the reader stays */
+  if(this.styleCalibration&&this.host.hooks?.preflight&&!this.styleRevealed){this.styleRevealed=true;this.host.onEvent?.({gameStyleReveal:true});}
   /* E351: a flow page (WoH) is laid out on the game's own page grid; the automatic box calibration measured the current
      sentence mid-page (left 56 / top 53 / width 44) and paused hiding while it measured, so it never runs there. */
   const h=this.host;/* 2026-11-15 layer 4 page model (overlay-placement page()): the layer itself says which glyphs it left out; the per-line screen check (capture + OCR at +0.3 / +1 / +1.7 s) held the bridge and the page's place messages stopped for up to 2 s in the middle of a sentence */if(h.placement?.paged){this.seq++;this.sourceAt=this.now();this.stage='read';this.status({hookCapturedAt:this.sourceAt,hookCaptureCharacters:text.length,hookVisualVerified:true,hookCheckState:'captured',hookCheckMessage:'台词捕捉成功，由 MeguLit 原位绘制'});return;}/* capture compositor: MeguLit draws the text itself, no screen OCR (no verify, no style measuring, no mask) */if(h.compositor?.wanted?.(h.preferences)){this.seq++;this.sourceAt=this.now();this.stage='read';this.status({hookCapturedAt:this.sourceAt,hookCaptureCharacters:text.length,hookVisualVerified:false,hookCheckState:'captured',hookCheckMessage:'台词捕捉成功，由 MeguLit 接管绘制'});return;}if(!this.styleCalibration&&!(h.hooks?.flowPage&&h.hooks?.flowGridName)/* E414: only a page with a measured grid skips box calibration */&&!h.hooks?.remembered/* E520: a game that embedded before is never paused on its first lines to measure the original */&&(this.styleCalibrationIdentity!==String(h.state.gameProcessId||'')+'|'+String(h.state.gameStarted||'')||this.styleRetryLine===String(h.state.gameProcessId||'')+'|'+String(h.state.gameStarted||''))&&this.plan!=='off'&&h.preferences.autoGameStyle!==false&&h.styleSync&&!h.styleSync.latest&&this.now()>=(this.styleRetryAt||0)&&this.styleGiveUp!==String(h.state.gameProcessId||'')+'|'+String(h.state.gameStarted||''))this.beginStyleSync(false);this.seq++;this.sourceAt=this.now();
