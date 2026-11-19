@@ -299,11 +299,18 @@ LR"MGLT((function(){
      if(this.trRec!==void && h!=this.trRec[0]) {this.trRec[0]=h;var r=this.trRec;this.trKey='';this.report('ToMe_CHARS engine=krkr line='+r[1]+' hidden='+h+r[2]);}
     } catch(e) {}
    } incontextof st;
+   st.trNote=function(k){
+    try {if(typeof this.trWhy!='Object' || this.trWhy===void) this.trWhy=%[];var n=(+this.trWhy[k])+1;this.trWhy[k]=n;
+     if(n==1 || n==2 || n==4 || n==8 || n==16 || n==64 || n==256) this.report('ToMe_KRKR status trwhy '+k+'='+n+' sent='+(+this.charsSent));} catch(e) {}
+   } incontextof st;
+)MGLT" LR"MGLT(
    st.trDone=function(inst){
     try {
-     var L=this.trLayer();if(L===void || !this.trOwn(inst,L)) return;
-     var scr=this.screen();if(!(scr[1]>0) || L.height<scr[1]*0.2 || !this.shown(L)) return;
-     var cs=(inst.getCharacters incontextof inst)(0,100000);if(typeof cs!='Object' || cs===null || cs.count==0) return;
+     /* 2026-11-19 why a TextRender line was not reported (live 千恋＊万花: no record at all, the reader stayed in its own box): counted per reason, on the status line */
+     if(typeof this.trWhy!='Object' || this.trWhy===void) this.trWhy=%[];
+     var L=this.trLayer();if(L===void) {this.trNote('layer');return;}if(!this.trOwn(inst,L)) {this.trNote('own');return;}
+     var scr=this.screen();if(!(scr[1]>0)) {this.trNote('scr');return;}if(L.height<scr[1]*0.2) {this.trNote('small');return;}if(!this.shown(L)) {this.trNote('hid');return;}
+     var cs=(inst.getCharacters incontextof inst)(0,100000);if(typeof cs!='Object' || cs===null || cs.count==0) {this.trNote('empty');return;}
      var a=this.abs(L),ox=a[0]+(+L.marginL),oy=a[1]+(+L.marginT),pad=0;
      try {var pf=L.textLayer._preRenderFontEx;if(typeof pf=='Object' && pf!==void && typeof pf.resizePadding=='Integer') pad=pf.resizePadding;} catch(e) {}
      var rs='',n=0,t='',ly=void,all=[],pts=[];
@@ -432,7 +439,7 @@ LR"MGLT((function(){
       if(typeof ms!='Object' || ms===void || ms===null) continue;
       for(var j=0;j<ms.count && j<32;j++) this.install(ms[j]);
      }
-     return 'ok layers='+this.recs.count+' lines='+this.line+' wait='+(this.oldLB!==void?1:0)+(this.oldPB!==void?1:0)+' wrapped='+this.wrapped.count+' draws='+this.calls+' hidden='+this.hid+' art='+this.art+' artLayers='+this.artSeen.count+' font='+this.fontNow()+' chars='+this.charsSent+(this.charsErr!=''?' charsErr='+this.charsErr:'')+' skipped='+this.skipped+(this.skippedCls!=''?'('+this.skippedCls+')':'');
+     return 'ok layers='+this.recs.count+' lines='+this.line+' wait='+(this.oldLB!==void?1:0)+(this.oldPB!==void?1:0)+' wrapped='+this.wrapped.count+' tr='+(this.trWrapped?1:0)+(typeof this.trWhy=='Object' && this.trWhy!==void?'/layer'+(+this.trWhy.layer)+'/own'+(+this.trWhy.own)+'/scr'+(+this.trWhy.scr)+'/small'+(+this.trWhy.small)+'/hid'+(+this.trWhy.hid)+'/empty'+(+this.trWhy.empty):'')+'/sent'+(+this.charsSent)+(this.charsErr!==void?'/err:'+this.charsErr:'')+' draws='+this.calls+' hidden='+this.hid+' art='+this.art+' artLayers='+this.artSeen.count+' font='+this.fontNow()+' chars='+this.charsSent+(this.charsErr!=''?' charsErr='+this.charsErr:'')+' skipped='+this.skipped+(this.skippedCls!=''?'('+this.skippedCls+')':'');
     } catch(e) {return 'error '+e.message;}
    } incontextof st;
    global.__megulitKrkrState=st;

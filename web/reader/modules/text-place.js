@@ -297,6 +297,16 @@
     const key = geom.join(';');
     if (key !== lastGeom) { lastGeom = key; dispatchEvent(new CustomEvent('megulit-reveal-progress', { detail: { typing: false } })); window.__tomoyoHitRegionsRefresh?.(true); }
   }
+  /* the line's top-left: the leftmost box of its top row (the first matched character may sit further right), taken once per
+     line and kept while a new line starts within a few px of it (the same text box) */
+  function anchorFrom(got, size, map, lineKey) {
+    const top = Math.min(...got.map(b => b[1]));
+    let a = [Math.min(...got.filter(b => b[1] < top + size * .5).map(b => b[0])), top];
+    if (anchor && anchorLine === lineKey && Math.abs(a[0] - anchor[0]) < size * 2 && Math.abs(a[1] - anchor[1]) < size * 2) a = anchor;
+    else if (anchor && Math.abs(a[0] - anchor[0]) <= Math.max(6, size * .6) && Math.abs(a[1] - anchor[1]) <= Math.max(6, size * .6)) a = anchor;
+    anchor = a; anchorLine = lineKey;
+    anchorLimit = map.bounds[3] - (median(got.map(b => b[3])) || size) * 1.3;
+  }
   function apply() {
     frame = 0;
     drawExtras();
@@ -319,6 +329,11 @@
     const idx = readerText ? align([...readerText], [...placeText]) : null;
     /* a placement of another line (the current one is not placed yet): the game's own copy of this line may still be on
        screen, so no plateless Japanese at the reader's place when the source said so */
+    /* 2026-11-19 (千恋＊万花 with its Chinese patch shown, user: the reader sat at the left edge over the name plate): the game draws
+       another language than the reader's text (a translation patch, a Chinese display), so no character can be aligned. In anchored
+       mode only the place is needed, never the characters: the top-left of the game's first row of boxes, taken like any anchor. */
+    if (!idx && anchorMode && !gameDrawn()) { const map0 = mapper(line.client), got0 = placeRects.map(r => r && map0(r)).filter(r => r && r[2] > 0 && r[3] > 0);
+      if (got0.length) { anchorFrom(got0, median(got0.map(r => r[3])) || 0, map0, String(line.text || '')); release(true); pin(win, sentence); return; } }
     if (!idx) { if (gameDrawn()) release(); else release(true); return; }
     if (document.body.classList.contains('megulit-place-game-drawn')) { document.body.classList.remove('megulit-place-game-drawn'); window.__tomoyoHitRegionsRefresh?.(true); }
     /* record px are game-client px; the reader surface may be larger than the game (galLayoutInfo: client origin and size
@@ -336,12 +351,7 @@
        box). A box that really moved (another text box, a different scene layout) moves it. */
     if (anchorMode) {
       /* the line's top-left: the leftmost box of its top row (the first matched character may sit further right) */
-      const got = boxes.filter(Boolean), top = Math.min(...got.map(b => b[1])), lineKey = String(line.text || '');
-      let a = [Math.min(...got.filter(b => b[1] < top + size * .5).map(b => b[0])), top];
-      if (anchor && anchorLine === lineKey && Math.abs(a[0] - anchor[0]) < size * 2 && Math.abs(a[1] - anchor[1]) < size * 2) a = anchor;
-      else if (anchor && Math.abs(a[0] - anchor[0]) <= Math.max(6, size * .6) && Math.abs(a[1] - anchor[1]) <= Math.max(6, size * .6)) a = anchor;
-      anchor = a; anchorLine = lineKey;
-      anchorLimit = map.bounds[3] - (median(got.map(b => b[3])) || size) * 1.3;
+      anchorFrom(boxes.filter(Boolean), size, map, String(line.text || ''));
       release(true);
       pin(win, sentence);
       return;
