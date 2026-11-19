@@ -62,7 +62,11 @@ internal static class ReaderLayerPolicy {
     public static void Unsettle(){SettledSince=-1;}
 
     /// <summary>The window calls a raise needs (GalWindowBridge.LayerZ does them; the self-test has a model).</summary>
-    public interface ILayerZ{bool BelowGame();bool Topmost();void RequestTopmost();void PlaceAboveGame();void PlaceTop();}
+    public interface ILayerZ{bool BelowGame();bool Topmost();void RequestTopmost();void PlaceAboveGame();void PlaceTop();void ForceTopmost();}
+    /// <summary>May the layer leave the topmost band when it may not float? Only when it stays visible there (another
+    /// MeguLit window in front). A layer that is hidden anyway keeps its place: recorded 2026-11-19 16:57, a sunk layer
+    /// could not be raised again while the game held the foreground.</summary>
+    public static bool SinkOnLeave(bool layerStaysVisible){return layerStaysVisible;}
     /// <summary>Puts the layer above the game and says how it got there. A request is never taken for its result:
     /// after each step the order is looked at again. wantFloat: the layer may be topmost. "failed": still under the
     /// game after everything (the caller tries again on its next pass).</summary>
@@ -74,18 +78,22 @@ internal static class ReaderLayerPolicy {
             if(!z.BelowGame())return "above-game";
         }
         z.PlaceTop();
-        return z.BelowGame()?"failed":"top";
+        if(!z.BelowGame())return "top";
+        if(wantFloat){z.ForceTopmost();if(!z.BelowGame())return "attached";}
+        return "failed";
     }
     /* A desktop in miniature for the self-test: the order of game, layer and one other program, the layer's topmost
        bit, and a system that may ignore a topmost request (recorded 2026-11-19 16:17 after coming back from another program). */
     sealed class ModelZ:ILayerZ{
-        public bool RefuseTopmost,LayerTopmost;public System.Collections.Generic.List<char> Order=new System.Collections.Generic.List<char>{'L','G','O'}; /* top first */
+        public bool RefuseTopmost,RefuseAll,LayerTopmost,Visible=true;public System.Collections.Generic.List<char> Order=new System.Collections.Generic.List<char>{'L','G','O'}; /* top first */
         void Put(char w,int at){Order.Remove(w);Order.Insert(Math.Max(0,Math.Min(Order.Count,at)),w);}
         public bool BelowGame(){return Order.IndexOf('L')>Order.IndexOf('G');}
         public bool Topmost(){return LayerTopmost;}
-        public void RequestTopmost(){if(RefuseTopmost)return;LayerTopmost=true;Put('L',0);}
-        public void PlaceAboveGame(){LayerTopmost=false;Order.Remove('L');Order.Insert(Order.IndexOf('G'),'L');}
-        public void PlaceTop(){if(LayerTopmost)return;Put('L',0);}
+        public void RequestTopmost(){if(RefuseTopmost||RefuseAll)return;LayerTopmost=true;Put('L',0);}
+        public void PlaceAboveGame(){if(RefuseAll)return;LayerTopmost=false;Order.Remove('L');Order.Insert(Order.IndexOf('G'),'L');}
+        public void PlaceTop(){if(LayerTopmost||RefuseAll)return;Put('L',0);}
+        public bool ForceWorks;public void ForceTopmost(){if(!ForceWorks)return;LayerTopmost=true;Put('L',0);}
+        public void Hide(){Visible=false;}public void Show(){Visible=true;}
         /* a window that becomes the foreground goes to the top of the normal band: above the layer unless that is topmost */
         public void Activate(char w){Order.Remove(w);Order.Insert(LayerTopmost&&Order.Count>0&&Order[0]=='L'?1:0,w);}
         /* TopmostGuard.Sink: out of the topmost band, directly above the game */
@@ -187,6 +195,32 @@ internal static class ReaderLayerPolicy {
                     if(z.BelowGame())return "random focus run "+run+" step "+step+": layer under the game after "+how;
                     /* a second pass changes nothing that holds */
                     Raise(z,true);if(z.BelowGame())return "random focus run "+run+" step "+step+": second pass lost the place";
+                }
+            }
+            /* 8. recorded 2026-11-19 16:57 (layerRaise how:failed on every return): while the game holds the foreground the
+                  system ignores every z-order request for the layer. Leaving by hiding keeps the layer in the topmost
+                  band, so the return needs no request at all; leaving by sinking (the code before) ends under the game. */
+            if(SinkOnLeave(false)||!SinkOnLeave(true))return "leave rule";
+            {
+                var z=new ModelZ{LayerTopmost=true,RefuseAll=true};
+                z.Activate('O');if(!SinkOnLeave(false))z.Hide();else z.Sink();
+                z.Activate('G');z.Show();
+                if(z.BelowGame()||!z.Visible)return "return after hiding: layer under the game with every request refused";
+                var before=new ModelZ{LayerTopmost=true,RefuseAll=true};before.Activate('O');before.Sink();before.Activate('G');before.Show();
+                if(Raise(before,true)!="failed"||!before.BelowGame())return "return after sinking: the old way does not fail with every request refused (the test proves nothing)";
+                before.ForceWorks=true;if(Raise(before,true)!="attached"||before.BelowGame())return "last step not taken";
+            }
+            for(int run=0;run<2000;run++){
+                var z=new ModelZ{LayerTopmost=true,RefuseAll=true};Reset();t=0;Decide(Game,false,false,false,false,t);
+                for(int step=0;step<40;step++){
+                    t+=random.Next(16,9000);int roll=random.Next(6);bool minimised=random.Next(7)==0;
+                    int front=roll<3?Game:roll<5?Foreign:OwnLayer;
+                    if(front==Game)z.Activate('G');else if(front==Foreign)z.Activate('O');else z.Activate('L');
+                    State s=Decide(front,false,false,false,minimised,t);bool shown=s.Context&&!minimised;
+                    if(!s.Float&&SinkOnLeave(shown))z.Sink();
+                    if(shown)z.Show();else z.Hide();
+                    if(shown&&s.Float&&z.BelowGame())return "random leave/return run "+run+" step "+step+": layer under the game, every request refused";
+                    if(shown!=(front!=Foreign&&!minimised))return "random leave/return run "+run+" step "+step+": shown "+shown+" with front "+front;
                 }
             }
             if(Classify(false,true,true,true,true)!=None||Classify(true,true,false,true,true)!=OwnLayer||Classify(true,false,true,false,true)!=Game||Classify(true,false,false,false,true)!=OwnHome||Classify(true,false,false,false,false)!=Foreign)return "classify";

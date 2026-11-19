@@ -27,7 +27,7 @@ function host(config={immersion:true,dialogDetection:'marker'}){
   /* time passes with the 100 ms tick the reader service runs */
   advance(ms){const end=now+ms;while(now<end){now=Math.min(end,now+100);immersion.tick();}},
   event(m){reader.event(m);},message:m=>reader.message(m),
-  snapshot(){return{visible:immersion.visible,route:gal.preferences.hookProfile,preview:gal.previewPreferences,flips:visibility.length,routesAllEmbed:routes.every(r=>r==='embed'),cover:native.filter(m=>m.type==='cover'||m.type==='dialogVisibility').length};}};
+  snapshot(){return{line:immersion.currentText,visible:immersion.visible,route:gal.preferences.hookProfile,preview:gal.previewPreferences,flips:visibility.length,routesAllEmbed:routes.every(r=>r==='embed'),cover:native.filter(m=>m.type==='cover'||m.type==='dialogVisibility').length};}};
  return h;
 }
 /* what a screen probe may report at any moment: all of it is inference. Hides only for the box / scene probes: a
@@ -39,6 +39,8 @@ const NOISE=[
  h=>h.event({type:'dialogAuto',visible:false}),h=>h.event({type:'dialogAuto',visible:true}),
  h=>h.event({type:'dialogEvidence',visible:false}),
  h=>h.event({type:'readerInput',complete:true,skipHeld:false}),
+ /* the hook's "left the dialogue screen" verdict (silent stream + menu labels): an empty line of origin leave */
+ h=>h.immersion.source('','krkr','leave'),
 ];
 const noise=(h,r,n)=>{for(let i=0;i<n;i++){NOISE[Math.floor(r()*NOISE.length)](h);if(r()<0.5)h.advance(Math.floor(r()*120));}};
 /* the probes read the half-drawn frame right after the return: noise until just before the settle time is over */
@@ -139,10 +141,10 @@ for(const [name,start] of Object.entries(START))test(`property: focus away and b
   const r=rng(seed*104729+name.length),h=host();start(h);const before=h.snapshot(),rounds=2+Math.floor(r()*8);
   for(let i=0;i<rounds;i++){
    focusRound(h,r);if(r()<0.3)h.event({type:'readerContext',active:false}),h.advance(Math.floor(r()*300)),h.event({type:'readerContext',active:true}),settling(h,r);
-   const mid=h.snapshot();assert.deepEqual([mid.visible,mid.flips,mid.route,mid.cover],[before.visible,before.flips,before.route,before.cover],`seed ${seed} round ${i+1}: ${JSON.stringify(h.visibility.slice(before.flips))}`);
+   const mid=h.snapshot();assert.deepEqual([mid.line,mid.visible,mid.flips,mid.route,mid.cover],[before.line,before.visible,before.flips,before.route,before.cover],`seed ${seed} round ${i+1}: ${JSON.stringify(h.visibility.slice(before.flips))}`);
   }
   h.advance(SETTLE+200);h.advance(20000);const after=h.snapshot();
-  assert.deepEqual([after.visible,after.flips],[before.visible,before.flips],`seed ${seed}: late change ${JSON.stringify(h.visibility.slice(before.flips))}`);
+  assert.deepEqual([after.line,after.visible,after.flips],[before.line,before.visible,before.flips],`seed ${seed}: late change ${JSON.stringify(h.visibility.slice(before.flips))}`);
  }
 });
 const markerHidden=h=>{START['a line on screen'](h);h.event({type:'readerInput',complete:true,skipHeld:false});h.event({type:'markerPresence',present:false});h.advance(900);assert.equal(h.immersion.visible,false);assert.equal(h.visibility.at(-1).reason,'marker');};
@@ -163,6 +165,38 @@ test('a return lifts nothing a fact or a stronger probe asked for: engine, scene
   h.event({type:'readerContext',active:false});h.advance(5000);h.event({type:'readerContext',active:true});h.advance(SETTLE+20000);
   assert.equal(h.immersion.visible,false);assert.equal(h.visibility.length,flips);
  }
+});
+/* 2026-11-19 16:57 (user: "切屏回来还是直接消失 必须推进一两句才出来"). hook log at that moment: "left dialogue screen: stream silent
+   111s, labels=[...]" — three tooltips the pointer crossed on the way back, and the reader's current line was cleared. */
+test('the "left the dialogue screen" verdict is frozen with the context: nothing collected or decided while away or settling, E530 still works in front',()=>{
+ const {HookNative}=require('../core/hook-native.cjs');let now=1000,frozen=false;const out=[];
+ const h=new HookNative({native:__dirname,hook:__dirname,logs:'Z:/no-fixture-log'},m=>out.push(m),()=>{},()=>now);h.trace=()=>{};h.send=()=>{};h.contextFrozen=()=>frozen;
+ const sel={id:'a',selected:true,sample:'「同じ台詞を読み続けている」'},threads=list=>{h.state.hookThreads=list;return h.leaveCheck();},cleared=()=>out.some(m=>m.hookSource===''&&m.hookSourceOrigin==='leave');
+ h.lastSource='「同じ台詞を読み続けている」';h.lastSourceAt=1000;threads([sel,{id:'b',sample:''}]);
+ /* reading for 111 s, then away; on the way back the pointer crosses three buttons while the context is still frozen */
+ now+=111000;frozen=true;
+ assert.equal(threads([sel,{id:'b',sample:'读档界面'}]),false);assert.equal(threads([sel,{id:'b',sample:'快读速档'}]),false);assert.equal(threads([sel,{id:'b',sample:'保存界面'},{id:'c',sample:'自定义'}]),false);
+ assert.equal(cleared(),false,'frozen: the line stays');assert.equal(h.lastSource,'「同じ台詞を読み続けている」');
+ /* thawed: what was seen while frozen does not count afterwards */
+ frozen=false;now+=600;assert.equal(threads([sel,{id:'b',sample:'保存界面'},{id:'c',sample:'自定义'}]),false);assert.equal(cleared(),false,'labels from the frozen time were dropped');
+ /* in front and settled the game really goes to its menu: three new labels clear the reader as before */
+ now+=1000;threads([sel,{id:'b',sample:'New Game'}]);threads([sel,{id:'b',sample:'Load Game'}]);assert.equal(threads([sel,{id:'b',sample:'Settings'},{id:'c',sample:'Extras'}]),true);assert.equal(cleared(),true);
+ const reader=fs.readFileSync(path.join(__dirname,'..','services','reader.cjs'),'utf8');
+ assert.match(reader,/this\.gal\.hooks\.contextFrozen=\(\)=>this\.immersion\?\.frozen\?\.\(\)===true/);
+ assert.match(reader,/this\.immersion\.source\(message\.hookSource,message\.hookSourceEngine,message\.hookSourceOrigin\)/);
+});
+test('an empty line of origin leave is an inference for the arbiter; a real empty hook line stays a fact',()=>{
+ const h=host();START['a line on screen'](h);h.event({type:'readerContext',active:false});
+ h.immersion.source('','krkr','leave');h.advance(2000);assert.equal(h.immersion.visible,true,'refused while frozen');
+ h.immersion.source('','krkr');h.advance(600);assert.equal(h.immersion.visible,false,'the hook itself said the text is gone');
+});
+test('leaving hides the layer in place instead of sinking it; only a layer that stays visible leaves the topmost band',()=>{
+ const s=fs.readFileSync(path.join(__dirname,'..','native','GalWindowBridge.cs'),'utf8'),p=fs.readFileSync(path.join(__dirname,'..','native','ReaderLayerPolicy.cs'),'utf8');
+ assert.match(s,/if\(!ReaderLayerPolicy\.SinkOnLeave\(staysVisible\)\)\{\s*bool hid=IsShown\|\|IsWindowVisible\(Overlay\);if\(hid\)\{ShowWindow\(Overlay,0\);IsShown=false;\}/);
+ assert.equal((s.match(/TopmostGuard\.Sink\(Overlay,/g)||[]).length,3);
+ assert.equal((s.match(/ReaderLayerPolicy\.SinkOnLeave\(/g)||[]).length,3,'every sink of the layer asks the rule first');
+ assert.match(p,/public static bool SinkOnLeave\(bool layerStaysVisible\)\{return layerStaysVisible;\}/);
+ assert.match(p,/return after sinking: the old way does not fail with every request refused/);
 });
 test('the bridge looks at the order after every raise and has a way out when topmost is not taken',()=>{
  const s=fs.readFileSync(path.join(__dirname,'..','native','GalWindowBridge.cs'),'utf8'),p=fs.readFileSync(path.join(__dirname,'..','native','ReaderLayerPolicy.cs'),'utf8');

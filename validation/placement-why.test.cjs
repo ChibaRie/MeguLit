@@ -13,4 +13,6 @@ test('each placement decision is traced once per line',()=>{
  p.hook({...line,line:4,rects:[[300,560,28,28]]});assert.ok(traces.some(t=>t.includes('rejected: line 4 has 1 boxes for 2 characters')));
  p.hook({...line,line:5,hidden:false});assert.ok(traces.some(t=>t.includes('line 5 is drawn by the game itself')));
  p.configure({},{bound:false});p.hook({...line,line:6});assert.ok(traces.some(t=>t.startsWith('placement off: line 6')));
+ /* 2026-11-19 (素晴らしき日々, BGI on the GDI glyph path: no trace said why nothing was placed) the glyph path says it too */
+ p.glyph({text:'金曜日の昼',seq:7});assert.ok(traces.some(t=>t.startsWith('placement off: glyph line 7')),JSON.stringify(traces));
 });
