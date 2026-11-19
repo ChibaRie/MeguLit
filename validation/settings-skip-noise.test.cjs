@@ -85,3 +85,23 @@ test('HookBridge follows a new context of the selected hook only on a line that 
  assert.equal(Typing('「あっ、はい。なんですか」','まだ大雑把な目的地しか伝えていなかった'),false);
  assert.equal(Typing('','「あっ、はい。なんですか」'),false);
 });
+
+test('choice capture: double-drawn typing fragments are no options; 「ここ」 and ellipsis options stay',()=>{
+ const n=()=>new ChoiceCapture(()=>1000);
+ assert.deepEqual(n().add('オオ'),[]);assert.deepEqual(n().add('テテ'),[]);assert.deepEqual(n().add('オオーートト'),[]);
+ assert.deepEqual(n().add('ねねさん／ここ'),['ねねさん','ここ']);assert.deepEqual(n().add('…………／ああ、行こう'),['…………','ああ、行こう']);
+});
+
+test('hook source: no choice candidates (and no OCR locate) while the dialogue box is gone for a known reason',t=>{
+ const f=hookFixture(t);const traces=[];f.hook.trace=s=>traces.push(String(s));let located=0;f.hook.locateChoices=()=>{located++;};
+ f.line('まだ大雑把な目的地しか伝えていなかったのを思い出した。');
+ f.hook.dialogGoneAt=Date.now()-2000;
+ f.hook.auxText({text:'前往文本选项卡',sourceName:'TextRender',role:0});f.hook.auxText({text:'返回标题界面。',sourceName:'TextRender',role:0});
+ assert.ok(traces.some(s=>s.includes('choice aux skipped: dialogue box gone')));assert.equal(f.hook.choice?.items?.length||0,0);
+ f.hook.dialogGoneAt=0;f.hook.auxText({text:'はい／いいえ',sourceName:'TextRender',role:3});
+ assert.deepEqual(f.hook.choice.items.map(x=>x.text),['はい','いいえ']);assert.equal(located,0,'OCR is asked only after the burst settles');
+});
+const SERVICE=fs.readFileSync(path.join(__dirname,'..','services','reader.cjs'),'utf8');
+test('reader service hands the dialogue box state (known reasons only) to the hook source',()=>{
+ assert.match(SERVICE,/this\.gal\.hooks\.dialogGoneAt=message\.dialogVisible\?0:\/\^\(\?:window\|scene\|engine\)\$\//);
+});
