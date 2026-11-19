@@ -17,7 +17,8 @@ const D3_ROUTE=[0,1,1,0,0,0,1,1,0,0,0,1,1,0,0,0,1,1,0,0,1,1,1,0,0,1,1,1,0,0,1,1,
 const BACKUP_DIR='.megulit-japanese',KANA=/[぀-ヿ]/,HAN_ONLY_CN=/[一-鿿]/;
 
 const sha=b=>crypto.createHash('sha256').update(b).digest('hex');
-function xorKey(buf,offset){const out=Buffer.alloc(buf.length-offset);for(let i=0;i<out.length;i++)out[i]=buf[i+offset]^DBS_KEY[i%4];return out;}
+/* the engine XORs whole dwords only; a 1-3 byte tail stays plain (SiglusSceneScriptUtility dbs.py _xor32_inplace) */
+function xorKey(buf,offset){const out=Buffer.from(buf.subarray(offset)),n=out.length&~3;for(let i=0;i<n;i++)out[i]^=DBS_KEY[i%4];return out;}
 function route(data){const out=Buffer.alloc(data.length);for(let i=0;i<data.length;i++)out[i]=data[i]^D3_KEYS[D3_ROUTE[(i>>2)%D3_ROUTE.length]][i%4];return out;}
 /* E580 the distance-back LZ shared with Siglus scenes and Interheart (kit.lzDistance) */
 function lzss(src){
@@ -27,7 +28,7 @@ function literal(data){ // stored as literal runs; the engine reads it with the 
  const flagBytes=Math.ceil(data.length/8),out=Buffer.alloc(8+data.length+flagBytes);out.writeUInt32LE(out.length,0);out.writeUInt32LE(data.length,4);
  let s=0,d=8;while(s<data.length){const n=Math.min(8,data.length-s);out[d++]=(1<<n)-1;data.copy(out,d,s,s+n);s+=n;d+=n;}return out;}
 function decrypt(file){if(file.length<12)throw Error('DBS_SHORT');return {marker:file.readUInt32LE(0),raw:route(lzss(xorKey(file,4)))};}
-function encrypt(marker,raw){const packed=literal(route(raw)),out=Buffer.alloc(packed.length+4);out.writeUInt32LE(marker,0);for(let i=0;i<packed.length;i++)out[i+4]=packed[i]^DBS_KEY[i%4];return out;}
+function encrypt(marker,raw){const packed=literal(route(raw)),out=Buffer.alloc(packed.length+4);out.writeUInt32LE(marker,0);packed.copy(out,4);for(let i=0,n=packed.length&~3;i<n;i++)out[i+4]^=DBS_KEY[i%4];return out;}
 
 function parse(raw,marker){
  const u=o=>raw.readUInt32LE(o),[size,rows,cols,,fmt,data,text]=[0,4,8,12,16,20,24].map(u);
