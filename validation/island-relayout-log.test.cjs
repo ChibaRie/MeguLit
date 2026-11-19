@@ -39,3 +39,11 @@ test('a new game or a skip through text read before plays it forward: read as us
  for(const s of lines.slice(1)){f.line(s);f.tick(300);}
  assert.deepEqual(f.log().filter(Boolean).length<=1,true);
 });
+
+test('a new game started again from the title: its first lines are not lost even while they look like a LOG',t=>{
+ const f=fixture(t);const pro=['繰り返される単調な音。','無機質で、だけど優しい、ゆりかごの音。','それは何万、何億の年を越えて紡がれてきたこの星の息吹だ。','まだこの世界の広さと深さを知らなかったあの頃――。','二人で並んで歩いた白い砂浜。'];
+ for(const s of pro){f.line(s);f.tick(3000);}
+ f.tick(20000);f.line(pro[0]);f.tick(150);f.line(pro[1]);f.tick(3000);f.line(pro[2]);f.tick(2000);
+ const read=f.read();const second=read.slice(pro.length);
+ assert.deepEqual(second.filter(x=>pro.slice(0,3).includes(x)),pro.slice(0,3),'all three lines of the restarted run are read, in order: '+JSON.stringify(second));
+});

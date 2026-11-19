@@ -438,13 +438,20 @@ class HookNative{
    if(forward&&!repeatCurrent)L.progressAt=now;
    const current=key===String(this.lastSource||'').replace(/\s+/g,''),settled=now-(L.progressAt||0)>=2000;
    const replay=seen&&!forward&&(L.active||settled)&&(!current||L.active||!!L.held);L.hits=L.hits.filter(h=>now-h.at<1000);if(replay&&!L.hits.some(h=>h.key===key))L.hits.push({at:now,key});
-   const end=()=>{if(!L.active)return;L.active=false;clearTimeout(L.timer);L.timer=null;this.trace('native log closed');this.notify({hookNativeLog:false});};
+   /* a suspected LOG loses nothing: its lines wait in a stash. When the story goes on from the last of them (the line after it in
+      history: a new game started again, not a LOG) they are read first, in order; when the LOG closes by itself they go. */
+   const stash=L.stash||(L.stash=[]);
+   const end=(keep)=>{if(!L.active)return;L.active=false;clearTimeout(L.timer);L.timer=null;if(!keep)stash.length=0;else L.stashAt=this.now();this.trace('native log closed');this.notify({hookNativeLog:false});};
+   if(stash.length&&!L.active&&now-(L.stashAt||0)>10000)stash.length=0;
+   if(stash.length&&L.bypass!==key){const i=recent.lastIndexOf(stash[stash.length-1].key),j=recent.lastIndexOf(L.lastKey);
+    /* lines from well before the last line read (not a LOG, which ends at it) followed by the line after them: the story started again */
+    if(i>=0&&j>=0&&i<j-1&&recent[i+1]===key){const lines=stash.splice(0);this.trace('native log was a story restart; '+lines.length+' line(s) read');if(L.active)end(true);this.stashFlush=true;try{for(const x of lines){L.bypass=x.key;L.lastKey=x.key;this.source(x.m,x.name);}}finally{this.stashFlush=false;}L.lastKey=lines.length?lines[lines.length-1].key:L.lastKey;return this.source(m,name);}}
    if(L.bypass===key)L.bypass=null;
-   else if(replay&&(L.active||L.hits.length>=2)){if(!L.active){L.active=true;L.held=null;this.trace('native log detected; reading paused');this.notify({hookNativeLog:true});}
-    clearTimeout(L.timer);L.timer=setTimeout(end,1500);L.timer.unref?.();return;}
+   else if(replay&&(L.active||L.hits.length>=2)){if(!L.active){L.active=true;if(L.held){stash.push({...L.held,key:L.heldKey});L.held=null;}this.trace('native log detected; reading paused');this.notify({hookNativeLog:true});}
+    if(!stash.some(x=>x.key===key)){stash.push({m,name,key});if(stash.length>20)stash.shift();}clearTimeout(L.timer);L.timer=setTimeout(()=>end(true),1500);L.timer.unref?.();return;}
    // The first earlier line waits 0.4 s: a LOG sends the next one at once, a script repeating one line does not.
-   else if(replay){const held=L.held={m,name};const timer=setTimeout(()=>{if(L.held!==held)return;L.held=null;L.bypass=key;this.source(m,name);},400);timer.unref?.();return;}
-   if(!replay)end();L.lastKey=key;L.progressAt=now;if(forward&&!repeatCurrent){recent.push(key);if(recent.length>40)recent.shift();}L.seen.delete(key);L.seen.set(key,now);if(L.seen.size>3000)L.seen.delete(L.seen.keys().next().value);}
+   else if(replay){const held=L.held={m,name};L.heldKey=key;const timer=setTimeout(()=>{if(L.held!==held)return;L.held=null;L.bypass=key;this.source(m,name);},400);timer.unref?.();return;}
+   if(!replay){end(false);stash.length=0;}L.lastKey=key;L.progressAt=now;if(forward&&!repeatCurrent){recent.push(key);if(recent.length>40)recent.shift();}L.seen.delete(key);L.seen.set(key,now);if(L.seen.size>3000)L.seen.delete(L.seen.keys().next().value);}
   // Scene/chapter keys and asset ids ("10_1", "bg_01.png", "Chapter2") from engine string streams are never dialogue.
   if(identifierNoise(text)){this.trace('drop identifier text '+JSON.stringify(text.slice(0,60)));return;}
   if(ruby.length){const map=this.sourceRuby||(this.sourceRuby=new Map());map.set(text,ruby);if(map.size>64)map.delete(map.keys().next().value);}
@@ -638,7 +645,7 @@ class HookNative{
  }
  deliverSource(text,origin,engine='',nativeLine=0){
   const now=this.now(),live=!engine&&!nativeLine&&(origin||'live')==='live',S=this.skipBurst||(this.skipBurst={last:0,held:null,timer:null,count:0});
-  if(!live){this.emitSource(text,origin,engine,nativeLine);return;}
+  if(!live||this.stashFlush){if(this.stashFlush)S.last=now;this.emitSource(text,origin,engine,nativeLine);return;}
   {const last=this.lastOfMerged(text);if(last!==text){this.trace('merged skip text: kept the last line of '+text.length+' chars');text=last;}}
   const gap=now-S.last;S.last=now;
   if(gap>=300&&!S.held){S.count=0;this.emitSource(text,origin,engine,nativeLine);return;}
