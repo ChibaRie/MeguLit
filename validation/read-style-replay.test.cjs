@@ -83,3 +83,9 @@ test('pixel sample: a sentence the game does not draw gives no sample, and draw-
  r.sync.evidence();assert.equal(r.sync.lineStyle('エンジンが描画色を報告している台詞です。'),false);assert.equal(r.sync.lineStyle('履歴から戻った台詞です。',false),false);
  r.sync.lineEvidenceAt=0;r.sync.lineStyle('グラデーションの台詞がここに表示されています。');await r.wait();await r.answer(r.requests.at(-1).id,{textColor:'#ffffff',textGradient:true,textGradientTop:'#ffffff',textGradientBottom:'#88aaff'});
  assert.equal(r.samples().length,0,'a gradient is left to the saved gradient style');});
+test('one pixel slot: glyph colours and window samples share it, an early one waits, a late one never replaces the current',t=>{const r=reader(t);
+ r.play({t:'status',text:'既に読んだ台詞がここにあります。'});r.b.lineColorDrawn('既に読んだ台詞がここにあります。','#f7f77b');assert.equal(r.paint().color,'#f7f77b','glyph colour from the engine side');
+ r.b.lineColorDrawn('次に出てくる未読の台詞です。','#ffffff');assert.equal(r.paint().color,'#f7f77b','the next sentence\'s glyphs do not recolour the current one');
+ r.play({t:'status',text:'次に出てくる未読の台詞です。'});assert.equal(r.paint().color,'#ffffff','and are there when its source arrives');
+ r.play({t:'sample',text:'既に読んだ台詞がここにあります。',style:{fill:'#f7f77b',alpha:1}});assert.equal(r.paint().color,'#ffffff','a late window sample for the earlier sentence is ignored');
+ r.play({t:'status',text:'三つ目の台詞には何も届きません。'});assert.equal(r.paint().color,null,'nothing carried over to a sentence with no evidence');});
