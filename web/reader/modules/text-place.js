@@ -91,7 +91,9 @@
        from the game's own place, saved with the game's profile (anchorDX/anchorDY, client %, 0 = on the game's first character);
        the reader's own box position x/y stays as it was. A change re-pins at once (the root style observer below). */
     const pr = b.galPreferences?.() || {}, info0 = b.galLayoutInfo?.(), dpr0 = devicePixelRatio || 1, cwc = info0?.clientWidth ? info0.clientWidth / dpr0 : innerWidth, chc = info0?.clientHeight ? info0.clientHeight / dpr0 : innerHeight;
-    const offX = (Number(pr.anchorDX) || 0) / 100 * cwc, offY = (Number(pr.anchorDY) || 0) / 100 * chc;
+    /* an offset never takes the first character out of the game client (a stray value must not lose the line for good) */
+    const cx0 = info0?.clientWidth ? (info0.clientX || 0) / dpr0 : 0, cy0 = info0?.clientHeight ? (info0.clientY || 0) / dpr0 : 0;
+    const offX = Math.max(cx0 - anchor[0], Math.min(cx0 + cwc - 40 - anchor[0], (Number(pr.anchorDX) || 0) / 100 * cwc)), offY = Math.max(cy0 - anchor[1], Math.min(cy0 + chc - 40 - anchor[1], (Number(pr.anchorDY) || 0) / 100 * chc));
     if (tr && tr.width) { set(win, 'left', (wr.left + anchor[0] + offX - tr.left) + 'px'); set(win, 'top', (wr.top + anchor[1] + offY - tr.top) + 'px'); set(win, 'right', 'auto'); set(win, 'bottom', 'auto'); set(win, 'margin', '0'); }
     /* 2026-11-19 (user, windowed 千恋＊万花: 「不要再挤压我的汉字了 我窗口化呢 只要显示器上还有位置就不要这样」): the translation keeps the
        user's size and goes on below the game window as long as the monitor's work area has room (the overlay spans the desktop);

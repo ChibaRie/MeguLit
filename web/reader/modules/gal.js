@@ -835,7 +835,15 @@
        position fields are its offset from there (anchorDX/anchorDY, client %, default 0, may be negative); the box position
        x/y of the reader's own box is kept apart and untouched */
     const anchoredNow = () => document.body.classList.contains('megulit-anchored');
-    if (anchoredNow()) { f('galX').value = Number(preferences.anchorDX) || 0; f('galY').value = Number(preferences.anchorDY) || 0; f('galX').min = f('galY').min = '-95'; }
+    /* 2026-11-19 (user, 千恋＊万花: 「我校准了之后调了一下换行长度，直接再也恢复不了正确位置了」): the meaning of the two fields is
+       fixed when they are filled. The menu had been opened on a line the game drew itself (box mode: the fields held x 24.63 /
+       y 79.7); the next line was anchored and dragging the wrap width wrote those numbers as an offset. A change of mode while
+       the menu is open fills the fields again for the new meaning; nothing is ever read in the other one. */
+    let fieldsAreOffset = false;
+    const fillPosition = () => { fieldsAreOffset = anchoredNow(); if (fieldsAreOffset) { f('galX').value = Number(preferences.anchorDX) || 0; f('galY').value = Number(preferences.anchorDY) || 0; f('galX').min = f('galY').min = '-95'; } else { f('galX').value = preferences.x; f('galY').value = preferences.y; f('galX').min = f('galY').min = '0'; } };
+    fillPosition();
+    const modeWatch = new MutationObserver(() => { if (anchoredNow() !== fieldsAreOffset && document.body.contains(dialog)) { const was = syncingForm; syncingForm = true; try { fillPosition(); } finally { syncingForm = was; } } });
+    modeWatch.observe(document.body, { attributes: true, attributeFilter: ['class'] }); dialog.addEventListener('close', () => modeWatch.disconnect(), { once: true });
     const sliderOutputs = [];
     for(const input of group.querySelectorAll('input[type=number]')){
       const output=document.createElement('output');output.className='tomoyo-slider-value';output.htmlFor=input.name;
@@ -864,7 +872,7 @@
     dialogFields.maskState.textContent = bridge.maskMessage || '局部遮字会在绑定游戏并收到原文后启动';
     const current = () => appearance.clean({ ...preferences, readTextColor: f('galReadTextColor').value.toLowerCase() === f('galTextColor').value.toLowerCase() ? '' : f('galReadTextColor').value,
      furigana: f('galFurigana').checked, japaneseSize: Number(f('galJapaneseSize').value), sizeSource: Number(f('galJapaneseSize').value)!==preferences.japaneseSize||Number(f('galChineseSize')?.value??preferences.translationSize)!==preferences.translationSize?'user':preferences.sizeSource,
-      ...(anchoredNow() ? { x: preferences.x, y: preferences.y, anchorDX: Number(f('galX').value) || 0, anchorDY: Number(f('galY').value) || 0 } : { x: Number(f('galX').value), y: Number(f('galY').value) }), width: Number(f('galWidth').value), height: Number(f('galHeight').value),
+      ...(fieldsAreOffset ? { x: preferences.x, y: preferences.y, anchorDX: Number(f('galX').value) || 0, anchorDY: Number(f('galY').value) || 0 } : { x: Number(f('galX').value), y: Number(f('galY').value), anchorDX: Number(preferences.anchorDX) || 0, anchorDY: Number(preferences.anchorDY) || 0 }), width: Number(f('galWidth').value), height: Number(f('galHeight').value),
       ...Object.fromEntries(Object.entries(additional).map(([key,name]) => [key, typeof defaults[key] === 'boolean' ? f(name).checked : f(name).value])) });
     const save = event => { if(bridge.gameStyleCommitReady?.()===false){event?.preventDefault();event?.stopImmediatePropagation();return;}preferences = current();
      if(event?.type==='submit'&&dialog.dataset.menuTab==='calibrate'&&bridge.saveGameProfileFromMenu){event.preventDefault();event.stopImmediatePropagation();bridge.saveGameProfileFromMenu(preferences);
@@ -906,7 +914,7 @@
      y:e.clientY, gx:Number(f('galX').value), gy:Number(f('galY').value) }; try { e.target.setPointerCapture(e.pointerId); } catch {} };
     const dragMove = e => { if (!dragStart) return; e.preventDefault(); e.stopPropagation(); const dpr = Math.max(.5, Number(window.devicePixelRatio)||1), cw = layoutInfo?.clientWidth||window.innerWidth*dpr,
      ch = layoutInfo?.clientHeight||window.innerHeight*dpr;
-      const lo = anchoredNow() ? -95 : 0; f('galX').value = Math.round(Math.max(lo, Math.min(95, dragStart.gx + (e.clientX-dragStart.x)*dpr*100/cw))*10)/10; f('galY').value = Math.round(Math.max(lo,
+      const lo = fieldsAreOffset ? -95 : 0; f('galX').value = Math.round(Math.max(lo, Math.min(95, dragStart.gx + (e.clientX-dragStart.x)*dpr*100/cw))*10)/10; f('galY').value = Math.round(Math.max(lo,
        Math.min(95, dragStart.gy + (e.clientY-dragStart.y)*dpr*100/ch))*10)/10; if (!dragFrame) dragFrame = requestAnimationFrame(() => { dragFrame = 0; preview();
        }); };
     const dragUp = e => { if (!dragStart) return; e.stopPropagation(); dragStart = null; };
