@@ -128,3 +128,20 @@ test('taking the glyph pass-through back tells the user once what to do about th
  assert.ok(leak.startsWith('static void GlyphPassLeak(string why){if(GlyphPassLeaked)return;'),'once a run');
  assert.ok(leak.includes('{"allFailed",GlyphVersion}'),'and remembered for the game, so not on the next run');
  assert.ok(leak.includes('Status("这款游戏首次适配时前几句可能显示不全：开个新存档推进几句，再回标题重新开始即可");'),'through the existing status line');});
+
+/* 2026-11-19 17:45 (user, 素晴らしき日々 on a build with 256db869): "现在原文为什么还是断断续续的在后面", "汉字描边…一下这么丑一下又正常了", "校准还是很大问题" */
+test('after the pass-through is taken back the font layer gets no more lines of the writable stream, and the verdict outlives a new build',()=>{const hb=read('native/HookBridge.cs');
+ /* log 08:46:05.63 verdict; 08:46:13 "glyph hide line seq=5 chars=24 placed=0 hidden=0 requested=2", 08:46:19 "seq=7 placed=1 requested=1": still served */
+ assert.ok(hb.includes('static bool GlyphLeakStandDown(Candidate c){return GlyphPassLeaked&&c!=null&&c.embed&&!c.hideOnly;}'));
+ assert.ok(hb.includes('GpuLine(text);if(GlyphWanted()&&!GlyphLeakDown()){lock(GlyphGate){GlyphSent=true;}'),'no LINE to the font layer: no blank glyphs into the cache, no one-character places for the reader');
+ assert.ok(hb.includes('else if(d.ContainsKey("leak")){')&&hb.indexOf('else if(d.ContainsKey("leak")){')<hb.indexOf('else if(here&&d.TryGetValue("allFailed",out v)){'),'the leak is read before the build-bound verdicts, and before the remembered face that used to prove the pass-through at launch');
+ assert.ok(hb.includes('{"leak",why}'),'what is saved');});
+test('dark text never gets a dark outline, whatever set the two colours; the translation follows the sentence\'s own outline',()=>{const gal=read('web/reader/modules/gal.js');
+ assert.ok(gal.includes("readable=color=>fillDark&&(luma(color)===null?false:luma(color)<.35)?'#ffffff':color;"));
+ for(const line of ["stroke('jp',preferences.japaneseOutline,preferences.japaneseOutlineWidth,readable(preferences.japaneseOutlineColor));","stroke('cn',preferences.chineseOutline,preferences.chineseOutlineWidth,readable(preferences.chineseOutlineColor));","stroke('ruby',preferences.rubyOutline,preferences.rubyOutlineWidth,readable(preferences.rubyOutlineColor));"])assert.ok(gal.includes(line),line);
+ /* the rule itself, on the pairs of that session: saved profile black on black; light text keeps its dark outline; a gradient is not judged */
+ const luma=c=>{const m=/^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(c||'');return m?(.2126*parseInt(m[1],16)+.7152*parseInt(m[2],16)+.0722*parseInt(m[3],16))/255:null;};
+ const outline=(p,color)=>{const fillDark=p.textGradient!==true&&luma(p.textColor)!==null&&luma(p.textColor)<.35;return fillDark&&(luma(color)===null?false:luma(color)<.35)?'#ffffff':color;};
+ assert.equal(outline({textColor:'#000001'},'#000000'),'#ffffff');assert.equal(outline({textColor:'#f8f8f8'},'#000000'),'#000000');assert.equal(outline({textColor:'#000001'},'#f4f4ff'),'#f4f4ff');assert.equal(outline({textColor:'#000001',textGradient:true},'#000000'),'#000000');
+ /* frames 2 and 6 of the recording: the Japanese line had its white outline, the translation under it the saved black one */
+ assert.ok(gal.includes('--tomoyo-jp-stroke-color:var(--tomoyo-gal-line-edge); --tomoyo-ruby-stroke-color:var(--tomoyo-gal-line-edge); --tomoyo-cn-stroke-color:var(--tomoyo-gal-line-edge); }'));});

@@ -126,7 +126,7 @@
     @media (prefers-reduced-motion:reduce) { .sentence-text .megulit-ruby-base::before { transition:none; } }
     body.tome-line-read .sentence-window:not(.tome-island-page) { --tomoyo-gal-color:var(--tomoyo-gal-read-color); --tomoyo-gal-gradient:var(--tomoyo-gal-read-gradient); --tomoyo-gal-fill:var(--tomoyo-gal-read-fill); --tomoyo-gal-jp-stroke:var(--tomoyo-gal-read-jp-stroke); --tomoyo-gal-cn-stroke:var(--tomoyo-gal-read-cn-stroke); --tomoyo-gal-jp-filter:var(--tomoyo-gal-read-jp-filter); --tomoyo-gal-cn-filter:var(--tomoyo-gal-read-cn-filter); }
     body.tome-line-color .sentence-window:not(.tome-island-page) { --tomoyo-gal-color:var(--tomoyo-gal-line-color); --tomoyo-gal-gradient:none; --tomoyo-gal-fill:currentColor; } /* E550 per-line colour (text-position.js paintLine) */
-    body.tome-line-edge .sentence-window:not(.tome-island-page) { --tomoyo-jp-stroke-color:var(--tomoyo-gal-line-edge); --tomoyo-ruby-stroke-color:var(--tomoyo-gal-line-edge); } /* the outline the game drew this sentence with; furigana follows the line */
+    body.tome-line-edge .sentence-window:not(.tome-island-page) { --tomoyo-jp-stroke-color:var(--tomoyo-gal-line-edge); --tomoyo-ruby-stroke-color:var(--tomoyo-gal-line-edge); --tomoyo-cn-stroke-color:var(--tomoyo-gal-line-edge); } /* the outline the game drew this sentence with; furigana and the translation under it follow the line (they take its colour too) */
     body.tome-surface-pending .sentence-window, body.tome-surface-pending .tomoyo-native-mask, body.tome-surface-pending .tome-inline-wait { visibility:hidden!important; }
     body.tome-box-dragging .sentence-window { outline:2px dashed var(--theme-primary,#e0495a)!important; outline-offset:2px; cursor:move!important; }
     body.tome-box-dragging .sentence-window * { cursor:move!important; pointer-events:none!important; }
@@ -466,9 +466,11 @@
      const safe=/^#[0-9a-f]{6}$/i.test(color)?color:'#ffffff',thin=visible>0&&visible<pixel;
      root.setProperty('--tomoyo-'+name+'-stroke',(thin?pixel*2:visible*2)+'px');
      root.setProperty('--tomoyo-'+name+'-stroke-color',thin?safe+Math.round(Math.max(.2,visible/pixel)*255).toString(16).padStart(2,'0'):safe);};
-    stroke('jp',preferences.japaneseOutline,preferences.japaneseOutlineWidth,preferences.japaneseOutlineColor);
-    stroke('cn',preferences.chineseOutline,preferences.chineseOutlineWidth,preferences.chineseOutlineColor);
-    stroke('ruby',preferences.rubyOutline,preferences.rubyOutlineWidth,preferences.rubyOutlineColor);
+    /* 2026-11-19 (user, 素晴らしき日々: "汉字描边啥情况，为啥一下这么丑一下又正常了"): a dark text colour drawn with a dark outline is a blot, and a profile saved before the outline followed the measured colour still holds that pair (black on black). Whatever the source of the two colours, dark text gets a white outline; every other pair is drawn as set. */
+    const luma=c=>{const m=/^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(c||'');return m?(.2126*parseInt(m[1],16)+.7152*parseInt(m[2],16)+.0722*parseInt(m[3],16))/255:null;},fillDark=preferences.textGradient!==true&&luma(preferences.textColor)!==null&&luma(preferences.textColor)<.35,readable=color=>fillDark&&(luma(color)===null?false:luma(color)<.35)?'#ffffff':color;
+    stroke('jp',preferences.japaneseOutline,preferences.japaneseOutlineWidth,readable(preferences.japaneseOutlineColor));
+    stroke('cn',preferences.chineseOutline,preferences.chineseOutlineWidth,readable(preferences.chineseOutlineColor));
+    stroke('ruby',preferences.rubyOutline,preferences.rubyOutlineWidth,readable(preferences.rubyOutlineColor));
     document.body.classList.toggle('megulit-english-style',preferences.englishEnabled);
     root.setProperty('--megulit-en-font',appearance.englishFonts[preferences.englishFont]);
     root.setProperty('--megulit-en-size',scaled(preferences.englishSize));
