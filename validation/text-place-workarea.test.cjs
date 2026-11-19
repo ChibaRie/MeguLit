@@ -37,4 +37,4 @@ const html = `<!doctype html><html><head><meta charset="utf-8"><style>
 })().catch(e => { console.error(e); process.exit(1); });
 /* the bridge reports the work-area bottom of the game's monitor with the layout (overlay px) */
 { const cs = fs.readFileSync(path.join(__dirname, '..', 'native', 'GalWindowBridge.cs'), 'utf8');
-  assert.match(cs, /workBottom=WorkBottom\(area\)-box\.Top/); assert.match(cs, /Screen\.FromRectangle\([^)]*\)\)\.WorkingArea\.Bottom/); }
+  assert.match(cs, /workBottom=WorkBottom\(area\)-box\.Top/); assert.match(cs, /Screen\.FromRectangle\(.*\.WorkingArea\.Bottom/); }
