@@ -70,3 +70,19 @@ test('counter-examples: narration without a full stop, a new speaker, a closed �
  const q=new SentencePieces(()=>t);q.take('s','「あのね、','由岐');t+=1000;assert.equal(q.take('s','明日は','由岐'),'「あのね、明日は','the same speaker goes on');
  const r=new SentencePieces(()=>t);r.take('s','「あのね、');t+=1000;assert.equal(r.take('s','由岐「次の台詞」'),'由岐「次の台詞」','a name before a bracket opens a new line');
 });
+
+/* The same path for every engine: no engine or game name decides it (core/sentence-pieces.cjs is called from HookNative.source
+   for every stream). Two other shapes: a KiriKiri-style stream sending each piece of a quotation, a Siglus-style stream that
+   sends the grown sentence itself; and a KiriKiri counter-example. No script here: the translation is the reader's. */
+function plain(sourceName,sourceCode){const r=rig();r.h.originalText=null;r.feed=(text,gap=1200)=>{r.h.now=(n=>()=>n)(r.h.now()+gap);r.h.source({type:'hookSource',text,sourceCode,sourceName},sourceName);};return r;}
+test('any engine: KiriKiri-style pieces of one quotation grow one line, a Siglus-style grown line is kept as sent',()=>{
+ {const {shown,feed}=plain('KiriKiri','HW-8@1E5C40:SenrenBanka.exe');for(const piece of ['「それでね、','明日の放課後、','屋上で待ってるから」','　芳乃はそう言って笑った。'])feed(piece);
+  assert.deepEqual(shown.map(flat),['「それでね、','「それでね、明日の放課後、','「それでね、明日の放課後、屋上で待ってるから」','芳乃はそう言って笑った。']);}
+ {const {shown,feed}=plain('SiglusEngine','HW-1C@5A1B20:SiglusEngine.exe');for(const piece of ['「ねえ、','「ねえ、聞いてる？」'])feed(piece);
+  assert.deepEqual(shown.map(flat),['「ねえ、','「ねえ、聞いてる？」'],'the engine already sends the grown line: nothing is doubled');}
+});
+test('any engine, counter-example: two KiriKiri lines, each a closed quotation or narration, stay two lines',()=>{
+ const {shown,feed}=plain('KiriKiri','HW-8@1E5C40:SenrenBanka.exe');
+ for(const piece of ['「おはよう」','「今日もいい天気だね」','　空には雲ひとつない','　風が少し冷たい'])feed(piece);
+ assert.deepEqual(shown.map(flat),['「おはよう」','「今日もいい天気だね」','空には雲ひとつない','風が少し冷たい']);
+});
