@@ -8,7 +8,7 @@ const {parseGlyphPos,fillPlaces}=require('./gpu-glyph-pos.cjs');const {identifie
 function unwrapTags(text){let s=String(text),prev;do{prev=s;s=s.replace(/<R([^<>|\x00-\x7f][^<>|]*)\|[^<>]*>/g,'$1').replace(/<[A-Za-z]\d{0,3}(?=[^\x00-\x7f])([^<>]*)>/g,'$1');}while(s!==prev);return s;}
 function cleanSource(text,name='',code=''){const unity=code.endsWith(':JIT:UNITY');if(unity)text=require('./unity-source.cjs').rubySize(text).replace(/<br\s*\/?>/gi,'\n').replace(/<ruby[^>]*>(.*?)<\/ruby>/gis,'$1').replace(/<\/?(?:color|size|font|b|i|u|s|mark|align|line-height|cspace|mspace|indent|margin|voffset|alpha|link|style|noparse|sprite)(?:[=\s][^>]*)?>/gi,'');text=unwrapTags(text).replace(/\r\n?/g,'\n');if(unity)text=require('./unity-source.cjs').typewriter(text);return text.replace(/\x05/g,/^BGI(?:\.exe)?$/i.test(name)?'\n':'').replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g,'');}
 /* A speaker name from a name stream: brackets and control marks stripped; anything that reads like a sentence is not a name. */
-function speakerName(raw){const n=String(raw||'').replace(/[\x00-\x1f]/g,'').replace(/^[\s【\[「『(（]+|[\s】\]」』)）:：]+$/gu,'').trim();if(n.length%2===0&&n.length>=4&&n.slice(0,n.length/2)===n.slice(n.length/2))return speakerName(n.slice(0,n.length/2)); /* a name stream that sends the name twice (時雨時雨) */
+function speakerName(raw){const n=String(raw||'').replace(/[\x00-\x1f]/g,'').replace(/^[\s【\[「『(（]+|[\s】\]」』)）:：]+$/gu,'').trim();{const st=LineOnce.nameStack(n);if(st)return st;}if(n.length%2===0&&n.length>=4&&n.slice(0,n.length/2)===n.slice(n.length/2))return speakerName(n.slice(0,n.length/2)); /* a name stream that sends the name twice (時雨時雨) */
  return n&&n.length<=16&&(/^[?？]+$/.test(n)||!/[。、！？!?…]/.test(n))?n:'';}
 /* #141 (CLANNAD, v1.4.9-beta.1: speaker names showed up in the text flow). Many engines (RealLive/Siglus, KiriKiri, BGI,
    YU-RIS …) send the name box in the same stream as the line, either as its own string or glued to the front of the line.
@@ -308,7 +308,7 @@ class HookNative{
   /* 2026-11-15 (死に逝く君、館に芽吹く憎悪: the side stream's 「X　X　」 frame came 4-25 ms before the dialogue stream's line, was located
      as art text and drawn translated next to the subtitle): a side-stream text waits until the dialogue line of that moment
      has arrived, then the usual "part of the current line" check drops it */
-  {const t=m.text;const at=setTimeout(()=>this.artCandidate(t),AUX_ART_DELAY_MS);at.unref?.();}const C=this.choice||(this.choice=this.newChoiceCapture());const added=C.add(m.text,this.lastSource,this.speaker?.text);
+  {const t=m.text;const at=setTimeout(()=>this.artCandidate(t),AUX_ART_DELAY_MS);at.unref?.();}/* 2026-11-19 (千恋＊万花 settings page: 「オオ」「テテ」 went to OCR as options) no choice candidates while the dialogue box is gone for a known reason */if(this.dialogGoneAt&&Date.now()-this.dialogGoneAt>=800){this.trace('choice aux skipped: dialogue box gone');return;}const C=this.choice||(this.choice=this.newChoiceCapture());const added=C.add(m.text,this.lastSource,this.speaker?.text);
   this.trace('choice aux '+String(m.sourceName||'').slice(0,40)+' role='+(m.role??'')+' added='+JSON.stringify(added)+' text='+JSON.stringify(String(m.text).slice(0,80)));
   if(!added.length)return;clearTimeout(this.choiceTimer);this.choiceTimer=setTimeout(()=>this.requestChoices(0),450);this.choiceTimer.unref?.();}
  requestChoices(round){const options=round>0&&this.choiceOptions?this.choiceOptions:this.choice?.options();
@@ -654,6 +654,7 @@ class HookNative{
   /* E501 every source path (native line, merged batch, skip burst) meets the same frame-dump filter as the aux entries */
   if(require('./language-tracks.cjs').stuttered(text)){this.trace('drop typewriter/redraw frame '+JSON.stringify(String(text).slice(0,40)));return;}
   /* last guard before the reader: every path (native line, merged batch, skip burst) draws a sentence once and no stage note */
+  /* 2026-11-19 names glued while skipping (謎の男謎の男…美亜美亜) are the last name */{const nm=LineOnce.nameStack(text);if(nm){this.speaker={text:nm,at:this.now()};this.noteSpeaker(nm);this.trace('name stack kept last name '+JSON.stringify(nm));return;}}
   {const bare=LineOnce.stripStageNotes(text);if(bare!==text){if(!bare.trim()){this.trace('drop stage note '+JSON.stringify(String(text).slice(0,40)));return;}text=bare;}const once=LineOnce.collapse(text);if(once.collapsed){this.trace('emit repeat collapsed chars='+text.length+'->'+once.text.length);text=once.text;}}
   {const sp=splitSpeaker(text,this.knownSpeakers);if(sp.name){this.speaker={text:sp.name,at:this.now()};this.noteSpeaker(sp.name);if(!sp.text.trim()){this.trace('speaker name split from the text flow');return;}text=sp.text;}}
   if(!engine&&!nativeLine&&this.flowPage)engine='nvl';
