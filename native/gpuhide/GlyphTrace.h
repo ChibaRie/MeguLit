@@ -29,6 +29,7 @@
 #include <cmath>
 #include <stdint.h>
 #include <stdio.h>
+#include <chrono>
 
 struct GtGlyph { unsigned ord, at; uint32_t u; int bw, bh, cell, ink; std::vector<uint8_t> cov; };
 struct GtCell { int x, y, w, h; uint32_t u; unsigned ord; };
@@ -60,26 +61,30 @@ struct GlyphTrace {
   if (v.size() >= 8192) v.erase(v.begin()); v.push_back(c); traced++; if (cells.size() > 256) { auto keep = cells[tex]; cells.clear(); cells[tex] = keep; }
  }
  // Best place of glyph g inside the region (rx,ry,rw,rh) of read(x,y) (-1 = unreadable): returns false when not found.
- template <class R> static bool Find(const GtGlyph &g, const R &read, int rx, int ry, int rw, int rh, int &fx, int &fy, const std::vector<GtCell> *taken = nullptr) {
+ /* 2026-11-19 (1.4.17 live, 千恋＊万花: 35 s "not responding" on the title): a search runs on the game thread, so it stops at the
+    deadline of the write that asked for it */
+ typedef std::chrono::steady_clock::time_point Deadline;
+ static bool Late(const Deadline *d) { return d && std::chrono::steady_clock::now() > *d; }
+ template <class R> static bool Find(const GtGlyph &g, const R &read, int rx, int ry, int rw, int rh, int &fx, int &fy, const std::vector<GtCell> *taken = nullptr, const Deadline *deadline = nullptr) {
   auto used = [&](int x, int y) { if (taken) for (const GtCell &c : *taken) if (x < c.x + c.w && c.x < x + g.bw && y < c.y + c.h && c.y < y + g.bh) return true; return false; };
   if (g.bw > rw || g.bh > rh) return false;
   if (g.ink >= 3) {
    int ax = 0, ay = 0, av = -1; for (int y = 0; y < g.bh; y++) for (int x = 0; x < g.bw; x++) if (g.cov[(size_t)y * g.bw + x] > av) { av = g.cov[(size_t)y * g.bw + x]; ax = x; ay = y; }
-   for (int y = ry + ay; y <= ry + rh - g.bh + ay; y++) for (int x = rx + ax; x <= rx + rw - g.bw + ax; x++) {
+   for (int y = ry + ay; y <= ry + rh - g.bh + ay; y++) { if (Late(deadline)) return false; for (int x = rx + ax; x <= rx + rw - g.bw + ax; x++) {
     int t = read(x, y); if (t < 0) return false; if (std::abs(t - av) > 40) continue;
     int ox = x - ax, oy = y - ay; if (used(ox, oy)) continue; long diff = 0; int missing = 0;
     for (int yy = 0; yy < g.bh; yy++) for (int xx = 0; xx < g.bw; xx++) { int a = g.cov[(size_t)yy * g.bw + xx], b = read(ox + xx, oy + yy); if (b < 0) return false; diff += std::abs(a - b); if (a > 96 && b < 32) missing++; }
     if (diff <= 20L * g.bw * g.bh && missing * 10 <= g.ink) { fx = ox; fy = oy; return true; }
-   }
+   } }
    // not there with its ink: the engine may have received the blank of MeguLitFont (whose hook ran after ours)
   }
   // blank glyph with a mark pixel at its top-left (coverage 1..48), nothing else inside its box
   else if (g.cov[0] == 0) return false;
-  for (int y = ry; y <= ry + rh - g.bh; y++) for (int x = rx; x <= rx + rw - g.bw; x++) {
+  for (int y = ry; y <= ry + rh - g.bh; y++) { if (Late(deadline)) return false; for (int x = rx; x <= rx + rw - g.bw; x++) {
    int t = read(x, y); if (t < 0) return false; if (t < 1 || t > 48 || used(x, y)) continue; bool empty = true;
    for (int yy = 0; yy < g.bh && empty; yy++) for (int xx = 0; xx < g.bw; xx++) { if (!xx && !yy) continue; int b = read(x + xx, y + yy); if (b < 0 || b > 2) { empty = false; break; } }
    if (empty) { fx = x; fy = y; return true; }
-  }
+  } }
   return false;
  }
  // 2. Texels (x, y, w, h) of texture tex were written; read(x, y) gives the written coverage (0..255) or -1.
@@ -92,9 +97,10 @@ struct GlyphTrace {
    Keep(tex, c); if (log) log("glyph trace: U+%04X ord=%u -> tex %p texels %d,%d %dx%d (upload)", g.u, g.ord, tex, c.x, c.y, c.w, c.h);
    pending.erase(pending.begin(), pending.begin() + i + 1); return; }
   if ((long long)w * h > 4LL * 1024 * 1024) return;
-  std::vector<GtCell> taken;
-  for (size_t i = 0; i < pending.size();) { const GtGlyph &g = pending[i]; int fx, fy;
-   if (Find(g, read, x, y, w, h, fx, fy, &taken)) { taken.push_back(GtCell{ fx, fy, g.bw, g.bh, g.u, g.ord }); Keep(tex, taken.back()); if (log) log("glyph trace: U+%04X ord=%u -> tex %p texels %d,%d %dx%d (content)", g.u, g.ord, tex, fx, fy, g.bw, g.bh); pending.erase(pending.begin() + i); }
+  /* at most 4 ms of the game thread per write; the glyphs not looked for yet stay pending for the next writes */
+  std::vector<GtCell> taken; const Deadline deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(4);
+  for (size_t i = 0; i < pending.size();) { if (Late(&deadline)) break; const GtGlyph &g = pending[i]; int fx, fy;
+   if (Find(g, read, x, y, w, h, fx, fy, &taken, &deadline)) { taken.push_back(GtCell{ fx, fy, g.bw, g.bh, g.u, g.ord }); Keep(tex, taken.back()); if (log) log("glyph trace: U+%04X ord=%u -> tex %p texels %d,%d %dx%d (content)", g.u, g.ord, tex, fx, fy, g.bw, g.bh); pending.erase(pending.begin() + i); }
    else i++; }
  }
  // A copy of texels (sx, sy, w, h) of src to (dx, dy) of dst (UpdateSurface / UpdateTexture / CopySubresourceRegion).
