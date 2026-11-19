@@ -1,6 +1,7 @@
 
 #include "MinHook.h"
 #include "MeguLitSafeUnhook.h"
+#include "MeguLitCrashWitness.h"
 #include "lunarpc.h"
 #include "../../fileversion.hpp"
 void HIJACK();
@@ -188,6 +189,7 @@ static bool SafeToUnload()
 }
 DWORD WINAPI Pipe(LPVOID)
 {
+	MeguLitCrash::Arm(); /* MeguLitCrashWitness.h: a crash in the game leaves its place and a dump (not from DllMain) */
 	registerHookRpcHandlers();
 	for (bool running = true; running; hookPipe = INVALID_HANDLE_VALUE)
 	{
@@ -226,7 +228,10 @@ DWORD WINAPI Pipe(LPVOID)
 		for (auto &hook : *hooks)
 			hook.Clear();
 		detachall();
-		if (SafeToUnload())
+		/* the witness goes first (a filter set after it keeps the DLL loaded), then the check sees no thread in it;
+		   staying loaded, Pipe(0) arms it again */
+		bool witnessOff = MeguLitCrash::Release();
+		if (witnessOff && SafeToUnload())
 		{
 			SafelyDetached = true;
 			MH_Uninitialize();
@@ -294,6 +299,8 @@ BOOL WINAPI DllMain(HINSTANCE hModule, DWORD fdwReason, LPVOID lpReserved)
 		   gone and nothing needs freeing. The unload from Pipe comes after every hook was removed safely and MinHook
 		   was uninitialized; any other unload with hooks still on cannot be made safe here, and freeing their stubs
 		   would only add to it. */
+		if (lpReserved) /* process exit: the crash witness notes it, so an exception from here on is part of the exit */
+			MeguLitCrash::NoteExit();
 		if (lpReserved || !SafelyDetached)
 			break;
 		delete[] hooks;
