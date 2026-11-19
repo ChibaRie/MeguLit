@@ -243,6 +243,7 @@ LR"MGLT((function(){
     if(typeof L.clear=='Object') {rec.oldClear=L.clear;L.clear=rec.clr;}
     this.recs.add(rec);
    } incontextof st;
+)MGLT" LR"MGLT(
    /* The game's own read flag at a click wait (KAG getCurrentRead: the label being shown was read before): ToMe_KRKR read v=0|1.
       The sentence on screen is read / new also when it was written back hidden and nothing of it is drawn, so the reader can
       still give it the game's read or unread look. A game without the method sends nothing. */
