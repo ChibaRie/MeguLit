@@ -18,7 +18,7 @@ class Reader{
   if(message.type==='bindHotkey'){require('./bind-hotkey.cjs').request(this,message,e=>this.runtime.emit('reader-event',e),this.uiLanguage());return;}
   if(this.hotkeyBind&&(message.type==='bound'||message.type==='error'))require('./bind-hotkey.cjs').follow(this,message,e=>this.runtime.emit('reader-event',e),this.uiLanguage());
   if(message.type==='ready'||Array.isArray(message.windows))require('./bind-hotkey.cjs').startupScan(this,message,e=>this.runtime.emit('reader-event',e),this.uiLanguage(),()=>{const db=openStore(this.root);try{return db.prepare("SELECT id,title,executable FROM games WHERE removed_at IS NULL AND executable<>''").all();}finally{db.close();}});
-  if(message.type==='layerState'){this.logVisibility(message);return;}
+  if(message.type==='layerState'||message.type==='layerRaise'){this.logVisibility(message);return;}
   if(message.type==='readerContext'){this.immersion?.context(message.active);this.logVisibility({type:'readerContext',active:message.active});return;}
   if(message.type==='readerPointer'){this.runtime.emit('reader-pointer-input',message);return;}
   if(message.type==='hookEmbedRequest'){this.embedTranslate(message.id,message.text);return;}

@@ -61,6 +61,38 @@ internal static class ReaderLayerPolicy {
     }
     public static void Unsettle(){SettledSince=-1;}
 
+    /// <summary>The window calls a raise needs (GalWindowBridge.LayerZ does them; the self-test has a model).</summary>
+    public interface ILayerZ{bool BelowGame();bool Topmost();void RequestTopmost();void PlaceAboveGame();void PlaceTop();}
+    /// <summary>Puts the layer above the game and says how it got there. A request is never taken for its result:
+    /// after each step the order is looked at again. wantFloat: the layer may be topmost. "failed": still under the
+    /// game after everything (the caller tries again on its next pass).</summary>
+    public static string Raise(ILayerZ z,bool wantFloat){
+        if(wantFloat){
+            if(!z.Topmost())z.RequestTopmost();
+            if(!z.BelowGame())return z.Topmost()?"topmost":"above-game";
+            z.PlaceAboveGame();
+            if(!z.BelowGame())return "above-game";
+        }
+        z.PlaceTop();
+        return z.BelowGame()?"failed":"top";
+    }
+    /* A desktop in miniature for the self-test: the order of game, layer and one other program, the layer's topmost
+       bit, and a system that may ignore a topmost request (recorded 2026-11-19 16:17 after coming back from another program). */
+    sealed class ModelZ:ILayerZ{
+        public bool RefuseTopmost,LayerTopmost;public System.Collections.Generic.List<char> Order=new System.Collections.Generic.List<char>{'L','G','O'}; /* top first */
+        void Put(char w,int at){Order.Remove(w);Order.Insert(Math.Max(0,Math.Min(Order.Count,at)),w);}
+        public bool BelowGame(){return Order.IndexOf('L')>Order.IndexOf('G');}
+        public bool Topmost(){return LayerTopmost;}
+        public void RequestTopmost(){if(RefuseTopmost)return;LayerTopmost=true;Put('L',0);}
+        public void PlaceAboveGame(){LayerTopmost=false;Order.Remove('L');Order.Insert(Order.IndexOf('G'),'L');}
+        public void PlaceTop(){if(LayerTopmost)return;Put('L',0);}
+        /* a window that becomes the foreground goes to the top of the normal band: above the layer unless that is topmost */
+        public void Activate(char w){Order.Remove(w);Order.Insert(LayerTopmost&&Order.Count>0&&Order[0]=='L'?1:0,w);}
+        /* TopmostGuard.Sink: out of the topmost band, directly above the game */
+        public void Sink(){LayerTopmost=false;Order.Remove('L');Order.Insert(Order.IndexOf('G'),'L');}
+    }
+    static string LegacyRaise(ILayerZ z,bool wantFloat){if(wantFloat)z.RequestTopmost();else z.PlaceTop();return "";}
+
     /* What the tick did before (kept for the self-test only: the recorded sequence must fail on it). */
     static bool LegacyFloat(int front,bool menu,bool menuReady){return front==Game||menu&&menuReady&&(front==Game||front==OwnLayer||front==OwnHome);}
     static bool LegacyContext(int front,bool menu,bool menuReady){return front==Game||front==OwnLayer||menu&&menuReady&&front==OwnHome;}
@@ -126,6 +158,35 @@ internal static class ReaderLayerPolicy {
                     if(!raw)rawSince=-1;else if(rawSince<0)rawSince=t;
                     bool ok=Settled(raw,t);
                     if(ok&&(rawSince<0||t-rawSince<SettleMs))return "probes believed "+(rawSince<0?-1:t-rawSince)+" ms after a context change";
+                }
+            }
+            /* 7. recorded 2026-11-19 16:17: another program in front (the layer sinks), back to the game, and the system
+                  does not take the topmost request. The layer must be above the game after the first raise; the old raise
+                  (ask for topmost, look at nothing) leaves it under the game. Then every order of leaving and returning. */
+            foreach(bool refuse in new[]{true,false}){
+                var z=new ModelZ{RefuseTopmost=refuse,LayerTopmost=true};
+                z.Activate('O');z.Sink();z.Activate('G');
+                if(!z.BelowGame())return "focus return model: the game did not cover the sunk layer";
+                string how=Raise(z,true);
+                if(z.BelowGame())return "focus return: layer still under the game ("+how+", topmost "+(refuse?"refused":"taken")+")";
+                if(refuse&&how!="above-game")return "focus return with topmost refused: "+how;
+                if(!refuse&&how!="topmost")return "focus return: "+how;
+            }
+            var old=new ModelZ{RefuseTopmost=true,LayerTopmost=true};old.Activate('O');old.Sink();old.Activate('G');LegacyRaise(old,true);
+            if(!old.BelowGame())return "focus return: the old raise does not fail on the recorded case (the test proves nothing)";
+            for(int run=0;run<2000;run++){
+                var z=new ModelZ{RefuseTopmost=random.Next(2)==0,LayerTopmost=random.Next(2)==0};Reset();t=0;
+                for(int step=0;step<40;step++){
+                    t+=random.Next(16,400);int roll=random.Next(6);
+                    int front=roll<3?Game:roll<5?Foreign:OwnLayer;
+                    if(random.Next(5)==0)z.RefuseTopmost=!z.RefuseTopmost;
+                    if(front==Game)z.Activate('G');else if(front==Foreign)z.Activate('O');else z.Activate('L');
+                    State s=Decide(front,false,false,false,false,t);
+                    if(!s.Float){z.Sink();continue;}
+                    string how=Raise(z,true);
+                    if(z.BelowGame())return "random focus run "+run+" step "+step+": layer under the game after "+how;
+                    /* a second pass changes nothing that holds */
+                    Raise(z,true);if(z.BelowGame())return "random focus run "+run+" step "+step+": second pass lost the place";
                 }
             }
             if(Classify(false,true,true,true,true)!=None||Classify(true,true,false,true,true)!=OwnLayer||Classify(true,false,true,false,true)!=Game||Classify(true,false,false,false,true)!=OwnHome||Classify(true,false,false,false,false)!=Foreign)return "classify";

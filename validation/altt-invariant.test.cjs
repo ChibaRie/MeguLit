@@ -130,6 +130,48 @@ test('a text window that came back while frozen is shown at the thaw, a hide rea
  assert.equal(h.immersion.visible,true);
 });
 
+/* 2026-11-19 16:17 (user, on the build with the Alt+T fix: "一切屏回来就啥都没了"). Leaving for another window and coming back, in
+   any state: what a fact decided is the same before and after, with no flip in between; a hide that rested only on a lost
+   wait marker ends with the return, because its evidence is thrown away when the context freezes and nothing else could
+   lift it before the next line. */
+for(const [name,start] of Object.entries(START))test(`property: focus away and back, any number of times, with probe noise, changes nothing (${name})`,async()=>{
+ for(let seed=1;seed<=60;seed++){
+  const r=rng(seed*104729+name.length),h=host();start(h);const before=h.snapshot(),rounds=2+Math.floor(r()*8);
+  for(let i=0;i<rounds;i++){
+   focusRound(h,r);if(r()<0.3)h.event({type:'readerContext',active:false}),h.advance(Math.floor(r()*300)),h.event({type:'readerContext',active:true}),settling(h,r);
+   const mid=h.snapshot();assert.deepEqual([mid.visible,mid.flips,mid.route,mid.cover],[before.visible,before.flips,before.route,before.cover],`seed ${seed} round ${i+1}: ${JSON.stringify(h.visibility.slice(before.flips))}`);
+  }
+  h.advance(SETTLE+200);h.advance(20000);const after=h.snapshot();
+  assert.deepEqual([after.visible,after.flips],[before.visible,before.flips],`seed ${seed}: late change ${JSON.stringify(h.visibility.slice(before.flips))}`);
+ }
+});
+const markerHidden=h=>{START['a line on screen'](h);h.event({type:'readerInput',complete:true,skipHeld:false});h.event({type:'markerPresence',present:false});h.advance(900);assert.equal(h.immersion.visible,false);assert.equal(h.visibility.at(-1).reason,'marker');};
+test('recorded 07:17:09Z: a line hidden by a lost wait marker is back once the player returns, whatever the probes report meanwhile',()=>{
+ for(let seed=1;seed<=60;seed++){
+  const r=rng(seed*31337),h=host();markerHidden(h);const flips=h.visibility.length;
+  h.event({type:'readerContext',active:false});noise(h,r,Math.floor(r()*5));h.advance(1000+Math.floor(r()*15000));
+  assert.equal(h.immersion.visible,false,'nothing moves while away');assert.equal(h.visibility.length,flips);
+  h.event({type:'readerContext',active:true});settling(h,r);h.advance(200);
+  assert.equal(h.immersion.visible,true,`seed ${seed}: the current line is shown again after the return`);
+  assert.equal(h.visibility.length,flips+1,`seed ${seed}: exactly one change, the return: ${JSON.stringify(h.visibility.slice(flips))}`);
+  h.advance(20000);assert.equal(h.immersion.visible,true,`seed ${seed}: and stays`);
+ }
+});
+test('a return lifts nothing a fact or a stronger probe asked for: engine, scene, text window, skip held',()=>{
+ for(const hide of [h=>{h.event({type:'hookDialog',visible:false,engine:'cs2'});h.advance(900);},h=>h.event({type:'dialogScene',visible:false,reason:'changed 98%'}),h=>h.event({type:'dialogScene',visible:false,box:true,reason:'text window hidden'})]){
+  const h=host();START['a line on screen'](h);hide(h);assert.equal(h.immersion.visible,false);const flips=h.visibility.length;
+  h.event({type:'readerContext',active:false});h.advance(5000);h.event({type:'readerContext',active:true});h.advance(SETTLE+20000);
+  assert.equal(h.immersion.visible,false);assert.equal(h.visibility.length,flips);
+ }
+});
+test('the bridge looks at the order after every raise and has a way out when topmost is not taken',()=>{
+ const s=fs.readFileSync(path.join(__dirname,'..','native','GalWindowBridge.cs'),'utf8'),p=fs.readFileSync(path.join(__dirname,'..','native','ReaderLayerPolicy.cs'),'utf8');
+ assert.match(s,/string how=ReaderLayerPolicy\.Raise\(new LayerZ\(gameRoot,gameTop\),Layer\.Float\);/);
+ assert.match(s,/type="layerRaise",how=how,above=above,topmost=topmost/);
+ assert.doesNotMatch(s,/SetWindowPos\(Overlay,Layer\.Float\?new IntPtr\(-1\):IntPtr\.Zero,0,0,0,0,0x0001\|0x0002\|0x0010\);\s*Emit\(new\{type="coverDebug"/,'a raise that asks and never looks');
+ assert.match(p,/if\(!z\.BelowGame\(\)\)return z\.Topmost\(\)\?"topmost":"above-game";\s*z\.PlaceAboveGame\(\);/);
+ assert.match(p,/the old raise does not fail on the recorded case/);
+});
 test('a source nobody listed is an inference: a detector added later cannot hide under the menu',{skip:!FACT},()=>{
  const h=host();START['a line on screen'](h);
  assert.equal(FACT.has('some-new-detector'),false);

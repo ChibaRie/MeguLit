@@ -386,11 +386,26 @@ public class GalWindowBridge {
         // Another application in front (Alt+Tab): the layer stays directly above the game, below that application.
         if(!front){if(!below)return;IntPtr above=GetWindow(gameTop,3);if(above==Overlay)return;SetWindowPos(Overlay,above==IntPtr.Zero?IntPtr.Zero:above,0,0,0,0,0x0001|0x0002|0x0010);
             Emit(new{type="coverDebug",text="Alt+T 菜单打开、前台是其他程序：阅读层放回游戏正上方"});return;}
-        if(Layer.Float&&(GetWindowLong(Overlay,-20)&8)==0)below=true;
-        if(!below)return;
-        // Menu open: topmost, so neither clicking the game nor focusing another MeguLit window puts the menu under the game.
-        SetWindowPos(Overlay,Layer.Float?new IntPtr(-1):IntPtr.Zero,0,0,0,0,0x0001|0x0002|0x0010);
-        Emit(new{type="coverDebug",text=menu?"Alt+T 菜单打开：阅读层固定到游戏上方":"阅读层已移到前台游戏上方"});}
+        bool topmost=(GetWindowLong(Overlay,-20)&8)!=0;
+        if(!below&&(!Layer.Float||topmost)){if(LastRaise!="held"){LastRaise="held";Emit(new{type="layerRaise",how="held",above=true,topmost=topmost});}return;}
+        /* 2026-11-19 16:17 (user: 「一切屏回来就啥都没了」): back from another program the decision was right (float, shown) but the
+           topmost request did not take; the game, activated, lay above the layer and nothing checked. The raise now has a
+           result: asked, looked at, and when the layer is still under the game it is put directly above it in the normal
+           band (the same call that keeps it there while another program is in front), every pass until it holds. */
+        string how=ReaderLayerPolicy.Raise(new LayerZ(gameRoot,gameTop),Layer.Float);
+        bool above=!BelowGame(gameRoot,gameTop);topmost=(GetWindowLong(Overlay,-20)&8)!=0;
+        if(how!=LastRaise){LastRaise=how;Emit(new{type="layerRaise",how=how,above=above,topmost=topmost});}
+        if(below)Emit(new{type="coverDebug",text=menu?"Alt+T 菜单打开：阅读层固定到游戏上方":"阅读层已移到前台游戏上方"});}
+    static string LastRaise="";
+    static bool BelowGame(IntPtr gameRoot,IntPtr gameTop){int steps=0;for(IntPtr h=GetWindow(Overlay,3);h!=IntPtr.Zero&&steps<400;h=GetWindow(h,3),steps++)if(h==gameRoot||h==gameTop)return true;return false;}
+    sealed class LayerZ:ReaderLayerPolicy.ILayerZ{
+        readonly IntPtr Root,Top;public LayerZ(IntPtr root,IntPtr top){Root=root;Top=top;}
+        public bool BelowGame(){return GalWindowBridge.BelowGame(Root,Top);}
+        public bool Topmost(){return (GetWindowLong(Overlay,-20)&8)!=0;}
+        public void RequestTopmost(){SetWindowPos(Overlay,new IntPtr(-1),0,0,0,0,0x0001|0x0002|0x0010);}
+        public void PlaceAboveGame(){IntPtr above=GetWindow(Top,3);if(above==Overlay)return;SetWindowPos(Overlay,above==IntPtr.Zero?IntPtr.Zero:above,0,0,0,0,0x0001|0x0002|0x0010);}
+        public void PlaceTop(){SetWindowPos(Overlay,IntPtr.Zero,0,0,0,0,0x0001|0x0002|0x0010);}
+    }
     /* P0 2026-11-13 (user, ファタモルガーナの館 full screen: the game flashed and kept dropping to the desktop; Alt+T sent it
        to the desktop). A full-screen game (its window covers its whole monitor: KiriKiri fsmethod=cds, TOPMOST popup, E533)
        minimises itself as soon as it loses the foreground. MeguLit then must never take the foreground from it: the overlay
@@ -583,7 +598,7 @@ public class GalWindowBridge {
         if(!bound){s.Float=false;s.Pinned=false;}
         /* every change is logged (reader-host.log "layerState"): a report of the text vanishing is matched against it */
         string key=s.Front+"|"+s.Float+"|"+s.Context+"|"+s.Pinned+"|"+MenuOpen+"|"+IsShown+"|"+DialogVisible+"|"+CoverEnabled;
-        if(bound&&key!=LastLayerKey){LastLayerKey=key;Emit(new{type="layerState",front=s.Front,floating=s.Float,context=s.Context,pinned=s.Pinned,menu=MenuOpen,shown=IsShown,dialog=DialogVisible,cover=CoverEnabled,topmost=Overlay!=IntPtr.Zero&&(GetWindowLong(Overlay,-20)&8)!=0});}
+        if(bound&&key!=LastLayerKey){LastLayerKey=key;/* the place is checked in this pass, not up to 250 ms later */LastZCheck=DateTime.MinValue;Emit(new{type="layerState",front=s.Front,floating=s.Float,context=s.Context,pinned=s.Pinned,menu=MenuOpen,shown=IsShown,dialog=DialogVisible,cover=CoverEnabled,topmost=Overlay!=IntPtr.Zero&&(GetWindowLong(Overlay,-20)&8)!=0});}
         return s;}
     static void ReaderInputTick(bool foregroundGame){ReaderActivationPolicy();RefreshReaderPointer();
         bool mouse=(GetAsyncKeyState(0x01)&0x8000)!=0,space=(GetAsyncKeyState(0x20)&0x8000)!=0,enter=(GetAsyncKeyState(0x0d)&0x8000)!=0;
