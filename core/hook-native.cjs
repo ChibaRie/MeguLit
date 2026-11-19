@@ -181,13 +181,15 @@ class HookNative{
  /* Colour evidence for engines whose dialogue is hidden as blank glyphs or skipped GPU draws (nothing of the game's text is on
     screen): the colour of the draw itself. GDI / GDI+ / Direct2D report the DC text colour or brush per line (src text|gdip|d2d|run,
     matched by the line's seq); the GPU glyph trace reports texel tint x vertex colour (src gpu, the line being traced).
-    A source that only ever shows one colour may not be the final colour (engines that draw white and tint in a shader or on the
-    CPU afterwards): it becomes evidence once it has shown two different colours in this game session. Then every line's colour is
-    passed on as a lineStyleSample for that line's text, into the reader's one pixel slot. */
+    Pure white or black from a source that never showed anything else may not be the final colour (engines that draw white and tint
+    in a shader or on the CPU afterwards): such a value is evidence only once the source has shown two different colours in this
+    game session. Any other colour is the game's own choice and counts at once (live ISLAND: every line pale cyan, read or not
+    yet reached, and the reader stayed white). The colour is passed on as a lineStyleSample for the line's text, into the reader's
+    one pixel slot. */
  glyphColor(m){if(!Number.isSafeInteger(m.seq)||!/^#[0-9a-f]{6}$/i.test(m.color||'')||!(m.alpha>=0&&m.alpha<=255))return;const src=m.src==='gpu'?'gpu':'gdi',G=this.glyphColors||(this.glyphColors={gdi:{seen:new Set(),cur:null},gpu:{seen:new Set(),cur:null}}),S=G[src];
   const color=m.color.toLowerCase(),key=color+'/'+(m.alpha>>4);if(S.seen.size<32)S.seen.add(key);S.cur={seq:m.seq,color,alpha:m.alpha,origin:String(m.src||'').slice(0,8),sent:''};this.glyphColorFlush();}
  glyphColorFlush(){const G=this.glyphColors,d=this.state.hookGlyphDots;if(!G||!d||!d.text)return;
-  for(const src of ['gdi','gpu']){const S=G[src],c=S.cur;if(!c||S.seen.size<2||src==='gdi'&&c.seq!==d.seq)continue;const tag=d.seq+'|'+c.color+'|'+c.alpha;if(c.sent===tag)continue;c.sent=tag;
+  for(const src of ['gdi','gpu']){const S=G[src],c=S.cur;const plain=/^#(?:f[a-f]){3}$|^#(?:0[0-5]){3}$/.test(c?.color||'');if(!c||plain&&S.seen.size<2||src==='gdi'&&c.seq!==d.seq)continue;const tag=d.seq+'|'+c.color+'|'+c.alpha;if(c.sent===tag)continue;c.sent=tag;
    this.emit({type:'lineStyleSample',text:d.text,style:{fill:c.color,alpha:Math.round(c.alpha/255*1000)/1000},origin:'draw-'+c.origin});return;}}
  glyphDots(m){if(m?.state==='status'&&['paused','live','needs-relaunch','marks-off'].includes(m.status)){this.trace('glyph dots '+m.status);this.notify({hookGlyphDotsStatus:m.status});this.emit(m);return;}if(!m||!['line','dots','cached'].includes(m.state))return;const cur=this.state.hookGlyphDots;
   if(m.state==='cached'){if(cur)this.notify({hookGlyphDots:{...cur,cached:true}});this.emit(m);return;}

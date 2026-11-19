@@ -111,7 +111,10 @@
   if(Number.isSafeInteger(m.sourceToken)){colorDraw.sourceToken=m.sourceToken;colorDraw.claimed=matches;}
   if(colorDraw.claimed){const own=colorDraw.color||colorDraw.style?null:pixelFor(colorSource);paintLine(colorDraw.color||own?.color||'',colorSource,colorDraw.style||own?.style);}
  };
- b.textPosition=(m,refresh=false)=>{m=cs2Canvas(m);
+ b.textPosition=(m,refresh=false)=>{/* an engine that reports a screen line with its own colour and source token (CatSystem2 layout, page lines) is draw evidence for that
+     sentence in the single-line reader too: into the pixel slot, behind an ADV draw transaction */
+  if(m&&!refresh&&/_screen_v[12]$/.test(String(m.engine||''))&&Number.isSafeInteger(m.token)&&m.token>0&&typeof m.color==='string'&&/^#[0-9a-f]{6}$/i.test(m.color))pixelSeen({text:'',token:m.token,color:m.color,style:m.style&&typeof m.style==='object'?m.style:null});
+  m=cs2Canvas(m);
   if(!m||![m.x0,m.y0,m.x1,m.y1].every(unit)||m.x1<m.x0||m.y1<m.y0||!Number.isFinite(m.size)||m.size<=0||m.size>256)return;const firstSource=!last;last=m;lastAt=Date.now();
   if(!refresh)lineColor(m);
   if(cal){if(Number.isSafeInteger(m.token)&&m.token>=0)cal.lines.set(m.token,{...m});cal.engine=m.engine;cal.x0=Math.min(cal.x0,m.x0);cal.y0=Math.min(cal.y0,m.y0);cal.x1=Math.max(cal.x1,m.x1);cal.y1=Math.max(cal.y1,m.y1);cal.size=Math.max(cal.size,m.size||0);}

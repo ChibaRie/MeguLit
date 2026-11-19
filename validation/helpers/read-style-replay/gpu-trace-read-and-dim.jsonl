@@ -2,31 +2,31 @@
 {"t":"status","text":"静かな朝の光が部屋に差し込んでいた。（1）"}
 {"t":"gline","seq":100,"text":"静かな朝の光が部屋に差し込んでいた。（1）"}
 {"t":"gcolor","seq":100,"color":"#f7f77b","alpha":255,"src":"gpu"}
-{"t":"expect","color":null,"edge":null,"line":1,"note":"only one colour seen so far: not evidence yet, the saved style applies"}
+{"t":"expect","color":"#f7f77b","edge":null,"line":1,"note":"a colour that is not plain white or black is chosen by the game: evidence from the first sentence"}
 {"t":"status","text":"「おはよう、今日は早いんだね」（2）"}
 {"t":"gcolor","seq":101,"color":"#f7f77b","alpha":255,"src":"gpu"}
 {"t":"gline","seq":101,"text":"「おはよう、今日は早いんだね」（2）"}
-{"t":"expect","color":null,"edge":null,"line":2,"note":"only one colour seen so far: not evidence yet, the saved style applies"}
+{"t":"expect","color":"#f7f77b","edge":null,"line":2}
 {"t":"status","text":"彼女は窓の外を見つめたまま答えない。（3）"}
 {"t":"gline","seq":102,"text":"彼女は窓の外を見つめたまま答えない。（3）"}
 {"t":"gcolor","seq":102,"color":"#f7f77b","alpha":255,"src":"gpu"}
-{"t":"expect","color":null,"edge":null,"line":3,"note":"only one colour seen so far: not evidence yet, the saved style applies"}
+{"t":"expect","color":"#f7f77b","edge":null,"line":3}
 {"t":"status","text":"「……昨日のこと、覚えてる？」（4）"}
 {"t":"gcolor","seq":103,"color":"#f7f77b","alpha":255,"src":"gpu"}
 {"t":"gline","seq":103,"text":"「……昨日のこと、覚えてる？」（4）"}
-{"t":"expect","color":null,"edge":null,"line":4,"note":"only one colour seen so far: not evidence yet, the saved style applies"}
+{"t":"expect","color":"#f7f77b","edge":null,"line":4}
 {"t":"status","text":"俺は言葉に詰まって視線を落とした。（5）"}
 {"t":"gline","seq":104,"text":"俺は言葉に詰まって視線を落とした。（5）"}
 {"t":"gcolor","seq":104,"color":"#f7f77b","alpha":255,"src":"gpu"}
-{"t":"expect","color":null,"edge":null,"line":5,"note":"only one colour seen so far: not evidence yet, the saved style applies"}
+{"t":"expect","color":"#f7f77b","edge":null,"line":5}
 {"t":"status","text":"静かな朝の光が部屋に差し込んでいた。（6）"}
 {"t":"gcolor","seq":105,"color":"#f7f77b","alpha":255,"src":"gpu"}
 {"t":"gline","seq":105,"text":"静かな朝の光が部屋に差し込んでいた。（6）"}
-{"t":"expect","color":null,"edge":null,"line":6,"note":"only one colour seen so far: not evidence yet, the saved style applies"}
+{"t":"expect","color":"#f7f77b","edge":null,"line":6}
 {"t":"status","text":"「おはよう、今日は早いんだね」（7）"}
 {"t":"gline","seq":106,"text":"「おはよう、今日は早いんだね」（7）"}
 {"t":"gcolor","seq":106,"color":"#ffffff","alpha":255,"src":"gpu"}
-{"t":"expect","color":"#ffffff","edge":null,"line":7,"note":"first sentence in another colour: the switch shows on this very sentence"}
+{"t":"expect","color":"#ffffff","edge":null,"line":7,"note":"white counts now that the source has shown two colours: the switch shows on this very sentence"}
 {"t":"status","text":"彼女は窓の外を見つめたまま答えない。（8）"}
 {"t":"gcolor","seq":107,"color":"#ffffff","alpha":255,"src":"gpu"}
 {"t":"gline","seq":107,"text":"彼女は窓の外を見つめたまま答えない。（8）"}

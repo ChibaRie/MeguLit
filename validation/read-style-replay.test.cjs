@@ -122,3 +122,9 @@ test('draw-colour evidence of GPU-hidden lines is wired end to end: glyph trace,
  assert.ok(gpu.includes('Trace.Write(tex, k.x, k.y, k.w, k.h, k.whole, read, rgb, GetTickCount())')&&gpu.includes('g.col = x.col; g.hasCol = x.hasCol;'));
  /* the tint never searches the written image: a bounded number of texel reads under the glyph's own coverage */
  const tint=trace.slice(trace.indexOf('static uint32_t Tint'),trace.indexOf('template <class R> void Write'));assert.ok(tint.includes('n < 8')&&!/for \(int y/.test(tint));});
+test('a screen line reported with its own colour paints that sentence in the single-line reader (CatSystem2 layout)',t=>{const r=reader(t),tok=s=>r.window.TomeIslandSource.token(s);
+ const pos=(text,color)=>r.b.textPosition({type:'hookTextPos',engine:'cs2_screen_v2',line:1,token:tok(text),x0:230,y0:160,x1:800,y1:190,size:28,color});
+ r.play({t:'status',text:'既に読んだ台詞がここにあります。'});pos('既に読んだ台詞がここにあります。','#b0e2ff');assert.equal(r.paint().color,'#b0e2ff');
+ pos('次に出てくる未読の台詞です。','#ffffff');assert.equal(r.paint().color,'#b0e2ff',"the next line's colour waits for its sentence");
+ r.play({t:'status',text:'次に出てくる未読の台詞です。'});assert.equal(r.paint().color,'#ffffff');
+ r.play({t:'status',text:'色の報告が無い台詞です。'});assert.equal(r.paint().color,null);});
