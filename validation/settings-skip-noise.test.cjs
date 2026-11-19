@@ -25,18 +25,29 @@ function readerFixture(){let now=1e6;const b={galStatus(){}};const window={__tom
  for(const f of ['line-once','island-source','hook-reader'])vm.runInContext(fs.readFileSync(path.join(__dirname,'..','web','reader','modules',f+'.js'),'utf8'),ctx);
  let seq=0;return {b,wait(ms){now+=ms;},say(text){if(seq)b.hookPage({same:false});b.galStatus({hookActive:true,hookSource:text,hookSequence:++seq});},chars:()=>b.hookReaderStatus().chars};}
 const PREVIEW='テキスト速度のサンプルと、オート速度のサンプルです。';
-test('reader: preview text arriving while the dialogue box is hidden (settings page) is not taken, the same text in dialogue is',()=>{
+test('reader: preview text typed out while the dialogue box is gone (settings page) is not taken, the same text in dialogue is',()=>{
  const f=readerFixture();
  f.say('まだ大雑把な目的地しか伝えていなかったのを思い出した。');const before=f.chars();
- f.b.galStatus({dialogVisible:false,reason:'marker'});f.wait(1500);
- f.say(PREVIEW);f.say('サンテキスプト表ル示サンテプルキテキススト表ト示サン表プル示');
+ f.b.galStatus({dialogVisible:false,reason:'scene'});f.wait(1500);
+ for(const t of ['テキスト速度のサンプルと、','テキスト速度のサンプルと、オート速度の',PREVIEW,'サンテキスプト表ル示サンテプルキテキススト表ト示サン表プル示']){f.say(t);f.wait(60);}
  assert.equal(f.chars(),before,'the settings page text is not shown');assert.deepEqual([...f.b.hookPageLines()],[]);
- f.b.galStatus({dialogVisible:true});assert.equal(f.chars(),before,'nor drawn when the box comes back');
+ f.wait(500);f.b.galStatus({dialogVisible:true});assert.equal(f.chars(),before,'nor drawn when the box comes back');
  f.say('「あっ、はい。なんですか」');assert.equal(f.chars(),'「あっ、はい。なんですか」'.length);
  const g=readerFixture();g.say(PREVIEW);assert.equal(g.chars(),PREVIEW.length,'in the dialogue state the same text is a line');
 });
+test('reader: auto mode, a line left 8 s and hidden by a lost wait marker: the next line from the dialogue stream is shown',()=>{
+ const f=readerFixture();f.say('まだ大雑把な目的地しか伝えていなかったのを思い出した。');f.wait(8200);
+ f.b.galStatus({dialogVisible:false,reason:'marker'});f.wait(2000);
+ const next='「あー……すみません。アタシはここいらに詳しくないんですよ」';f.say(next);assert.equal(f.chars(),next.length);
+ const g=readerFixture();g.say('前の行です。');g.b.galStatus({dialogVisible:false,reason:'skip'});g.wait(2000);g.say('「え？　あ、そうでしたね」');assert.equal(g.chars(),'「え？　あ、そうでしたね」'.length);
+});
+test('reader: a CG scene hides the box; its next line arrives just before the box returns and is shown (#114)',()=>{
+ const f=readerFixture();f.say('前の行です。');f.b.galStatus({dialogVisible:false,reason:'scene'});f.wait(4000);
+ const next='「ですからね……奥まで行くのは勘弁してください」';f.say(next);assert.notEqual(f.chars(),next.length,'held while the box is still away');
+ f.wait(400);f.b.galStatus({dialogVisible:true});assert.equal(f.chars(),next.length,'shown as the box returns');
+});
 test('reader: a line arriving just as the box hides is still the line',()=>{
- const f=readerFixture();f.b.galStatus({dialogVisible:false,reason:'marker'});f.wait(100);
+ const f=readerFixture();f.b.galStatus({dialogVisible:false,reason:'scene'});f.wait(100);
  f.say('「え？　あ、そうでしたね」');assert.equal(f.chars(),'「え？　あ、そうでしたね」'.length);
 });
 
