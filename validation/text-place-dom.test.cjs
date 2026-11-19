@@ -133,7 +133,7 @@ const html = `<!doctype html><html><head><meta charset="utf-8"><style>
     await at(4, -3); await frame(); assert.deepStrictEqual((await firstTok()).slice(0, 2), [300, 400], 'a few px off: kept (no jitter)');
     await at(0, -200); await frame(); assert.deepStrictEqual((await firstTok()).slice(0, 2), [300, 200], 'another text box: follows');
     await page.evaluate(() => { document.querySelector('.tomoyo-cn-row').textContent = '在百货商店购物，在餐厅用餐，在公园悠闲地度过……'.repeat(3); }); await at(0, 220); await frame();
-    { const b = await page.evaluate(() => document.querySelector('.tomoyo-cn-row').getBoundingClientRect().bottom); assert.ok(b <= 720 - 40 * 1.3 + 2, 'anchored: the translation stays above the bar (' + Math.round(b) + ')'); }
+    { const b = await page.evaluate(() => document.querySelector('.tomoyo-cn-row').getBoundingClientRect().bottom); assert.ok(b <= 720 - 8 + 1, 'anchored: the translation stays on the screen (' + Math.round(b) + ')'); /* 2026-11-19 user: the screen, not the game bar, is the limit */ const fsz = await page.evaluate(() => parseFloat(getComputedStyle(document.querySelector('.tomoyo-cn-row')).fontSize)); assert.ok(fsz >= 24 * .6 - 1, 'never under 60 % (' + fsz + ')'); }
     await page.evaluate(() => { document.querySelector('.tomoyo-cn-row').textContent = '今天是晴天'; });
     await page.evaluate(() => { window.__tomoyoChinese.textPlaceAnchor(false); window.__tomoyoChinese.textPlace({ fallback: true, text: '今日は晴れ' }); }); await frame();
     /* name plate and a choice drawn on their boxes, click-through */
