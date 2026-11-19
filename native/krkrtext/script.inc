@@ -76,7 +76,7 @@ LR"MGLT((function(){
     var scr=this.screen(),sw=scr[0],sh=scr[1];
     if(!(sw>0) || !(sh>0) || L.height<sh*0.2) return;
     var size=+L.fontSize;
-    if(!(size>0)) size=Math.abs(+L.font.height);
+    if(!(size>0)) {size=+L.font.height;if(size<0) size=-size;} /* no Math here: in a function bound to the state dictionary a bare global name reads as void */
     if(!(size>0)) return;
     var cx,cy;
     if(lm) {
@@ -339,7 +339,7 @@ LR"MGLT((function(){
     if(this.trTry===void) this.trTry=0;if(++this.trTry>40) return;
     var T=this.trOwner.textLayer;if(typeof T!='Object' || T===void || T===null) return;
     /* a text layer that is not a child of its message layer is that layer's own buffer, laid at the message layer's origin */
-    var at=T.parent===this.trOwner?this.abs(T):this.trAbsL,cnt=%[],rep=%[],best='',bn=0,lit=0,lv=-1,lb=0,w=+T.imageWidth,hh=+T.imageHeight,amin=this.trTry>10?0x40:0xc0,need=this.trPts.count<=4?3:6;
+    var at=T.parent===this.trOwner?this.abs(T):this.trAbsL,cnt=%[],rep=%[],best='',bn=0,bestL='',bnL=0,lit=0,lv=-1,lb=0,w=+T.imageWidth,hh=+T.imageHeight,amin=this.trTry>10?0x40:0xc0,need=this.trPts.count<=4?3:6;
     for(var i=0;i<this.trPts.count;i++) {
      var p=this.trPts[i];
      for(var gy=1;gy<=6;gy++) for(var gx=1;gx<=6;gx++) {
@@ -353,12 +353,22 @@ LR"MGLT((function(){
          and near shades are one colour (5 bits a channel, reported as the first full value seen) */
       if(((px>>24)&255)<amin) continue;
       var k=''+(((rgb>>19)&31)<<10 | ((rgb>>11)&31)<<5 | ((rgb>>3)&31)),c=cnt[k];if(c===void) {c=0;rep[k]=rgb;}c++;cnt[k]=c;if(c>bn) {bn=c;best=''+rep[k];}
+      /* the most common colour that is not near black, kept apart: a dark outline can outnumber a thin fill */
+      if(((rgb>>16)&255)+((rgb>>8)&255)+(rgb&255)>=144 && c>bnL) {bnL=c;bestL=''+rep[k];}
      }
     }
     /* opaque glyph pixels already have their final colour: taken at the first tick (live 死に逝く君: 父親が死んだ。 was on screen for
        170 ms and got none); the brightest-pixel fallback still waits for the typewriter and any fade-in */
+    /* ToMe_KRKR colorlog: one diagnostic record a sentence, what the sampler saw (HookBridge writes it to the log). Its own
+       record: the status line is left alone (a status change stopped this path on live 千恋＊万花, see the report). */
+    if(this.trTry==20 && bn<need && lit<3) this.report('ToMe_KRKR colorlog line='+this.trRec[1]+' col=- try=20 opaque='+bn+'/'+need+' lit='+lit);
     if(bn<need && (lit<3 || this.trTry<3)) return; /* a few ticks in: the typewriter and any fade-in have drawn the first glyphs */
-    var h='',v=bn>=need?+best:lb;for(var i=0;i<6;i++) {h='0123456789abcdef'.charAt(v&15)+h;v=v>>4;}
+    var h='',v=bn>=need?+best:lb,dk=0;
+    /* the outline or shadow pass is drawn first and is near black; the reader drops a near-black colour as an outline, which
+       leaves the sentence with no colour at all. A brighter colour holding a third as many pixels is the text. */
+    if(bn>=need && bestL!='' && bnL*3>=bn) {var bd=+best;if(((bd>>16)&255)+((bd>>8)&255)+(bd&255)<144) {v=+bestL;dk=1;}}
+    for(var i=0;i<6;i++) {h='0123456789abcdef'.charAt(v&15)+h;v=v>>4;}
+    this.report('ToMe_KRKR colorlog line='+this.trRec[1]+' col='+h+' try='+this.trTry+' opaque='+bn+'/'+need+' lit='+lit+' bright='+bnL+' dark='+dk);
     this.trCol=h;var r=this.trRec;r[2]=this.trTailA+' color='+h+this.trTailB;this.trKey='';
     this.report('ToMe_CHARS engine=krkr line='+r[1]+' hidden='+r[0]+r[2]);
    } incontextof st;
