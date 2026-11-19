@@ -118,7 +118,10 @@ public static class GameStyleProbe{
  public static object Probe(Dictionary<string,object>d){
   long hwnd=(long)N(d,"hwnd",0),pid=(long)N(d,"pid",0);IntPtr target=new IntPtr(hwnd);uint actual;Rect client;
   if(!IsWindow(target)||GetWindowThreadProcessId(target,out actual)==0||actual!=pid||!GetClientRect(target,out client))throw new Exception("target changed");
-  uint foregroundPid;GetWindowThreadProcessId(GetForegroundWindow(),out foregroundPid);uint overlayPid=(uint)N(d,"overlayPid",0);if(IsIconic(target)||(GetAncestor(GetForegroundWindow(),2)!=GetAncestor(target,2)&&(overlayPid==0||foregroundPid!=overlayPid)))throw new Exception("game not foreground; measurement deferred");
+  uint foregroundPid;GetWindowThreadProcessId(GetForegroundWindow(),out foregroundPid);uint overlayPid=(uint)N(d,"overlayPid",0);
+  // Background test rigs (MEGULIT_NO_HOTKEYS=1: a second copy that never owns the foreground) measure a game kept behind other windows; the capture is the game window's own surface either way.
+  bool rig=Environment.GetEnvironmentVariable("MEGULIT_NO_HOTKEYS")=="1";
+  if(IsIconic(target)||(!rig&&GetAncestor(GetForegroundWindow(),2)!=GetAncestor(target,2)&&(overlayPid==0||foregroundPid!=overlayPid)))throw new Exception("game not foreground; measurement deferred");
   int width=client.R,height=client.B;if(width<100||height<100||width>16384||height>16384)throw new Exception("invalid client size");
   bool scanUi=d.ContainsKey("mode")&&Convert.ToString(d["mode"])=="screen-text";
   string source=scanUi?"":Convert.ToString(d["source"]);if(source.Length>4000)throw new Exception("source too long");
