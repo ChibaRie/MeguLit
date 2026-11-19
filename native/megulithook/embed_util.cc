@@ -1,4 +1,5 @@
 #include "MinHook.h"
+#include "MeguLitSafeUnhook.h"
 #include "MeguLitGdiHide.h"
 #include "MeguLitEmbedWait.h"
 static std::atomic<bool> patch_fun_ptrs_patch_once_flag = true;
@@ -80,19 +81,51 @@ bool _1f()
   return 0;
 }
 bool _1 = _1f();
+/* MeguLit 2026-11-19: every function replaced here, with its MinHook trampoline and its detour, so that removal can
+   go through the shared safe flow (native/shared/MeguLitSafeUnhook.h) instead of MH_RemoveHook freeing the trampoline
+   under a game thread that is still in the detour (the detour calls the trampoline) */
+static std::mutex replacedLock;
+static std::unordered_map<void *, std::pair<void *, void *>> replacedHooks; // target -> {trampoline, detour}
+static bool RemoveReplaced(void *target)
+{
+  void *original, *detour;
+  {
+    std::lock_guard _(replacedLock);
+    auto found = replacedHooks.find(target);
+    if (found == replacedHooks.end())
+      return true;
+    original = found->second.first;
+    detour = found->second.second;
+    replacedHooks.erase(found);
+  }
+  MeguLitUnhook::Span body = MeguLitUnhook::FunctionSpan(detour);
+  if (MeguLitUnhook::RemoveMinHook(target, original, &body, 1, nullptr, 0, 2000))
+    return true;
+  Msg::Log("MeguLit replaced function %p kept, not freed: a thread may still be in its detour", target);
+  return false;
+}
 bool ReplaceFunction(PVOID oldf, PVOID newf, PVOID *pOrigin)
 {
   PVOID oldx;
   if (!pOrigin)
     pOrigin = &oldx;
   RemoveHook((uintptr_t)oldf);
-  if (MH_OK == MH_CreateHook(oldf, newf, pOrigin))
-    return MH_OK == MH_EnableHook(oldf);
-  else
+  MeguLitUnhook::RetryKept(oldf);
+  MH_STATUS created = MH_CreateHook(oldf, newf, pOrigin);
+  if (MH_OK == created)
   {
-    MH_RemoveHook(oldf);
+    if (MH_OK == MH_EnableHook(oldf))
+    {
+      std::lock_guard _(replacedLock);
+      replacedHooks[oldf] = {*pOrigin, newf};
+      return true;
+    }
+    MH_RemoveHook(oldf); /* created just now and never enabled: no thread can be in it */
     return false;
   }
+  if (created == MH_ERROR_ALREADY_CREATED) /* as before, the hook already there is removed (now safely) and this call fails */
+    RemoveReplaced(oldf);
+  return false;
 }
 void attachFunction(uintptr_t _hook_font_flag)
 {
@@ -113,23 +146,26 @@ void attachFunction(uintptr_t _hook_font_flag)
     }
   }
 }
-void detachall()
+/* Removes every function replaced here through the safe flow. True when all trampolines were freed; a kept one stays
+   disabled. The attached flags are reset so that a later host (the hook DLL can stay loaded) attaches them again. */
+bool detachall()
 {
+  bool freed = true;
   for (auto _flag : replacedfuns)
   {
-    auto info = funcs.at(_flag);
-    if (MH_OK == MH_DisableHook((LPVOID)info.addr))
-      MH_RemoveHook((LPVOID)info.addr);
+    auto &info = funcs.at(_flag);
+    freed = RemoveReplaced((LPVOID)info.addr) && freed;
+    info.attached = false;
   }
+  replacedfuns.clear();
 
   if (!patch_fun_ptrs_patch_once_flag.load())
   {
     for (auto &&[ptr1, ptr2] : patch_fun_ptrs)
-    {
-      if (MH_OK == MH_DisableHook(ptr1))
-        MH_RemoveHook(ptr1);
-    }
+      freed = RemoveReplaced(ptr1) && freed;
+    patch_fun_ptrs_patch_once_flag = true;
   }
+  return freed;
 }
 void patch_fun_ptrs_patch_once()
 {
