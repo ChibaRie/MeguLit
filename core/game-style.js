@@ -92,6 +92,8 @@ if(typeof value.rubyRowOffsetsX==='string')result.rubyRowOffsetsX=value.rubyRowO
     if (typeof value.gameProcess === 'string') result.gameProcess = value.gameProcess.slice(0,100);
     /* 2026-11-19 the remembered game is its full program path (many engines share a program name: BGI.exe, cs2.exe, SiglusEngine.exe) */
     if (typeof value.gameExecutable === 'string') result.gameExecutable = value.gameExecutable.slice(0,1000);
+    /* 2026-11-19 the anchored line's offset from the game's own place (client %), kept apart from the box position x/y */
+    for (const k of ['anchorDX','anchorDY']) if (Number.isFinite(Number(value[k])) && value[k] !== '' && value[k] !== null) result[k] = Math.max(-95, Math.min(95, Math.round(Number(value[k]) * 10) / 10));
     return result;
   }
   /* E550 per-line colour (ファタモルガーナの館: narration grey #9d9d9d, speech white). lineKind: 'speech' for a line in

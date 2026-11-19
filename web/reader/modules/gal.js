@@ -831,6 +831,11 @@
     colorUndo.onclick=()=>{if(!previousColor)return;f('galTextColor').value=previousColor;f('galTextColor').dispatchEvent(new Event('input',{bubbles:true}));};
     f('galFurigana').checked = preferences.furigana; f('galJapaneseSize').value = preferences.japaneseSize;
     for (const [key, name] of Object.entries({ x: 'galX', y: 'galY', width: 'galWidth', height: 'galHeight' })) f(name).value = preferences[key];
+    /* 2026-11-19 (user: 「左右留白和边距现在都调整不了文本框位置了」): while the line is anchored on the game's own place the box
+       position fields are its offset from there (anchorDX/anchorDY, client %, default 0, may be negative); the box position
+       x/y of the reader's own box is kept apart and untouched */
+    const anchoredNow = () => document.body.classList.contains('megulit-anchored');
+    if (anchoredNow()) { f('galX').value = Number(preferences.anchorDX) || 0; f('galY').value = Number(preferences.anchorDY) || 0; f('galX').min = f('galY').min = '-95'; }
     const sliderOutputs = [];
     for(const input of group.querySelectorAll('input[type=number]')){
       const output=document.createElement('output');output.className='tomoyo-slider-value';output.htmlFor=input.name;
@@ -859,7 +864,7 @@
     dialogFields.maskState.textContent = bridge.maskMessage || '局部遮字会在绑定游戏并收到原文后启动';
     const current = () => appearance.clean({ ...preferences, readTextColor: f('galReadTextColor').value.toLowerCase() === f('galTextColor').value.toLowerCase() ? '' : f('galReadTextColor').value,
      furigana: f('galFurigana').checked, japaneseSize: Number(f('galJapaneseSize').value), sizeSource: Number(f('galJapaneseSize').value)!==preferences.japaneseSize||Number(f('galChineseSize')?.value??preferences.translationSize)!==preferences.translationSize?'user':preferences.sizeSource,
-      x: Number(f('galX').value), y: Number(f('galY').value), width: Number(f('galWidth').value), height: Number(f('galHeight').value),
+      ...(anchoredNow() ? { x: preferences.x, y: preferences.y, anchorDX: Number(f('galX').value) || 0, anchorDY: Number(f('galY').value) || 0 } : { x: Number(f('galX').value), y: Number(f('galY').value) }), width: Number(f('galWidth').value), height: Number(f('galHeight').value),
       ...Object.fromEntries(Object.entries(additional).map(([key,name]) => [key, typeof defaults[key] === 'boolean' ? f(name).checked : f(name).value])) });
     const save = event => { if(bridge.gameStyleCommitReady?.()===false){event?.preventDefault();event?.stopImmediatePropagation();return;}preferences = current();
      if(event?.type==='submit'&&dialog.dataset.menuTab==='calibrate'&&bridge.saveGameProfileFromMenu){event.preventDefault();event.stopImmediatePropagation();bridge.saveGameProfileFromMenu(preferences);
@@ -901,7 +906,7 @@
      y:e.clientY, gx:Number(f('galX').value), gy:Number(f('galY').value) }; try { e.target.setPointerCapture(e.pointerId); } catch {} };
     const dragMove = e => { if (!dragStart) return; e.preventDefault(); e.stopPropagation(); const dpr = Math.max(.5, Number(window.devicePixelRatio)||1), cw = layoutInfo?.clientWidth||window.innerWidth*dpr,
      ch = layoutInfo?.clientHeight||window.innerHeight*dpr;
-      f('galX').value = Math.round(Math.max(0, Math.min(95, dragStart.gx + (e.clientX-dragStart.x)*dpr*100/cw))*10)/10; f('galY').value = Math.round(Math.max(0,
+      const lo = anchoredNow() ? -95 : 0; f('galX').value = Math.round(Math.max(lo, Math.min(95, dragStart.gx + (e.clientX-dragStart.x)*dpr*100/cw))*10)/10; f('galY').value = Math.round(Math.max(lo,
        Math.min(95, dragStart.gy + (e.clientY-dragStart.y)*dpr*100/ch))*10)/10; if (!dragFrame) dragFrame = requestAnimationFrame(() => { dragFrame = 0; preview();
        }); };
     const dragUp = e => { if (!dragStart) return; e.stopPropagation(); dragStart = null; };

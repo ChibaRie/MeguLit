@@ -20,6 +20,7 @@
     'body.megulit-placed .tome-box-deco,body.megulit-placed .sentence-window:not(.megulit-place-window){display:none!important}',
     'body.megulit-placed .megulit-place-window .sentence-text{position:absolute!important;left:0!important;top:0!important;width:100vw!important;height:100vh!important;margin:0!important;padding:0!important;transform:none!important;overflow:visible!important}',
     'body.megulit-placed .megulit-place-window .tome-page-lines{display:none!important}',
+    'body .tomoyo-cn-row.megulit-cn-on-ui,body .tomoyo-cn-row.megulit-cn-on-ui *{text-shadow:0 0 2px #000,0 0 2px #000,1px 1px 2px #000,-1px -1px 2px #000,0 0 5px rgba(0,0,0,.85)!important}',
     'body.megulit-placed .megulit-place-window .megulit-ruby-base{position:absolute!important;display:block!important;margin:0!important;padding:0!important}',
     'body.megulit-placed .megulit-place-window .char-token{position:absolute!important;display:block!important;margin:0!important;padding:0!important;text-align:center!important;white-space:pre!important;letter-spacing:0!important;text-indent:0!important;pointer-events:auto}',
     'body.megulit-placed .megulit-place-window .char-token.megulit-unplaced{display:none!important}',
@@ -86,11 +87,24 @@
     document.body.classList.add('megulit-anchored'); win.classList.add('megulit-anchor-window');
     for (const p of ['left', 'top']) win.style.removeProperty(p);
     const tok = sentence.querySelector('.char-token'), wr = win.getBoundingClientRect(), tr = tok?.getBoundingClientRect();
-    if (tr && tr.width) { set(win, 'left', (wr.left + anchor[0] - tr.left) + 'px'); set(win, 'top', (wr.top + anchor[1] - tr.top) + 'px'); set(win, 'right', 'auto'); set(win, 'bottom', 'auto'); set(win, 'margin', '0'); }
-    /* the translation stays above the game's own bar (1.3 rows over the client bottom): smaller, never lower; the Japanese keeps its size */
+    /* 2026-11-19 (user: 「左右留白和边距现在都调整不了文本框位置了」): in anchored mode the box position fields are the line's offset
+       from the game's own place, saved with the game's profile (anchorDX/anchorDY, client %, 0 = on the game's first character);
+       the reader's own box position x/y stays as it was. A change re-pins at once (the root style observer below). */
+    const pr = b.galPreferences?.() || {}, info0 = b.galLayoutInfo?.(), dpr0 = devicePixelRatio || 1, cwc = info0?.clientWidth ? info0.clientWidth / dpr0 : innerWidth, chc = info0?.clientHeight ? info0.clientHeight / dpr0 : innerHeight;
+    const offX = (Number(pr.anchorDX) || 0) / 100 * cwc, offY = (Number(pr.anchorDY) || 0) / 100 * chc;
+    if (tr && tr.width) { set(win, 'left', (wr.left + anchor[0] + offX - tr.left) + 'px'); set(win, 'top', (wr.top + anchor[1] + offY - tr.top) + 'px'); set(win, 'right', 'auto'); set(win, 'bottom', 'auto'); set(win, 'margin', '0'); }
+    /* 2026-11-19 (user, windowed 千恋＊万花: 「不要再挤压我的汉字了 我窗口化呢 只要显示器上还有位置就不要这样」): the translation keeps the
+       user's size and goes on below the game window as long as the monitor's work area has room (the overlay spans the desktop);
+       only a sentence that does not fit above the work-area bottom is made smaller, once and never under 60 %, and if it still
+       does not fit the block moves up just enough, for that sentence. Over the game's own bottom bar the translation gets a
+       stronger outline (no plate) so it stays readable. */
     const row = win.querySelector('.tomoyo-cn-row'), parts = row ? [...row.querySelectorAll('*')] : [];
-    for (const o of parts) o.style.removeProperty('font-size');
-    if (row && Number.isFinite(anchorLimit)) { const fs0 = parseFloat(getComputedStyle(parts[0] || row).fontSize) || 16; for (let k = 0, fs = fs0; k < 6 && row.getBoundingClientRect().bottom > anchorLimit && fs > 10; k++) { const rb = row.getBoundingClientRect(); fs = Math.max(10, Math.floor(fs * Math.max(.6, (anchorLimit - rb.top) / Math.max(1, rb.height)))); for (const o of parts.length ? parts : [row]) set(o, 'font-size', fs + 'px'); } }
+    for (const o of row ? [row, ...parts] : []) o.style.removeProperty('font-size');
+    if (row) { const info = b.galLayoutInfo?.(), dpr = devicePixelRatio || 1, limit = (Number.isFinite(info?.workBottom) && info.workBottom > 0 ? info.workBottom / dpr : innerHeight) - 8;
+      const fs0 = parseFloat(getComputedStyle(parts[0] || row).fontSize) || 16; let rb = row.getBoundingClientRect();
+      if (rb.bottom > limit) { const fs = Math.max(Math.ceil(fs0 * .6), Math.floor(fs0 * Math.max(.6, (limit - rb.top) / Math.max(1, rb.height)))); for (const o of parts.length ? parts : [row]) set(o, 'font-size', fs + 'px'); rb = row.getBoundingClientRect(); }
+      if (rb.bottom > limit) { const up = Math.min(rb.bottom - limit, Math.max(0, win.getBoundingClientRect().top)); set(win, 'top', (parseFloat(win.style.top) || win.getBoundingClientRect().top) - up + 'px'); rb = row.getBoundingClientRect(); }
+      row.classList.toggle('megulit-cn-on-ui', Number.isFinite(anchorLimit) && rb.bottom > anchorLimit); }
   }
   function release(fallback = false) {
     if (!page) document.body.classList.remove('megulit-placed');
@@ -444,5 +458,5 @@
   const markAll = root => { for (const t of (root.querySelectorAll ? root.querySelectorAll('.sentence-text .char-token:not(.megulit-dash)') : [])) markDash(t); };
   new MutationObserver(records => { for (const r of records) for (const n of r.addedNodes) if (n.nodeType === 1) { if (n.matches?.('.char-token') && n.closest('.sentence-text')) markDash(n); else markAll(n); } }).observe(document.documentElement, { subtree: true, childList: true });
   markAll(document);
-  addEventListener('resize', schedule);
+  addEventListener('resize', schedule); if (window.MutationObserver) new MutationObserver(() => { if (anchorMode && anchor) schedule(); }).observe(document.documentElement, { attributes: true, attributeFilter: ['style'] });
 })();
