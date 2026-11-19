@@ -21,7 +21,9 @@ class SentencePieces{
    if(b.startsWith(a))out=p; /* the engine sent the grown sentence itself */
    else if(a.endsWith(b))out=L.text; /* the last piece again (a redraw): nothing new */
    else if(L.text.length+p.length<=this.max)out=L.text+p;}
-  this.last={stream,text:out,at:now,speaker:out!==p&&L?L.speaker||who:who};return out;}
+  const grew=out!==p&&!!L;this.last={stream,text:out,at:now,speaker:grew?L.speaker||who:who,pieces:grew?(out===L.text?L.pieces:[...L.pieces,p]):[p]};return out;}
+ /* The pieces the current grown line was made of (for a translation pieced together when the whole line has none), or null. */
+ piecesOf(text){const L=this.last;return L&&L.pieces.length>1&&flat(L.text)===flat(text)?L.pieces.slice():null;}
  reset(){this.last=null;}
 }
 module.exports={SentencePieces,unfinished,continues};
