@@ -1,4 +1,5 @@
 #include "BGI.h"
+#include "MeguLitBgiSprite.h"
 /********************************************************************************************
 BGI hook:
   Usually game folder contains BGI.*. After first run BGI.gdb appears.
@@ -1089,6 +1090,7 @@ namespace
     }
     return true;
   }
+  ULONG MeguLitBgiMessageFunction = 0;
   bool InsertBGI2Hook()
   {
 
@@ -1186,6 +1188,7 @@ namespace
 
     // GROWL_DWORD2(hp.address, processStartAddress);
 
+    MeguLitBgiMessageFunction = addr; /* MeguLit: the sprite text scan leaves this function to EmbedBGI */
     return NewHook(hp, "EmbedBGI");
   }
 
@@ -1355,11 +1358,55 @@ namespace
     return NewHook(hp, "BGI5");
   }
 }
+namespace
+{
+  /* MeguLit 2026-11-19 (素晴らしき日々: the black-screen quotes at a chapter start reached no stream): BGI's sprite text,
+     drawn by a string walker of its own and never by the message function, as a read-only stream "BGISpriteText". The
+     walker is found by its shape (MeguLitBgiSprite.h), never by address. The bridge passes a *SpriteText stream to the
+     reader as full-screen text (located on screen, not a choice, never selected as the dialogue stream by itself). */
+  void BGISpriteFilter(TextBuffer *buffer, HookParam *)
+  {
+    std::string result = buffer->strA();
+    result = re::sub(result, "<r.+?>(.+?)</r>", "$1", std::regex_constants::icase);
+    std::string kept;
+    for (char c : result)
+      if ((unsigned char)c >= 0x20)
+        kept += c;
+    buffer->from(kept);
+  }
+  void InsertBGISpriteHook()
+  {
+    auto call = findiatcallormov((DWORD)GetGlyphOutlineA, processStartAddress, processStartAddress, processStopAddress);
+    if (!call)
+      call = findiatcallormov((DWORD)GetGlyphOutlineA, processStartAddress, processStartAddress, processStopAddress, false, XX);
+    if (!call)
+      return;
+    MeguLitBgiSprite::Image img{(const BYTE *)processStartAddress, (uintptr_t)processStartAddress, (size_t)(processStopAddress - processStartAddress)};
+    uintptr_t glyph = MeguLitBgiSprite::Enclosing(img, call);
+    if (!glyph)
+      return;
+    std::set<uintptr_t> skip;
+    if (MeguLitBgiMessageFunction)
+      skip.insert(MeguLitBgiMessageFunction);
+    for (auto &w : MeguLitBgiSprite::Find(img, glyph, skip))
+    {
+      HookParam hp;
+      hp.address = w.function;
+      hp.offset = stackoffset(w.arg);
+      hp.type = USING_STRING;
+      hp.filter_fun = BGISpriteFilter;
+      NewHook(hp, "BGISpriteText");
+    }
+  }
+}
 bool BGI::attach_function()
 {
   if (InsertBGI4Hook())
-    return true;
-  return InsertBGI2Hook() || (PcHooks::hookOtherPcFunctions(), InsertBGI1Hook()) || veryold();
+    return InsertBGISpriteHook(), true;
+  bool ok = InsertBGI2Hook() || (PcHooks::hookOtherPcFunctions(), InsertBGI1Hook()) || veryold();
+  if (ok)
+    InsertBGISpriteHook();
+  return ok;
 }
 
 uintptr_t queryrelativeret(HookParam &hp, uintptr_t retaddr);
