@@ -152,6 +152,8 @@ function luaLang(block){/* {{ "text", {"ruby", text="よみ"}, "base", {"/ruby"}
  while(i<block.length){const c=block[i];
   if(c==='"'){let j=i+1,s='';while(j<block.length&&block[j]!=='"'){if(block[j]==='\\'){s+=block[j+1];j+=2;continue;}s+=block[j++];}
    if(depth===2){page+=s;if(pending){ruby.push([s,pending]);pending=null;}}i=j+1;continue;}
+  /* name = {"name", name="…"}: the speaker tag some patch builds put in each language table, not a page */
+  if(c==='{'&&depth===1&&/\bname\s*=\s*$/.test(block.slice(Math.max(0,i-16),i))){const end=luaBlock(block,i);if(end<0)break;i=end+1;continue;}
   if(c==='{'){if(depth===2){const end=luaBlock(block,i);if(end<0)break;const tag=block.slice(i,end+1),r=/^\{\s*"ruby"\s*,\s*text\s*=\s*"((?:[^"\\]|\\.)*)"/.exec(tag);if(r)pending=r[1];i=end+1;continue;}depth++;if(depth===2)page='';}
   else if(c==='}'){if(depth===2&&page)pages.push(page);depth--;}
   i++;}
@@ -160,8 +162,14 @@ const AST_PLACEHOLDER=/^\s*(?:\*[^*\r\n]+\*\s*)+$/;
 function parseAstMulti(text){const rows=[],anchors=[],re=/\btext\s*=\s*\{/g;let m,last=0,matched=false;
  while((m=re.exec(text))){const open=text.indexOf('{',m.index),end=luaBlock(text,open);if(end<0)break;
   for(const a of text.slice(last,m.index).matchAll(/"((?:[^"\\]|\\.)*)"/g))if(ascii(a[1]))anchors.push(a[1]);
-  const block=text.slice(open,end+1),langs={};for(const k of block.matchAll(/\b(ja|cn|tw|en)\s*=\s*\{/g)){const o=k.index+k[0].length-1,e=luaBlock(block,o);if(e>0&&!(k[1] in langs))langs[k[1]]=luaLang(block.slice(o,e+1));}
-  if(langs.ja){matched=true;rows.push(langs);}
+  /* Most builds give each message its own text = { ja = …, cn = … }. A Chinese patch build of 美少女万華鏡 keeps one table
+     for the whole file instead, text = { [1] = { ja = …, cn = … }, [2] = … }: each [n] is one message. */
+  const whole=text.slice(open,end+1),messages=[];
+  if(/^\{\s*\[\d+\]\s*=\s*\{/.test(whole)){const item=/\s*,?\s*\[\d+\]\s*=\s*\{/y;let i=1;
+   while(i<whole.length){item.lastIndex=i;const it=item.exec(whole);if(!it)break;const o=it.index+it[0].length-1,e=luaBlock(whole,o);if(e<0)break;messages.push(whole.slice(o,e+1));i=e+1;}}
+  else messages.push(whole);
+  for(const block of messages){const langs={};for(const k of block.matchAll(/\b(ja|cn|tw|en)\s*=\s*\{/g)){const o=k.index+k[0].length-1,e=luaBlock(block,o);if(e>0&&!(k[1] in langs))langs[k[1]]=luaLang(block.slice(o,e+1));}
+   if(langs.ja){matched=true;rows.push(langs);}}
   last=end+1;re.lastIndex=end+1;}
  if(!matched)return null;
  const jaNonEmpty=rows.map(r=>r.ja.text).filter(Boolean);
