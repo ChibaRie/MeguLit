@@ -256,14 +256,22 @@ public class GalWindowBridge {
     static IntPtr PreferredOverlay=IntPtr.Zero;
     static int HostedFrameUpdates;
     public static int HostedStyle(int style){return (style&~0x00c40000)|unchecked((int)0x80000000);}
+    /* no edge of any kind, a tool window: the same value as chromeless_ex_style in desktop/src/window_chrome.rs */
+    public static int HostedExStyle(int ex){return (ex&~(0x00000001|0x00000100|0x00000200|0x00020000|0x00040000))|0x00000080;}
     static void PrepareHostedFrame(){
         // A dedicated transparent HWND is always a popup. Expanding its hit region
         // during menu drag must never reveal the saved ordinary-window caption.
-        int style=GetWindowLong(Overlay,-16),wanted=HostedStyle(style),ex=GetWindowLong(Overlay,-20),wantedEx=(ex&~0x00040000)|0x00000080;
-        if(style==wanted&&ex==wantedEx)return;
-        SetWindowLong(Overlay,-16,wanted);SetWindowLong(Overlay,-20,wantedEx);
+        /* 2026-11-19: the window's own process now keeps these bits off for good (desktop/src/window_chrome.rs, WM_STYLECHANGING).
+           This stays as the check from outside: an older MeguLit.exe, or a frame that shows up anyway, is put right and
+           logged with the size of the non-client area (reader-host.log "hostFrame"), 200 times at most. */
+        int style=GetWindowLong(Overlay,-16),wanted=HostedStyle(style),ex=GetWindowLong(Overlay,-20),wantedEx=HostedExStyle(ex);
+        Rect wr,cr;Point co=new Point();int ncLeft=0,ncTop=0,ncRight=0,ncBottom=0;
+        if(GetWindowRect(Overlay,out wr)&&GetClientRect(Overlay,out cr)&&ClientToScreen(Overlay,ref co)&&!IsIconic(Overlay)){ncLeft=co.X-wr.Left;ncTop=co.Y-wr.Top;ncRight=wr.Right-(co.X+cr.Right);ncBottom=wr.Bottom-(co.Y+cr.Bottom);}
+        bool framed=ncLeft!=0||ncTop!=0||ncRight!=0||ncBottom!=0;
+        if(style==wanted&&ex==wantedEx&&!framed)return;
+        if(style!=wanted)SetWindowLong(Overlay,-16,wanted);if(ex!=wantedEx)SetWindowLong(Overlay,-20,wantedEx);
         SetWindowPos(Overlay,IntPtr.Zero,0,0,0,0,0x0001|0x0002|0x0004|0x0010|0x0020);
-        if(++HostedFrameUpdates<=12)Emit(new{type="hostFrame",update=HostedFrameUpdates,styleBefore=style,styleAfter=GetWindowLong(Overlay,-16),exStyleBefore=ex,exStyleAfter=GetWindowLong(Overlay,-20)});
+        if(++HostedFrameUpdates<=200)Emit(new{type="hostFrame",update=HostedFrameUpdates,styleBefore=style,styleAfter=GetWindowLong(Overlay,-16),exStyleBefore=ex,exStyleAfter=GetWindowLong(Overlay,-20),nonClient=ncLeft+","+ncTop+","+ncRight+","+ncBottom});
     }
     static void FindOverlay(){
         // Self-test modes run without an overlay process (OverlayPid 0): never adopt, move or raise someone else's window.
