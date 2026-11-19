@@ -153,6 +153,32 @@ test('an engine-side hidden confirmation keeps the line in the game: the glyph c
  assert.ok(hb.includes('if(want)Interlocked.Increment(ref EngineHideOn);else Interlocked.Decrement(ref EngineHideOn);')&&hb.includes('if(!EngineAllSelfTest())'));});
 test('pass-through by engine confirmation can be taken back: unconfirmed lines return to write-back hidden, menus are not on this path',()=>{const hb=read('native/HookBridge.cs'),s=read('native/krkrtext/script.inc');
  assert.ok(hb.includes('if(++EngineUnconfirmed>=2){EngineHideProven=false;EngineTrialFailed=true;'),'two unconfirmed lines in a row end it for the run');
- assert.ok(hb.includes('if(Volatile.Read(ref EngineHideOn)>0&&!(text==EnginePassText||TypewriterStep(EnginePassText,text))){'),'counted only while the engine hide is on, a redraw is not a new line');
+ assert.ok(hb.includes('if(Volatile.Read(ref EngineHideOn)>0&&!SkipHeld&&!EngineSameClick(text,now)){'),'counted only while the engine hide is on and the skip key is up; the texts of one click, their repeats and typewriter steps are one line');
  /* the dialogue-only ownership gate of the engine hide is untouched (4e2bd3f8 / E980): a renderer bound to no layer is the dialogue's only while KAG writes to that message layer */
  assert.ok(s.includes("return typeof inst.textLayer=='undefined' && L===this.kag.current;"));});
+/* 2026-11-19 (user: calibrating 千恋＊万花 in hide mode, the screenshots had no game text in the dialogue box; log 05:56:10-05:56:20Z: write-back off,
+   engine hide event reset, three sentences rendered by TextRender with lit glyphs, and still nothing on screen). The KiriKiri text layer
+   functions are run as they are written in native/krkrtext/script.inc (TJS2 read as JavaScript: void -> undefined, isvalid -> true). */
+const trScript=()=>{const s=read('native/krkrtext/script.inc'),a=s.indexOf('st.trRestore=function(){'),b=s.indexOf('st.trDone=function(inst){');assert.ok(a>0&&b>a);
+ const js=s.slice(a,b).replace(/ incontextof st;/g,';').replace(/isvalid this\.trT/g,'true').replace(/\bvoid\b/g,'undefined');
+ return ()=>{const T={opacity:255},L={textLayer:T},sent=[],st={trOwner:L,trRec:[0,100001,' sw=1280 sh=720 text=あ'],trKey:'',on:false,trLayer:()=>L,hideOn(){return this.on;},report:l=>sent.push(l)};new Function('st',js)(st);return{T,L,st,sent,tick:()=>st.trHide()};};};
+test('preflight with the engine hide: the text layer is visible again whatever the game did to it while it was hidden',()=>{const rig=trScript();
+ {const r=rig();r.st.on=true;r.tick();assert.equal(r.T.opacity,0);r.tick();r.st.on=false;r.tick();assert.equal(r.T.opacity,255,'plain case');assert.deepEqual(r.sent.map(l=>/hidden=(\d)/.exec(l)[1]),['1','0'],'the record follows the state');}
+ /* a scene change: the game takes its text window away (opacity 0), MeguLit starts hiding in that moment, the game brings the window back */
+ {const r=rig();r.T.opacity=0;r.st.on=true;r.tick();r.T.opacity=255;r.tick();assert.equal(r.T.opacity,0,'still hidden while MeguLit asks');r.tick();
+  r.st.on=false;r.tick();assert.equal(r.T.opacity,255,'the original is on screen for the calibration, not left at the 0 that was there when hiding began');}
+ /* the game fades its text in while it is hidden */
+ {const r=rig();r.T.opacity=0;r.st.on=true;r.tick();for(const v of [64,128,192,255]){r.T.opacity=v;r.tick();assert.equal(r.T.opacity,0);}r.st.on=false;r.tick();assert.equal(r.T.opacity,255);}
+ /* a game that keeps its text half transparent gets that value back, and hiding again after the preflight works the same */
+ {const r=rig();r.T.opacity=200;for(let i=0;i<3;i++){r.st.on=true;r.tick();assert.equal(r.T.opacity,0);r.st.on=false;r.tick();assert.equal(r.T.opacity,200);}}
+ /* a text window the game itself keeps away stays away: MeguLit does not show what the game hid */
+ {const r=rig();r.T.opacity=0;r.st.on=true;r.tick();r.tick();r.st.on=false;r.tick();assert.equal(r.T.opacity,0);}});
+test('every layer that hides the game text gives way in one place, and the pass-through counts clicks',()=>{const hb=read('native/HookBridge.cs');
+ const down=hb.slice(hb.indexOf('static string LayersGiveWay(string reason){'),hb.indexOf('public static bool GiveWaySelfTest(){'));
+ for(const part of ['ReplacementEnabled=false;','h.Reset();','EnginePassConfirmed=true;','GlyphOff();','Diagnostic("hide layers give way ("+reason+"): "+state);'])assert.ok(down.includes(part),part);
+ assert.ok(hb.slice(hb.indexOf('static void GlyphOff(){')).startsWith('static void GlyphOff(){GpuDisarm();'),'the font layer and the GPU layer go down together');
+ const de=hb.slice(hb.indexOf('static void Deactivate(string reason){'));assert.ok(de.slice(0,de.indexOf('\n')).includes('LayersGiveWay(reason);'),'the preflight (disable) ends there');
+ assert.ok(hb.includes('if(!GiveWaySelfTest()){')&&hb.includes('if(LayersGiveWay("self-test")!="write-back=off engine=off glyph=off gpu=off"||ReplacementEnabled||ev.WaitOne(0))return false;'));
+ /* live log: proven 05:55:15.50, taken back 05:55:16.35 by the scene label and the name of the same click */
+ assert.ok(hb.includes('if(!EngineAllOk("■自動車（車内／走行）")||!EngineAllOk("【運転手】")||!EngineAllOk("【運転手】")||!EngineAllOk("台詞"+i+"。"))return false;EngineHideProof("self-test");'));
+ assert.ok(hb.includes('if((now-EngineBatchAt).TotalMilliseconds<EngineBatchMs){'));});
