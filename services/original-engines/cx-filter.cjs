@@ -113,7 +113,10 @@ function controlBlockIn(file){let b;try{b=fs.readFileSync(file);}catch{return nu
  while(at>=0){if(at%4===0&&at+0x1000<=b.length){const cb=new Uint32Array(0x400);for(let i=0;i<0x400;i++)cb[i]=(~b.readUInt32LE(at+i*4))>>>0;return cb;}at=b.indexOf(SIG,at+1);}return null;}
 // Does a decrypted head look like a file KiriKiri keeps (script text with BOM, TJS2 bytecode, PSB, image, sound,
 // movie)? Only multi-byte magics: a one-byte guess (* ; @) matches random bytes of a wrong scheme.
-const HEAD=/^(?:\xff\xfe|\xef\xbb\xbf|TJS2|PSB\x00|mdf\x00|TLG[05]|\x89PNG|OggS|RIFF|AMV\d)/;
+// 2026-11-19 (千恋＊万花 data.xp3: its first encrypted entries are KiriKiri simple-crypt scripts \xfe\xfe<mode>\xff,
+// pre-rendered fonts "TVP pre-rendered font" and OpenType / TrueType fonts; none matched, so the archive got no filter
+// and its fonts could not be read): those heads count too.
+const HEAD=/^(?:\xff\xfe|\xef\xbb\xbf|TJS2|PSB\x00|mdf\x00|TLG[05]|\x89PNG|OggS|RIFF|AMV\d|\xfe\xfe[\x00-\x02]\xff|TVP |OTTO|\x00\x01\x00\x00|ttcf)/;
 const looks=b=>HEAD.test(b.toString('latin1',0,4))||(b.length>=4&&(b[1]^b[3])===0x53&&(b[2]^b[3])===0x42);
 const rotl32=(x,n)=>((x<<n)|(x>>>(32-n)))>>>0;
 function hxChacha(key1Hex,key2Hex,data){
