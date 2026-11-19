@@ -90,3 +90,21 @@ test('one pixel slot: glyph colours and window samples share it, an early one wa
  r.play({t:'status',text:'次に出てくる未読の台詞です。'});assert.equal(r.paint().color,'#ffffff','and are there when its source arrives');
  r.play({t:'sample',text:'既に読んだ台詞がここにあります。',style:{fill:'#f7f77b',alpha:1}});assert.equal(r.paint().color,'#ffffff','a late window sample for the earlier sentence is ignored');
  r.play({t:'status',text:'三つ目の台詞には何も届きません。'});assert.equal(r.paint().color,null,'nothing carried over to a sentence with no evidence');});
+/* Evidence while MeguLit hides the dialogue: nothing of the game's text is on screen then, so the colour must come from where
+   hiding cannot reach it. */
+test('hidden dialogue still has colour evidence: draw arguments, the text layer buffer, the pre-hide computed style',()=>{
+ const TP=require('../core/text-paths.cjs'),krkr=read('native/krkrtext/script.inc'),web=read('core/text-paths-web.cjs');
+ const line=TP.formatChars({engine:'web',line:3,hidden:true,sw:1280,sh:720,viewport:[0,0,1280,720],rects:[[1,2,3,4]],text:'既読',color:'f7f77b'}),m=TP.parseChars?TP.parseChars(line):null;
+ assert.ok(line.includes(' color=f7f77b text='),'the record carries the colour while hidden=1');if(m)assert.equal(m.color,'#f7f77b');
+ assert.equal(TP.formatChars({engine:'web',line:3,hidden:true,sw:1,sh:1,rects:[],text:'x',color:'red'}).includes('color='),false,'only a real colour is written');
+ /* KiriKiri KAG: the arguments are copied before the opacity is forced to 0 */
+ const copy=krkr.indexOf('d.assign(args);st.drawArgs=d;'),force=krkr.indexOf('a[4]=0;a[6]=0;st.hid++;');assert.ok(copy>0&&force>copy,'draw arguments are kept before hiding changes them');
+ /* KiriKiri TextRender: hiding is the layer\'s opacity, the sampled pixels are the layer\'s own buffer */
+ assert.ok(krkr.includes('T.opacity=0')&&krkr.includes('T.getMainPixel(x,y)'));
+ /* web: the hide rule is lifted for one synchronous read and put back */
+ const g=web.slice(web.indexOf('function gameColor'));assert.ok(g.indexOf("removeAttribute('data-megulit-hide')")<g.indexOf('getComputedStyle')&&g.indexOf('getComputedStyle')<g.indexOf("setAttribute('data-megulit-hide','')"));});
+test('opacity rule: animated opacity is never painted, settled opacity is, the paint field says which',()=>{
+ assert.equal(HookNative.paint('f:ffffff32,a:1').animated,true);assert.equal(HookNative.paint('f:ffffff80').animated,undefined);
+ const ctx={};vm.createContext(ctx);vm.runInContext(read('web/reader/modules/game-style.js'),ctx);const gs=ctx.TomoyoGameStyle,p={autoGameStyle:true,textColor:'#fffaf2'};
+ assert.equal(gs.linePaint(p,'',"",{fill:'#ffffff',alpha:.2,animated:true}).color,'#ffffff');assert.equal(gs.linePaint(p,'','',{fill:'#ffffff',alpha:.5}).color,'#ffffff80');
+ const s=read('native/krkrtext/script.inc');assert.ok(s.includes("return op<255?s+',a:1':s;")&&s.includes('this.drawLo==this.drawOp')&&s.includes('r.lo==r.op'),'the engine side settles a sub-opaque opacity only when every draw had it and nothing moved for three ticks');});

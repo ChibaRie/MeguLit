@@ -103,7 +103,10 @@
   if(typeof m.color==='string'&&/^#[0-9a-f]{6}$/i.test(m.color))colorDraw.color=m.color;
   if(m.style&&typeof m.style==='object'&&/^#[0-9a-f]{6}$/i.test(m.style.fill||'')){
    /* A game that fades characters in starts each one faint: the opacity at the first character is not the sentence's (live ファタモルガーナの館: begin 20 %, end opaque). Until the end says so it counts only when the last finished sentence was dimmed the same. */
-   const a=Number(m.style.alpha);if(m.phase==='end')endAlpha=Number.isFinite(a)?a:1;colorDraw.style=m.phase!=='end'&&a<.98&&!(Math.abs(a-endAlpha)<.03)?{...m.style,alpha:1}:m.style;} /* the engine side sends the end again when the opacity rises after it */
+   /* Rule (engine side decides, native/krkrtext/script.inc st.fade): an opacity below 1 marked animated is not the sentence's yet and
+      is painted opaque; unmarked it is the game's dimming and applies at once, at a begin as well. One exception keeps a dimmed run
+      steady: an animated opacity equal to the last settled one is taken as the same dimming. */
+   const a=Number(m.style.alpha),dim=a<.98,settled=m.style.animated!==true;if(settled)endAlpha=Number.isFinite(a)?a:1;colorDraw.style=dim&&!settled&&!(Math.abs(a-endAlpha)<.03)?{...m.style,alpha:1}:{...m.style,animated:false};} /* the engine side sends the end again when the opacity rises after it */
   if(Number.isSafeInteger(m.sourceToken)){colorDraw.sourceToken=m.sourceToken;colorDraw.claimed=matches;}
   if(colorDraw.claimed){const own=colorDraw.color||colorDraw.style?null:pixelFor(colorSource);paintLine(colorDraw.color||own?.color||'',colorSource,colorDraw.style||own?.style);}
  };

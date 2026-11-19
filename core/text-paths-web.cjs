@@ -61,15 +61,22 @@ const PAGE_SCRIPT=String.raw`(function(){
     if(!/[\s　​﻿]/.test(ch)){var r=document.createRange();r.setStart(n,i);r.setEnd(n,i+len);var b=r.getClientRects();
      if(b.length&&b[0].width>0&&b[0].height>0){var q=b[0];if(prevTop!==null&&Math.abs(q.top-prevTop)>q.height/2)text+='\n';prevTop=q.top;text+=ch;rects.push([q.left*dpr,q.top*dpr,q.width*dpr,q.height*dpr]);}}
     i+=len;}}
-  return {rects:rects,text:text,hidden:hidden&&rects.length>0,sw:innerWidth*dpr,sh:innerHeight*dpr};}
+  return {rects:rects,text:text,hidden:hidden&&rects.length>0,sw:innerWidth*dpr,sh:innerHeight*dpr,color:gameColor(el)};}
+ /* The colour the game gives this line (read / unread colours), also while MeguLit hides it: the hide rule is lifted for one
+    synchronous style read (nothing is painted in between) and put back. The first visible text node speaks for the line. */
+ function hex(c){var m=/rgba?\(([^)]*)\)/.exec(c||'');if(!m)return '';var p=m[1].split(/[ ,\/]+/).filter(Boolean);if(p.length<3||p.length>=4&&+p[3]===0)return '';var s='';for(var i=0;i<3;i++){var v=Math.max(0,Math.min(255,Math.round(+p[i])));if(!(v>=0))return '';s+=(v<16?'0':'')+v.toString(16);}return s;}
+ function gameColor(el){var on=el.hasAttribute('data-megulit-hide'),c='';try{if(on)el.removeAttribute('data-megulit-hide');
+   var w=document.createTreeWalker(el,NodeFilter.SHOW_TEXT,{acceptNode:function(n){var p=n.parentElement;if(!p||p.closest('rt,rp,script,style')||!/\S/.test(n.data))return 2;return 1;}}),n=w.nextNode();
+   if(n){var cs=getComputedStyle(n.parentElement);c=hex(cs.webkitTextFillColor)||hex(cs.color);}}catch(e){}
+  try{if(on)el.setAttribute('data-megulit-hide','');}catch(e){}return c;}
  function scan(){S.timer=0;try{
   var el=pick();if(el!==S.el){S.el=el;apply();}
   if(!el){if(!S.canvas&&document.querySelector('canvas')&&!document.querySelector(KNOWN.join(','))){S.canvas=true;send({status:'canvas'});}return;}
   var m=measure();if(!m||!m.rects.length)return;var flat=norm(m.text);
   if(!(S.last&&(flat.indexOf(S.last)===0||S.last.indexOf(flat)===0)))S.line++;
-  var key=S.line+'|'+m.hidden+'|'+m.rects.map(function(q){return q.map(Math.round).join(',');}).join(';');
+  var key=S.line+'|'+m.hidden+'|'+m.color+'|'+m.rects.map(function(q){return q.map(Math.round).join(',');}).join(';');
   if(key===S.key)return;S.key=key;S.last=flat;
-  send({line:S.line,hidden:m.hidden,sw:m.sw,sh:m.sh,rects:m.rects,text:m.text});
+  send({line:S.line,hidden:m.hidden,sw:m.sw,sh:m.sh,rects:m.rects,text:m.text,color:m.color});
  }catch(e){send({status:'error '+(e&&e.message)});}}
  function later(){if(!S.timer)S.timer=setTimeout(scan,40);}
  window.__megulitText={hide:function(on){S.on=!!on;apply();S.key='';later();return S.on;},want:function(t){S.wanted=String(t||'');later();},scan:scan};
@@ -112,7 +119,7 @@ class WebTextPath{
  report(payload){let o;try{o=JSON.parse(payload);}catch{return;}if(o.status){this.onStatus(o.status);return;}
   if(!Array.isArray(o.rects))return;
   if(o.hidden&&this.canary){if(!this.armed){this.canary.arm('web');this.armed=true;}else this.canary.alive('web');}
-  this.onChars(formatChars({engine:'web',line:o.line,hidden:o.hidden,sw:o.sw,sh:o.sh,viewport:[0,0,o.sw,o.sh],rects:o.rects,text:o.text}));}
+  this.onChars(formatChars({engine:'web',line:o.line,hidden:o.hidden,sw:o.sw,sh:o.sh,viewport:[0,0,o.sw,o.sh],rects:o.rects,text:o.text,color:o.color}));}
  exited(code){if(this.canary&&this.armed)this.canary.exited('web',code);}
  stop(){this.stopped=true;for(const c of this.pages.values()){this.evaluate(c,'window.__megulitText&&window.__megulitText.hide(false)').finally(()=>c.close());}this.pages.clear();}
 }

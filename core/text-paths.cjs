@@ -17,7 +17,8 @@ const MAX_RECTS=4000;
 
 /* ---- record ------------------------------------------------------------------------------------------------------
    ToMe_CHARS engine=<e> line=N hidden=0|1 sw=W sh=H vx=X vy=Y vw=W vh=H n=K rects=x,y,w,h;... [color=rrggbb] text=<\x1f = newline>
-   color (optional): the colour the game's glyphs of this line really have (KiriKiri TextRender: sampled from its text layer).
+   color (optional): the colour the game's glyphs of this line really have, taken where hiding cannot reach it (KiriKiri TextRender:
+   sampled from its text layer, whose pixels stay when the layer is at opacity 0; web: the computed colour with the hide rule lifted).
    rects: one per character of text (newlines left out), in game-screen pixels (0..sw, 0..sh), top-left origin.
    vx..vh: where the game screen sits in the client area, client pixels; all 0 = unknown (aspect fit, centred). */
 const num=v=>{const n=Number(v);return Number.isFinite(n)?Math.round(n*100)/100:0;};
@@ -25,7 +26,7 @@ function formatChars(r){
  const rects=(r.rects||[]).slice(0,MAX_RECTS).map(q=>q.map(num).join(',')).join(';');
  const v=r.viewport||[0,0,0,0];
  return 'ToMe_CHARS engine='+r.engine+' line='+(r.line|0)+' hidden='+(r.hidden?1:0)+' sw='+num(r.sw)+' sh='+num(r.sh)+
-  ' vx='+num(v[0])+' vy='+num(v[1])+' vw='+num(v[2])+' vh='+num(v[3])+' n='+(r.rects||[]).length+' rects='+rects+' text='+String(r.text||'').replace(/\r?\n/g,'\x1f');
+  ' vx='+num(v[0])+' vy='+num(v[1])+' vw='+num(v[2])+' vh='+num(v[3])+' n='+(r.rects||[]).length+' rects='+rects+(/^#?[0-9a-f]{6}$/i.test(r.color||'')?' color='+String(r.color).replace('#','').toLowerCase():'')+' text='+String(r.text||'').replace(/\r?\n/g,'\x1f');
 }
 const RE=/^ToMe_CHARS engine=([a-z]+) line=(\d+) hidden=([01]) sw=([\d.]+) sh=([\d.]+) vx=(-?[\d.]+) vy=(-?[\d.]+) vw=([\d.]+) vh=([\d.]+) n=(\d+) rects=([-\d.,;]*)(?: color=([0-9a-f]{6}))? text=(.*)$/;
 function parseChars(line){

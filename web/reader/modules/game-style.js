@@ -118,7 +118,7 @@ if(typeof value.rubyRowOffsetsX==='string')result.rubyRowOffsetsX=value.rubyRowO
     if (!fill) return null;
     const aa = a => Math.round(Math.max(0, Math.min(1, a)) * 255).toString(16).padStart(2, '0');
     const own = !!drawn && fill === drawn, sampled = own || hex(engineColor) && fill === String(engineColor).toLowerCase();
-    const alpha = own && Number.isFinite(style.alpha) && style.alpha > .02 && style.alpha < .98 ? style.alpha : 1;
+    const alpha = own && style.animated !== true && Number.isFinite(style.alpha) && style.alpha > .02 && style.alpha < .98 ? style.alpha : 1; /* animated: a fade-in may be running, not the sentence's opacity */
     const edge = own && hex(style.edge) && style.edge.toLowerCase() !== fill ? style.edge.toLowerCase() + (style.edgeAlpha > .02 && style.edgeAlpha < .98 ? aa(style.edgeAlpha) : '') : '';
     return { color: fill + (alpha < 1 ? aa(alpha) : ''), edge, sampled };
   }
