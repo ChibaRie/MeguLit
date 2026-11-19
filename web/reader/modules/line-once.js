@@ -34,8 +34,13 @@
  /* whole sentences: up to and including a closing bracket or sentence stop (with what follows it of the same kind) */
  function units(text){const out=[];const re=/[^」』）)。！？!?…]*(?:[」』）)。！？!?…]+|$)/gu;let m;while((m=re.exec(text))&&m[0]){out.push(m[0]);if(re.lastIndex>=text.length)break;}return out;}
  const real=u=>key(u).replace(/[「『」』（）()。、！？!?…‥・～〜ー―\-]/g,'').length;
+ /* 2026-11-19 (千恋＊万花 【芦花】「で？　１人？」: the frame held the line twice and the start of a third; split at its inner ？ the
+    pieces 「で？」 were too short to count as a repeat and the reader drew 「で？　１人？」「で？): one whole sentence (ending in a
+    closing bracket or stop, 3+ letters) drawn two or more times, character for character, maybe followed by the start of
+    another copy, is that sentence once */
+ function period(text){const c=[...text];for(let p=1;p*2<=c.length;p++){if(!/[」』）)。！？!?…]/.test(c[p-1])||/[」』）)。！？!?…]/.test(c[p]))continue;let ok=true;for(let i=p;i<c.length&&ok;i++)ok=c[i]===c[i%p];if(!ok)continue;const one=c.slice(0,p).join('');if(real(one)>=3)return one;}return '';}
  function collapse(input){
-  const text=String(input||''),u=units(text);if(u.length<2)return {text,ruby:[],collapsed:false};
+  const text=String(input||''),one=period(text.replace(/[\s　]+$/,''));if(one){const r=collapse(one);return {text:r.text,ruby:r.ruby,collapsed:true};}const u=units(text);if(u.length<2)return {text,ruby:[],collapsed:false};
   /* a run of one sentence (redraw, base/reading pair) is one copy; a short exact repeat (「うん」「うん」) needs 3+ letters */
   const same=(a,b)=>variant(a,b)&&(key(a)!==key(b)||real(b)>=3);
   const runs=[];for(const s of u){const last=runs[runs.length-1];if(last&&same(last[0],s))last.push(s);else runs.push([s]);}
