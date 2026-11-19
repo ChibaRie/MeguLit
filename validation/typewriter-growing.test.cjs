@@ -7,6 +7,7 @@
      - five stages, sequence + 1 each: every character is typed once, a shown one never hides, each stage types after the
        characters already shown;
      - the translation stays on screen while the line grows and the grown line's translation keeps what it shares with it;
+     - the same in another engine form (KiriKiri: name in the source, new lines held for the page report);
      - not growth: a box cleared in between, another speaker, or a line already finished types the new line from the start. */
 const assert = require('node:assert'), fs = require('node:fs'), path = require('node:path');
 let chromium;
@@ -67,6 +68,21 @@ const shownNow = page => page.evaluate(() => window.__tomoyoChinese.hookReaderSt
     assert.deepStrictEqual(grow.requests, STAGES, 'every stage asks for its own whole-line translation');
     assert.strictEqual(grow.cn, CN.at(-1), 'the last translation is the whole sentence');
     assert.strictEqual(grow.cnEmpty, 0, 'the translation never goes blank while the line grows');
+    await page.close();
+    /* another engine form: KiriKiri-style source (【name】 in the text, engine krkr whose new lines wait for the page report),
+       the line grown in three steps with sequence + 1 each; the same rule, no engine branch */
+    page = await open(browser);
+    const krkr = await page.evaluate(async () => {
+      const b = window.__tomoyoChinese, steps = ['「で？', '「で？　１人？', '「で？　１人？　ほんとに？」'];
+      b.galStatus({ hookActive: true, hookSourceEngine: 'krkr' });
+      const starts = [];
+      for (const [i, t] of steps.entries()) { b.galStatus({ hookActive: true, hookSource: '【芦花】' + t, hookSequence: 70 + i }); starts.push(b.hookReaderStatus().typing?.shown ?? -1); await window.__wait(1400); }
+      return { starts, typedTwice: [...window.__typed].filter(([, n]) => n > 1).map(([k]) => k), lost: window.__lost, shown: [...document.querySelectorAll('.tomoyo-hook-reader .sentence-text .char-token')].map(t => t.textContent).join('') };
+    });
+    assert.strictEqual(krkr.shown, '「で？　１人？　ほんとに？」', 'krkr form: the whole grown line, without the name');
+    assert.deepStrictEqual(krkr.starts.slice(1), [3, 7], 'krkr form: each step types after the shown characters');
+    assert.deepStrictEqual(krkr.typedTwice, [], 'krkr form: each character typed once');
+    assert.deepStrictEqual(krkr.lost, [], 'krkr form: a shown character never hides');
     await page.close();
     /* not growth: the box cleared in between */
     page = await open(browser);

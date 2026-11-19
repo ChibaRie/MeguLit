@@ -39,10 +39,10 @@
  let hiddenAt=0,held=null,heldKeys=new Set(),replaying=false;
  /* 2026-11-19 (素晴らしき日々 BGI 「やっぱり……いい女には、」+「たばこと」+「屋上と」…: the source grows one open quotation piece by piece and
     sends each stage as a new line, sequence + 1). A new line whose text starts with the line on screen (spaces aside) is that line
-    growing when the line on screen is an open quotation (a 「『 left open, no sentence end), the box was not cleared in between and
+    growing when the line on screen is an open quotation (a 「『 not closed yet; a ？ inside it does not end it), the box was not cleared in between and
     the speaker is the same: the shown characters stay on their nodes and places and only the new ones are typed. */
  let continued=null,boxCleared=false,speaker='';const flat=v=>String(v||'').replace(/[\s　]+/g,'');
- const openLine=v=>{const t=String(v||'').replace(/\s+$/,'');if(!t||/[。．！？!?」』）)】]$/.test(t))return false;return Math.max(t.lastIndexOf('「'),t.lastIndexOf('『'))>Math.max(t.lastIndexOf('」'),t.lastIndexOf('』'));};
+ const openLine=v=>{const t=String(v||'').replace(/\s+$/,'');if(!t)return false;return Math.max(t.lastIndexOf('「'),t.lastIndexOf('『'))>Math.max(t.lastIndexOf('」'),t.lastIndexOf('』'));};
  const grows=(old,next)=>{const a=flat(old),c=flat(next);return !!a&&c.length>a.length&&c.startsWith(a)&&openLine(old);};const HIDDEN_HOLD_MS=800,RELEASE_MS=3000,GONE=/^(?:window|scene|engine)$/;
  const previous=b.galStatus;b.galStatus=m=>{if(!replaying)previous(m);if((m.dialogVisible===false&&GONE.test(String(m.reason||'')))||m.type==='gameClosed'||m.hookSource===null)boxCleared=true;if(typeof m.dialogVisible==='boolean'){if(m.dialogVisible){hiddenAt=0;const h=held,n=heldKeys.size;held=null;heldKeys=new Set();if(h&&n===1&&Date.now()-h.at<=RELEASE_MS){replaying=true;try{b.galStatus(h.m);}finally{replaying=false;}}}else hiddenAt=GONE.test(String(m.reason||''))?(hiddenAt||Date.now()):0;}if(typeof m.hookSourceRead==='boolean')document.body.classList.toggle('tome-line-read',m.hookSourceRead);if(b.islandPage?.accept(m)){active=recovering=false;text='';resetPage();root?.remove();root=null;return;}
   if(m.type==='gameClosed'||m.hookSource===null){document.body.classList.toggle('tome-line-read',false);resetPage();text='';}
