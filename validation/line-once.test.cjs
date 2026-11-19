@@ -23,6 +23,9 @@ test('ruby base and reading forms are one sentence; the base text wins and the r
  for(const frame of [SIX,SIX+SIX,X+Y,Y+X,SIX+'「しな',X+X]){const r=L.collapse(frame);assert.equal(r.text,X,frame);}
  assert.deepEqual(L.collapse(SIX).ruby,[['志那都','しなつ']]);
  assert.equal(L.collapse(Y+Y).text,Y,'a reading-only repeat keeps its own form');
+ /* live 2026-11-19 line 14: a whole copy and a copy cut after its …… */
+ const Q='「（サービスの悪い運転手だ……）」';assert.equal(L.collapse(Q+'「（サービスの悪い運転手だ……').text,Q);
+ assert.equal(L.collapse('「待って……」「待って……」「待って……').text,'「待って……」');
 });
 
 test('real text is kept: different sentences, short exact repeats, page text with a new line',()=>{
