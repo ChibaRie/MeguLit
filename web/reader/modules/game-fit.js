@@ -13,16 +13,21 @@
  /* win: {top,bottom} of the drawn block (CSS px); client: {top,bottom}; fit: current scale.
     Returns {fit, shift, room}: the next scale, how far to move the block up (<= 0) and, when the block still does not
     fit at the smallest scale and moved up to the client top, the height left for the translation (else 0). */
- /* 2026-11-19 (千恋＊万花, box at y 82 %: every two- and three-row sentence moved its first row up 45-65 px and short ones
-    dropped back, "the position runs about"). jp: {top,bottom} of the Japanese alone. The first row keeps its anchor like the
-    game's own text: a translation that does not fit is made smaller, then scrolls; the block moves up only as far as the
-    Japanese itself crosses the limit (a very long sentence), and only for that sentence. */
+ /* 2026-11-19 (千恋＊万花, box at y 82 %: two- and three-row sentences moved their first row up 45-65 px and short ones dropped
+    back, user: 「位置不要到处跑」「只有在显示不下中文的时候才小」). jp: {top,bottom} of the Japanese alone. The Japanese stands in for
+    the game's own rows: its size and first row never change, long sentences wrap downwards. Only the translation gives way:
+    when this sentence's translation does not fit above the client bottom it is made smaller once (down to 60 %, sized from
+    the translation's own height); only if it still does not fit the block moves up just enough, as a last resort. Both are
+    for this sentence only. Without jp (older callers) the block is scaled and moved as before. */
  function plan(win,client,fit,jp){
   const limit=client.bottom-MARGIN,over=win.bottom-limit;
   if(!(over>0))return {fit,shift:0,room:0};
+  if(jp&&Number.isFinite(jp.bottom)){const cn=Math.max(0,win.bottom-Math.max(win.top,jp.bottom));
+   if(fit>MIN+.005&&cn>0){const next=Math.max(MIN,Math.floor(fit*Math.max(0,cn-over)/cn*100)/100);if(next<fit-.005)return {fit:next,shift:0,room:0};}
+   const up=Math.min(over,Math.max(0,win.top-(client.top+MARGIN)));return {fit,shift:-up,room:over>up?over-up:0};}
   const height=win.bottom-win.top,avail=limit-win.top;
   if(fit>MIN+.005&&height>0&&avail>0){const next=Math.max(MIN,Math.floor(fit*avail/height*100)/100);if(next<fit-.005)return {fit:next,shift:0,room:0};}
-  const need=jp&&Number.isFinite(jp.bottom)?Math.max(0,Math.min(over,jp.bottom-limit)):over,up=Math.min(need,Math.max(0,win.top-(client.top+MARGIN)));
+  const up=Math.min(over,Math.max(0,win.top-(client.top+MARGIN)));
   return {fit,shift:-up,room:over>up?over-up:0};
  }
  function install(w){
@@ -57,7 +62,9 @@
    const roomNow=room;if(roomNow>0){/* the translation was cut to roomNow: its full height decides */const cn=win.querySelector('.tomoyo-cn-output');if(cn&&cn.scrollHeight>cn.clientHeight)box.bottom+=cn.scrollHeight-cn.clientHeight;}
    const p=plan(box,client,fit,m.jp?{top:m.jp.top-shift,bottom:m.jp.bottom-shift}:null);
    let nextRoom=0;if(p.room>0){const cn=win.querySelector('.tomoyo-cn-output');if(cn){const full=cn.scrollHeight||cn.getBoundingClientRect().height;nextRoom=Math.max(0,Math.floor(full-p.room));}}
-   if(p.fit!==fit||p.shift!==shift||nextRoom!==room){fit=p.fit;shift=p.shift;room=nextRoom;set();schedule();}
+   /* within one sentence the result only tightens (a translation arriving in parts, a resize pass): it never flips back and forth */
+   const nf=Math.min(fit,p.fit),ns=Math.min(shift,p.shift),nr=Math.max(room,nextRoom);
+   if(nf!==fit||ns!==shift||nr!==room){fit=nf;shift=ns;room=nr;set();schedule();}
   }
   function schedule(){if(!frame)frame=(w.requestAnimationFrame||(f=>setTimeout(f,16)))(check);}
   const ro=w.ResizeObserver?new w.ResizeObserver(schedule):null;let watched=null;
