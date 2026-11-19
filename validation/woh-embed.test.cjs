@@ -75,7 +75,7 @@ test("E323 wiring: per-sentence indent, marker on the current line, box probes o
  const gal=read('web/reader/modules/gal.js'),wait=read('web/reader/modules/wait-marker.js'),imm=read('core/immersion.cjs'),view=read('web/reader/modules/island-page.js');
  assert.match(gal,/for\(const sentence of document\.querySelectorAll\('\.sentence-text'\)\)\{\r?\n\s+let leading=!sentence\.closest\('\.tome-island-flow'\);/);
  assert.match(wait,/\.tome-island-pair\.tome-island-current/);
- assert.match(imm,/source\(text,engine\)\{const flow=engine==='nvl';/);assert.match(imm,/scene\(visible,why='scene'\)\{[^\n]*if\(this\.isFlow\(\)\)\{/);assert.match(imm,/autoBox\(visible\)\{[^}]*\|\|this\.isFlow\(\)\)return;/);
+ assert.match(imm,/source\(text,engine,origin\)\{const flow=engine==='nvl';/);assert.match(imm,/scene\(visible,why='scene'\)\{[^\n]*if\(this\.isFlow\(\)\)\{/);assert.match(imm,/autoBox\(visible\)\{[^}]*\|\|this\.isFlow\(\)\)return;/);
  assert.match(view,/\.tome-island-flow \.sentence-text\[data-megulit-native-breaks\]\{white-space:pre-wrap!important/,"a paragraph with the game's own breaks still wraps at the box width");
  assert.doesNotMatch(view,/--tomoyo-gal-gap'\)\)\|\|8/,'the slider gap is not added between lines');
 });

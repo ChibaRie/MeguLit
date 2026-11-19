@@ -18,6 +18,7 @@ class Reader{
   if(message.type==='bindHotkey'){require('./bind-hotkey.cjs').request(this,message,e=>this.runtime.emit('reader-event',e),this.uiLanguage());return;}
   if(this.hotkeyBind&&(message.type==='bound'||message.type==='error'))require('./bind-hotkey.cjs').follow(this,message,e=>this.runtime.emit('reader-event',e),this.uiLanguage());
   if(message.type==='ready'||Array.isArray(message.windows))require('./bind-hotkey.cjs').startupScan(this,message,e=>this.runtime.emit('reader-event',e),this.uiLanguage(),()=>{const db=openStore(this.root);try{return db.prepare("SELECT id,title,executable FROM games WHERE removed_at IS NULL AND executable<>''").all();}finally{db.close();}});
+  /* the hook's own inferences (left the dialogue screen) obey the same freeze as the screen probes */if(this.gal?.hooks&&!this.gal.hooks.contextFrozen)this.gal.hooks.contextFrozen=()=>this.immersion?.frozen?.()===true;
   if(message.type==='layerState'||message.type==='layerRaise'){this.logVisibility(message);return;}
   if(message.type==='readerContext'){this.immersion?.context(message.active);this.logVisibility({type:'readerContext',active:message.active});return;}
   if(message.type==='readerPointer'){this.runtime.emit('reader-pointer-input',message);return;}
@@ -78,7 +79,7 @@ class Reader{
   /* 2026-11-13 (ATRI: the choice overlay was drawn in a reader window hidden as "scene changed"): while choices are on screen the reader stays shown */if(Object.prototype.hasOwnProperty.call(message,'hookChoices'))this.immersion.choices(!!message.hookChoices);
   if(typeof message.hookSource==='string'){this.gal?.send({type:'markerSource',text:message.hookSource});if(!message.hookRecovering&&message.hookSourceOrigin!=='history'){
    if(message.hookSource&&message.hookSource!==this.immersion.currentText)this.gal?.send({type:'dialogSceneLine'});
-   this.immersion.source(message.hookSource,message.hookSourceEngine);
+   this.immersion.source(message.hookSource,message.hookSourceEngine,message.hookSourceOrigin);
    /* E287: translate the next few lines the script leaves untranslated, so they are ready before the game reaches them. */
    if(typeof message.hookSource==='string'&&message.hookSource.trim())require('./script-prefetch.cjs').ahead(this).catch(()=>{});
    if(typeof message.hookSource==='string'&&message.hookSource.trim()){require('./scene-shots.cjs').maybe(this);require('./sentence-scenes.cjs').remember(this);}
