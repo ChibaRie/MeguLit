@@ -21,7 +21,7 @@
 #include <map>
 #include <deque>
 #include <algorithm>
-#include "minhook/include/MinHook.h"
+#include "../shared/minhook/include/MinHook.h"
 
 namespace {
 // TJS string (tTJSVariantString): a ttstr is one pointer to this.

@@ -38,7 +38,7 @@
 #include <cmath>
 #include "GlyphQuads.h"
 #include "GlyphTrace.h"
-#include "../scncapture/minhook/include/MinHook.h"
+#include "../shared/minhook/include/MinHook.h"
 
 static CRITICAL_SECTION Lock;
 struct Guard { Guard() { EnterCriticalSection(&Lock); } ~Guard() { LeaveCriticalSection(&Lock); } };
@@ -68,8 +68,11 @@ template <int S, int K, typename R, typename... A> struct Thunk<S, K, R(WINAPI *
 template <int S, int K, typename R, typename... A> void *Thunk<S, K, R(WINAPI *)(A...)>::tramp;
 template <int S, int K, typename R, typename... A> R(WINAPI *Thunk<S, K, R(WINAPI *)(A...)>::hook)(A...);
 static std::map<int, std::vector<void *>> Hooked; static int HookCount;
+// 2026-11-19 (perf/minhook-freeze): every install queues its hooks and switches them on with Apply, one freeze of the game's
+// threads per batch instead of one per hook (MinHook suspends every other thread for each MH_EnableHook).
+static bool Apply() { return MH_ApplyQueued() == MH_OK; }
 template <int S, int K, typename F> static bool Inst(void *target, F hook) {
- typedef Thunk<S, K, F> T; T::hook = hook; if (MH_CreateHook(target, (void *)&T::Run, &T::tramp) != MH_OK) return false; if (MH_EnableHook(target) != MH_OK) return false; HookCount++; return true;
+ typedef Thunk<S, K, F> T; T::hook = hook; if (MH_CreateHook(target, (void *)&T::Run, &T::tramp) != MH_OK) return false; if (MH_QueueEnableHook(target) != MH_OK) return false; HookCount++; return true;
 }
 template <int S, typename F> static void Hook(void *target, F hook) {
  if (!target) return; auto &v = Hooked[S]; for (void *t : v) if (t == target) return; if (v.size() >= 8) { Log("hook slot %d full", S); return; }
@@ -478,11 +481,11 @@ static int WINAPI HSetDIBitsToDevice(HDC d, int x, int y, DWORD w, DWORD h, int 
 }
 static int InstallGdi() {
  int n = 0; HMODULE g = GetModuleHandleW(L"gdi32.dll"); if (!g) return 0;
- auto h = [&](const char *name, void *hook, void **orig) { void *t = GetProcAddress(g, name); if (t && MH_CreateHook(t, hook, orig) == MH_OK && MH_EnableHook(t) == MH_OK) n++; };
+ auto h = [&](const char *name, void *hook, void **orig) { void *t = GetProcAddress(g, name); if (t && MH_CreateHook(t, hook, orig) == MH_OK && MH_QueueEnableHook(t) == MH_OK) n++; };
  h("BitBlt", (void *)HBitBlt, (void **)&OBitBlt); h("StretchBlt", (void *)HStretchBlt, (void **)&OStretchBlt); h("GdiTransparentBlt", (void *)HTransparentBlt, (void **)&OTransparentBlt); h("GdiAlphaBlend", (void *)HAlphaBlend, (void **)&OAlphaBlend);
  h("StretchDIBits", (void *)HStretchDIBits, (void **)&OStretchDIBits); h("SetDIBitsToDevice", (void *)HSetDIBitsToDevice, (void **)&OSetDIBitsToDevice);
  { int before = n; h("GetGlyphOutlineW", (void *)HGgoW, (void **)&OGgoW); h("GetGlyphOutlineA", (void *)HGgoA, (void **)&OGgoA); Log("glyph trace: GetGlyphOutline hooks=%d", n - before); n = before; }
- return n;
+ return Apply() ? n : 0;
 }
 // GDI engines have no Present: a frame is whatever was drawn in the last 33 ms.
 static DWORD WINAPI GdiTicker(void *) { while (!Quit) { Sleep(33); if (!GdiSeen) continue; unsigned now = GetTickCount(); Guard g; if (now - LastPresent > 300) FramesTick(now, GdiW, GdiH); } return 0; }
@@ -533,6 +536,7 @@ static int Install(HMODULE d3d9) {
   dx->Release();
  }
  DestroyWindow(w); UnregisterClassW(wc.lpszClassName, wc.hInstance);
+ if (!Apply()) HookCount = 0;
  return devices;
 }
 

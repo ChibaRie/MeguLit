@@ -32,7 +32,7 @@
 #include <list>
 #include <memory>
 #include "dump_api.h"
-#include "../minhook/include/MinHook.h" // MH_Initialize only; hooks go through DumpHook
+#include "../../shared/minhook/include/MinHook.h" // MH_Initialize only; hooks go through DumpHook
 
 bool VoiceFileNameFor(ULONGLONG start, std::wstring &name); // modules/VoiceFile.cpp
 

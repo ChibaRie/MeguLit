@@ -115,6 +115,10 @@ int main(int argc, char **argv)
 	SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX); /* a crash ends the test quietly, no WER window */
 	SetUnhandledExceptionFilter(Crashed);
 	bool naive = argc > 1 && !strcmp(argv[1], "--naive");
+	/* 100 rounds by default (2026-11-19: a quick native self-test); MEGULIT_SELFTEST_FULL=1 runs the full 1000. The old
+	   removal (--naive) always gets 1000 rounds to crash in. */
+	char full[8] = {0};
+	int rounds = naive || (GetEnvironmentVariableA("MEGULIT_SELFTEST_FULL", full, sizeof full) && full[0] == '1') ? 1000 : 100;
 	setvbuf(stdout, NULL, _IONBF, 0);
 	MH_Initialize();
 	A = Make(0, (void *)InnerA);
@@ -129,7 +133,7 @@ int main(int argc, char **argv)
 	int npauses = 0;
 	LONG kept = 0;
 	DWORD t0 = GetTickCount();
-	for (int round = 0; round < 1000; round++)
+	for (int round = 0; round < rounds; round++)
 	{
 		Code &c = round & 1 ? B : A;
 		MeguLitUnhook::Span &stub = round & 1 ? stubB : stubA;
@@ -158,7 +162,7 @@ int main(int argc, char **argv)
 	Sleep(50);
 	Stop = 1;
 	WaitForMultipleObjects(2, th, TRUE, 5000);
-	printf("%s 1000 hook/unhook rounds under 2 calling threads: %lld calls, %ld wrong results, %ld kept, %lu ms\n", Wrong ? "FAIL" : "ok  ", (long long)Calls, Wrong, kept, GetTickCount() - t0);
+	printf("%s %d hook/unhook rounds under 2 calling threads: %lld calls, %ld wrong results, %ld kept, %lu ms\n", Wrong ? "FAIL" : "ok  ", rounds, (long long)Calls, Wrong, kept, GetTickCount() - t0);
 	fails += Wrong != 0;
 	if (naive)
 	{

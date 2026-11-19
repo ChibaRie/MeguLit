@@ -160,11 +160,11 @@ static BOOL WINAPI HCloseHandle(HANDLE h) { { VGuard g; VFiles.erase(h); } retur
 typedef BOOL(WINAPI *TextOutWF)(HDC, int, int, LPCWSTR, int); static TextOutWF OTextOutW; static volatile LONG TextOutCalls;
 static BOOL WINAPI HTextOutW(HDC dc, int x, int y, LPCWSTR s, int n) { LONG k = InterlockedIncrement(&TextOutCalls); if (Diag && k < 40 && s && n > 0) Log("TextOutW %d,%d %.*S", x, y, (std::min)(n, 40), s); return OTextOutW(dc, x, y, s, n); }
 static int InstallFontDots() {
- int n = 0; HMODULE k = GetModuleHandleW(L"kernel32.dll"); auto hk = [&](const char *name, void *hook, void **orig) { void *t = (void *)GetProcAddress(k, name); if (t && MH_CreateHook(t, hook, orig) == MH_OK && MH_EnableHook(t) == MH_OK) n++; };
+ int n = 0; HMODULE k = GetModuleHandleW(L"kernel32.dll"); auto hk = [&](const char *name, void *hook, void **orig) { void *t = (void *)GetProcAddress(k, name); if (t && MH_CreateHook(t, hook, orig) == MH_OK && MH_QueueEnableHook(t) == MH_OK) n++; };
  hk("CreateFileW", (void *)HCreateFileW, (void **)&OCreateFileW); hk("CreateFileA", (void *)HCreateFileA, (void **)&OCreateFileA); hk("ReadFile", (void *)HReadFile, (void **)&OReadFile);
  hk("SetFilePointer", (void *)HSetFilePointer, (void **)&OSetFilePointer); hk("SetFilePointerEx", (void *)HSetFilePointerEx, (void **)&OSetFilePointerEx); hk("GetFileSize", (void *)HGetFileSize, (void **)&OGetFileSize);
  hk("GetFileSizeEx", (void *)HGetFileSizeEx, (void **)&OGetFileSizeEx); hk("CloseHandle", (void *)HCloseHandle, (void **)&OCloseHandle);
- if (Diag) { void *t = (void *)GetProcAddress(GetModuleHandleW(L"gdi32.dll"), "TextOutW"); if (t && MH_CreateHook(t, (void *)HTextOutW, (void **)&OTextOutW) == MH_OK) MH_EnableHook(t); }
- return n;
+ if (Diag) { void *t = (void *)GetProcAddress(GetModuleHandleW(L"gdi32.dll"), "TextOutW"); if (t && MH_CreateHook(t, (void *)HTextOutW, (void **)&OTextOutW) == MH_OK) MH_QueueEnableHook(t); }
+ return Apply() ? n : 0;
 }
 #endif

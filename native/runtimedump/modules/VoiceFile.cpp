@@ -21,7 +21,7 @@
 #include <deque>
 #include <memory>
 #include "dump_api.h"
-#include "../minhook/include/MinHook.h" // MH_Initialize only; hooks go through DumpHook
+#include "../../shared/minhook/include/MinHook.h" // MH_Initialize only; hooks go through DumpHook
 
 namespace voicefile {
 wchar_t Dir[1024], OutDir[1024];
