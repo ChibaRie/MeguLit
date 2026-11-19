@@ -52,9 +52,9 @@
   });
   active.set(element,state);state.controller.start(nodes.length,{speed,from,instant:instant||!enabled||skipping});
  }
- function text(element,value,{instant=false}={}){
+ function text(element,value,{instant=false,from=0}={}){
   stop(element);const nodes=[...String(value)].map(character=>{const span=root.document.createElement('span');span.className=/^\p{Script=Latin}$/u.test(character)?'tome-translation-char megulit-latin':'tome-translation-char';span.textContent=character;return span;});
-  element.replaceChildren(...nodes);reveal(element,nodes,{instant});
+  element.replaceChildren(...nodes);reveal(element,nodes,{instant,from});
  }
  function configure(options={}){
   const next=options.enabled!==false,newSpeed=rate(options.speed);

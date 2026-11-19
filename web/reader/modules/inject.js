@@ -47,11 +47,15 @@
     [data-tomoyo-transparent] .sentence-text, [data-tomoyo-transparent] .tomoyo-cn-output { text-shadow:0 1px 3px #000c; }
   `;
   (document.head || document.documentElement).appendChild(style);
+  /* 2026-11-19 (BGI: one quotation the game adds to piece by piece, each stage a new line): the translation of a line that
+     grew stays on screen until the grown line's own arrives, which keeps what it shares with it and types only the rest */
+  const flat = v => String(v || '').replace(/[\s\u3000]+/g, ''), grown = (before, next) => { const a = flat(before), c = flat(next); return !!a && c.length > a.length && c.startsWith(a); };
   function setText(text, error = false, animate = false) {
     if (!output) return;
+    const was = output.dataset.state === 'ready' ? [...output.textContent] : [];
     output.dataset.state = error ? 'error' : 'ready';
     if (output.textContent === text) return;
-    if (animate && window.TomeTypewriter) window.TomeTypewriter.text(output, text);
+    if (animate && window.TomeTypewriter) { const now = [...text]; let from = 0; while (from < was.length && from < now.length && was[from] === now[from]) from++; window.TomeTypewriter.text(output, text, { from }); }
     else {
       window.TomeTypewriter?.stop(output); delete output.dataset.tomeTyping;
       const parts=text.split(/(\p{Script=Latin}+)/u);
@@ -102,11 +106,11 @@
     const text = (chars.length ? Array.from(chars, c => c.textContent).join('') : sentence.textContent).trim();
     if (text !== bridge.sourceText) { bridge.sourceText = text; bridge.onSourceText?.(text); }
     if (!enabled || !translationVisible || !text || text === bridge.current) return;
+    const growing = grown(bridge.current, text) && output.dataset.state === 'ready' && !!output.textContent;
     bridge.current = text;
     const id = ++bridge.serial;
     bridge.lastTranslationError = '';
-    setText(bridge.quietTranslation ? '' : '翻译中…');
-    output.dataset.state = 'pending';
+    if (!growing) { setText(bridge.quietTranslation ? '' : '翻译中…'); output.dataset.state = 'pending'; }
     try {
       window.__tomoyoTranslateRequest(JSON.stringify({ id, text, options: bridge.options?.() || {} }));
     } catch {
@@ -122,7 +126,7 @@
     if(text !== bridge.sourceText){bridge.sourceText=text;bridge.onSourceText?.(text);}
     /* 2026-11-13 (STEINS;GATE: each new line showed the previous line's translation for ~250 ms): the translation is
        requested after a 220 ms debounce, so the old one goes the moment the source line changes */
-    if(output&&text&&text!==bridge.current&&enabled&&translationVisible&&output.dataset.state!=='pending'){window.TomeTypewriter?.stop(output);output.replaceChildren();output.dataset.state='pending';}
+    if(output&&text&&text!==bridge.current&&enabled&&translationVisible&&output.dataset.state!=='pending'&&!(output.dataset.state==='ready'&&grown(bridge.current,text))){window.TomeTypewriter?.stop(output);output.replaceChildren();output.dataset.state='pending';}
     clearTimeout(bridge.timer);
     bridge.timer = setTimeout(read, 220);
   }
