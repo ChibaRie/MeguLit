@@ -35,6 +35,7 @@ function reader(t,prefs={}){
    if(row.t==='line'){const m=pageInfo(row.raw);assert.ok(m,'unparsed engine record: '+row.raw);hook.pageLine(m);}
    else if(row.t==='source'){now+=1000;hook.source({text:row.text,sourceName:'KiriKiriZ',origin:'live'},'');}
    else if(row.t==='status'){const {t:_,text,...m}=row;now+=1000;if(typeof text==='string')route({...m,hookSource:text,hookSequence:Math.round(now/1000)});else route(m);}
+   else if(row.t==='drawn')b.lineColorDrawn(row.text,row.color); /* ToMe_CHARS color: the engine side read its own glyphs */
    else if(row.t==='sample')route({type:'lineStyleSample',sourceToken:window.TomeIslandSource.token(row.text),style:row.style});
    else if(row.t==='expect'){const p=paint();assert.equal(p.color,row.color,'fill of line '+row.line);assert.equal(p.edge,row.edge,'outline of line '+row.line);return 1;}
    else if(row.t==='expectPos'){/* live recordings: the colour the reader is given for the sentence equals the game's pixels of that step */

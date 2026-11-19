@@ -335,7 +335,9 @@ LR"MGLT((function(){
       var k=''+(((rgb>>19)&31)<<10 | ((rgb>>11)&31)<<5 | ((rgb>>3)&31)),c=cnt[k];if(c===void) {c=0;rep[k]=rgb;}c++;cnt[k]=c;if(c>bn) {bn=c;best=''+rep[k];}
      }
     }
-    if(bn<need && lit<3 || this.trTry<3) return; /* a few ticks in: the typewriter and any fade-in have drawn the first glyphs */
+    /* opaque glyph pixels already have their final colour: taken at the first tick (live 死に逝く君: 父親が死んだ。 was on screen for
+       170 ms and got none); the brightest-pixel fallback still waits for the typewriter and any fade-in */
+    if(bn<need && (lit<3 || this.trTry<3)) return; /* a few ticks in: the typewriter and any fade-in have drawn the first glyphs */
     var h='',v=bn>=need?+best:lb;for(var i=0;i<6;i++) {h='0123456789abcdef'.charAt(v&15)+h;v=v>>4;}
     this.trCol=h;var r=this.trRec;r[2]=this.trTailA+' color='+h+this.trTailB;this.trKey='';
     this.report('ToMe_CHARS engine=krkr line='+r[1]+' hidden='+r[0]+r[2]);
