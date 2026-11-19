@@ -154,7 +154,7 @@ class HookNative{
    if(m.type==='waitMarkerStatus'){this.notify({waitMarkerMessage:String(m.message||'').slice(0,300),waitMarkerHookActive:m.active===true});return;}
    if(m.type==='hookSource'&&typeof m.text==='string'&&m.text.length<=4000){this.sourcePage(m,name);return;}
    // v1.1.4: speaker names from a name-role stream, for every engine that reports one (user: the log showed every line as narration).
-   if(m.type==='hookAuxText'&&typeof m.text==='string'&&m.text.length<=400){this.auxText(m,name);return;}
+   if(m.type==='hookAuxText'&&typeof m.text==='string'&&m.text.length<=400){this.auxText(m);return;}
    if(m.type==='hookName'&&typeof m.text==='string'){const n=speakerName(m.text);if(n){this.speaker={text:n,at:this.now()};this.noteSpeaker(n);}return;}
    if(m.type==='hookThreads'&&Array.isArray(m.hookThreads)){// Unity games create a stream per String-method call site (often 100+); keep the selected and embeddable ones
    // ahead of the cut so a late dialogue stream such as Naninovel's printer is never dropped.
@@ -305,11 +305,7 @@ class HookNative{
  artScanState(now=this.now()){const hidden=this.engineDialog===false,line=String(this.lastSource||'').trim(),current=!!line&&!hidden;
   const on=hidden||!line||now-(this.lastSourceAt||0)>2000;
   return {on,dialog:current?line.slice(0,600):'',speaker:current?String(this.state?.hookSpeaker||'').slice(0,40):'',band:current,foreign:this.foreignArtReady()};}
- auxText(m,name){/* 2026-11-19 (素晴らしき日々: the black-screen quotes at a chapter start reached no stream) text a *SpriteText stream carries
-    (art: true) is drawn outside the message window: a line of its own for the reader, placed where the game drew it like any
-    line and shown once (line-once), never a choice; the dialogue stream stays the one it was */
-  if(m.art===true){this.trace('sprite text '+JSON.stringify(String(m.text).slice(0,40)));this.source({type:'hookSource',text:m.text,sourceName:String(m.sourceName||''),origin:'sprite',hookActive:true},name);return;}
-  /* 2026-11-15 (沙耶の唄, user: 「ocr遮挡又出来了」): the dialogue hook sends each line on two thread contexts; the one not selected
+ auxText(m){/* 2026-11-15 (沙耶の唄, user: 「ocr遮挡又出来了」): the dialogue hook sends each line on two thread contexts; the one not selected
     came here as aux text, went to the art path and its translation was drawn over the game's own line. A line from the same hook
     as the dialogue stream is dialogue, never art text. */
   if(m.sourceName&&this.dialogueHook&&String(m.sourceName)===this.dialogueHook)return;/* nor choice text (user: 「不是选项」) */
@@ -363,7 +359,7 @@ class HookNative{
      Big5, Korean, Western, UTF-8) becomes the Japanese it was (core/text-sanity.cjs).
      The hook gets this text already as UTF-16 (the game converted it with the system code page), so the hook's own code page
      setting cannot help: each stream is judged by its text and locked once it is clearly one or the other. */
-  if(m.sourceName&&m.origin!=='history'&&m.origin!=='sprite')this.dialogueHook=String(m.sourceName);
+  if(m.sourceName&&m.origin!=='history')this.dialogueHook=String(m.sourceName);
   if(typeof m.text==='string'){const stream=name||m.sourceCode||m.sourceName||'';const fixed=(this.codepage||(this.codepage=new (require('./text-sanity.cjs').StreamCodepage)())).fix(stream,m.text);if(fixed.locked)this.trace('stream locked as '+fixed.pair+' '+JSON.stringify(String(stream).slice(0,60)));if(fixed.unreadable){this.trace('source dropped unreadable ('+this.codepage.mode(stream)+') '+JSON.stringify(m.text.slice(0,20)));return;}if(fixed.repaired){this.trace('source repaired '+fixed.pair+' '+JSON.stringify(fixed.text.slice(0,20)));m={...m,text:fixed.text};}}
   /* 2026-11-12 (ファタモルガーナの館: "……けれど……", drawn large in the middle of the opening, was hidden and shown as a subtitle
      at the bottom): while the engine says its text window is hidden, a line is art text. HookBridge leaves it to the game;
