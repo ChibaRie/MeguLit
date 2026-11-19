@@ -102,7 +102,28 @@ function pfsList(file){
 }
 function pfsRead(file,entry,key){const b=kit.readAt(file,entry.offset,entry.size);return key?kit.xor(b,key):b;}
 const AST=n=>/\.ast$/i.test(n);
-function pfsScenes(file){let t;try{t=pfsList(file);}catch{return [];}if(!t)return [];return t.files.filter(e=>AST(e.name)).map(e=>({name:path.basename(e.name.replace(/\\/g,'/')),read:()=>pfsRead(file,e,t.key)}));}
+/* S5 Artemis keeps its scenario as Lua .ast, compiled .asb, or the plain-text form scenario/*.txt (恋生恋逝恋相随's pf8: 20 scenario\sNN.txt, no .ast) */
+const ARTEMIS_SCRIPT=(n,f)=>/\.(ast|asb)$/i.test(n)||/\.txt$/i.test(n)&&/(^|[\\/])scenario[\\/]/i.test(String(f||n));
+function pfsScenes(file){let t;try{t=pfsList(file);}catch{return [];}if(!t)return [];return t.files.filter(e=>ARTEMIS_SCRIPT(e.name)).map(e=>({name:path.basename(e.name.replace(/\\/g,'/')),read:()=>pfsRead(file,e,t.key)}));}
+/* Artemis compiled .asb and plain-text .txt scenarios, after VNTranslationTools ArtemisAsbScript.cs / ArtemisTxtScript.cs (MIT, arcusmaximus).
+   asb: "ASB\0\0", u32 count, items: u32 type (0 command: str name, u32 line, u32 n, n×(str key, str value); 1 label: str), str = u32 len + utf8 + NUL.
+   Text = runs of print/ruby commands joined (ruby base kept), plus name / sel_text / RegisterTextToHistory attributes. */
+function parseAsb(buf){let p=9;const lines=[],anchors=[],u32=()=>{if(p+4>buf.length)throw Error('ASB_EOF');const v=buf.readUInt32LE(p);p+=4;return v;};
+ const str=()=>{const n=u32();if(p+n>buf.length)throw Error('ASB_EOF');const s=buf.toString('utf8',p,p+n);p+=n+1;return s;};
+ const count=buf.readUInt32LE(5);let run='',inRuby=false;const flush=()=>{if(run.trim())lines.push(run);run='';};
+ for(let i=0;i<count&&p<buf.length;i++){const type=u32();if(type===1){flush();anchors.push(str());continue;}if(type!==0)throw Error('ASB_ITEM');
+  const name=str();u32();const n=u32(),a={};for(let k=0;k<n;k++){const key=str();a[key]=str();}
+  if(name==='print'){run+=a.data||'';continue;}if(name==='ruby'){inRuby=true;continue;}if(name==='/ruby'){inRuby=false;continue;}
+  flush();if(name==='sel_text'&&a.text)lines.push(a.text);else if(name==='RegisterTextToHistory'&&a['1'])lines.push(a['1']);}
+ flush();return {lines,anchors};}
+function parseArtemisTxt(text){const lines=[],anchors=[];let msg=[];const flush=()=>{if(msg.length)lines.push(msg.join('\n'));msg=[];};
+ for(const raw of text.split(/\r?\n/)){const l=raw.replace(/\0/g,'').replace(/(\/\/|;).*/,'');if(l.startsWith('*')){flush();anchors.push(l.slice(1).trim());continue;}
+  const cmd=/^\s*\[([^\]' ]+)((?:[^\]"']|"(?:\\"|[^"])*"|'(?:\\'|[^'])*')*)\]\s*$/.exec(l);
+  if(cmd){const sel=cmd[1]==='sel_text'&&/\btext\s*=\s*("(?:\\"|[^"])*"|'(?:\\'|[^'])*'|[^\]"' ]*)/.exec(cmd[2]);if(sel){flush();lines.push(sel[1].replace(/^["']|["']$/g,''));}continue;}
+  if(l.trim()){msg.push(l.trim().replace(/\[[^\]]*\]/g,''));continue;}flush();}
+ flush();return {lines:lines.filter(t=>t.trim()),anchors};}
+function parseArtemis(buf){if(buf.length>=9&&buf.toString('latin1',0,5)==='ASB\0\0')return parseAsb(buf);const text=decode(buf);
+ if(/=\s*\{/.test(text)||/^\s*astver\b/m.test(text))return parseAst(buf);return parseArtemisTxt(text);}
 // Quoted strings in file order: the ones with any non-ASCII character are text, the rest are anchors.
 /* E352 multilingual Artemis (Steam The Shell: every message is text = { ja = {...}, en = {...}, tw = {...}, cn = {...} }):
    the Japanese table is the line, the release's own Simplified (else Traditional) Chinese is its translation, and
@@ -138,12 +159,14 @@ function parseAst(buf){const lines=[],anchors=[],text=decode(buf),re=/"((?:[^"\\
 const isPfs=f=>/\.pfs(?:\.\d+)?$/i.test(f);
 const artemis={
  id:'artemis',hint:'*.ast（或 .pfs）',
- scenes(dir){const out=new Map();for(const a of fs.readdirSync(dir).filter(isPfs).sort())for(const s of pfsScenes(path.join(dir,a)))out.set(s.name.toLowerCase(),s);
-  for(const file of walk(dir,3,AST))out.set(path.basename(file).toLowerCase(),{name:path.basename(file),read:()=>fs.readFileSync(file)});
+ scenes(dir){const out=new Map(),pfs=fs.readdirSync(dir).filter(isPfs).sort();for(const a of pfs)for(const s of pfsScenes(path.join(dir,a)))out.set(s.name.toLowerCase(),s);
+  /* loose scenario/*.txt only next to Artemis evidence (a .pfs or an .iet entry script): other engines keep scenario/*.txt too */
+  const txtOk=pfs.length>0||walk(dir,3,n=>/\.iet$/i.test(n)).length>0;
+  for(const file of walk(dir,3,(n,f)=>AST(n)||/\.asb$/i.test(n)||txtOk&&ARTEMIS_SCRIPT(n,f)))out.set(path.basename(file).toLowerCase(),{name:path.basename(file),read:()=>fs.readFileSync(file)});
   return [...out.values()].sort((a,b)=>a.name.localeCompare(b.name));},
  archives:dir=>fs.readdirSync(dir).filter(isPfs).flatMap(a=>pfsScenes(path.join(dir,a))),
  sources:dir=>[...fs.readdirSync(dir).filter(isPfs).map(f=>path.join(dir,f)),...walk(dir,3,AST)],
- parse:parseAst,test:AST,
+ parse:parseArtemis,test:AST,
  // E352: a multilingual release carries its own Chinese; other games fall back to the usual patch overlay.
  patchLines(base){let any=false;const list=base.map(scene=>{const zh=scene.zh||[];if(!zh.some(Boolean))return scene;any=true;return {...scene,patched:true,lines:scene.lines.map((t,k)=>zh[k]||t)};});return any?list:null;},
 };
@@ -509,6 +532,8 @@ const catsystem2=require('./catsystem2.cjs'),naninovel=require('./naninovel.cjs'
 const nitroplusN4=require('./nitroplus-n4.cjs');
 // E470 GARbro on-demand pack, tried after every reader of MeguLit's own (garbro.cjs).
 const garbro=require('./garbro.cjs').engine;
+/* S5 Kogado / Hypatia HyPack (kogado.cjs) */
+const kogado=require('./kogado.cjs').engine;
 /* E561 signed adapter packs (services/adapter-packs.cjs) go first: a pack exists for a folder only because the readers below
    did not read it well; a pack that makes a game worse is turned off for that game by adapter-feed.cjs */
 const adapterPack=(()=>{try{return require('../adapter-packs.cjs').engine;}catch{return {id:'adapter-pack',scenes:()=>[],parse:()=>({lines:[],anchors:[]}),sources:()=>[]};}})();
@@ -542,7 +567,7 @@ const eushully=require('./eushully.cjs').engine;
 const rugp=require('./rugp.cjs').engine;
 const F4A_SCAN=require('./archive-scan.cjs').ENGINES;
 const siglusPck=require('./siglus-pck.cjs').engine;
-const ENGINES={'adapter-pack':adapterPack,'nitroplus-n4':nitroplusN4,'kirikiri-lang':kirikiriLang,tyrano,kirikiri,artemis,renpy,siglus,'siglus-pck':siglusPck,'kirikiri-cx':kirikiriCx,'kirikiri-dump':kirikiriDump,'kirikiri-ks':kirikiriKs,hunex,fpd,yuris,aquaplus,'aquaplus-pck':aquaplusPck,nscripter,'unity-text':unityText,higurashi,mages,'capcom-msg':capcomMsg,'spike-wad':spikeWad,pwaat,naninovel,yarnspinner,utage,'mages-cpk':magesCpk,aokana,'unity-assets':unityAssets,drv3,catsystem2,rpgmaker,wolf,avg32,'nitro-npk':nitroNpk,'nitro-pak':nitroPak,'nitro-npa':nitroNpa,iga,paz,bruns,'re-pak':rePak,fvp,advhd,reallive,vgprompter,majiro,softpal,systemnnn,liar,rgss,silky,tmrhiro,nekosdk,ikura,exhibit,eagls,ast,seraph,interheart,nexas,malie,shiinario,cmvs,lucifen,kaguya,lcse,yuka,qlie,entis,alicesoft,marble,rugp,...webbundle,plaintext:require('./plaintext.cjs').engine,circus,whale,ddsystem,aoi,kid,...makers,escude,eushully,pjadv,luca,stuff,stcm2,slg:F4A_SCAN.slg,cpk:F4A_SCAN.cpk,evbox:F4A_SCAN.evbox,ism:F4A_SCAN.ism,glib2:F4A_SCAN.glib2,tanuki:F4A_SCAN.tanuki,yaneurao:F4A_SCAN.yaneurao,rits:F4A_SCAN.rits,bluegale:F4A_SCAN.bluegale,cyberworks:F4A_SCAN.cyberworks,dxlib:F4A_SCAN.dxlib,garbro};
+const ENGINES={'adapter-pack':adapterPack,'nitroplus-n4':nitroplusN4,'kirikiri-lang':kirikiriLang,tyrano,kirikiri,artemis,renpy,siglus,'siglus-pck':siglusPck,'kirikiri-cx':kirikiriCx,'kirikiri-dump':kirikiriDump,'kirikiri-ks':kirikiriKs,hunex,fpd,yuris,aquaplus,'aquaplus-pck':aquaplusPck,nscripter,'unity-text':unityText,higurashi,mages,'capcom-msg':capcomMsg,'spike-wad':spikeWad,pwaat,naninovel,yarnspinner,utage,'mages-cpk':magesCpk,aokana,'unity-assets':unityAssets,drv3,catsystem2,rpgmaker,wolf,avg32,'nitro-npk':nitroNpk,'nitro-pak':nitroPak,'nitro-npa':nitroNpa,iga,paz,bruns,'re-pak':rePak,fvp,advhd,kogado,reallive,vgprompter,majiro,softpal,systemnnn,liar,rgss,silky,tmrhiro,nekosdk,ikura,exhibit,eagls,ast,seraph,interheart,nexas,malie,shiinario,cmvs,lucifen,kaguya,lcse,yuka,qlie,entis,alicesoft,marble,rugp,...webbundle,plaintext:require('./plaintext.cjs').engine,circus,whale,ddsystem,aoi,kid,...makers,escude,eushully,pjadv,luca,stuff,stcm2,slg:F4A_SCAN.slg,cpk:F4A_SCAN.cpk,evbox:F4A_SCAN.evbox,ism:F4A_SCAN.ism,glib2:F4A_SCAN.glib2,tanuki:F4A_SCAN.tanuki,yaneurao:F4A_SCAN.yaneurao,rits:F4A_SCAN.rits,bluegale:F4A_SCAN.bluegale,cyberworks:F4A_SCAN.cyberworks,dxlib:F4A_SCAN.dxlib,garbro};
 // The engine whose running scripts this folder holds, if any can be read.
 function readable(id,dir){let scenes;try{scenes=ENGINES[id].scenes(dir);}catch{return false;}
  for(const s of scenes.slice(0,64)){try{if(ENGINES[id].parse(s.read()).lines.length)return true;}catch{}}return false;} /* 64: a game may open with many code-only scenes (女王蜂の王房 endings, first.ks) */

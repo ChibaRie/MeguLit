@@ -20,6 +20,7 @@ const ENGINES=[
  /* E578 or a data*.dat / *.lib that opens as a Malie archive (plain LIB / LIBU, or LIBP with one of the known title keys) */
  {name:'Malie',hook:true,test:f=>f.has(/^malie\.ini$/i)||f.has(/\.lib$/i)&&f.has(/^malie.*\.exe$/i)||(f.has(/^data\d*\.dat$|\.lib$/i)||f.sub('data',/^data\d*\.dat$|\.lib$/i))&&require('./malie.cjs').probe(f.dir)},
  {name:'AdvHD / WillPlus',hook:true,test:f=>f.has(/^rio\.arc$/i)||f.has(/^advhd\.exe$/i)},
+ {name:'Kogado (HyPack)',hook:null,test:f=>f.magicAny(/\.pak$/i,'HyPack')},
  {name:'Majiro',hook:true,test:f=>f.has(/^scenario\.arc$/i)&&f.has(/\.arc$/i)},
  {name:'QLIE',hook:true,test:f=>f.sub('GameData',/\.pack$/i)},
  /* E568 Softpal keeps PAL.dll in dll\ (時計仕掛けのレイライン); its archives start "PAC " (NeXAS: "PAC" + a version byte) */
@@ -201,7 +202,7 @@ const READERS={"BGI / Ethornell":["bgi"],
  "CatSystem2":["catsystem2"],
  "Artemis":["artemis"],
  "Malie":["malie"],
- "AdvHD / WillPlus":["advhd"],
+ "AdvHD / WillPlus":["advhd"],"Kogado (HyPack)":["kogado"],
  "Majiro":["majiro"],
  "QLIE":["qlie"],
  "SoftPal":["softpal"],

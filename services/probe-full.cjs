@@ -21,13 +21,17 @@
               versions:{path:{fileVersion,productVersion,strings}},items:[{kind,path,archive?,entry?,size,sha256,offset,packed,
               same?,pe?}],dropped:[{path,kind,reason}]}
    kind: script (a reader's decoded scene) | entry (raw archive entry) | loose (loose script file) | index (archive head
-   / tail) | exe | dll
+   / tail / "#at<offset>" region a header points to, or a whole script-named archive) | exe | dll
    collect() writes data/adapter-probe/full/<sha256>.mlfp; upload() sends it in CHUNK parts (R2 multipart on the relay,
    resumable) and deletes it when the relay has it. unpack() is the maintainer's side (tools/probe-workbench.cjs). */
 const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto'),zlib=require('node:zlib');
 const CHUNK=5<<20,PACKED_MAX=48<<20,RAW_MAX=320<<20,ENTRY_MAX=32<<20,EXE_MAX=96<<20,RSRC_KEEP=1<<20,INDEX_SPAN=1<<20,HASH_FULL=1<<30,
  FILES_MAX=20000,COLLECT_MS=240000,KEEP_DAYS=7;
 const MAGIC='MLFP';
+const SCRIPT_ARCHIVE=/script|scenario|scene|scn|story|text|msg|nss|mes|sdat/i;
+/* u32 little-endian values in an archive's first 64 bytes that land inside [lo,hi): where a directory in the middle starts (at most 3) */
+function headerPointers(k,file,lo,hi){let h;try{h=k.readAt(file,0,64);}catch{return [];}const out=[];
+ for(let o=0;o+4<=h.length&&out.length<3;o+=4){const x=h.readUInt32LE(o);if(x>=lo&&x<hi&&!out.some(y=>Math.abs(y-x)<INDEX_SPAN))out.push(x);}return out.sort((a,b)=>a-b);}
 const fullDir=root=>path.join(root,'data','adapter-probe','full');
 const sha=b=>crypto.createHash('sha256').update(b).digest('hex');
 const kit=()=>require('./original-engines/kit.cjs');
@@ -120,8 +124,13 @@ function collect({dir,executable,result={},out,identity='',title='',vndb='',app=
   const a=archiveEntries(f.full);
   if(a&&a.entries.length){for(const e of a.entries){if(late())break;if(!isScriptName(e.name)){continue;}if(e.size>ENTRY_MAX){dropped.push({path:f.path,entry:e.name,kind:'entry',reason:'size'});continue;}
     let b;try{b=e.read();}catch{continue;}add('entry',b,{path:f.path+'/'+e.name.replace(/\\/g,'/'),archive:f.path,entry:e.name,format:a.format,...(e.encrypted?{encrypted:true}:{})});}continue;}
-  /* not listable here: the index regions */
-  const k=kit();add('index',k.readAt(f.full,0,Math.min(INDEX_SPAN,f.size)),{path:f.path+'#head',archive:f.path,at:0,...(a?{format:a.format}:{})});
+  /* not listable here: the index regions. S5: an archive whose name says script (Scene.pck, nss.npa, SCRIPT.PAK, Script2.arc) goes whole
+     when it fits ENTRY_MAX (head and tail alone left Rewrite+, Muramasa, Muv-Luv unreadable); a bigger one also sends the regions its header
+     points to (rio / npa directories in the middle), as index items "#at<offset>" */
+  const k=kit();
+  if(f.size<=ENTRY_MAX&&SCRIPT_ARCHIVE.test(path.basename(f.path))){add('index',k.readAt(f.full,0,f.size),{path:f.path+'#head',archive:f.path,at:0,whole:true,...(a?{format:a.format}:{})});continue;}
+  add('index',k.readAt(f.full,0,Math.min(INDEX_SPAN,f.size)),{path:f.path+'#head',archive:f.path,at:0,...(a?{format:a.format}:{})});
+  for(const at of headerPointers(k,f.full,INDEX_SPAN,f.size-INDEX_SPAN))add('index',k.readAt(f.full,at,Math.min(INDEX_SPAN,f.size-INDEX_SPAN-at)),{path:f.path+'#at'+at,archive:f.path,at});
   if(f.size>INDEX_SPAN)add('index',k.readAt(f.full,Math.max(INDEX_SPAN,f.size-INDEX_SPAN),Math.min(INDEX_SPAN,f.size-INDEX_SPAN)),{path:f.path+'#tail',archive:f.path,at:Math.max(INDEX_SPAN,f.size-INDEX_SPAN)});}
 
  /* 4 loose script files */
