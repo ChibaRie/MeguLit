@@ -12,7 +12,7 @@
   if (!b || !document.body) { document.addEventListener('DOMContentLoaded', install, { once: true }); return; }
   if (b.textPlace) return;
   let unmatched = null; const UNMATCHED_MS = 400;
-  let on = false, line = null, frame = 0, lastGeom = '', boxBottom = 0, boxKey = '', anchor = null, anchorLine = '', anchorLimit = NaN, anchorMode = true, drawnByGame = '', page = null; const clones = new Map();
+  let on = false, line = null, frame = 0, lastGeom = '', boxBottom = 0, boxKey = '', anchor = null, anchorLine = '', anchorLimit = NaN, anchorMode = true, drawnByGame = '', drawnHiding = false, page = null; const clones = new Map();
   const style = document.createElement('style');
   style.textContent = [
     'body.megulit-placed .sentence-window.megulit-place-window{left:0!important;top:0!important;right:auto!important;bottom:auto!important;width:100vw!important;height:100vh!important;max-height:none!important;margin:0!important;padding:0!important;background:none!important;border:0!important;box-shadow:none!important;outline:0!important;backdrop-filter:none!important;overflow:visible!important;transform:none!important;pointer-events:none}',
@@ -31,6 +31,7 @@
        no plate behind any MeguLit text). Only a placed page whose places do not hold the line yet hides its Japanese. */
     /* 2026-11-16 (1.4.16 live: the game's own line and MeguLit's 20 px above it while the game was not hidden yet): whenever the game draws its line itself, MeguLit draws only the translation, placed or not */
     'body.megulit-place-game-drawn.megulit-anchored .sentence-window.tomoyo-hook-reader .sentence-text:not(.megulit-old-line),body.megulit-place-game-drawn.megulit-placed .sentence-window.tomoyo-hook-reader .sentence-text:not(.megulit-old-line){visibility:hidden!important}',
+    'body.megulit-place-game-drawn.megulit-game-line-brief .sentence-window.tomoyo-hook-reader .sentence-text:not(.megulit-old-line){visibility:hidden!important}',
     'body.megulit-place-game-drawn .sentence-window.tomoyo-hook-reader .tomoyo-cn-row{visibility:visible!important}',
     /* layer 4 page model: older lines of the page (their own .sentence-text, placed like the current one) */
     'body.megulit-place-asleep .sentence-window.tomoyo-hook-reader{visibility:hidden!important}',
@@ -175,6 +176,8 @@
     const text = on && drawnByGame ? readerLine() : '';
     const drawn = !!text && drawnByGame.includes(text);
     if (document.body.classList.contains('megulit-place-game-drawn') !== drawn) { document.body.classList.toggle('megulit-place-game-drawn', drawn); window.__tomoyoHitRegionsRefresh?.(true); }
+    /* the same line while MeguLit is hiding the game's text (core/overlay-placement.cjs `hiding`): the game's own line is there until the hide is back, wherever the reader's line sits */
+    const brief = drawn && drawnHiding; if (document.body.classList.contains('megulit-game-line-brief') !== brief) document.body.classList.toggle('megulit-game-line-brief', brief);
     return drawn;
   }
   let reveal = { id: 0, n: 0, t: 0 };
@@ -451,7 +454,7 @@
     if (key !== lastGeom) { lastGeom = key; dispatchEvent(new CustomEvent('megulit-reveal-progress', { detail: { typing: false } })); window.__tomoyoHitRegionsRefresh?.(true); }
   }
   const schedule = () => { if (!frame) frame = requestAnimationFrame(apply); };
-  b.textPlace = m => { if (m && m.text && typeof m.read === 'boolean') b.lineReadDrawn?.(m.text, m.read); if (m && m.text && typeof m.color === 'string') b.lineColorDrawn?.(m.text, m.color); if (m?.visible === true) { drawnByGame = [...String(m.text || '')].filter(c => !blank(c)).join(''); schedule(); return; } if (m && Array.isArray(m.rects) && m.text) drawnByGame = ''; if (m?.clear) line = null; else if (m?.fallback && m.text) line = { fallback: true, text: String(m.text) }; else if (m && Array.isArray(m.rects) && m.text) line = { text: String(m.text), rects: m.rects, client: Array.isArray(m.client) ? m.client : [innerWidth, innerHeight] }; schedule(); };
+  b.textPlace = m => { if (m && m.text && typeof m.read === 'boolean') b.lineReadDrawn?.(m.text, m.read); if (m && m.text && typeof m.color === 'string') b.lineColorDrawn?.(m.text, m.color); if (m?.visible === true) { drawnByGame = [...String(m.text || '')].filter(c => !blank(c)).join(''); drawnHiding = m.hiding === true; schedule(); return; } if (m && Array.isArray(m.rects) && m.text) drawnByGame = ''; if (m?.clear) line = null; else if (m?.fallback && m.text) line = { fallback: true, text: String(m.text) }; else if (m && Array.isArray(m.rects) && m.text) line = { text: String(m.text), rects: m.rects, client: Array.isArray(m.client) ? m.client : [innerWidth, innerHeight] }; schedule(); };
   const pageGone = () => { for (const n of document.querySelectorAll('.megulit-old-line')) n.remove(); clones.clear(); document.body.classList.remove('megulit-place-asleep'); };
   /* 2026-11-15 `elsewhere` (core/overlay-placement.cjs page()): the layer is not armed and another path hides the game's
      line (write-back, glyph layer); the page says nothing about the line, so the reader places it as without a page */
