@@ -109,8 +109,10 @@ if($DryRun -or $Prepare){}
 elseif(Done 'sync'){Skip 'sync'}
 else{
  $dirty=git status --porcelain --untracked-files=no
- # an earlier run of this release already bumped the version files: that is our own change, not someone else's
- if($Resuming){$bumpFiles='web/about.js','desktop/Cargo.toml','desktop/tauri.conf.json','desktop/Cargo.lock','README.md';$dirty=@($dirty|Where-Object{$l=$_;-not ($bumpFiles|Where-Object{$l -like "* $_"})})}
+ # an earlier run of this release already bumped the version files: that is our own change, not someone else's.
+ # 2026-11-19 (1.4.17): -Prepare leaves exactly that bump uncommitted, and the documented next step is -SkipBuild; it was
+ # refused as a dirty tree and had to be run with -IncludeWorkingChanges. -SkipBuild accepts the bump files like a resume.
+ if($Resuming -or $SkipBuild){$bumpFiles='web/about.js','desktop/Cargo.toml','desktop/tauri.conf.json','desktop/Cargo.lock','README.md';$dirty=@($dirty|Where-Object{$l=$_;-not ($bumpFiles|Where-Object{$l -like "* $_"})})}
  if($dirty -and -not $IncludeWorkingChanges){throw "Working tree has uncommitted changes (add -IncludeWorkingChanges to ship them):`n$dirty"}
  G fetch -q origin
  if($Beta){
