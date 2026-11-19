@@ -57,3 +57,16 @@ test('only an open quotation grows: closed lines, narration, a new quotation and
  const r=new SentencePieces(()=>t);r.take('s','「あのね、');assert.equal(r.take('s','「あのね、明日は'),'「あのね、明日は','an engine that sends the grown line itself is left as it is');
  const s=new SentencePieces(()=>t);s.take('s','「あのね、');s.reset();assert.equal(s.take('s','明日は'),'明日は','a page reset ends the sentence');
 });
+
+test('counter-examples: narration without a full stop, a new speaker, a closed 」 then a new 「」 never join',()=>{
+ {const {shown,feed}=rig();for(const piece of ['そこに覆い被さる重く真っ青な空は','いつでも当たり前の姿を私達に見せてくれる'])feed(piece);
+  assert.deepEqual(shown.map(flat),['そこに覆い被さる重く真っ青な空は','いつでも当たり前の姿を私達に見せてくれる'],'two narration lines without 。 stay two lines');}
+ {const {shown,feed}=rig();for(const piece of ['「ふぅ……」','「やっぱり……いい女には、'])feed(piece);
+  assert.deepEqual(shown.map(flat),['「ふぅ……」','「やっぱり……いい女には、'],'a closed 」 then a new 「 is a new line');}
+ {const {h,shown,feed}=rig();feed('「やっぱり……いい女には、');h.speaker={text:'希実香',at:h.now()};feed('たばこと');
+  assert.deepEqual(shown.map(flat),['「やっぱり……いい女には、','たばこと'],'a new speaker name before the piece starts a new line');}
+ let t=0;const p=new SentencePieces(()=>t);
+ assert.equal(p.take('s','「あのね、','由岐'),'「あのね、');t+=1000;assert.equal(p.take('s','明日は','希実香'),'明日は','another speaker');
+ const q=new SentencePieces(()=>t);q.take('s','「あのね、','由岐');t+=1000;assert.equal(q.take('s','明日は','由岐'),'「あのね、明日は','the same speaker goes on');
+ const r=new SentencePieces(()=>t);r.take('s','「あのね、');t+=1000;assert.equal(r.take('s','由岐「次の台詞」'),'由岐「次の台詞」','a name before a bracket opens a new line');
+});
