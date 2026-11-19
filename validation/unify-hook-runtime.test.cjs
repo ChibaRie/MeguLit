@@ -34,9 +34,10 @@ test('HookBridge: MeguLitHook for every game; the old folders only for an older 
  const b=read('native/HookBridge.cs');
  assert.match(b,/string root=ChooseRuntime\(Path\.GetFullPath\(Path\.Combine\(AppDomain\.CurrentDomain\.BaseDirectory,"\.\.","runtime"\)\),/);
  assert.match(b,/if\(island&&Directory\.Exists\(at\("hook-island"\)\)&&!MainRuntimeHas\(root,"ToMeCS2_DRAW"\)\)root=at\("hook-island"\);/);
- assert.match(b,/if\(steinsGate&&Directory\.Exists\(at\("hook-mages"\)\)&&!MainRuntimeHas\(root,"ToMeSG_EMBED"\)\)root=/);
+ assert.match(b,/if\(steinsGate&&Directory\.Exists\(at\("hook-mages"\)\)&&\(!unified\|\|!MainRuntimeHas\(root,"ToMeSG_EMBED"\)\)\)root=/,'STEINS;GATE keeps its folder unless unified');
+ assert.match(b,/Environment\.GetEnvironmentVariable\("MEGULIT_UNIFIED_ADAPTERS"\)=="1"/,'unified only on request (never verified on a real game)');
  assert.match(b,/if\(siglus&&Path\.GetFileName\(root\)=="hook-readonly"&&/,'Siglus already on MeguLitHook; its folder only without MeguLitHook');
- assert.match(b,/if\(euphoria&&Directory\.Exists\(at\("hook"\)\)&&!MainRuntimeHas\(root,"EmbedEuphoria474_DrawHide_TEST2"\)\)root=at\("hook"\);/);
+ assert.match(b,/if\(euphoria&&Directory\.Exists\(at\("hook"\)\)&&\(!unified\|\|!MainRuntimeHas\(root,"EmbedEuphoria474_DrawHide_TEST2"\)\)\)root=at\("hook"\);/,'euphoria HD keeps its folder unless unified');
  const exe=path.join(__dirname,'..','native','HookBridge.exe');
  if(fs.existsSync(exe)&&/RuntimeChoiceSelfTest/.test(b)){const out=execFileSync(exe,['--runtime-choice-self-test'],{windowsHide:true,encoding:'utf8',timeout:30000});assert.match(out,/PASS runtime choice/,out);}
 });
