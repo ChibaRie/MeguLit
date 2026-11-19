@@ -15,6 +15,7 @@ mod tray_menu;
 mod hot_assets;
 #[cfg(windows)]
 mod reader_pointer;
+mod window_chrome;
 use serde_json::{json, Value};
 use std::{path::PathBuf, process::Command, sync::atomic::{AtomicBool, Ordering}};
 use tauri::{Emitter, Manager, State, WindowEvent, tray::{TrayIconBuilder, TrayIconEvent, MouseButtonState, MouseButton}};
@@ -158,7 +159,7 @@ async fn reader_open(app:tauri::AppHandle,background:Option<bool>)->Result<(),St
         .data_directory(state.root.join("cache/webview-profile"))
         .initialization_script("document.addEventListener('contextmenu',event=>event.preventDefault(),true);")
         .build().map_err(|e|{reader_log(&state.root,"window-create-failed",&e.to_string());e.to_string()})
-        .map(|w|window_policy::no_accent_border(&w))?;reader_log(&state.root,"window-created","");Ok(())
+        .map(|w|{window_policy::no_accent_border(&w);window_policy::chromeless(&w);})?;reader_log(&state.root,"window-created","");Ok(())
 }
 
 #[tauri::command]
