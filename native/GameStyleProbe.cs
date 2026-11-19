@@ -46,6 +46,11 @@ public static class GameStyleProbe{
     double t=((b.Top+y)-word.Box.Top)/(double)Math.Max(1,word.Box.Height-1);if(t>=0&&t<=1){var band=bands[Math.Min(7,(int)(t*8))];if(!band.Counts.ContainsKey(key)){band.Counts[key]=0;band.Sums[key]=new long[3];band.Touches[key]=0;}band.Counts[key]++;band.Sums[key][0]+=R;band.Sums[key][1]+=G;band.Sums[key][2]+=B;if(near)band.Touches[key]++;}
    }
   }
+  if(bins.Count==0)return null;
+  // Background seen through closed strokes (the counters of 口, 目) is not ink: on a black box with a black outline it outnumbered
+  // the thin grey fill and came out as the text colour (live ファタモルガーナの館 2026-11-19). Hollow text, a fill in the background
+  // colour inside an outline, keeps it: there the enclosed area is at least as large as the strokes around it.
+  if(back[3]>0){Func<int,bool> like=k=>{var e=sums[k];int c=bins[k];return Math.Abs(e[0]/c-back[0]/back[3])+Math.Abs(e[1]/c-back[1]/back[3])+Math.Abs(e[2]/c-back[2]/back[3])<60;};int other=bins.Where(p=>!like(p.Key)).Select(p=>p.Value).DefaultIfEmpty(0).Max();if(other>=12)foreach(int k in bins.Keys.Where(k=>like(k)&&bins[k]*10<other*6).ToList()){bins.Remove(k);}}
   if(bins.Count==0)return null;int top=bins.Values.Max();if(top<12)return null;
   int best=bins.Where(p=>p.Value>=Math.Max(12,top/5)).OrderByDescending(p=>p.Value-2*touches[p.Key]).ThenByDescending(p=>p.Value).First().Key,count=bins[best];var s=sums[best];Gradient(bands,out gradientTop,out gradientBottom);
   {int edgeKey=-1,edgeCount=0;foreach(var p in bins){if(p.Key==best||p.Value<Math.Max(12,count/6))continue;var e=sums[p.Key];if(back[3]>0&&Math.Abs(e[0]/p.Value-back[0]/back[3])+Math.Abs(e[1]/p.Value-back[1]/back[3])+Math.Abs(e[2]/p.Value-back[2]/back[3])<90)continue; /* the background seen inside closed strokes */if(Math.Abs(e[0]/p.Value-s[0]/count)+Math.Abs(e[1]/p.Value-s[1]/count)+Math.Abs(e[2]/p.Value-s[2]/count)<120)continue;if(p.Value>edgeCount){edgeCount=p.Value;edgeKey=p.Key;}}

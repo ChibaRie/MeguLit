@@ -382,6 +382,9 @@ static void Deactivate(string reason){if(WaitHook!=null)WaitHook.Disable();lock(
  static void StartEngineHide(string tag){string path=tag.ToLowerInvariant();System.Threading.EventWaitHandle hide;lock(EngineHides){if(EngineHides.ContainsKey(tag))return;EngineHides[tag]=null;}
   if(!TextPathCanary.Allowed(path)){Diagnostic(path+" invisible drawing off for this game (crash canary): "+TextPathCanary.Why(path));return;}
   try{hide=new System.Threading.EventWaitHandle(false,System.Threading.EventResetMode.ManualReset,"Local\\MeguLit"+tag.Substring(0,1)+path.Substring(1)+"Hide-"+Pid);}catch(Exception e){Diagnostic(path+" hide event "+e.Message);return;}
+  /* The event outlives a bridge that was killed while hiding (the game holds it open): a new bridge starts from "the game draws", or a
+     read-only session after a crash left the dialogue invisible with nobody drawing it (live ファタモルガーナの館 2026-11-19). */
+  try{hide.Reset();}catch{}
   lock(EngineHides)EngineHides[tag]=hide;if(tag=="KRKR")KrkrHide=hide;
   /* E472 (user: fullscreen ファタモルガーナの館 showed no text at all): the game's text may only be invisible while MeguLit's own
      text is on screen. MeguLit's reading layer has to be a visible window above the game (exclusive fullscreen, a hidden or

@@ -13,7 +13,7 @@
  const unit=v=>Number.isFinite(v)&&Math.abs(v)<=20000;
  const plausibleMap=v=>!!v&&[v.s,v.bx,v.by,v.dx,v.dy].every(Number.isFinite)&&v.s>.1&&v.s<10&&Math.abs(v.bx)<=20000&&Math.abs(v.by)<=20000&&Math.abs(v.dx)<=20000&&Math.abs(v.dy)<=20000&&v.cw>0&&v.ch>0;
  const api={
-  resetSession(nextIdentity){stateStyle.clear();readState='';map=last=cal=null;lastAt=0;following=false;applied='';if(nextIdentity!==undefined)identity=String(nextIdentity);b.lineColorReset?.();repaint();},
+  resetSession(nextIdentity){stateStyle.clear();readState='';endAlpha=1;map=last=cal=null;lastAt=0;following=false;applied='';if(nextIdentity!==undefined)identity=String(nextIdentity);b.lineColorReset?.();repaint();},
   refresh(){if(last)b.textPosition(last,true);},
   mapExtent(m){if(!plausibleMap(map)||map.engine!==m.engine)return null;const l=b.galLayoutInfo?.(),kx=(l?.clientWidth||map.cw)/map.cw,ky=(l?.clientHeight||map.ch)/map.ch;return {x:(map.s*m.x0+map.bx)*kx,y:(map.s*m.y0+map.by)*ky,width:map.s*(m.x1-m.x0+m.size)*kx,size:map.s*m.size*ky};},
   getMap:()=>map?{...map}:null,
@@ -59,7 +59,7 @@
  /* Read styles: every sentence is painted from its own evidence (the engine's draw call, else the game's pixels: fill, opacity,
     outline). A sentence with none takes the last reliable sample of the same engine-reported read state, never the other state's
     and never a guess; with no state or no sample the saved colours apply. Furigana reads the same variables. */
- const stateStyle=new Map();let readState='',pixelPaint=null;
+ const stateStyle=new Map();let readState='',pixelPaint=null,endAlpha=1;
  const paintLine=(color,text,style)=>{const gs=window.TomoyoGameStyle,p=b.galPreferences?.()||{},root=document.documentElement.style;
   let paint=gs?.linePaint?gs.linePaint(p,text||'',color,style||null):null;if(!gs?.linePaint&&gs?.lineColor){const c=gs.lineColor(p,text||'',color);paint=c?{color:c,edge:'',sampled:!!color}:null;}
   if(paint?.sampled&&readState)stateStyle.set(readState,paint);
@@ -87,7 +87,9 @@
   // A late end for the previous source cannot recolour a sentence waiting for its own begin.
   if(!colorDraw||colorDraw.engine!==m.engine||colorDraw.line!==m.line)return;
   if(typeof m.color==='string'&&/^#[0-9a-f]{6}$/i.test(m.color))colorDraw.color=m.color;
-  if(m.style&&typeof m.style==='object'&&/^#[0-9a-f]{6}$/i.test(m.style.fill||''))colorDraw.style=m.style;
+  if(m.style&&typeof m.style==='object'&&/^#[0-9a-f]{6}$/i.test(m.style.fill||'')){
+   /* A game that fades characters in starts each one faint: the opacity at the first character is not the sentence's (live ファタモルガーナの館: begin 20 %, end opaque). Until the end says so it counts only when the last finished sentence was dimmed the same. */
+   const a=Number(m.style.alpha);if(m.phase==='end')endAlpha=Number.isFinite(a)?a:1;colorDraw.style=m.phase!=='end'&&a<.98&&!(Math.abs(a-endAlpha)<.03)?{...m.style,alpha:1}:m.style;} /* the engine side sends the end again when the opacity rises after it */
   if(Number.isSafeInteger(m.sourceToken)){colorDraw.sourceToken=m.sourceToken;colorDraw.claimed=matches;}
   if(colorDraw.claimed)paintLine(colorDraw.color||pixelPaint?.color||'',colorSource,colorDraw.style||(colorDraw.color?null:pixelPaint?.style));
  };

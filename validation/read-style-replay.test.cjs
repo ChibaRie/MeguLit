@@ -8,6 +8,7 @@
      status  a reader status message (hookSourceRead + hookSourceReadOrigin; with text it also carries that sentence)
      sample  the game's own pixels for the sentence on screen (core/line-pixels.cjs result)
      expect  what the reader paints now: color (#rrggbb / #rrggbbaa, null = no override), edge (null = the saved outline)
+     expectPos live recordings: the game's pixel colour of that step (pixel), which the colour handed to the reader must match
      expectNot a colour the reader must not show now
    A live recording is replayed by the same driver. */
 process.env.MEGULIT_RELAY_BASE??='off';
@@ -26,7 +27,7 @@ function reader(t,prefs={}){
  const ctx={window,document,MutationObserver:class{observe(){}},getComputedStyle:()=>({getPropertyValue:()=>'',fontSize:'28px'}),Date,setTimeout,clearTimeout};
  vm.createContext(ctx);vm.runInContext(read('web/reader/modules/game-style.js'),ctx);window.TomoyoGameStyle=ctx.TomoyoGameStyle;
  for(const f of ['island-source','hook-reader','text-position'])vm.runInContext(read('web/reader/modules/'+f+'.js'),ctx);
- let now=100000;const route=m=>{if(m.type==='hookTextPos')b.textPosition(m);else if(m.type==='lineStyleSample')b.lineStyleSample(m);else b.galStatus(m);};
+ let now=100000,lastPos=null;const route=m=>{if(m.type==='hookTextPos'){if(m.color||m.style)lastPos=m;b.textPosition(m);}else if(m.type==='lineStyleSample')b.lineStyleSample(m);else b.galStatus(m);};
  const hook=new HookNative({native:__dirname,hook:__dirname,logs:'Z:/no-read-style-log'},route,()=>{},()=>now);hook.trace=()=>{};hook.send=()=>{};t.after(()=>hook.stop());
  const paint=()=>({color:classes.has('tome-line-color')?vars.get('--tomoyo-gal-line-color'):null,edge:classes.has('tome-line-edge')?vars.get('--tomoyo-gal-line-edge'):null});
  return {b,window,classes,paint,
@@ -36,12 +37,15 @@ function reader(t,prefs={}){
    else if(row.t==='status'){const {t:_,text,...m}=row;now+=1000;if(typeof text==='string')route({...m,hookSource:text,hookSequence:Math.round(now/1000)});else route(m);}
    else if(row.t==='sample')route({type:'lineStyleSample',sourceToken:window.TomeIslandSource.token(row.text),style:row.style});
    else if(row.t==='expect'){const p=paint();assert.equal(p.color,row.color,'fill of line '+row.line);assert.equal(p.edge,row.edge,'outline of line '+row.line);return 1;}
+   else if(row.t==='expectPos'){/* live recordings: the colour the reader is given for the sentence equals the game's pixels of that step */
+    assert.ok(lastPos,'no draw colour reached the reader for '+row.shot);const h=c=>[1,3,5].map(i=>parseInt(c.slice(i,i+2),16)),x=h(lastPos.style?.fill||lastPos.color),y=h(row.pixel),d=Math.abs(x[0]-y[0])+Math.abs(x[1]-y[1])+Math.abs(x[2]-y[2]);
+    assert.ok(d<=48,row.shot+' '+row.text+': reader '+(lastPos.style?.fill||lastPos.color)+' vs game pixels '+row.pixel);if(lastPos.style)assert.equal(lastPos.style.fill,lastPos.color);return 1;}
    else if(row.t==='expectNot'){assert.notEqual(paint().color,row.color,'line '+row.line+' must not show '+row.color);}
    return 0;}};
 }
 const fixtures=fs.readdirSync(dir).filter(f=>f.endsWith('.jsonl')).sort();
 const rowsOf=f=>read(path.join('validation','helpers','read-style-replay',f)).split(/\r?\n/).filter(Boolean).map(l=>JSON.parse(l));
-for(const f of fixtures)test('read-style replay: '+f,t=>{const rows=rowsOf(f),meta=rows[0],r=reader(t,meta.prefs||{});let checked=0;for(const row of rows.slice(1))checked+=r.play(row);assert.ok(checked>=20,'at least 20 consecutive sentences are checked ('+checked+')');});
+for(const f of fixtures)test('read-style replay: '+f,t=>{const rows=rowsOf(f),meta=rows[0],r=reader(t,meta.prefs||{});let checked=0;for(const row of rows.slice(1))checked+=r.play(row);assert.ok(checked>=(meta.min||20),'at least '+(meta.min||20)+' sentences are checked ('+checked+')');});
 test('the four cases are present: colour switch, no distinction, dimming, flag + pixels',()=>{for(const n of ['colour-read-to-unread','no-distinction','no-evidence','dim-read-to-unread','flag-and-pixels'])assert.ok(fixtures.includes(n+'.jsonl'),n);});
 test('furigana and the base text read the same per-line variables',()=>{const css=read('web/reader/modules/gal.js');
  assert.ok(css.includes('.megulit-ruby-base[data-tomoyo-reading]::before { -webkit-text-fill-color:var(--tomoyo-gal-color'));

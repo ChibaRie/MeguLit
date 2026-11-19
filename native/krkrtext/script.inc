@@ -24,7 +24,7 @@ LR"MGLT((function(){
      KiriKiri builds; typeof does not */
   var st=(typeof global.__megulitKrkrState=='Object')?global.__megulitKrkrState:void;
   if(st===void) {
-   st=%['skipped'=>0,'drawArgs'=>void,'charsSent'=>0,'charsErr'=>'','trWrapped'=>0,'trLine'=>0,'trText'=>'','trKey'=>'','trOp'=>void,'trT'=>void,'trOwner'=>void,'trRec'=>void,'skippedCls'=>'','lastFont'=>'','pfontName'=>void,'art'=>0,'artText'=>'','artSeen'=>[],'calls'=>0,'hid'=>0,'wrapped'=>[],'recs'=>[],'active'=>void,'lastVis'=>-1,'timer'=>void,'line'=>0,'report'=>global.__megulitKrkrReport,'kag'=>k,'hooked'=>0,'oldLB'=>void,'oldPB'=>void,'oldPBC'=>void];
+   st=%['skipped'=>0,'drawArgs'=>void,'drawOp'=>0,'lastEnd'=>void,'charsSent'=>0,'charsErr'=>'','trWrapped'=>0,'trLine'=>0,'trText'=>'','trKey'=>'','trOp'=>void,'trT'=>void,'trOwner'=>void,'trRec'=>void,'skippedCls'=>'','lastFont'=>'','pfontName'=>void,'art'=>0,'artText'=>'','artSeen'=>[],'calls'=>0,'hid'=>0,'wrapped'=>[],'recs'=>[],'active'=>void,'lastVis'=>-1,'timer'=>void,'line'=>0,'report'=>global.__megulitKrkrReport,'kag'=>k,'hooked'=>0,'oldLB'=>void,'oldPB'=>void,'oldPBC'=>void];
    st.screen=function(){
     var sw=+this.kag.scWidth,sh=+this.kag.scHeight;
     if(!(sw>0) || !(sh>0)) {sw=+this.kag.primaryLayer.width;sh=+this.kag.primaryLayer.height;}
@@ -51,7 +51,9 @@ LR"MGLT((function(){
     try {
      var a=this.drawArgs;this.drawArgs=void;
      if(a!==void && a.count>=4) {
-      var op=a.count>4?+a[4]:255;if(op<0) op=0;if(op>255) op=255;
+      /* a game that fades each character in draws it several times with a rising opacity: the sentence's opacity is the
+         highest one it was drawn with (a dimmed read line is drawn at one constant opacity) */
+      var op=a.count>4?+a[4]:255;if(op<this.drawOp) op=this.drawOp;if(op<0) op=0;if(op>255) op=255;
       var s='f:'+this.hex(+a[3]&0xffffff,6)+this.hex(op,2);
       var lv=a.count>6?+a[6]:0;if(lv>255) lv=255;
       if(lv>0) {
@@ -124,8 +126,20 @@ LR"MGLT((function(){
    } incontextof st;
 )MGLT" LR"MGLT(
    st.flush=function(rec){
-    if(rec.n>0) {this.send('end',rec,rec.x0,rec.x1);try {this.chars(rec);} catch(e) {this.charsErr=e.message;}}
-    rec.n=0;rec.text='';rec.rs='';rec.cn=0;rec.hc=0;rec.ct='';
+    if(rec.n>0) {this.send('end',rec,rec.x0,rec.x1);
+     /* kept for st.fade: a game that fades characters in is still raising their opacity after the click wait began */
+     try {this.lastEnd=%['line'=>rec.line,'same'=>rec.same,'nvl'=>rec.nvl,'y0'=>rec.y0,'y1'=>rec.y1,'size'=>rec.size,'sw'=>rec.sw,'sh'=>rec.sh,'n'=>rec.n,'color'=>rec.color,'paint'=>rec.paint,'text'=>rec.text,'x0'=>rec.x0,'x1'=>rec.x1,'op'=>this.drawOp];} catch(e) {this.lastEnd=void;}
+     try {this.chars(rec);} catch(e) {this.charsErr=e.message;}}
+    rec.n=0;rec.text='';rec.rs='';rec.cn=0;rec.hc=0;rec.ct='';this.drawOp=0;
+   } incontextof st;
+   /* the finished sentence was drawn again with a higher opacity (fade-in still running): its end record is sent again with the
+      opacity it has now, so the reader never keeps a sentence at the faint first step */
+   st.fade=function(){
+    var r=this.lastEnd;if(r===void || r===null) return;
+    if(this.active!==void && this.active!==null && this.active.n>0) {this.lastEnd=void;return;}
+    var p=''+r.paint;if(this.drawOp<=r.op || p.length<10 || p.substring(0,2)!='f:') return;
+    r.op=this.drawOp;r.paint=p.substring(0,8)+this.hex(r.op>255?255:r.op,2)+p.substring(10);
+    this.send('end',r,r.x0,r.x1);
    } incontextof st;
    st.flushAll=function(){for(var i=0;i<this.recs.count;i++) this.flush(this.recs[i]);} incontextof st;
    /* 2026-11-12 (user: the game must think it draws its text while the output is ours): while MeguLit asks for it
@@ -144,7 +158,7 @@ LR"MGLT((function(){
      if(typeof st=='Object' && st!==void) {
       if(self.__mgKind=='msg') {
        st.calls++;
-       {var d=[];d.assign(args);st.drawArgs=d;}
+       {var d=[];d.assign(args);st.drawArgs=d;var o=d.count>4?+d[4]:255;if(o>st.drawOp) st.drawOp=o;}
        if(st.hideOn()) {
         var a=[];a.assign(args);
         while(a.count<7) a.add(a.count==4?255:(a.count==5?true:0));
@@ -309,6 +323,7 @@ LR"MGLT((function(){
 )MGLT" LR"MGLT(
    st.vis=function(){
     try {this.trHide();} catch(e) {}
+    try {this.fade();} catch(e) {}
     try {
      var r=this.active;if(r===void || r===null || !isvalid r.target) return;
      var v=this.shown(r.target);
