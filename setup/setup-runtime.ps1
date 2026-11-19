@@ -239,8 +239,7 @@ $button = New-Object Windows.Forms.Button; $button.Text = '取消 Cancel'; $butt
 $button.Font = New-Object Drawing.Font($ui, 9, [Drawing.FontStyle]::Bold); Style-Button $button $false; $button.FlatAppearance.BorderColor = $C.red; $button.Location = New-Object Drawing.Point(568,200); $button.Size = New-Object Drawing.Size(120,34); $button.Cursor = 'Hand'
 $progress.Controls.Add($button)
 
-$client = New-Object Net.WebClient; $client.Headers.Add('User-Agent','MeguLit-setup')
-$script:queue = @(); $script:index = 0; $script:urlIndex = 0; $script:done = $false; $script:mode = ''
+$script:fetch = $null; $script:queue = @(); $script:index = 0; $script:done = $false; $script:mode = ''
 $names = @{ base = '基础组件'; reading = '注音分词词典'; voice = '语音引擎' }
 # base needs Python's core library too: an interrupted install once left node.exe but no Lib\zipfile.
 $markers = @{ base = @('runtime\node.exe','runtime\python\python.exe','runtime\python\Lib\zipfile\__init__.py','runtime\python\Lib\encodings\__init__.py'); reading = 'runtime\reading\sudachidict_full\resources\system.dic'; voice = 'runtime\aivis\run.exe' }
@@ -248,34 +247,433 @@ $markers = @{ base = @('runtime\node.exe','runtime\python\python.exe','runtime\p
 # ---- download source ----
 # Users in mainland China often get very slow GitHub downloads. We do not look up the user's IP
 # (that would send it to a third-party geo service); the system time zone / UI language is enough
-# to decide whether to probe mirrors. When it looks like China, every source gets a short ranged
-# download and the fastest wins. Mirrors only relay the same GitHub file; SHA-256 still has to match.
+# to decide the source order. Mirrors only relay the same GitHub file; SHA-256 still has to match.
 $inChina = ([TimeZoneInfo]::Local.Id -eq 'China Standard Time') -or ((Get-Culture).Name -eq 'zh-CN')
-function Source-Name($url) { ([Uri]$url).Host }
+# 2026-11-19: players in China sat on dl.megulit.com (Cloudflare R2, throttled there after the first MB) at 9 / 178 MB.
+# In China cn-dl (Tencent EdgeOne) now comes first, then the other megulit.com mirror, the GitHub proxies, GitHub last.
+# Elsewhere GitHub stays first. The order is only the tie-break: every source is probed in parallel and ranked by speed.
+# setup\runtime.json keeps its own mirror order (the app's downloader reads it too); the order is decided here.
+function Rank-Sources($urls, [bool]$china) {
+  $all = @($urls)
+  $rows = for ($i = 0; $i -lt $all.Count; $i++) {
+    $h = ([Uri]$all[$i]).Host
+    $r = if (-not $china) { if ($h -eq 'github.com') { 0 } else { 1 } } elseif ($h -like 'cn-*') { 0 } elseif ($h -like '*.megulit.com') { 1 } elseif ($h -eq 'github.com') { 3 } else { 2 }
+    [pscustomobject]@{ u = $all[$i]; r = $r; i = $i }
+  }
+  @($rows | Sort-Object r, i | ForEach-Object { $_.u })
+}
 function Candidates($id) {
   $direct = @($packs.$id.urls)
   $mirrored = foreach ($m in @($manifest.mirrors)) { foreach ($u in $direct) { $seg = $u.Split('/'); $m.Replace('{url}', $u).Replace('{tag}', $seg[-2]).Replace('{file}', $seg[-1]) } }
-  if ($inChina) { @($mirrored) + $direct } else { $direct + @($mirrored) }
+  Rank-Sources (@($direct) + @($mirrored)) $inChina
 }
-function Probe($url) {
-  try {
-    $req = [Net.HttpWebRequest]::Create($url); $req.AddRange(0, 1048575); $req.Timeout = 6000; $req.ReadWriteTimeout = 6000; $req.UserAgent = 'MeguLit-setup'
-    $sw = [Diagnostics.Stopwatch]::StartNew(); $res = $req.GetResponse(); $stream = $res.GetResponseStream()
-    $buf = New-Object byte[] 65536; $n = 0
-    while ($sw.ElapsedMilliseconds -lt 6000) { $r = $stream.Read($buf, 0, $buf.Length); if ($r -le 0) { break }; $n += $r }
-    $res.Close(); if ($n -lt 65536) { return 0 }
-    return $n / [math]::Max(0.05, $sw.Elapsed.TotalSeconds)
-  } catch { return 0 }
+# Multi-source segmented downloader (compiled on first use, runs on background threads; the window only polls it).
+# The old single WebClient stayed on whichever source answered first, even at 20 KB/s, and threw the .part away on retry.
+# Now: all sources are probed at once for ~3 s, the file is fetched as 4 MB Range segments over 8 connections from the
+# fastest sources, a connection far below the average or silent for 15 s is dropped and its segment goes elsewhere, and
+# finished segments are listed in runtime-<id>.setup.part.json so Retry or the next launch only fetches what is missing.
+# A source answering 200 instead of 206 (no Range) is only used alone, for the whole file.
+# validation\setup-download.test.cjs runs this class against local throttled servers.
+$fetchSource = @'
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Net;
+using System.Text;
+using System.Text.RegularExpressions;
+using System.Threading;
+using System.Security.Cryptography;
+
+public class MeguSource {
+  public string Url, Live, Host, Why;
+  public int Order, Active, Strikes;
+  public double ProbeSpeed, Speed;
+  public long ProbeBytes, Bytes, Length = -1, WinBytes, Recent;
+  public int Range = -1;   /* -1 unknown, 0 no (200 only), 1 yes (206) */
+  public bool Dead;
 }
-function Order-Sources($id) {
-  $list = @(Candidates $id)
-  if (-not $inChina -or $list.Count -lt 2) { return $list }
-  $status.Text = '正在为你挑选最快的下载源（GitHub / 国内镜像）…'; $form.Refresh()
-  $scored = foreach ($u in $list) { [Windows.Forms.Application]::DoEvents(); [pscustomobject]@{ url = $u; speed = (Probe $u) } }
-  $ok = @($scored | Where-Object { $_.speed -gt 0 } | Sort-Object speed -Descending | ForEach-Object { $_.url })
-  $bad = @($scored | Where-Object { $_.speed -le 0 } | ForEach-Object { $_.url })
-  return $ok + $bad
+
+public class MeguConn {
+  public MeguSource Src; public int Seg; public long Len, Got, WinGot;
+  public HttpWebRequest Req; public DateTime Started, LastData; public double RecentSpeed;
+  public volatile bool Killed; public string KillWhy;
 }
+
+/* Downloads one file from several mirrors at once: parallel speed probe, HTTP Range segments on
+   several connections (fast sources take more segments), slow or stalled connections are dropped and
+   their segment goes to another source, finished segments are remembered in <part>.json so a retry or
+   a restart only fetches what is missing. The whole file is checked against SHA-256 at the end. */
+public class MeguFetch {
+  public string[] Urls; public string Part; public long Size; public string Sha;
+  public int Connections = 8, MaxPerSource = 6, SegmentSize = 4 << 20, ProbeMs = 3000, ProbeCapMs = 4000, StallMs = 15000, SlowGraceMs = 6000;
+  public long ProbeMaxBytes = 16L << 20;
+  public double SlowRatio = 0.3;
+  public string UserAgent = "MeguLit-setup";
+
+  public volatile string Phase = "idle";
+  public string Error = "";
+  public long Resumed, ProbeElapsedMs, Steals, SlowKills, StallKills;
+  public bool Single;
+  public double TotalSpeed;
+  public List<MeguSource> Sources = new List<MeguSource>();
+
+  readonly object gate = new object();
+  readonly List<MeguConn> conns = new List<MeguConn>();
+  readonly LinkedList<int> pending = new LinkedList<int>();
+  readonly StringBuilder log = new StringBuilder();
+  readonly DateTime t0 = DateTime.UtcNow;
+  bool[] done; int segCount; long doneBytes; volatile bool cancel; string failWhy;
+  Thread main;
+
+  public string StatePath { get { return Part + ".json"; } }
+  public string LogText() { lock (log) return log.ToString(); }
+  void Log(string s) { lock (log) log.AppendFormat("{0,6:0.0}s {1}\r\n", (DateTime.UtcNow - t0).TotalSeconds, s); }
+
+  public long Received {
+    get { lock (gate) { long n = doneBytes; foreach (MeguConn c in conns) n += Interlocked.Read(ref c.Got); return Math.Min(n, Size); } }
+  }
+  public string SourceLabel() {
+    lock (gate) {
+      MeguSource top = null; int busy = 0;
+      foreach (MeguSource s in Sources) {
+        if (s.Active == 0 && s.Recent == 0) continue;
+        if (s.Active > 0) busy++;
+        if (top == null || s.Recent > top.Recent || (s.Recent == top.Recent && s.Bytes > top.Bytes)) top = s;
+      }
+      if (top == null) return "";
+      return busy > 1 ? top.Host + " 等 " + busy + " 个源" : top.Host;
+    }
+  }
+
+  public void Start() {
+    main = new Thread(Run); main.IsBackground = true; main.Start();
+  }
+  public void Cancel() {
+    cancel = true;
+    lock (gate) { foreach (MeguConn c in conns) Kill(c, "cancel"); Monitor.PulseAll(gate); }
+  }
+  public bool Wait(int ms) { return main == null || main.Join(ms); }
+
+  void Run() {
+    FileStream held = null;
+    try {
+      /* Two setup windows on one folder must not write the same file: the second one takes its own. */
+      for (int k = 0; held == null; k++) {
+        string p = k == 0 ? Part : Part + "-" + k;
+        try { held = new FileStream(p + ".lock", FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None, 1, FileOptions.DeleteOnClose); Part = p; }
+        catch (IOException) { if (k >= 20) throw; }
+      }
+      if (ServicePointManager.DefaultConnectionLimit < 64) ServicePointManager.DefaultConnectionLimit = 64;
+      segCount = (int)((Size + SegmentSize - 1) / SegmentSize);
+      for (int i = 0; i < Urls.Length; i++) {
+        MeguSource s = new MeguSource(); s.Url = Urls[i]; s.Live = Urls[i]; s.Host = new Uri(Urls[i]).Authority; s.Order = i; Sources.Add(s);
+      }
+      for (int round = 0; round < 2; round++) {
+        LoadState();
+        bool complete = Resumed == Size;
+        if (!complete) {
+          if (round == 0) Probe();
+          if (cancel) { Phase = "cancelled"; return; }
+          Phase = "download";
+          if (HasRangeSource()) Segmented();
+          if (!cancel && failWhy == null && doneBytes < Size) WholeFile();
+          if (cancel) { Phase = "cancelled"; return; }
+          if (failWhy != null || doneBytes < Size) { Fail(failWhy ?? "所有下载源都失败了"); return; }
+        }
+        Phase = "verify";
+        string hash = Hash();
+        if (hash == Sha.ToUpperInvariant()) { TryDelete(StatePath); Log("sha256 ok"); Phase = "done"; return; }
+        Log("sha256 mismatch " + hash + (round == 0 ? ", downloading again from scratch" : ""));
+        TryDelete(StatePath); TryDelete(Part);
+        if (round == 1) { Fail("文件校验失败，可能下载不完整"); return; }
+      }
+    } catch (Exception e) { if (cancel) Phase = "cancelled"; else Fail(e.Message); }
+    finally { if (held != null) held.Dispose(); }
+  }
+  void Fail(string why) { Error = why; Log("failed: " + why); Phase = "failed"; }
+
+  /* ---------- resume state ---------- */
+  void LoadState() {
+    done = new bool[segCount]; doneBytes = 0; Resumed = 0; Single = false; failWhy = null;
+    try {
+      if (File.Exists(StatePath) && File.Exists(Part) && new FileInfo(Part).Length == Size) {
+        string j = File.ReadAllText(StatePath);
+        if (Num(j, "size") == Size && Num(j, "segment") == SegmentSize && Str(j, "sha256") == Sha.ToUpperInvariant()) {
+          foreach (Match m in Regex.Matches(Str(j, "done"), @"\d+")) { int k = int.Parse(m.Value); if (k < segCount && !done[k]) { done[k] = true; doneBytes += SegLen(k); } }
+        }
+      }
+    } catch { }
+    Resumed = doneBytes;
+    if (doneBytes == 0) {
+      for (int i = 0; ; i++) {
+        try { using (FileStream f = new FileStream(Part, FileMode.Create, FileAccess.Write, FileShare.ReadWrite)) f.SetLength(Size); break; }
+        catch (IOException) { if (i >= 30) throw; Thread.Sleep(500); }
+      }
+      TryDelete(StatePath);
+    } else Log("resume: " + doneBytes + " of " + Size + " bytes already here");
+    pending.Clear();
+    for (int i = 0; i < segCount; i++) if (!done[i]) pending.AddLast(i);
+  }
+  void SaveState() {
+    StringBuilder d = new StringBuilder();
+    for (int i = 0; i < segCount; i++) if (done[i]) { if (d.Length > 0) d.Append(','); d.Append(i); }
+    try { File.WriteAllText(StatePath, "{\"size\":" + Size + ",\"segment\":" + SegmentSize + ",\"sha256\":\"" + Sha.ToUpperInvariant() + "\",\"done\":\"" + d + "\"}"); } catch { }
+  }
+  static long Num(string j, string k) { Match m = Regex.Match(j, "\"" + k + "\"\\s*:\\s*(\\d+)"); return m.Success ? long.Parse(m.Groups[1].Value) : -1; }
+  static string Str(string j, string k) { Match m = Regex.Match(j, "\"" + k + "\"\\s*:\\s*\"([^\"]*)\""); return m.Success ? m.Groups[1].Value : ""; }
+  long SegLen(int k) { return Math.Min(Size, (long)(k + 1) * SegmentSize) - (long)k * SegmentSize; }
+  static void TryDelete(string p) { try { if (File.Exists(p)) File.Delete(p); } catch { } }
+
+  /* ---------- parallel probe ---------- */
+  HttpWebRequest Make(string url) {
+    HttpWebRequest r = (HttpWebRequest)WebRequest.Create(url);
+    r.UserAgent = UserAgent; r.Timeout = StallMs; r.ReadWriteTimeout = StallMs; r.KeepAlive = true;
+    return r;
+  }
+  static int StatusOf(WebException e) { HttpWebResponse r = e.Response as HttpWebResponse; return r == null ? 0 : (int)r.StatusCode; }
+  static long TotalFromContentRange(string cr) { if (cr == null) return -1; Match m = Regex.Match(cr, @"/(\d+)"); return m.Success ? long.Parse(m.Groups[1].Value) : -1; }
+
+  void Probe() {
+    Phase = "probe";
+    List<HttpWebRequest> reqs = new List<HttpWebRequest>();
+    List<Thread> threads = new List<Thread>();
+    DateTime start = DateTime.UtcNow;
+    int running = Sources.Count;
+    foreach (MeguSource src in Sources) {
+      MeguSource s = src;
+      HttpWebRequest req = Make(s.Url); req.Timeout = ProbeCapMs; req.ReadWriteTimeout = ProbeCapMs; req.AddRange(0L);
+      lock (reqs) reqs.Add(req);
+      Thread t = new Thread(delegate() {
+        try {
+          using (HttpWebResponse res = (HttpWebResponse)req.GetResponse()) {
+            s.Live = res.ResponseUri.AbsoluteUri;
+            if ((int)res.StatusCode == 206) { s.Range = 1; s.Length = TotalFromContentRange(res.Headers["Content-Range"]); }
+            else { s.Range = 0; s.Length = res.ContentLength; }
+            Stream st = res.GetResponseStream(); byte[] buf = new byte[65536];
+            while ((DateTime.UtcNow - start).TotalMilliseconds < ProbeMs && Interlocked.Read(ref s.ProbeBytes) < ProbeMaxBytes) {
+              int n = st.Read(buf, 0, buf.Length); if (n <= 0) break; Interlocked.Add(ref s.ProbeBytes, n);
+            }
+            double sec = Math.Max(0.05, (DateTime.UtcNow - start).TotalSeconds);
+            s.ProbeSpeed = s.ProbeBytes / sec;
+          }
+        } catch (WebException e) {
+          int code = StatusOf(e);
+          if (code >= 400) { s.Dead = true; s.Why = "HTTP " + code; }
+          else if (s.ProbeBytes > 0) s.ProbeSpeed = s.ProbeBytes / Math.Max(0.05, (DateTime.UtcNow - start).TotalSeconds);
+          else s.Why = e.Status.ToString();
+        } catch (Exception e) { if (s.ProbeBytes == 0) s.Why = e.Message; }
+        finally { try { req.Abort(); } catch { } Interlocked.Decrement(ref running); }
+      });
+      t.IsBackground = true; threads.Add(t); t.Start();
+    }
+    while (running > 0 && !cancel && (DateTime.UtcNow - start).TotalMilliseconds < ProbeMs + 150) Thread.Sleep(30);
+    /* A source still connecting or mid-read gets scored on what it managed so far, then its request is dropped. */
+    foreach (MeguSource s in Sources) if (s.ProbeSpeed == 0 && s.ProbeBytes > 0) s.ProbeSpeed = s.ProbeBytes / Math.Max(0.05, (DateTime.UtcNow - start).TotalSeconds);
+    lock (reqs) foreach (HttpWebRequest r in reqs) { try { r.Abort(); } catch { } }
+    foreach (Thread t in threads) t.Join(Math.Max(0, ProbeCapMs - (int)(DateTime.UtcNow - start).TotalMilliseconds));
+    ProbeElapsedMs = (long)(DateTime.UtcNow - start).TotalMilliseconds;
+    foreach (MeguSource s in Sources) {
+      if (!s.Dead && Size > 0 && s.Length > 0 && s.Length != Size) { s.Dead = true; s.Why = "size " + s.Length; }
+      s.Speed = s.ProbeSpeed;
+      Log(string.Format("probe {0}: {1:0.00} MB/s range={2}{3}", s.Host, s.ProbeSpeed / 1048576, s.Range, s.Dead ? " dead " + s.Why : (s.Why != null ? " (" + s.Why + ")" : "")));
+    }
+  }
+
+  /* ---------- segmented download ---------- */
+  bool HasRangeSource() { lock (gate) { foreach (MeguSource s in Sources) if (!s.Dead && s.Range != 0) return true; return false; } }
+  double BestSpeed() { double b = 0; foreach (MeguSource s in Sources) if (!s.Dead && s.Range != 0 && s.Speed > b) b = s.Speed; return b; }
+  /* Fast sources take more connections; a source far slower than the best one is left alone. Caller holds gate. */
+  MeguSource Pick() {
+    double best = BestSpeed(); MeguSource pick = null; double score = -1;
+    foreach (MeguSource s in Sources) {
+      if (s.Dead || s.Range == 0 || s.Active >= MaxPerSource) continue;
+      if (s.Speed < best * SlowRatio) continue;
+      double sc = s.Speed / (1 + 0.6 * s.Active);
+      if (sc > score || (sc == score && pick != null && s.Order < pick.Order)) { score = sc; pick = s; }
+    }
+    return pick;
+  }
+  bool OthersAlive(MeguSource me) { foreach (MeguSource s in Sources) if (s != me && !s.Dead && s.Range != 0) return true; return false; }
+  int Busy() { int n = 0; foreach (MeguSource s in Sources) n += s.Active; return n; }
+  void Kill(MeguConn c, string why) {
+    if (c.Killed) return; c.KillWhy = why; c.Killed = true;
+    HttpWebRequest r = c.Req; if (r != null) { try { r.Abort(); } catch { } }
+  }
+
+  void Segmented() {
+    int workers = Math.Min(Connections, Math.Max(1, pending.Count));
+    List<Thread> ts = new List<Thread>();
+    for (int i = 0; i < workers; i++) { Thread t = new Thread(Worker); t.IsBackground = true; ts.Add(t); t.Start(); }
+    DateTime win = DateTime.UtcNow; long winDone = doneBytes;
+    while (true) {
+      bool alive = false; foreach (Thread t in ts) if (t.IsAlive) alive = true;
+      if (!alive) break;
+      Thread.Sleep(250);
+      lock (gate) {
+        DateTime now = DateTime.UtcNow;
+        double sec = (now - win).TotalSeconds;
+        if (sec >= 2) {
+          long rec = doneBytes; foreach (MeguConn c in conns) rec += c.Got;
+          TotalSpeed = Math.Max(0, rec - winDone) / sec; winDone = rec;
+          foreach (MeguSource s in Sources) { s.Recent = s.WinBytes; s.WinBytes = 0; }
+          foreach (MeguConn c in conns) { c.RecentSpeed = c.WinGot / Math.Max(0.25, (now - (c.Started > win ? c.Started : win)).TotalSeconds); c.WinGot = 0; }
+          win = now;
+        }
+        /* Average per-connection speed over the last window, finished segments included. */
+        int n = conns.Count; double avg = n > 0 ? TotalSpeed / n : 0;
+        foreach (MeguConn c in conns) {
+          if (c.Killed) continue;
+          if ((now - c.LastData).TotalMilliseconds > StallMs) { StallKills++; Kill(c, "stall"); continue; }
+          if (n >= 2 && (now - c.Started).TotalMilliseconds > SlowGraceMs && c.RecentSpeed < avg * SlowRatio && c.Len - c.Got > 256 * 1024) { SlowKills++; Kill(c, "slow"); }
+        }
+      }
+    }
+    lock (gate) { if (!cancel && doneBytes < Size && failWhy == null && HasRangeSource()) failWhy = "所有下载源都失败了"; }
+  }
+
+  void Worker() {
+    while (true) {
+      MeguConn c;
+      lock (gate) {
+        while (true) {
+          if (cancel || failWhy != null || doneBytes >= Size) { Monitor.PulseAll(gate); return; }
+          MeguSource s = Pick();
+          if (pending.Count > 0 && s != null) {
+            int seg = pending.First.Value; pending.RemoveFirst();
+            c = new MeguConn(); c.Src = s; c.Seg = seg; c.Len = SegLen(seg); c.Started = c.LastData = DateTime.UtcNow;
+            s.Active++; conns.Add(c); break;
+          }
+          if (pending.Count == 0 && s != null) Steal(s);
+          if (Busy() == 0 && pending.Count > 0 && s == null) { if (!HasRangeSource()) return; failWhy = "所有下载源都失败了"; Monitor.PulseAll(gate); return; }
+          if (Busy() == 0 && pending.Count == 0 && doneBytes < Size) return;
+          Monitor.Wait(gate, 300);
+        }
+      }
+      Fetch(c);
+    }
+  }
+  /* Tail: nothing left to hand out, so a free connection takes over a segment that a slow one would finish much later. */
+  void Steal(MeguSource s) {
+    MeguConn worst = null; double worstEta = 0;
+    foreach (MeguConn c in conns) {
+      if (c.Killed || (DateTime.UtcNow - c.Started).TotalMilliseconds < 2000) continue;
+      double eta = (c.Len - c.Got) / Math.Max(1.0, c.RecentSpeed);
+      if (eta > worstEta) { worstEta = eta; worst = c; }
+    }
+    if (worst == null) return;
+    double mine = worst.Len / Math.Max(1.0, s.Speed) + 1.0;
+    if (worstEta > mine * 1.5) { Steals++; Kill(worst, "steal"); }
+  }
+
+  void Fetch(MeguConn c) {
+    MeguSource s = c.Src; long start = (long)c.Seg * SegmentSize; string err = null; int code = 0; bool wrongSize = false, noRange = false, timedOut = false;
+    string used = s.Live;
+    try {
+      HttpWebRequest req = Make(used); req.AddRange(start, start + c.Len - 1);
+      lock (gate) { if (c.Killed) throw new WebException("killed"); c.Req = req; }
+      using (HttpWebResponse res = (HttpWebResponse)req.GetResponse()) {
+        if ((int)res.StatusCode != 206) { noRange = true; throw new WebException("no range (HTTP " + (int)res.StatusCode + ")"); }
+        string cr = res.Headers["Content-Range"] ?? "";
+        Match m = Regex.Match(cr, @"bytes\s+(\d+)-(\d+)/(\d+)");
+        if (!m.Success || long.Parse(m.Groups[1].Value) != start || long.Parse(m.Groups[2].Value) != start + c.Len - 1 || long.Parse(m.Groups[3].Value) != Size) { wrongSize = true; throw new WebException("bad Content-Range " + cr); }
+        s.Live = res.ResponseUri.AbsoluteUri;
+        using (Stream st = res.GetResponseStream())
+        using (FileStream f = new FileStream(Part, FileMode.Open, FileAccess.Write, FileShare.ReadWrite, 1 << 16)) {
+          f.Seek(start, SeekOrigin.Begin); byte[] buf = new byte[65536];
+          while (true) {
+            int n = st.Read(buf, 0, (int)Math.Min(buf.Length, c.Len - c.Got)); if (n <= 0) break;
+            f.Write(buf, 0, n);
+            lock (gate) { c.Got += n; c.WinGot += n; s.WinBytes += n; s.Bytes += n; c.LastData = DateTime.UtcNow; }
+            if (c.Got >= c.Len) break;
+          }
+          f.Flush(true);
+        }
+        if (c.Got != c.Len) throw new WebException("short read");
+      }
+    } catch (WebException e) { err = e.Message; code = StatusOf(e); timedOut = e.Status == WebExceptionStatus.Timeout; }
+    catch (Exception e) { err = e.Message; }
+    lock (gate) {
+      s.Active--; conns.Remove(c);
+      double sec = Math.Max(0.05, (DateTime.UtcNow - c.Started).TotalSeconds);
+      if (err == null) {
+        done[c.Seg] = true; doneBytes += c.Len; SaveState();
+        s.Speed = s.Speed <= 0 ? c.Len / sec : s.Speed * 0.6 + (c.Len / sec) * 0.4; s.Range = 1;
+      } else {
+        pending.AddFirst(c.Seg);
+        if (c.Killed) {
+          if (c.KillWhy == "slow" || c.KillWhy == "steal") s.Speed = Math.Min(s.Speed, Math.Max(c.RecentSpeed, c.Got / sec));
+          if (c.KillWhy == "stall") { s.Speed *= 0.2; s.Strikes++; }
+          if (c.KillWhy != "cancel") Log("seg " + c.Seg + " " + c.KillWhy + " on " + s.Host + string.Format(" ({0:0.00} MB/s)", c.RecentSpeed / 1048576));
+        } else if (timedOut) { StallKills++; s.Speed *= 0.2; s.Strikes++; Log("seg " + c.Seg + " stall on " + s.Host + " (no data for " + StallMs / 1000 + " s)"); }
+        else if (noRange) { s.Range = 0; Log(s.Host + ": no Range support"); }
+        else if (wrongSize || code == 404 || code == 403 || code == 410 || code == 416) { s.Dead = true; s.Why = code > 0 ? "HTTP " + code : err; Log(s.Host + " dropped: " + s.Why); }
+        else if (used != s.Url) { s.Live = s.Url; Log(s.Host + ": redirect target failed, back to " + s.Url); }
+        else { s.Strikes++; s.Speed *= 0.5; Log("seg " + c.Seg + " error on " + s.Host + ": " + err); }
+        /* The last working source is given more chances: a short network drop should not end the download. */
+        if (!s.Dead && (s.Strikes >= 8 || (s.Strikes >= 3 && OthersAlive(s)))) { s.Dead = true; s.Why = "too many errors"; Log(s.Host + " dropped: " + s.Why); }
+      }
+      Monitor.PulseAll(gate);
+    }
+  }
+
+  /* ---------- sources without Range: one connection, whole file ---------- */
+  void WholeFile() {
+    List<MeguSource> list = new List<MeguSource>();
+    foreach (MeguSource s in Sources) if (!s.Dead && s.Range == 0) list.Add(s);
+    list.Sort(delegate(MeguSource a, MeguSource b) { int k = b.Speed.CompareTo(a.Speed); return k != 0 ? k : a.Order.CompareTo(b.Order); });
+    if (list.Count == 0) return;
+    Single = true; failWhy = null;
+    foreach (MeguSource s in list) {
+      if (cancel) return;
+      lock (gate) { doneBytes = 0; for (int i = 0; i < segCount; i++) done[i] = false; pending.Clear(); }
+      TryDelete(StatePath);
+      MeguConn c = new MeguConn(); c.Src = s; c.Seg = -1; c.Len = Size; c.Started = c.LastData = DateTime.UtcNow;
+      lock (gate) { s.Active++; conns.Add(c); }
+      string err = null; bool[] over = new bool[1];
+      Thread dog = new Thread(delegate() {
+        while (!c.Killed && !over[0]) {
+          Thread.Sleep(250);
+          lock (gate) { if ((DateTime.UtcNow - c.LastData).TotalMilliseconds > StallMs) { StallKills++; Kill(c, "stall"); } TotalSpeed = s.Speed; }
+        }
+      });
+      dog.IsBackground = true; dog.Start();
+      try {
+        HttpWebRequest req = Make(s.Url);
+        lock (gate) { if (c.Killed) throw new WebException("killed"); c.Req = req; }
+        using (HttpWebResponse res = (HttpWebResponse)req.GetResponse())
+        using (Stream st = res.GetResponseStream())
+        using (FileStream f = new FileStream(Part, FileMode.Create, FileAccess.Write, FileShare.ReadWrite, 1 << 16)) {
+          byte[] buf = new byte[65536];
+          while (true) {
+            int n = st.Read(buf, 0, buf.Length); if (n <= 0) break;
+            f.Write(buf, 0, n);
+            lock (gate) { c.Got += n; s.WinBytes += n; s.Bytes += n; c.LastData = DateTime.UtcNow; s.Speed = c.Got / Math.Max(0.05, (DateTime.UtcNow - c.Started).TotalSeconds); }
+            if (c.Got > Size) throw new WebException("file larger than expected");
+          }
+        }
+        if (c.Got != Size) throw new WebException("short read");
+      } catch (Exception e) { err = c.Killed ? c.KillWhy : e.Message; }
+      over[0] = true;
+      lock (gate) { s.Active--; conns.Remove(c); if (err == null) { doneBytes = Size; for (int i = 0; i < segCount; i++) done[i] = true; } }
+      if (err == null) return;
+      Log("whole-file " + s.Host + " failed: " + err);
+      if (cancel) return;
+      s.Dead = true; s.Why = err;
+    }
+    failWhy = "所有下载源都失败了";
+  }
+
+  string Hash() {
+    for (int i = 0; ; i++) {
+      try {
+        using (FileStream f = new FileStream(Part, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 1 << 20))
+        using (SHA256 h = SHA256.Create()) return BitConverter.ToString(h.ComputeHash(f)).Replace("-", "");
+      } catch (IOException) { if (i >= 30) throw; Thread.Sleep(500); }
+    }
+  }
+}
+'@
+function Ensure-Engine { if (-not ('MeguFetch' -as [type])) { Add-Type -TypeDefinition $fetchSource } }
 
 # Resolve the chosen folder; copy MeguLit there when it is not this folder. Returns $false (and says why) when it cannot.
 $script:moved = $false
@@ -292,7 +690,7 @@ function Use-Target {
   } catch { [void][Windows.Forms.MessageBox]::Show($form, ('这个位置不能写入：' + $target + "`n换一个位置吧，例如 D:\MeguLit（Program Files 需要管理员权限）"), 'MeguLit'); return $false }
   $choice.Visible = $false; $progress.Visible = $true; $button.Enabled = $false
   $title.Text = '正在复制 MeguLit…'; $status.ForeColor = $C.muted; $status.Text = ('正在把 MeguLit 复制到 ' + $target); $whereLabel.Text = '安装位置：' + $target; Set-Busy; $form.Refresh()
-  $copyArgs = @("`"$sourceRoot`"", "`"$target`"", '/E', '/R:2', '/W:1', '/NP', '/NFL', '/NDL', '/NJH', '/NJS', '/XD', "`"$sourceRoot\logs`"", "`"$sourceRoot\cache`"", 'runtime-*.unpack', '/XF', 'runtime-*.part')
+  $copyArgs = @("`"$sourceRoot`"", "`"$target`"", '/E', '/R:2', '/W:1', '/NP', '/NFL', '/NDL', '/NJH', '/NJS', '/XD', "`"$sourceRoot\logs`"", "`"$sourceRoot\cache`"", 'runtime-*.unpack', '/XF', 'runtime-*.part*')
   $copy = Start-Process -FilePath "$env:SystemRoot\System32\robocopy.exe" -ArgumentList $copyArgs -WindowStyle Hidden -PassThru
   $null = $copy.Handle
   while (-not $copy.HasExited) { [Windows.Forms.Application]::DoEvents(); Start-Sleep -Milliseconds 30 }
@@ -348,10 +746,10 @@ function Start-Install($ids) {
   $script:index = 0; $choice.Visible = $false; $progress.Visible = $true; Next-Pack
 }
 function Current { $script:queue[$script:index] }
-# Each download attempt gets its own file name: antivirus scanners often hold a freshly written
-# file for a few seconds, and reusing one name made every retry fail with "file in use".
+# One stable file per pack so Retry or the next launch can resume it (the downloader waits out antivirus locks).
+# Unpack folders still get a fresh name per attempt. ".setup.part" keeps clear of the app's own runtime-<id>.part.
 $script:attempt = 0
-function Part { Join-Path $Root ('runtime-' + (Current) + '-' + $script:attempt + '.part') }
+function Part { Join-Path $Root ('runtime-' + (Current) + '.setup.part') }
 # Remove/move with patience: retry for ~15 s while another process (antivirus, indexer, an old
 # MeguLit still running) holds the file, instead of failing the whole install on the first try.
 function With-Retry([scriptblock]$op) {
@@ -372,45 +770,48 @@ function Stop-RuntimeProcesses {
 }
 function Next-Pack {
   if ($script:index -ge $script:queue.Count) { $script:done = $true; $form.Close(); return }
-  $script:urlIndex = 0; $script:sources = @(Order-Sources (Current)); Start-Download
+  Start-Download
 }
+$poll = New-Object Windows.Forms.Timer; $poll.Interval = 200
 function Start-Download {
   $script:stage = 'download'; $script:mode = 'download'; $button.Text = '取消 Cancel'; Style-Button $button $false; $button.FlatAppearance.BorderColor = $C.red; $status.ForeColor = $C.muted; Set-Bar 0
   $title.Text = '正在下载运行组件…'
-  $status.Text = ('[{0}/{1}] 正在下载{2}…  来源 {3}' -f ($script:index+1), $script:queue.Count, $names[(Current)], (Source-Name $script:sources[$script:urlIndex]))
-  $script:attempt++
-  if (Test-Path (Part)) { try { Remove-Item (Part) -Force -ErrorAction Stop } catch { $script:attempt++ } }
-  $client.DownloadFileAsync([Uri]$script:sources[$script:urlIndex], (Part))
+  $status.Text = ('[{0}/{1}] {2}：正在同时测速所有下载源（GitHub / 国内镜像），挑最快的几个一起下载…' -f ($script:index+1), $script:queue.Count, $names[(Current)]); $form.Refresh()
+  try { Ensure-Engine } catch { Fail ('下载组件加载失败：' + $_.Exception.Message); return }
+  $f = New-Object MeguFetch
+  $f.Urls = [string[]]@(Candidates (Current)); $f.Part = Part; $f.Size = [long]$packs.(Current).size; $f.Sha = [string]$packs.(Current).sha256
+  $script:fetch = $f; $f.Start(); $poll.Start()
 }
 function Fail([string]$message) {
   $script:mode = 'failed'; $status.ForeColor = $C.red; Set-Bar 0
   $title.Text = if ($script:stage -eq 'unpack') { '安装没完成' } else { '下载中断了' }
-  $hint = if ($script:stage -eq 'unpack') { '磁盘空间不足或文件被占用时会这样，点「重试」再来一次 / Retry' } else { '检查网络后点「重试」 / Check your connection and retry' }
+  $hint = if ($script:stage -eq 'unpack') { '磁盘空间不足或文件被占用时会这样，点「重试」再来一次 / Retry' } else { '检查网络后点「重试」，已下载的部分会接着用 / Check your connection and retry' }
   $status.Text = $message + "`n" + $hint; $button.Text = '重试 Retry'; Style-Button $button $true
 }
-
-$client.add_DownloadProgressChanged({ param($s,$e)
-  $total = [math]::Max($e.TotalBytesToReceive, $packs.(Current).size)
-  Set-Bar ([int][math]::Min(1000, 1000 * $e.BytesReceived / $total))
-  $status.Text = ('[{0}/{1}] 正在下载{2}  {3:N0} / {4:N0} MB  ·  来源 {5}' -f ($script:index+1), $script:queue.Count, $names[(Current)], ($e.BytesReceived/1MB), ($total/1MB), (Source-Name $script:sources[$script:urlIndex]))
-})
-$client.add_DownloadFileCompleted({ param($s,$e)
-  if ($e.Cancelled) { return }
-  if ($e.Error) {
-    if ($script:urlIndex + 1 -lt $script:sources.Count) { $script:urlIndex++; Start-Download; return }
-    $msg = if ($e.Error.InnerException) { $e.Error.InnerException.Message } else { $e.Error.Message }
-    Fail ('下载失败：' + $msg); return
-  }
-  try {
-    $part = Part; $unpack = Join-Path $Root ('runtime-' + (Current) + '-' + $script:attempt + '.unpack')
-    $script:stage = 'unpack'
-    $status.Text = '正在校验… / Verifying'; $form.Refresh()
-    $hash = $null; With-Retry { $script:hashValue = (Get-FileHash -Algorithm SHA256 $part -ErrorAction Stop).Hash }; $hash = $script:hashValue
-    if ($hash -ne $packs.(Current).sha256.ToUpper()) {
-      try { Remove-Item $part -Force -ErrorAction Stop } catch {}
-      if ($script:urlIndex + 1 -lt $script:sources.Count) { $script:urlIndex++; Start-Download; return }
-      throw '文件校验失败，可能下载不完整'
+$poll.add_Tick({
+  $f = $script:fetch; if (-not $f) { $poll.Stop(); return }
+  $head = '[{0}/{1}] ' -f ($script:index+1), $script:queue.Count
+  switch ($f.Phase) {
+    'download' {
+      $got = $f.Received; Set-Bar ([int][math]::Min(1000, 1000 * $got / [math]::Max(1, $f.Size)))
+      $speed = if ($f.TotalSpeed -gt 0) { '  ·  {0:N1} MB/s' -f ($f.TotalSpeed / 1MB) } else { '' }
+      $src = $f.SourceLabel(); $from = if ($src) { '  ·  来源 ' + $src } else { '' }
+      $resumed = if ($f.Resumed -gt 0) { '（接着上次）' } else { '' }
+      $status.Text = $head + ('正在下载{0}{1}  {2:N0} / {3:N0} MB{4}{5}' -f $names[(Current)], $resumed, ($got/1MB), ($f.Size/1MB), $speed, $from)
     }
+    'verify' { Set-Bar 1000; $status.Text = $head + '正在校验… / Verifying' }
+    'done' { $poll.Stop(); $script:fetch = $null; Save-FetchLog $f; Install-Pack $f.Part }
+    'failed' { $poll.Stop(); $script:fetch = $null; Save-FetchLog $f; Fail ('下载失败：' + $f.Error) }
+  }
+})
+# Probe results and every dropped connection go to logs\setup-download.log, so a "slow download" report can be read.
+function Save-FetchLog($f) {
+  try { $d = Join-Path $Root 'logs'; New-Item -ItemType Directory -Force $d | Out-Null; Add-Content -Encoding UTF8 (Join-Path $d 'setup-download.log') ("== " + (Get-Date -Format s) + " " + (Current) + " " + $f.Phase + "`r`n" + $f.LogText()) } catch {}
+}
+function Install-Pack([string]$part) {
+  try {
+    $script:attempt++; $unpack = Join-Path $Root ('runtime-' + (Current) + '-' + $script:attempt + '.unpack')
+    $script:stage = 'unpack'
     $status.Text = ('正在解压{0}… / Unpacking' -f $names[(Current)]); Set-Busy; $form.Refresh()
     if (Test-Path $unpack) { With-Retry { Remove-Item $unpack -Recurse -Force -ErrorAction Stop } }
     New-Item -ItemType Directory $unpack | Out-Null
@@ -428,21 +829,24 @@ $client.add_DownloadFileCompleted({ param($s,$e)
     }
     # Leftovers are harmless; never fail an install that already succeeded over a temp file.
     try { Remove-Item $unpack -Recurse -Force -ErrorAction Stop } catch {}
-    try { Remove-Item $part -Force -ErrorAction Stop } catch {}
+    try { Remove-Item $part, ($part + '.json') -Force -ErrorAction SilentlyContinue } catch {}
     $script:index++; Next-Pack
   } catch { Fail ('安装失败：' + $_.Exception.Message) }
-})
+}
 
 $button.add_Click({
-  if ($script:mode -eq 'failed') { $script:urlIndex = 0; Start-Download }
-  else { $client.CancelAsync(); $form.Close() }
+  if ($script:mode -eq 'failed') { Start-Download }
+  else { if ($script:fetch) { $poll.Stop(); $script:fetch.Cancel() }; $form.Close() }
 })
-$form.add_FormClosing({ if (-not $script:done) { $client.CancelAsync() } })
+$form.add_FormClosing({ if (-not $script:done -and $script:fetch) { $poll.Stop(); $script:fetch.Cancel() } })
 # MEGULIT_SETUP_PREVIEW=<png>: render the choice page to an image and exit (used to check the layout).
-if ($env:MEGULIT_SETUP_PREVIEW) { $form.add_Shown({ if ($env:MEGULIT_SETUP_PREVIEW_STATE -eq 'failed') { $choice.Visible = $false; $progress.Visible = $true; $script:stage = 'download'; Fail '下载失败：无法连接到服务器' }; if ($env:MEGULIT_SETUP_PREVIEW_STATE -eq 'progress') { $choice.Visible = $false; $progress.Visible = $true; $status.Text = '[1/3] 正在下载基础组件  47 / 107 MB  ·  来源 github.com'; Set-Bar 440 }; $form.Refresh(); $bmp = New-Object Drawing.Bitmap $form.Width, $form.Height; $form.DrawToBitmap($bmp, (New-Object Drawing.Rectangle 0,0,$form.Width,$form.Height)); $bmp.Save($env:MEGULIT_SETUP_PREVIEW); $form.Close() }) }
+if ($env:MEGULIT_SETUP_PREVIEW) { $form.add_Shown({ if ($env:MEGULIT_SETUP_PREVIEW_STATE -eq 'failed') { $choice.Visible = $false; $progress.Visible = $true; $script:stage = 'download'; Fail '下载失败：无法连接到服务器' }; if ($env:MEGULIT_SETUP_PREVIEW_STATE -eq 'progress') { $choice.Visible = $false; $progress.Visible = $true; $status.Text = '[1/3] 正在下载基础组件  47 / 107 MB  ·  6.8 MB/s  ·  来源 cn-dl.megulit.com 等 3 个源'; Set-Bar 440 }; $form.Refresh(); $bmp = New-Object Drawing.Bitmap $form.Width, $form.Height; $form.DrawToBitmap($bmp, (New-Object Drawing.Rectangle 0,0,$form.Width,$form.Height)); $bmp.Save($env:MEGULIT_SETUP_PREVIEW); $form.Close() }) }
+# MEGULIT_SETUP_AUTOSTART=lite|full: press the install button at once (end-to-end test on a hidden desktop).
+if ($env:MEGULIT_SETUP_AUTOSTART -and -not $env:MEGULIT_SETUP_PREVIEW) { $form.add_Shown({ Start-Install $(if ($env:MEGULIT_SETUP_AUTOSTART -eq 'full') { $full } else { $lite }) }) }
 [void]$form.ShowDialog()
-$client.Dispose()
-Get-ChildItem $Root -Filter 'runtime-*.part' -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
+if ($script:fetch) { $script:fetch.Cancel(); [void]$script:fetch.Wait(3000) }
+# runtime-<id>.setup.part(.json) stay for resuming; only the per-attempt files of older setups are swept.
+Get-ChildItem $Root -Filter 'runtime-*.part' -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '^runtime-[a-z]+-\d+\.part$' } | Remove-Item -Force -ErrorAction SilentlyContinue
 Get-ChildItem $Root -Directory -Filter 'runtime-*.unpack' -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
 if ($script:done -and (Test-Path (Join-Path $Root 'runtime\node.exe'))) {
   Make-Shortcuts
