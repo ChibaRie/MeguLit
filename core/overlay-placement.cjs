@@ -14,8 +14,8 @@ const fs = require('node:fs'), path = require('node:path');
 const { rectsToClient } = require('./compositor-host.cjs');
 
 class OverlayPlacement {
-  constructor({ root, send = () => {} } = {}) {
-    this.root = root; this.send = send; this.client = [0, 0]; this.current = null; this.on = false;
+  constructor({ root, send = () => {}, trace = () => {} } = {}) {
+    this.root = root; this.send = send; this.trace = trace; this.client = [0, 0]; this.current = null; this.on = false;
   }
   wanted(preferences) {
     if (process.env.MEGULIT_CAPTURE_COMPOSITOR === '1') return false;
@@ -36,7 +36,11 @@ class OverlayPlacement {
     if (on !== this.on) { this.on = on; if (!on) { this.clear(); if (this.extraKey && this.extraKey !== '[]') this.send({ type: 'textPlaceExtra', items: [] }); this.extraKey = ''; } this.send({ type: 'textPlaceMode', on }); }
   }
   clear() { if (this.current) { this.current = null; this.send({ type: 'textPlace', clear: true }); } }
+  /* 2026-11-19 (千恋＊万花 maximised, krkr drawing its text invisible, the reader still in its style box): why a reported line
+     was or was not placed, once per line, so a live log says which step stopped it */
+  why(key, text) { if (this.whyKey === key) return; this.whyKey = key; this.trace('placement ' + text); }
   hook(m) {
+    if (m && m.type === 'hookCharRects' && !this.on) this.why('off:' + m.line, 'off: line ' + (Number(m.line) || 0) + ' not placed (文字显示 is not 画进游戏画面, or no window bound)');
     if (!this.on || !m) return;
     /* engine position hooks (hookTextPos: line box in game-screen px) anchor lines that come without device positions */
     if (m.type === 'hookTextPos') { const k = m.sw > 0 && this.client[0] ? this.client[0] / m.sw : 1, ky = m.sh > 0 && this.client[1] ? this.client[1] / m.sh : k; if ([m.x0, m.y0, m.x1, m.size].every(Number.isFinite) && m.size > 0) this.anchor({ x: m.x0 * k, y: m.y0 * ky, size: m.size * ky, width: Math.max((m.x1 - m.x0) * k, m.size * ky * 16) }); return; }
@@ -44,7 +48,7 @@ class OverlayPlacement {
       const chars = [...String(m.text || '')].map(c => c === '\u001f' ? '\n' : c), flat = [];
       for (const c of chars) if (c !== '\n' && c !== '\r') flat.push(c);
       const rects = rectsToClient(m, this.client[0], this.client[1]);
-      if (rects.length !== flat.length) return; // one rect per character is the protocol; anything else is not placeable
+      if (rects.length !== flat.length) { this.why('count:' + m.line + ':' + rects.length, 'rejected: line ' + (Number(m.line) || 0) + ' has ' + rects.length + ' boxes for ' + flat.length + ' characters'); return; } // one rect per character is the protocol; anything else is not placeable
       const id = String(m.engine || 'path') + ':' + (Number(m.line) || 0);
       /* 2026-11-15 (沙耶の唄: MeguLit's Japanese drawn a few px off the game's own, unhidden line): the source says the game
          draws this line itself (not hidden yet, or never). The reader must not put its Japanese over it: it gets a
@@ -53,8 +57,8 @@ class OverlayPlacement {
          already showed hidden from its cached glyphs, and the repaint reports it as not hidden. That is the same line,
          still hidden on screen: it stays placed. */
       if (m.hidden !== true && m.engine !== 'gpu' && this.current && !this.current.fallback && this.current.id === id && this.current.text === flat.join('')) return; /* GPU hiding is decided per frame: there, not hidden is the game showing it */
-      if (m.hidden !== true) { if (this.current?.id === id) this.clear(); const vis = flat.join(''); if (vis && vis !== this.visibleKey) { this.visibleKey = vis; this.send({ type: 'textPlace', visible: true, text: vis }); } return; }
-      this.visibleKey = '';
+      if (m.hidden !== true) { this.why('shown:' + id, 'not placed: line ' + (Number(m.line) || 0) + ' is drawn by the game itself (hidden=0)'); if (this.current?.id === id) this.clear(); const vis = flat.join(''); if (vis && vis !== this.visibleKey) { this.visibleKey = vis; this.send({ type: 'textPlace', visible: true, text: vis }); } return; }
+      this.visibleKey = ''; this.why('placed:' + id + ':' + rects.length, 'placed: line ' + (Number(m.line) || 0) + ', ' + rects.length + ' characters, first box ' + (rects[0] ? [].concat(rects[0]).map(v => Math.round(Number(v) || 0)).join(',') : '-') + ' in client ' + this.client.join('x'));
       this.emitLine({ id, engine: m.engine, text: flat.join(''), rects, client: this.client.slice(), ...(m.color ? { color: m.color } : {}), ...(typeof m.read === 'boolean' ? { read: m.read } : {}) });
     }
   }
