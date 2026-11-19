@@ -380,7 +380,10 @@
          line that filled the text box got the full stylesheet size. The size is now always derived from the Japanese
          glyphs (one size for every line of the box) and only ever made smaller to fit. */
       /* from the boxes' height (one per text box): widths vary with proportional kana and moved the size line to line */
-      const tall = median(all.map(r => r[3])) || size, base = Math.max(12, Math.round((only ? 1 : .55) * tall));
+      const tall = median(all.map(r => r[3])) || size, userCn = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--tomoyo-gal-cn-size')), base = Number.isFinite(userCn) && userCn >= 10 ? userCn : Math.max(12, Math.round((only ? 1 : .55) * tall));
+      /* 2026-11-19 (user: 中文不要随便调尺寸, 只有显示不下才小): the standard size is the user's translation size, the same for every line;
+         it is made smaller only when this line's translation does not fit, once, and the result is kept for the line (key: its text) */
+      const fitKey = row.textContent + '|' + (sentence.textContent || ''), lock = row.__megulitFit && row.__megulitFit.key === fitKey ? row.__megulitFit.fs : 0, floor = Math.max(10, Math.round(base * .6));
       set(row, 'font-size', base + 'px'); set(row, 'line-height', '1.25');
       /* 2026-11-16 (1.4.16 live: the row was 10px, its text 32px and over the SAVE/LOAD bar): the translation's own elements carry the
          game style's size rule; inline, they take the row's size and line height */
@@ -407,7 +410,8 @@
       if (rh > room) { set(row, 'line-height', '1.1'); rh = row.offsetHeight || rh; }
       /* wider first (fewer rows), as far as the game's right edge */
       if (rh > room && R - x0 - 8 > width) { set(row, 'width', (R - x0 - 8) + 'px'); rh = row.offsetHeight || rh; }
-      for (let fs = base; rh > room && fs > 10;) { fs = Math.max(10, Math.floor(fs * Math.max(.5, room / rh))); set(row, 'font-size', fs + 'px'); rh = row.offsetHeight || rh; }
+      if (lock) { set(row, 'font-size', lock + 'px'); rh = row.offsetHeight || rh; } else for (let fs = base; rh > room && fs > floor;) { fs = Math.max(floor, Math.floor(fs * Math.max(.5, room / rh))); set(row, 'font-size', fs + 'px'); rh = row.offsetHeight || rh; }
+      if (row.style.visibility !== 'hidden' && !lock) row.__megulitFit = { key: fitKey, fs: parseFloat(row.style.getPropertyValue('font-size')) || base };
       /* still too long at the smallest size: cut at the box, never over the game's UI */
       if (rh > room && room > 10) { set(row, 'max-height', room + 'px'); set(row, 'overflow', 'hidden'); }
       const top = only ? (rh > room ? Math.max(T, B - rh) : y0) : below;

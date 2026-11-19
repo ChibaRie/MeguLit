@@ -102,6 +102,8 @@ class HookNative{
   if(hide&&!this.glyphNoted){this.glyphNoted=true;this.trace?.('embed fallback: the game font has no glyphs for the translation; the game hides the line and MeguLit draws it');}
   this.notify({embedTranslating:!hide,embedLine:{source:String(o?.source||''),text:hide?'':String(o?.text||trans||''),drawn:!hide}});}
  tick(){if(this.process&&this.now()-this.lastHeartbeat>12000){const old=this.process;this.process=null;++this.serial;old.kill();this.retry('Hook 通信无响应');}if(!this.process&&this.wanted&&this.target&&this.now()>=this.retryAt)this.start(this.target);}
+ /* the engine's text window state (ToMe_DIALOG); lines held during a moment's hide are dialogue when it comes back */
+ dialogState(visible){this.engineDialog=visible;this.engineDialogAt=this.now();if(visible&&this.boxBlink){const b=this.boxBlink;this.boxBlink=null;clearTimeout(b.timer);this.trace('line kept as dialogue: the text window was hidden only for a moment');for(const x of b.lines)this.source(x.m,x.name);}}
  retry(message){this.pageReset();this.islandSources.clear();this.islandDraw=null;this.islandDraws=[];this.islandDelivered=0;clearTimeout(this.islandTimer);clearTimeout(this.sourceTimer);clearTimeout(this.sourceDeadline);this.sourceDeadline=null;this.pendingSource=null;this.verified=false;this.enabled=false;this.retryAt=this.now()+Math.min(30000,1000*2**Math.min(this.attempt++,5));this.notify({hookActive:false,processAttached:false,streamSelected:false,receivedText:false,replacementState:'unverified',hookSource:this.lastSource||null,hookRecovering:!!this.lastSource,hookThreads:[],hookMessage:message+'；正在自动重连'});}
  start({pid,hwnd,name,started}){if(!/^[A-Za-z0-9_\-. \u0080-\uffff]{1,100}$/.test(name)||!/^\d{10,20}$/.test(started))return;
   // Do not keep re-attaching to a game process that has exited; wait for the window bridge to bind the new one.
@@ -133,7 +135,7 @@ class HookNative{
    if(m.type==='hookGpuPage'){const page=require('./overlay-placement.cjs').parsePage(m.line);/* #299/#307/#311 (Strawberry Nauts, FSN REMASTERED, ライムライト・レモネードジャム): a page the layer never located (gh=0, nothing awake, no places: the game draws its text another way) says nothing about the text window; taking it for 'window gone' hid the reader's line 0.1 s after each line came, so the box and the game's text were both gone */if(page&&!page.awake&&!(page.glyphHeight>0)&&!page.lines.some(l=>l.rects.length)){if(!this.unseenPageNoted){this.unseenPageNoted=true;this.trace?.('gpu page not located (gh=0): window state ignored');}return;}if(page){this.emit(page);/* the page on screen is the engine's own word on whether its text is shown (a wait marker leaving must not hide the reader's page; no page = text window gone, title) */if(page.armed&&(page.lines.some(l=>l.rects.length)||!page.awake)){/* only the reader's layer follows it: engineDialog stays untouched, or the first line of a page, handed over while the old page fades out, was taken for art text (2026-11-15: every page lost its first line) */this.emit({type:'hookDialog',visible:page.awake,engine:'gpupage'});}}return;}
    if(m.type==='hookTextPos'&&m.engine==='pal_sprite_v1'){this.palPosition(m);return;}
    /* 2026-11-12 the engine's own text window state (KiriKiri ToMe_DIALOG): a line arriving while it is hidden is art text */
-   if(m.type==='hookDialog'&&typeof m.visible==='boolean'){this.engineDialog=m.visible;this.engineDialogAt=this.now();}
+   if(m.type==='hookDialog'&&typeof m.visible==='boolean')this.dialogState(m.visible);
    if(m.type==='hookTextPos'||m.type==='hookPage'||m.type==='hookDialog'||m.type==='hookGameUi'||m.type==='hookFont'||m.type==='hookTextMarks'){this.emit(m);if(m.type==='hookPage')this.islandPage(m);return;}
    /* Translation written back into the game: the bridge holds a dialogue line and asks for its translation. */
    if(m.type==='embedRequest'&&Number.isSafeInteger(m.id)&&typeof m.text==='string'&&m.text.length<=4000){this.emit({type:'hookEmbedRequest',id:m.id,text:m.text});return;}
@@ -156,7 +158,7 @@ class HookNative{
    if(m.type==='waitMarkerStatus'){this.notify({waitMarkerMessage:String(m.message||'').slice(0,300),waitMarkerHookActive:m.active===true});return;}
    if(m.type==='hookSource'&&typeof m.text==='string'&&m.text.length<=4000){this.sourcePage(m,name);return;}
    // v1.1.4: speaker names from a name-role stream, for every engine that reports one (user: the log showed every line as narration).
-   if(m.type==='hookAuxText'&&typeof m.text==='string'&&m.text.length<=400){this.auxText(m,name);return;}
+   if(m.type==='hookAuxText'&&typeof m.text==='string'&&m.text.length<=400){this.auxText(m);return;}
    if(m.type==='hookName'&&typeof m.text==='string'){const n=speakerName(m.text);if(n){this.speaker={text:n,at:this.now()};this.noteSpeaker(n);}return;}
    if(m.type==='hookThreads'&&Array.isArray(m.hookThreads)){// Unity games create a stream per String-method call site (often 100+); keep the selected and embeddable ones
    // ahead of the cut so a late dialogue stream such as Naninovel's printer is never dropped.
@@ -345,11 +347,7 @@ class HookNative{
   if(!kana){const tall=Math.max(0,...it.rows.map(r=>+r?.h||0));if(n>8||n<2||(it.sh>0&&tall<it.sh/50))return 'kanji fragment';}
   if(line&&line!==O.lastText){const l=HookNative.flat(line);if(l.includes(flat)||flat.includes(l))return 'part of the hook line';}
   const last=O.said.get(flat);if(last!=null&&now-last<OCR_LINE_REPEAT_MS)return 'already shown';return '';}
- auxText(m,name){/* 2026-11-19 (素晴らしき日々: the black-screen quotes at a chapter start reached no stream) text a *SpriteText stream carries
-    (art: true) is drawn outside the message window: a line of its own for the reader, placed where the game drew it like any
-    line and shown once (line-once), never a choice; the dialogue stream stays the one it was */
-  if(m.art===true){this.trace('sprite text '+JSON.stringify(String(m.text).slice(0,40)));this.source({type:'hookSource',text:m.text,sourceName:String(m.sourceName||''),origin:'sprite',hookActive:true},name);return;}
-  /* 2026-11-15 (沙耶の唄, user: 「ocr遮挡又出来了」): the dialogue hook sends each line on two thread contexts; the one not selected
+ auxText(m){/* 2026-11-15 (沙耶の唄, user: 「ocr遮挡又出来了」): the dialogue hook sends each line on two thread contexts; the one not selected
     came here as aux text, went to the art path and its translation was drawn over the game's own line. A line from the same hook
     as the dialogue stream is dialogue, never art text. */
   if(m.sourceName&&this.dialogueHook&&String(m.sourceName)===this.dialogueHook)return;/* nor choice text (user: 「不是选项」) */
@@ -403,11 +401,15 @@ class HookNative{
      Big5, Korean, Western, UTF-8) becomes the Japanese it was (core/text-sanity.cjs).
      The hook gets this text already as UTF-16 (the game converted it with the system code page), so the hook's own code page
      setting cannot help: each stream is judged by its text and locked once it is clearly one or the other. */
-  if(m.sourceName&&m.origin!=='history'&&m.origin!=='sprite')this.dialogueHook=String(m.sourceName);
+  if(m.sourceName&&m.origin!=='history')this.dialogueHook=String(m.sourceName);
   if(typeof m.text==='string'){const stream=name||m.sourceCode||m.sourceName||'';const fixed=(this.codepage||(this.codepage=new (require('./text-sanity.cjs').StreamCodepage)())).fix(stream,m.text);if(fixed.locked)this.trace('stream locked as '+fixed.pair+' '+JSON.stringify(String(stream).slice(0,60)));if(fixed.unreadable){this.trace('source dropped unreadable ('+this.codepage.mode(stream)+') '+JSON.stringify(m.text.slice(0,20)));return;}if(fixed.repaired){this.trace('source repaired '+fixed.pair+' '+JSON.stringify(fixed.text.slice(0,20)));m={...m,text:fixed.text};}}
   /* 2026-11-12 (ファタモルガーナの館: "……けれど……", drawn large in the middle of the opening, was hidden and shown as a subtitle
      at the bottom): while the engine says its text window is hidden, a line is art text. HookBridge leaves it to the game;
      here it goes to the art layer (invisible readable copy + translation where the game drew it), not to the subtitles. */
+  /* 2026-11-19 (ISLAND with its own hook, rig2 live: 「…………はぁ」 arrived 7 ms after the window reported hidden for a sprite change
+     and 0.3 s before it was shown again; taken as art text, the line was never shown) a line in the first 0.6 s of a hidden text
+     window waits: the window back within that time makes it dialogue, otherwise it is art text as before */
+  if(this.engineDialog===false&&typeof m.text==='string'&&m.text.trim()&&this.now()-(this.engineDialogAt||0)<600&&!m.boxBlinkTimedOut){const b=this.boxBlink||(this.boxBlink={lines:[],timer:null});if(!b.lines.some(x=>x.m.text===m.text))b.lines.push({m,name});if(!b.timer){const wait=Math.max(1,600-(this.now()-(this.engineDialogAt||0)));b.timer=setTimeout(()=>{if(this.boxBlink!==b)return;this.boxBlink=null;for(const x of b.lines)this.source({...x.m,boxBlinkTimedOut:true},x.name);},wait);b.timer.unref?.();}return;}
   if(this.engineDialog===false&&typeof m.text==='string'&&m.text.trim()){this.trace('art text (text window hidden) '+JSON.stringify(m.text.slice(0,40)));this.artSeen?.delete(HookNative.flat(m.text.trim()));this.artCandidate(m.text);return;}
   // The game's own ruby readings ride after the line as \x1d base \x1c reading pairs (ISLAND hook): split them off
   // before anything else sees the text, and attach them when this line is delivered (user, 2026-11-03).
@@ -467,14 +469,31 @@ class HookNative{
   // LOG: those lines are neither read nor recorded and the reader hides; it returns after 1.5 s without replays or at
   // the first new line. A single repeated line (a script repeating itself) is read as usual.
   {const L=this.nativeLog||(this.nativeLog={seen:new Map(),hits:[],active:false,timer:null}),now=this.now(),key=text.replace(/\s+/g,'');
-   const current=key===String(this.lastSource||'').replace(/\s+/g,''),replay=L.seen.has(key)&&(!current||L.active||!!L.held);L.hits=L.hits.filter(t=>now-t<1000);if(replay)L.hits.push(now);
-   const end=()=>{if(!L.active)return;L.active=false;clearTimeout(L.timer);L.timer=null;this.trace('native log closed');this.notify({hookNativeLog:false});};
+   /* 2026-11-19 (ISLAND with its own hook: a page relayout sends the page's earlier lines again, 「わお…」 after 「いやっほう…」, a
+      whole NVL page after its newest line; 96 false LOGs paused reading and 14 of 20 lines were never shown, also in v1.4.16) the
+      LOG is told by evidence, not by any repeat: earlier lines read lately (the last 40) arriving while the story has not moved
+      on for 2 s. A line that moves on (new, or the one read after the current line: a new game or a skip through text read
+      before) is progress, and so is any line read; earlier lines within 2 s of that are the page being laid out again
+      and are read as usual. */
+   const recent=L.order||(L.order=[]),c=recent.length-1,at=recent.lastIndexOf(key),seen=L.seen.has(key);
+   const anchor=L.lastKey!==undefined?L.lastKey:recent[c],before=recent.lastIndexOf(anchor,anchor===key?-1:recent.length-1),repeatCurrent=c>=0&&at===c,forward=!seen||at<0||repeatCurrent&&!L.active&&!L.held||before>=0&&recent[before+1]===key;
+   if(forward&&!repeatCurrent)L.progressAt=now;
+   const current=key===String(this.lastSource||'').replace(/\s+/g,''),settled=now-(L.progressAt||0)>=2000;
+   const replay=seen&&!forward&&(L.active||settled)&&(!current||L.active||!!L.held);L.hits=L.hits.filter(h=>now-h.at<1000);if(replay&&!L.hits.some(h=>h.key===key))L.hits.push({at:now,key});
+   /* a suspected LOG loses nothing: its lines wait in a stash. When the story goes on from the last of them (the line after it in
+      history: a new game started again, not a LOG) they are read first, in order; when the LOG closes by itself they go. */
+   const stash=L.stash||(L.stash=[]);
+   const end=(keep)=>{if(!L.active)return;L.active=false;clearTimeout(L.timer);L.timer=null;if(!keep)stash.length=0;else L.stashAt=this.now();this.trace('native log closed');this.notify({hookNativeLog:false});};
+   if(stash.length&&!L.active&&now-(L.stashAt||0)>10000)stash.length=0;
+   if(stash.length&&L.bypass!==key){const i=recent.lastIndexOf(stash[stash.length-1].key),j=recent.lastIndexOf(L.lastKey);
+    /* lines from well before the last line read (not a LOG, which ends at it) followed by the line after them: the story started again */
+    if(i>=0&&j>=0&&i<j-1&&recent[i+1]===key){const lines=stash.splice(0);this.trace('native log was a story restart; '+lines.length+' line(s) read');if(L.active)end(true);this.stashFlush=true;try{for(const x of lines){L.bypass=x.key;L.lastKey=x.key;this.source(x.m,x.name);}}finally{this.stashFlush=false;}L.lastKey=lines.length?lines[lines.length-1].key:L.lastKey;return this.source(m,name);}}
    if(L.bypass===key)L.bypass=null;
-   else if(replay&&(L.active||L.hits.length>=2)){if(!L.active){L.active=true;L.held=null;this.trace('native log detected; reading paused');this.notify({hookNativeLog:true});}
-    clearTimeout(L.timer);L.timer=setTimeout(end,1500);L.timer.unref?.();return;}
+   else if(replay&&(L.active||L.hits.length>=2)){if(!L.active){L.active=true;if(L.held){stash.push({...L.held,key:L.heldKey});L.held=null;}this.trace('native log detected; reading paused');this.notify({hookNativeLog:true});}
+    if(!stash.some(x=>x.key===key)){stash.push({m,name,key});if(stash.length>20)stash.shift();}clearTimeout(L.timer);L.timer=setTimeout(()=>end(true),1500);L.timer.unref?.();return;}
    // The first earlier line waits 0.4 s: a LOG sends the next one at once, a script repeating one line does not.
-   else if(replay){const held=L.held={m,name};const timer=setTimeout(()=>{if(L.held!==held)return;L.held=null;L.bypass=key;this.source(m,name);},400);timer.unref?.();return;}
-   if(!replay)end();L.seen.delete(key);L.seen.set(key,now);if(L.seen.size>3000)L.seen.delete(L.seen.keys().next().value);}
+   else if(replay){const held=L.held={m,name};L.heldKey=key;const timer=setTimeout(()=>{if(L.held!==held)return;L.held=null;L.bypass=key;this.source(m,name);},400);timer.unref?.();return;}
+   if(!replay){end(false);stash.length=0;}L.lastKey=key;L.progressAt=now;if(forward&&!repeatCurrent){recent.push(key);if(recent.length>40)recent.shift();}L.seen.delete(key);L.seen.set(key,now);if(L.seen.size>3000)L.seen.delete(L.seen.keys().next().value);}
   // Scene/chapter keys and asset ids ("10_1", "bg_01.png", "Chapter2") from engine string streams are never dialogue.
   if(identifierNoise(text)){this.trace('drop identifier text '+JSON.stringify(text.slice(0,60)));return;}
   if(ruby.length){const map=this.sourceRuby||(this.sourceRuby=new Map());map.set(text,ruby);if(map.size>64)map.delete(map.keys().next().value);}
@@ -668,7 +687,7 @@ class HookNative{
  }
  deliverSource(text,origin,engine='',nativeLine=0){
   const now=this.now(),live=!engine&&!nativeLine&&(origin||'live')==='live',S=this.skipBurst||(this.skipBurst={last:0,held:null,timer:null,count:0});
-  if(!live){this.emitSource(text,origin,engine,nativeLine);return;}
+  if(!live||this.stashFlush){if(this.stashFlush)S.last=now;this.emitSource(text,origin,engine,nativeLine);return;}
   {const last=this.lastOfMerged(text);if(last!==text){this.trace('merged skip text: kept the last line of '+text.length+' chars');text=last;}}
   const gap=now-S.last;S.last=now;
   if(gap>=300&&!S.held){S.count=0;this.emitSource(text,origin,engine,nativeLine);return;}
