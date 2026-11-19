@@ -1,4 +1,5 @@
 #include "Yuris.h"
+#include "EuphoriaHD474Draw.h" /* MeguLit 2026-11-19 one hook runtime: the euphoria HD 0.474 draw adapter that runtime/hook carried */
 /********************************************************************************************
 YU-RIS hook:
   Becomes common recently. I first encounter this game in Whirlpool games.
@@ -595,6 +596,15 @@ bool Yuris::InsertYuris6Hook()
   hp.filter_fun = Yuris6Filter;
   hp.type = USING_STRING | NO_CONTEXT | DATA_INDIRECT;
   hp.codepage = codepage;
+  /* euphoria HD (YU-RIS 0.474): its exact executable only (EuphoriaHD474Draw::Install checks the address, the image base and the
+     whole file hash), as runtime/hook did; every other YU-RIS6 game goes on to E345 below */
+  if (EuphoriaHD474Draw::Install(addr))
+  {
+    hp.type |= EMBED_ABLE | FULL_STRING;
+    hp.filter_fun = [](TextBuffer *b, HookParam *h) { Yuris6Clean(b, h); if (b->size) EuphoriaHD474Draw::ObserveSource(b->strA()); b->from(std::string(1, (char)0x1e) + b->strA() + std::string(1, (char)0x1f)); };
+    hp.embed_fun = EuphoriaHD474Draw::Embed;
+    return NewHook(hp, "EmbedEuphoria474_DrawHide_TEST2");
+  }
   // E345: the copy loop just before the hook is confirmed (EAX = struct, ESI = past the copied NUL),
   // so the copied string register can be rewritten in place.
   if (MatchPattern(addr - sizeof(checkbefore), checkbefore, sizeof(checkbefore)))
