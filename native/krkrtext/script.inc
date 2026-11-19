@@ -308,6 +308,8 @@ LR"MGLT((function(){
 )MGLT" LR"MGLT(
    st.trDone=function(inst){
     try {
+     /* 2026-11-19 why a TextRender line was not reported (live 千恋＊万花: no record at all, the reader stayed in its own box): counted per reason, on the status line */
+     if(typeof this.trWhy!='Object' || this.trWhy===void) this.trWhy=%[];
      var L=this.trLayer();if(L===void) {this.trNote('layer');return;}if(!this.trOwn(inst,L)) {this.trNote('own');return;}
      var scr=this.screen();if(!(scr[1]>0)) {this.trNote('scr');return;}if(L.height<scr[1]*0.2) {this.trNote('small');return;}if(!this.shown(L)) {this.trNote('hid');return;}
      var cs=(inst.getCharacters incontextof inst)(0,100000);if(typeof cs!='Object' || cs===null || cs.count==0) {this.trNote('empty');return;}
@@ -386,7 +388,7 @@ LR"MGLT((function(){
      /* bound to no context, so `this` is the TextRender instance the game calls done on; installed once per run */
      if(typeof global.__megulitTrHook!='Object') global.__megulitTrHook=function(args*){
       var r=(global.__megulitTrDone incontextof this)(args*);
-      try {var st=global.__megulitKrkrState;if(typeof st=='Object' && st!==void) {st.trHookTick=+st.trTick;st.trDone(this);}} catch(e) {}
+      try {var st=global.__megulitKrkrState;if(typeof st=='Object' && st!==void) st.trDone(this);} catch(e) {}
       return r;
      };
      var d=global.TextRender.done;
@@ -396,37 +398,7 @@ LR"MGLT((function(){
     } catch(e) {this.charsErr='trwrap '+e.message;}
    } incontextof st;
 )MGLT" LR"MGLT(
-   /* 2026-11-19 TJS copies class methods into each instance: renderers made before trWrap get their own done wrapped; else polled */
-   st.trVisit=function(k,v){
-    try {if(typeof v=='Object' && v!==void && v!==null && typeof v.getCharacters=='Object' && typeof v.done=='Object' && this.trInst.find(v)<0) this.trInst.add(v);} catch(e) {}
-   } incontextof st;
-   st.trNames=['textRender','_textRender','renderer','_renderer','textRenderer','_textRenderer','render','tr','_tr','textrender','trender','textRenderObject','mtr','renderText'];
-   st.trProbe=function(o,tag){
-    for(var i=0;i<this.trNames.count;i++) {var nm=this.trNames[i];try {var v=o[nm];if(typeof v=='Object' && v!==void && v!==null && typeof v.getCharacters=='Object' && typeof v.done=='Object') {if(this.trInst.find(v)<0) {this.trInst.add(v);this.trFound=(this.trFound===void?'':this.trFound+',')+tag+'.'+nm;}}} catch(e) {}}
-   } incontextof st;
-   st.trScan=function(){
-    var step='t';
-    try {
-     var now=+this.trTick;if(this.trScanAt!==void && now-this.trScanAt<20) return;this.trScanAt=now;step='i';
-     if(this.trInst===void) this.trInst=[];step='k';
-     var k=this.kag,pages=[k.fore,k.back];
-     for(var i=0;i<pages.count;i++) {step='m'+i;var ms=pages[i].messages;if(typeof ms!='Object' || ms===void || ms===null) continue;
-      for(var j=0;j<ms.count && j<32;j++) {var L=ms[j];this.trProbe(L,'m'+j);try {if(typeof L.textLayer=='Object' && L.textLayer!==void && L.textLayer!==null) this.trProbe(L.textLayer,'t'+j);} catch(e) {}}}
-     this.trProbe(k,'kag');this.trProbe(global,'g');
-     step='w';var n=0;for(var i=this.trInst.count-1;i>=0;i--) {var o=this.trInst[i];if(o===void || o===null || !isvalid o) {this.trInst.erase(i);continue;}
-      step='w1';if(typeof o.__megulitTr=='undefined') {step='w2';o.done=(global.__megulitTrHook incontextof o);step='w3';o.__megulitTr=1;n++;}}
-     if(n>0 || this.trScanN===void) {this.trScanN=1;this.report('ToMe_KRKR status trinst wrapped='+n+' total='+this.trInst.count+(this.trFound!==void?' at='+this.trFound:''));}
-    } catch(e) {this.charsErr='trscan@'+step+' '+e.message;}
-   } incontextof st;
-   st.trPoll=function(){
-    try {
-     if(this.trInst===void || this.trInst.count==0) return;
-     var now=+this.trTick;if(this.trHookTick!==void && now-this.trHookTick<15) return;if(this.trPollAt!==void && now-this.trPollAt<3) return;this.trPollAt=now;
-     for(var i=0;i<this.trInst.count;i++) {var o=this.trInst[i];if(isvalid o) this.trDone(o);}
-    } catch(e) {}
-   } incontextof st;
    st.vis=function(){
-    try {this.trTick=(+this.trTick)+1;if(this.trWrapped) {this.trScan();this.trPoll();}} catch(e) {this.charsErr='vis '+e.message;}
     try {this.trHide();} catch(e) {}
     try {this.fade();} catch(e) {}
     try {this.trSample();} catch(e) {this.trTry=99;}
