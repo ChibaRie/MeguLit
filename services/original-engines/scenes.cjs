@@ -85,10 +85,28 @@ const kirikiri={
  archives:dir=>ksArchives(dir).flatMap(a=>xp3Scenes(a,KS)),
  sources:dir=>[...ksArchives(dir),...walk(dir,2,KS)],
  parse:parseKs,test:KS,
+ /* S9 a Chinese patch.xp3 over the Japanese data.xp3: the Japanese scene under each patched one (layerOriginal) */
+ originalLines(dir){if(!this.scenes(dir).length)return null;const layers=new Map();for(const a of ksArchives(dir))for(const s of xp3Scenes(a,KS))addLayer(layers,s);
+  for(const file of walk(dir,2,KS))addLayer(layers,{name:path.basename(file),read:()=>fs.readFileSync(file)});return layerOriginal(this.scenes(dir),layers,parseKs);},
 };
 // Archives next to the game, then those in arc/ (女王蜂の王房 keeps scenario.xp3 there), later ones overriding.
 function ksArchives(dir){const xp3=d=>{try{return fs.readdirSync(d).filter(f=>/\.xp3$/i.test(f)).sort((a,b)=>rank(a)-rank(b)||a.localeCompare(b)).map(f=>path.join(d,f));}catch{return [];}};return [...xp3(path.join(dir,'arc')),...xp3(dir)];}
 function rank(name){const m=name.toLowerCase().match(/^patch(\d*)\.xp3$/);return m?1+(+m[1]||0):0;}
+/* S9 (2026-11-19, 27 probes of Chinese builds): a translation laid over the Japanese release in the same folder (patch.xp3
+   over data.xp3, root.pfs.010 over root.pfs.000) leaves the Japanese scene under the Chinese one. The game runs the patch's
+   scene; its Japanese lines are the same scene in an earlier layer, lined up 1:1 when the counts match, else by anchors
+   (bgi.alignLines). Unpatched Japanese scenes are their own original; a Chinese scene with nothing Japanese under it stays
+   ''. null when no Chinese scene has a Japanese one under it (the adoption in original-text.cjs then does nothing). */
+const KANA_LINE=/[ぁ-ゖァ-ヺ]/,HAN_LINE=/[一-鿿]/;
+function sceneLanguage(lines){let ja=0,zh=0;for(const t of lines||[]){if(KANA_LINE.test(t))ja++;else if(HAN_LINE.test(t))zh++;}return zh>=5&&zh>ja*3?'zh':ja>0&&ja>=zh?'ja':'';}
+function layerOriginal(running,layers,parse){let swapped=0,at=0;const align=require('./bgi.cjs').alignLines,added=[],rewritten=[];
+ const out=running.flatMap(s=>{const r=scene(s);at+=r.length;return r;});
+ function scene(s){let own;try{own=parse(s.read());}catch{return [];}const lines=own.lines||[];if(sceneLanguage(lines)!=='zh')return lines;
+  const under=(layers.get(s.name.toLowerCase())||[]).slice(0,-1).reverse();
+  for(const u of under){let ja;try{ja=parse(u.read());}catch{continue;}if(sceneLanguage(ja.lines)!=='ja')continue;swapped++;const r=align([{name:s.name,lines}],[{name:s.name,lines:ja.lines}]);for(const i of r.added||[])added.push(at+i);for(const i of r.rewritten||[])rewritten.push(at+i);return r;}
+  return lines.map(()=>'');}
+ if(swapped)Object.defineProperties(out,{added:{value:added},rewritten:{value:rewritten}});return swapped?out:null;}
+const addLayer=(layers,s)=>{const k=s.name.toLowerCase();if(!layers.has(k))layers.set(k,[]);layers.get(k).push(s);};
 
 // ---- Artemis --------------------------------------------------------------------------------------------------
 function pfsList(file){
@@ -169,6 +187,9 @@ const artemis={
  parse:parseArtemis,test:AST,
  // E352: a multilingual release carries its own Chinese; other games fall back to the usual patch overlay.
  patchLines(base){let any=false;const list=base.map(scene=>{const zh=scene.zh||[];if(!zh.some(Boolean))return scene;any=true;return {...scene,patched:true,lines:scene.lines.map((t,k)=>zh[k]||t)};});return any?list:null;},
+ /* S9 a Chinese root.pfs.010 (or loose .ast) over the Japanese root.pfs.000: the Japanese scene under each patched one */
+ originalLines(dir){const layers=new Map();for(const a of fs.readdirSync(dir).filter(isPfs).sort())for(const s of pfsScenes(path.join(dir,a)))addLayer(layers,s);
+  for(const file of walk(dir,3,AST))addLayer(layers,{name:path.basename(file),read:()=>fs.readFileSync(file)});return layerOriginal(this.scenes(dir),layers,parseAst);},
 };
 
 // ---- Ren'Py ---------------------------------------------------------------------------------------------------
@@ -597,4 +618,4 @@ function preparing(dir){
 }
 /* E375 why a recognised game cannot be read (an engine's own check, e.g. encrypted WOLF archives), or null. */
 function unsupportedReason(dir){for(const e of Object.values(ENGINES)){if(typeof e.unsupported!=='function')continue;let code='';try{code=e.unsupported(dir);}catch{}if(code)return {engine:e.id,code,detail:e.REASONS?.[code]||''};}return null;}
-module.exports={cxChineseOnly,cxPrepareSync,ownCx,unquoteSlot,unsupportedReason,preparing,cxBuilds,chineseColumn,ENGINES,detect,readable,read,fingerprint,parseKs,parseAst,parseRpy,pfsList,pfsRead,tlPairs,decode};
+module.exports={layerOriginal,sceneLanguage,cxChineseOnly,cxPrepareSync,ownCx,unquoteSlot,unsupportedReason,preparing,cxBuilds,chineseColumn,ENGINES,detect,readable,read,fingerprint,parseKs,parseAst,parseRpy,pfsList,pfsRead,tlPairs,decode};
