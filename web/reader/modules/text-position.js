@@ -7,16 +7,17 @@
  'use strict';const b=window.__tomoyoChinese;if(!b){document.addEventListener('DOMContentLoaded',install,{once:true});return;}if(b.textPosition)return;
  const send=m=>{try{window.__tomoyoTranslateRequest(JSON.stringify(m));}catch{}};
  const repaint=()=>window.__tomeStyleSyncPaint?.();
- let identity='',map=null,last=null,lastAt=0,cal=null,following=false,applied='';
+ let identity='',map=null,last=null,lastAt=0,cal=null,following=false,applied='',baseWidth=null,setWidth=null,dropped=null;
  // Engine units are pixels of the game's own canvas: a value far outside any canvas means the hook read something that
  // is not a coordinate (an early ISLAND build reported a pointer), and must never move the text box.
  const unit=v=>Number.isFinite(v)&&Math.abs(v)<=20000;
  const plausibleMap=v=>!!v&&[v.s,v.bx,v.by,v.dx,v.dy].every(Number.isFinite)&&v.s>.1&&v.s<10&&Math.abs(v.bx)<=20000&&Math.abs(v.by)<=20000&&Math.abs(v.dx)<=20000&&Math.abs(v.dy)<=20000&&v.cw>0&&v.ch>0;
  const api={
-  resetSession(nextIdentity){stateStyle.clear();readState='';endAlpha=1;map=last=cal=null;lastAt=0;following=false;applied='';if(nextIdentity!==undefined)identity=String(nextIdentity);b.lineColorReset?.();repaint();},
+  resetSession(nextIdentity){stateStyle.clear();readState='';endAlpha=1;map=last=cal=null;lastAt=0;following=false;applied='';baseWidth=setWidth=dropped=null;if(nextIdentity!==undefined)identity=String(nextIdentity);b.lineColorReset?.();repaint();},
   refresh(){if(last)b.textPosition(last,true);},
   mapExtent(m){if(!plausibleMap(map)||map.engine!==m.engine)return null;const l=b.galLayoutInfo?.(),kx=(l?.clientWidth||map.cw)/map.cw,ky=(l?.clientHeight||map.ch)/map.ch;return {x:(map.s*m.x0+map.bx)*kx,y:(map.s*m.y0+map.by)*ky,width:map.s*(m.x1-m.x0+m.size)*kx,size:map.s*m.size*ky};},
   getMap:()=>map?{...map}:null,
+  followState:()=>({baseWidth,setWidth,dropped:dropped?{...dropped}:null}),
   state:()=>({source:!!last&&Date.now()-lastAt<15*60*1000,calibrated:!!map&&(!last||map.engine===last.engine)||/_adv_v1$|^cs2_screen_v3$/.test(String(last?.engine||''))&&last.sw>0&&last.sh>0,following}),
   setMap(value){map=plausibleMap(value)?value:null;repaint();},
   startCalibration(){cal={x0:Infinity,y0:Infinity,x1:-Infinity,y1:-Infinity,size:0,engine:'',lines:new Map()};},
@@ -140,7 +141,18 @@
   const layout=layout0,cw=layout?.clientWidth||use.cw,ch=layout?.clientHeight||use.ch,kx=cw/use.cw,ky=ch/use.ch;
   const boxX=(use.s*m.x0+use.bx-use.dx)*kx,boxY=(use.s*m.y0+use.by-use.dy)*ky-(b.pageHistoryHeight?.()||0)*(window.devicePixelRatio||1);
   const x=Math.round(Math.max(0,Math.min(95,boxX*100/cw))*10)/10,y=Math.round(Math.max(0,Math.min(95,boxY*100/ch))*10)/10,key=x+','+y;
-  if(key!==applied){applied=key;b.previewGalPosition?.({x,y});}
+  /* 2026-11-20 (user, a third-party game: after loading a save the text sat at the right edge, 「しばらく / 喪服の男 / 遺族と礼」 one
+     short row under the other; Alt+T and calibration did not hold). Following a line used to move only x/y and keep the width, so a
+     start far right pushed the rest of every row past the game window and only the first glyphs of each row showed. The width now
+     follows the place: the box's own width (the one the user, a calibration or the profile set, never a width set here) as long as
+     it fits, else up to the window's right edge. A place that leaves less than half that width (at most 30 %) to the right edge or
+     starts below 95 % is never dialogue (a redraw from mid-line or a menu caption reported right after a load, a scene jump, a
+     return from the save menu) and is dropped. Any other place, a real switch between layouts included, applies at once. */
+  const current=Number(b.galPreferences?.()?.width);if(Number.isFinite(current)&&(baseWidth===null||current!==setWidth))baseWidth=current;
+  const width=Math.max(5,Math.min(100,baseWidth||60)),rawX=boxX*100/cw,rawY=boxY*100/ch;
+  if(100-rawX<Math.min(width,60)/2||rawY>95){dropped={x:Math.round(rawX*10)/10,y:Math.round(rawY*10)/10,at:Date.now()};return;}
+  const fit=Math.round(Math.min(width,100-x)*10)/10,next=Number.isFinite(current)&&fit!==current?fit:undefined;
+  if(key!==applied||next!==undefined){applied=key;if(next!==undefined)setWidth=next;b.previewGalPosition?.(next!==undefined?{x,y,width:next}:{x,y});}
   if(!following){following=true;repaint();}
  };
 })();
