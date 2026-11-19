@@ -53,5 +53,18 @@
   let found=false;let out=text.replace(/[■□◆][^「『」』。、！？!?…■□◆\n（）()]{1,24}(?:（[^（）\n]{0,30}(?:）|$)|(?=[■□◆「『]|$))/gu,()=>{found=true;return '';});
   if(found)out=out.replace(/^[^「『」』。、！？!?…\s（）]{1,24}（[^（）\n]{0,30}）/u,'');
   return found?out.replace(/^[\s　]+/,''):text;}
- return {variant,collapse,stripStageNotes,key};
+ /* 2026-11-19 (死に逝く君、館に芽吹く憎悪, Ctrl skip: 「謎の男謎の男謎の男謎の男美亜美亜」): name frames glued while skipping. A frame made
+    only of two or more runs of different short names (2-8 characters, each with kanji or katakana), every run drawn two or
+    more times, stands for its last name; '' when it is not one (「うんうん」「そうそうだね」 stay lines). */
+ function nameStack(input){const t=key(input);if(!t||t.length>64||/[「『」』（）()。、！？!?…‥・ー―]/.test(t))return '';
+  const named=u=>/[ァ-ヺ々〆一-鿿]/.test(u);
+  const go=(i,runs)=>{if(i===t.length)return runs.length>=2?runs:null;
+   for(let L=2;L<=Math.min(8,t.length-i);L++){const u=t.slice(i,i+L);if(!named(u))continue;let k=1;while(t.startsWith(u,i+k*L))k++;if(k<2)continue;
+    if(runs.length&&runs[runs.length-1][0]===u)continue;const r=go(i+k*L,[...runs,[u,k]]);if(r)return r;}
+   return null;};
+  const runs=go(0,[]);return runs?runs[runs.length-1][0]:'';}
+ /* settings / menu preview text (千恋＊万花 「テキスト速度のサンプルと…」, ISLAND 「テキスト表示サンプル」 typed out of order): the letters of
+    サンプル together with テキスト or 表示/文字/速度 in one short frame are the preview of a settings page, not dialogue */
+ function samplePreview(input){const t=key(input);if(!t||t.length>120)return false;const has=w=>[...w].every(c=>t.includes(c));return has('サンプル')&&(has('テキスト')||/表示|文字|速度/.test(t)||has('表示'));}
+ return {variant,collapse,stripStageNotes,key,nameStack,samplePreview};
 });
