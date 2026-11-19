@@ -65,6 +65,15 @@ test('index: the decrypted table in memory — stride, fields, count field, name
  assert.equal(ix.kinds.filter(([k])=>k==='text').length,G.scenes,'scenes open as text with the Blowfish key');assert.equal(ix.kinds[G.scenes][0],'png');
  assert.deepEqual({module:ix.locator.module,rva:ix.locator.rva},{module:0,rva:0x21010});assert.match(ix.slotSig[0].pattern,/^[0-9a-f]{12}\?{8}[0-9a-f]{8}$/);
 });
+test('index: found whole wherever the heap puts it — every 16-byte placement across a 4 KB block edge (E987)',()=>{
+ /* a live game's allocator places the table anywhere: next to dense key material, or with only a few records past a
+    block edge before other data; each placement must give the whole table, never a cut one or none */
+ const heap=rf.heapBlob(G),H=0x02000000,bad=[];
+ for(let pad=0;pad<4096;pad+=16){const bytes=Buffer.concat([Buffer.alloc(pad),heap.blob,Buffer.alloc(4096)]);
+  const sc=S.createScanner({archives:ARCH});sc.header({v:1,pid:1,bits:64,modules:[],regions:[{base:'0x'+H.toString(16),size:bytes.length,protect:4,type:0x20000}]});
+  sc.region({base:H,bytes,index:0});const c=sc.finish().indexes.map(i=>i.count);if(!c.includes(G.records.length))bad.push(pad+':'+c.join('/'));}
+ assert.deepEqual(bad,[],'placements with a cut or missing table');
+});
 test('scripts: decoded bytecode — opcode before the length byte, u8 length prefix, NUL terminator',()=>{
  const s=LOCAL.scripts[0];assert.ok(s);assert.equal(s.encoding,'sjis');assert.equal(s.lengthPrefix,'u8');assert.equal(s.terminator,'nul');assert.equal(s.opcodes[0].byte,'10');
 });
