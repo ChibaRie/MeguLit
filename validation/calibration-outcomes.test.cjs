@@ -100,3 +100,31 @@ test('the glyph pass-through is taken back by a cache report or a line with unbl
 test('discarding the new settings also drops the colour painted on the current sentence; the probe knows white text on a light sky',()=>{
  assert.ok(read('web/reader/modules/game-style-sync-ui.js').includes('const before=session.cancel();apply(before.prefs,before.map);/* the colour painted on the current sentence from a sample taken during the discarded calibration goes with it */b.lineColorReset?.();'));
  {const probe=read('native/GameStyleProbe.cs');for(const c of ['new[]{Color.FromArgb(120,170,230),Color.White,Color.FromArgb(16,16,24)}','new[]{Color.FromArgb(121,158,190),Color.Black,Color.White}','new[]{Color.FromArgb(240,236,225),Color.FromArgb(40,36,48),Color.Transparent}','style["textBackColor"]=backColor;','Text background colour mismatch'])assert.ok(probe.includes(c),c);}});
+
+test('a calibration changes only what it was asked for: text keeps the place, position keeps colours and size',()=>{
+ const tools=require('../core/game-profile.js');
+ const measured={x:19.4,y:79.3,width:64,anchorDX:0,anchorDY:0,japaneseSize:30.9,translationSize:30.9,japaneseSpacingPx:0,lineHeight:-1.25,lineHeightMode:'offset',textColor:'#fdf479',japaneseOutlineColor:'#060201',chineseOutlineColor:'#060201',rubyOutlineColor:'#060201',paddingX:0,paddingY:0,autoScale:true};
+ const text=tools.pick(measured,'text'),position=tools.pick(measured,'position');
+ for(const k of ['x','y','width','anchorDX','anchorDY','paddingX','paddingY'])assert.equal(text[k],undefined,'仅校准文字 leaves '+k);
+ for(const k of ['textColor','japaneseOutlineColor','chineseOutlineColor','rubyOutlineColor','japaneseSize','translationSize','lineHeight','japaneseSpacingPx'])assert.equal(position[k],undefined,'仅校准位置 leaves '+k);
+ assert.deepEqual(Object.keys(position).sort(),['anchorDX','anchorDY','paddingX','paddingY','width','x','y']);
+ assert.equal(text.textColor,'#fdf479');assert.equal(text.japaneseOutlineColor,'#060201');assert.equal(text.japaneseSize,30.9);
+ const ui=read('web/reader/modules/game-style-sync-ui.js');
+ assert.ok(ui.includes("apply(pick(out,part));message=t('measured');aligning=part!=='text';"),'the measured style goes through the part filter');
+ assert.ok(ui.includes("if(part!=='text'){const target={...r,"),'the position map is only finished for a calibration that includes the position');});
+
+test('a position calibration of an anchored line goes through the one entry that moves it onto the game\'s ink',()=>{
+ /* live 死に逝く君 2026-11-19 08:07:13Z: "placement placed: line 100006, 12 characters, first box 322,743,31,34 in client 1671x939";
+    the reader's first glyph was at client y 868 (layoutDiagnostic firstGlyphTop 940.8, clientY 73), the game's own at about 750.
+    The saved offset is corrected by b.alignToGameInk (fix/no-repeat 94f5ddfa); this side measures and hands the ink over, in client pixels. */
+ const ui=read('web/reader/modules/game-style-sync-ui.js');
+ assert.ok(ui.includes('alignToGameInk=target=>new Promise(done=>runCorrection(target,done))'),'one entry');
+ assert.ok(!ui.includes('out.anchorDX=0'),'no second writer of the offset');
+ assert.ok(ui.includes("if(part!=='text'&&Number.isFinite(r.inkLeft)&&Number.isFinite(r.inkTop)"),'the measured ink reaches it; 仅校准文字 never moves the line');
+ const engineTop=743,gameTop=750,readerTopBefore=940.8-73;assert.ok(Math.abs(engineTop-gameTop)<=10&&readerTopBefore-gameTop>100,'the engine place was right, the offset was the error');});
+
+test('taking the glyph pass-through back tells the user once what to do about the first lines',()=>{const hb=read('native/HookBridge.cs');
+ const leak=hb.slice(hb.indexOf('static void GlyphPassLeak(string why){'),hb.indexOf('static void GlyphLineReport(string s){'));
+ assert.ok(leak.startsWith('static void GlyphPassLeak(string why){if(GlyphPassLeaked)return;'),'once a run');
+ assert.ok(leak.includes('{"allFailed",GlyphVersion}'),'and remembered for the game, so not on the next run');
+ assert.ok(leak.includes('Status("这款游戏首次适配时前几句可能显示不全：开个新存档推进几句，再回标题重新开始即可");'),'through the existing status line');});
