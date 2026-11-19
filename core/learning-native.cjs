@@ -164,9 +164,14 @@ class LocalLearning{
   const result=await this.request('lookup_exact',args,'zh'),tokens=await this.tokenize(args.text),token=tokens.find(t=>t.start===args.start&&t.end===args.end),head=tokens.find(t=>t.start===args.start),entry=result.entries?.find(e=>e.id===entryId)||result.entries?.[0],m=result.morphology||{};
   let chosen=token,reading=token?.reading||m.reading||'',surface=result.surface,pronunciationForm='surface';
   if(!chosen&&head?.lexeme?.base===m.base&&entry?.readings?.some(r=>kana(r)===kana(head.lexeme.reading))){chosen=head;reading=head.lexeme.reading;surface=m.base;pronunciationForm='lemma';}
+  /* 2026-11-19 (user, 千恋＊万花: うたたね could not be mined, 「当前词没有确定读音」): Sudachi cut the line うたた｜ねし, so a selection
+     ending inside a token had no reading. selectedReading(): a word written only in kana reads as written; with kanji, the
+     dictionary reading when the entry is spelled as selected and has one reading (before the joined token readings: いつの間にか
+     is いつのまにか, not いつのあいだにか). Nothing else: a token piece is never used, a rare word without an entry stays unread. */
+  const selected=[...args.text].slice(args.start,args.end).join(''),fixed=!chosen?selectedReading(selected,entry):null;if(fixed){reading=fixed.reading;surface=selected;pronunciationForm=fixed.form;}
   // A selection spanning several tokens (e.g. 木曜日の空) reads as the sentence-context readings joined in order.
-  let phrase=false;if(!chosen){const inside=tokens.filter(t=>t.start>=args.start&&t.end<=args.end).sort((a,b)=>a.start-b.start);if(inside.length>1&&inside[0].start===args.start&&inside.at(-1).end===args.end&&inside.every((t,i)=>i===0||inside[i-1].end===t.start)&&inside.every(t=>t.reading||!/[一-龯々]/.test(t.surface))){reading=inside.map(t=>t.reading||t.surface).join('');surface=[...args.text].slice(args.start,args.end).join('');phrase=true;pronunciationForm='phrase';}}
-  const ambiguous=!reading||!!chosen?.reading_ambiguous||!phrase&&!!entry&&!entry.readings?.some(r=>kana(r)===kana(reading));
+  let phrase=false;if(!chosen&&!fixed){const inside=tokens.filter(t=>t.start>=args.start&&t.end<=args.end).sort((a,b)=>a.start-b.start);if(inside.length>1&&inside[0].start===args.start&&inside.at(-1).end===args.end&&inside.every((t,i)=>i===0||inside[i-1].end===t.start)&&inside.every(t=>t.reading||!/[一-龯々]/.test(t.surface))){reading=inside.map(t=>t.reading||t.surface).join('');surface=[...args.text].slice(args.start,args.end).join('');phrase=true;pronunciationForm='phrase';}}
+  const ambiguous=!reading||!!chosen?.reading_ambiguous||!phrase&&!fixed&&!!entry&&!entry.readings?.some(r=>kana(r)===kana(reading));
   return {surface,clickedSurface:result.surface,base:m.base||result.surface,reading,pitch:chosen?.pitch||[],pitchSource:chosen?.pitch_source||(phrase?'词组 · 音调由语音引擎估计':'UniDic 未匹配 · 音调由语音引擎估计'),pronunciationForm,ambiguous,pos:m.wordClass||entry?.pos?.join('、')||'',meaning:entry?.definition_groups?.map(g=>g.text).join('\n')||entry?.definitions?.join('\n')||'',sentence:args.text};
  }
 
@@ -193,4 +198,7 @@ class LocalLearning{
  }
  stop(){this.closed=true;this.worker?.stdin.end();this.installer?.kill();for(const p of this.pending.values()){clearTimeout(p.timer);p.reject(Error('本地辞书已关闭'));}this.pending.clear();}
 }
-module.exports={LocalLearning,chinesePos};
+/* The reading a selection has by itself (see word()): kana as written, or the one dictionary reading of an entry spelled so. */
+function selectedReading(text,entry){const t=String(text||'').trim();if(!t)return null;if(/^[\p{Script=Hiragana}\p{Script=Katakana}ー～〜]+$/u.test(t))return {reading:t,form:'kana'};
+ const readings=[...new Set((entry?.readings||[]).map(kana).filter(Boolean))];return entry?.spellings?.includes(t)&&readings.length===1?{reading:readings[0],form:'dictionary'}:null;}
+module.exports={LocalLearning,chinesePos,selectedReading};
