@@ -149,3 +149,8 @@ test('the KiriKiri script fits the compiler: every raw literal piece and the who
  const pieces=[...read('native/krkrtext/script.inc').matchAll(/LR"MGLT\(([\s\S]*?)\)MGLT"/g)].map(m=>m[1].length);
  assert.ok(pieces.length>=5);assert.ok(Math.max(...pieces)<=8190,'largest piece '+Math.max(...pieces)+' units');
  const total=pieces.reduce((a,b)=>a+b,0);assert.ok(total<32767,'whole script '+total+' units');});
+test('an engine-side hidden confirmation keeps the line in the game: the glyph colour has something to read',()=>{const hb=read('native/HookBridge.cs');
+ /* live 千恋＊万花 hide mode: lines were written back hidden (no GDI glyph proof), TextRender drew nothing, no colour; 死に逝く君 kept its lines and its colours */
+ assert.ok(hb.includes('if(line.IndexOf(" hidden=1 ",StringComparison.Ordinal)>0)EngineHideProof(label);'),'ToMe_CHARS hidden=1 is the proof');
+ const ok=hb.slice(hb.indexOf('public static bool GlyphAllOk(string text){'));assert.ok(ok.indexOf('if(EngineAllOk(text))return true;')>0&&ok.indexOf('if(EngineAllOk(text))return true;')<ok.indexOf('if(GlyphCached)'),'checked before the GDI-only reasons to write back');
+ assert.ok(hb.includes('if(want)Interlocked.Increment(ref EngineHideOn);else Interlocked.Decrement(ref EngineHideOn);')&&hb.includes('if(!EngineAllSelfTest())'));});
