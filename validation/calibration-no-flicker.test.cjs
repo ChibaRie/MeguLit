@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 'use strict';
-/* 2026-11-19 (user, live 千恋＊万花 shown in Simplified Chinese: "点校准之后 alt+t 闪闪闪的"). Calibration samples read the
-   screen, so each one hid the subtitle and the Alt+T menu (gameStylePreview → body.tome-style-probing). The game drew
-   Chinese, the source was Japanese: no sample ever matched, every new line reset the per-line attempts, and the menu the
+/* 2026-11-19 (user, live 千恋＊万花: "点校准之后 alt+t 闪闪闪的"). Calibration samples read the screen, so each one hid the
+   subtitle and the Alt+T menu (gameStylePreview → body.tome-style-probing). The game draws Japanese, but its line was still
+   hidden while calibrating (recording 14:55: during a capture the box held only MeguLit's translation line, no game text),
+   so no sample ever matched, every new line reset the per-line attempts, and the menu the
    player had just used blinked two or three times per line until the 90 s deadline.
    Now a sample captures the game window alone (captureMode "window"): nothing of MeguLit is hidden. Only when that
    window cannot be captured does one screen read per calibration hide the subtitle (never the menu). A calibration
@@ -29,7 +30,7 @@ async function calibrate(r,lines){r.sync.observe(LINES[0],false);r.sync.begin('a
  for(let i=1;i<=lines;i++){for(let k=0;k<4;k++){await r.wait();await r.miss();}r.sync.observe(LINES[i],false);}
  for(let k=0;k<4;k++){await r.wait();await r.miss();}}
 
-test('a translated edition: calibrating over ten lines hides nothing and ends with a clear unmatched',async t=>{const r=rig(t);
+test('an original that never shows: calibrating over ten lines hides nothing and ends with a clear unmatched',async t=>{const r=rig(t);
  await calibrate(r,10);
  assert.ok(r.captures('window')>=1,'the game window is captured');assert.equal(r.captures('visible-client'),0,'never the screen');
  assert.equal(r.hides(),0,'the subtitle and the Alt+T menu are never hidden');

@@ -292,7 +292,9 @@ LR"MGLT((function(){
      if(L===void || this.trOwner!==L || this.trRec===void) {this.trRestore();return;}
      var T=L.textLayer,on=this.hideOn();
      if(this.trT!==void && this.trT!==T) this.trRestore();
-     if(on) {if(this.trOp===void || this.trT!==T) {this.trT=T;this.trOp=T.opacity;}if(T.opacity!=0) T.opacity=0;}
+     if(on) {if(this.trOp===void || this.trT!==T) {this.trT=T;this.trOp=T.opacity;}
+      /* a value other than 0 was set by the game since the last tick (its text window came back after a scene change): that is the game's own opacity now */
+      if(T.opacity!=0) this.trOp=T.opacity;if(T.opacity!=0) T.opacity=0;}
      else this.trRestore();
      /* the line on screen changes its hidden state without a new render: send its record again */
      var h=(on && T.opacity==0)?1:0;

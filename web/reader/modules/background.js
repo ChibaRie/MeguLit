@@ -320,7 +320,7 @@
   }}
  // Added when the menu is shown, before its first frame (a timer used to add it up to 0.6 s later).
  for(const name of ['show','showModal']){const original=HTMLDialogElement.prototype[name];HTMLDialogElement.prototype[name]=function(){menuLayer(this);const result=original.apply(this,
-  arguments);requestAnimationFrame(()=>glassReport());return result;};}
+  arguments);/* 2026-11-19 (user: a focus ring sat on the menu's close button as soon as Alt+T opened it): opening is not keyboard navigation. The first focus goes to the panel itself, which draws no ring; Tab then walks the controls with MeguLit's own :focus-visible ring, a mouse click never shows one */if(this.classList.contains('tomoyo-cn-dialog')){const panel=this;let frames=0;/* the panel cannot take focus before its first frame: tried again for a moment, until it has it or the player has moved on */const grab=()=>{try{if(!panel.isConnected||!panel.open||document.activeElement===panel)return;const a=document.activeElement;if(a&&a!==document.body&&!panel.contains(a))return;if(!panel.hasAttribute('tabindex'))panel.tabIndex=-1;panel.focus({preventScroll:true});if(document.activeElement!==panel&&++frames<40)requestAnimationFrame(grab);}catch{}};grab();}requestAnimationFrame(()=>glassReport());return result;};}
  function warmLookupGlass(panel){if(!panel.matches('.tomoyo-selection-card')||!['glass','both'].includes(document.documentElement.dataset.tomeCardSurface))return;
   panel.dataset.glassPending='';panel.style.visibility='hidden';setTimeout(()=>revealLookupGlass(panel),350);}
  function revealLookupGlass(panel){if(!panel.hasAttribute('data-glass-pending'))return;panel.removeAttribute('data-glass-pending');panel.style.visibility='';cardEntrance(panel);

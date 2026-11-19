@@ -3,9 +3,10 @@
 const fs=require('node:fs'),path=require('node:path'),{spawn}=require('node:child_process'),{createInterface}=require('node:readline');
 // Publish the current visible line; a short line retains the existing wrap width in the reader.
 const NEEDED=1;
-/* 2026-11-19 (user, 千恋＊万花 Chinese edition: "点校准之后 alt+t 闪闪闪的"): each calibration sample reads the screen and hides
-   the subtitle and the Alt+T menu for it; a new line reset the per-line attempts, so while the game's own text never matched
-   the source (a translated edition) every line hid them up to three times until the deadline. A session ends as unmatched
+/* 2026-11-19 (user, 千恋＊万花: "点校准之后 alt+t 闪闪闪的"): each calibration sample read the screen and hid the subtitle and
+   the Alt+T menu for it; a new line reset the per-line attempts, so while the game's own original never showed (the game
+   draws Japanese, but its line stayed hidden during the calibration) every line hid them up to three times until the
+   deadline. A session ends as unmatched
    after this many misses in all, whatever the lines. */
 const SESSION_MISSES=4;
 const profileTools=require('./game-profile.js'),gameStyle=require('./game-style.js'),islandSource=require('./island-source.js');
