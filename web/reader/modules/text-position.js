@@ -59,12 +59,20 @@
  const paintLine=(color,text)=>{const gs=window.TomoyoGameStyle,p=b.galPreferences?.()||{},c=gs?.lineColor?gs.lineColor(p,text||'',color):'',root=document.documentElement.style;
   const on=!!c;document.body.classList.toggle('tome-line-color',on);if(on)root.setProperty('--tomoyo-gal-line-color',c);else root.removeProperty('--tomoyo-gal-line-color');};
  api.paintLine=paintLine;
- b.lineColorReset=()=>{colorSource='';colorSequence=null;colorDraw=latestDraw=retiredDraw=null;waitingDraw=false;paintLine('','');};
+ /* 2026-11-19 live 死に逝く君、館に芽吹く憎悪 (TextRender, read yellow → new white): a text path that saw the colour of the game's
+    own glyphs (ToMe_CHARS color) paints the line with it when no engine draw colour claimed it. */
+ let drawnColor=null;
+ /* the source may carry ruby readings, a speaker name or stage notes the game does not draw, and a page that grew by a sentence
+    draws the earlier ones too: most characters of either text found in the other is a match */
+ const compact=t=>String(t||'').replace(/\s+/g,''),drawnMatches=src=>{const a=[...compact(src)],d=[...compact(drawnColor?.text)];if(!a.length||!d.length)return false;
+  const left=new Map();for(const c of a)left.set(c,(left.get(c)||0)+1);let hit=0;for(const c of d){const n=left.get(c);if(n){hit++;left.set(c,n-1);}}return hit>=Math.ceil(Math.min(a.length,d.length)*.8);};
+ b.lineColorDrawn=(text,color)=>{if(!/^#[0-9a-f]{6}$/i.test(String(color)))return;drawnColor={text:String(text||''),color};if(!colorDraw?.claimed&&drawnMatches(colorSource))paintLine(color,colorSource);};
+ b.lineColorReset=()=>{colorSource='';colorSequence=null;colorDraw=latestDraw=retiredDraw=drawnColor=null;waitingDraw=false;paintLine('','');};
  b.lineColorFor=(text,sequence)=>{const next=String(text||''),seq=Number.isSafeInteger(sequence)?sequence:null;
   if(next===colorSource&&(seq===null||seq===colorSequence))return;colorSource=next;colorSequence=seq;
   if(colorDraw&&!colorDraw.claimed&&colorDraw.sourceToken!=null&&colorDraw.sourceToken===sourceToken(next)){colorDraw.claimed=true;waitingDraw=false;paintLine(colorDraw.color,next);return;}
   /* A draw already claimed by the previous sequence is retired: a late end for it must not recolour this one, even with the same text. */
-  retiredDraw=colorDraw?.claimed?{engine:colorDraw.engine,line:colorDraw.line}:null;colorDraw=null;waitingDraw=true;paintLine('',next);
+  retiredDraw=colorDraw?.claimed?{engine:colorDraw.engine,line:colorDraw.line}:null;colorDraw=null;waitingDraw=true;paintLine(drawnMatches(next)?drawnColor.color:'',next);
  };
  const lineColor=m=>{
   if(!/_adv_v1$/.test(String(m.engine||''))||!Number.isSafeInteger(m.line))return;

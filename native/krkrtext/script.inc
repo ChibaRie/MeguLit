@@ -242,23 +242,56 @@ LR"MGLT((function(){
      var cs=(inst.getCharacters incontextof inst)(0,100000);if(typeof cs!='Object' || cs===null || cs.count==0) return;
      var a=this.abs(L),ox=a[0]+(+L.marginL),oy=a[1]+(+L.marginT),pad=0;
      try {var pf=L.textLayer._preRenderFontEx;if(typeof pf=='Object' && pf!==void && typeof pf.resizePadding=='Integer') pad=pf.resizePadding;} catch(e) {}
-     var rs='',n=0,t='',ly=void;
+     var rs='',n=0,t='',ly=void,all=[],pts=[];
      for(var i=0;i<cs.count;i++) {
       var c=cs[i],ch=''+c.text;if(ch=='' || ch==' ' || ch=='　' || ch=="\t" || ch=="\n") continue;
       var y=+c.y;if(ly!==void && y!=ly) t+="\n";ly=y;t+=ch;
       rs+=(n>0?';':'')+int(ox+(+c.x))+','+int(oy+y+pad)+','+int(+c.cw)+','+int(+c.size);n++;
+      if(all.count<400) all.add([ox+(+c.x),oy+y+pad,+c.cw,+c.size]);
      }
      if(n==0) return;
      if(this.trOwner!==L) {this.trRestore();this.trRec=void;this.trOwner=L;this.trText='';this.trKey='';}
      var flat=t.replace(/\n/g,'');
-     if(!(this.trText!='' && (flat.indexOf(this.trText)==0 || this.trText.indexOf(flat)==0))) this.trLine++;
+     var from=0;
+     if(!(this.trText!='' && (flat.indexOf(this.trText)==0 || this.trText.indexOf(flat)==0))) {this.trLine++;this.trCol=void;this.trTry=0;}
+     /* a page that grew by a sentence: its colour is that sentence's own (a read line above a new one keeps its yellow) */
+     else if(flat.length>this.trText.length+1 && flat.indexOf(this.trText)==0) {from=this.trText.length;this.trCol=void;this.trTry=0;}
+     for(var i=from;i<all.count && pts.count<6;i++) pts.add(all[i]);
      var T=L.textLayer,h=(this.hideOn() && T.opacity==0)?1:0,scr=this.screen();
      var key=this.trLine+'|'+h+'|'+rs;if(key==this.trKey) return;this.trKey=key;this.trText=flat;this.charsSent++;
-     var tail=' sw='+int(scr[0])+' sh='+int(scr[1])+' vx=0 vy=0 vw=0 vh=0 n='+n+' rects='+rs+' text='+t;
+     this.trPts=pts;this.trAbsL=a;this.trTailA=' sw='+int(scr[0])+' sh='+int(scr[1])+' vx=0 vy=0 vw=0 vh=0 n='+n+' rects='+rs;this.trTailB=' text='+t;
+     var tail=this.trTailA+(this.trCol!==void?' color='+this.trCol:'')+this.trTailB;
      this.trRec=[h,100000+this.trLine,tail];
      this.report('ToMe_CHARS engine=krkr line='+(100000+this.trLine)+' hidden='+h+tail);
      this.trHide();
     } catch(e) {this.charsErr='tr '+e.message;}
+   } incontextof st;
+)MGLT" LR"MGLT(
+   /* 2026-11-19 live 死に逝く君、館に芽吹く憎悪: a TextRender game paints read lines yellow and new ones white without touching
+      chColor, so the record carries the colour the glyphs really have: the most common opaque pixel inside the first
+      characters' boxes of the (possibly opacity-0) text layer, sampled once the typewriter has drawn them. */
+   st.trSample=function(){
+    if(this.trRec===void || this.trCol!==void || this.trPts===void || this.trOwner===void) return;
+    if(this.trTry===void) this.trTry=0;if(++this.trTry>40) return;
+    var T=this.trOwner.textLayer;if(typeof T!='Object' || T===void || T===null) return;
+    /* a text layer that is not a child of its message layer is that layer's own buffer, laid at the message layer's origin */
+    var at=T.parent===this.trOwner?this.abs(T):this.trAbsL,cnt=%[],best='',bn=0,lit=0,lv=-1,lb=0,w=+T.imageWidth,hh=+T.imageHeight;
+    for(var i=0;i<this.trPts.count;i++) {
+     var p=this.trPts[i];
+     for(var gy=1;gy<=6;gy++) for(var gx=1;gx<=6;gx++) {
+      var x=int(p[0]-at[0]+p[2]*gx/7),y=int(p[1]-at[1]+p[3]*gy/7);
+      if(x<0 || y<0 || x>=w || y>=hh) continue;
+      var px=T.getMainPixel(x,y),rgb=px&0xffffff;
+      /* a buffer drawn with holdAlpha keeps alpha 0: there the glyph body is its brightest pixel (edges blend to the background) */
+      if(rgb!=0) {lit++;var lum=((rgb>>16)&255)+((rgb>>8)&255)+(rgb&255);if(lum>lv) {lv=lum;lb=rgb;}}
+      if(((px>>24)&255)<0xc0) continue;
+      var k=''+(px&0xffffff),c=cnt[k];c=(c===void?0:c)+1;cnt[k]=c;if(c>bn) {bn=c;best=k;}
+     }
+    }
+    if(bn<6 && lit<3 || this.trTry<3) return; /* a few ticks in: the typewriter and any fade-in have drawn the first glyphs */
+    var h='',v=bn>=6?+best:lb;for(var i=0;i<6;i++) {h='0123456789abcdef'.charAt(v&15)+h;v=v>>4;}
+    this.trCol=h;var r=this.trRec;r[2]=this.trTailA+' color='+h+this.trTailB;this.trKey='';
+    this.report('ToMe_CHARS engine=krkr line='+r[1]+' hidden='+r[0]+r[2]);
    } incontextof st;
    st.trWrap=function(){
     try {
@@ -279,6 +312,7 @@ LR"MGLT((function(){
 )MGLT" LR"MGLT(
    st.vis=function(){
     try {this.trHide();} catch(e) {}
+    try {this.trSample();} catch(e) {this.trTry=99;}
     try {
      var r=this.active;if(r===void || r===null || !isvalid r.target) return;
      var v=this.shown(r.target);
