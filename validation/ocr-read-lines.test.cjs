@@ -82,5 +82,6 @@ test('wiring: the scan runs without artText (5 s quiet), artText only decides th
  assert.match(p,/dialogSeen = ScanDialogSeen, others = ScanOthers, at =/);
  assert.match(p,/Priority = ThreadPriority\.BelowNormal/,'the scan stays a low-priority thread');
  assert.match(g,/if\(!art\)s\.slow=true;/,'read lines only: the slow rate');assert.match(p,/Thread\.Sleep\(busy \? 400 : ScanSlow \? 1500 : 700\)/);
- assert.match(p,/if \(last != null && !Changed\(last, thumb\) && !pending && !darkRecheck\) continue;/,'OCR only when the picture changed');
- assert.match(p,/bool darkRecheck = Dark\(thumb\) && \(DateTime\.UtcNow - lastOcr\)\.TotalMilliseconds >= 4000;/,'or, on a dark picture, every 4 s (faint grey text on black)');});
+ assert.match(p,/forced = last != null && !Changed\(last, thumb\) && !pending;\s*if \(forced && !darkRecheck\) continue;/,'OCR only when the picture changed');
+ assert.match(p,/bool darkRecheck = Dark\(thumb\) && \(DateTime\.UtcNow - lastOcr\)\.TotalMilliseconds >= \(darkMisses < 3 \? 4000 : 20000\);/,'or, on a dark picture, every 4 s (faint grey text on black), every 20 s after three empty reads');
+ assert.match(p,/if \(forced\) darkMisses = groups\.Count \+ foreignGroups\.Count == 0 \? Math\.Min\(darkMisses \+ 1, 3\) : 0;/);assert.match(p,/if \(seen0 != null && Differ\(seen0, thumb\) >= 0\.3\) darkMisses = 0;/,'a fade-in lifts the cap');});
