@@ -367,13 +367,13 @@ static void Deactivate(string reason){if(WaitHook!=null)WaitHook.Disable();lock(
     the base runtime pack still carries (hook, hook-island, hook-mages[-e201], hook-siglus) are used only when MeguLitHook is
     missing or is an older build without that adapter (euphoria HD sits in its Yuris.cpp). Exercised by --runtime-choice-self-test. */
  static string ChooseRuntime(string runtime,bool euphoria,bool island,bool steinsGate,bool siglus){return ChooseRuntime(runtime,euphoria,island,steinsGate,siglus,Environment.GetEnvironmentVariable("MEGULIT_UNIFIED_ADAPTERS")=="1");}
- /* unified: STEINS;GATE and euphoria HD on MeguLitHook too. Their adapters are in MeguLitHook32 but were never run on a real
-    game there, so by default they keep their dedicated folders; MEGULIT_UNIFIED_ADAPTERS=1 switches them for that check */
+ /* unified: ISLAND, STEINS;GATE and euphoria HD on MeguLitHook too. Their adapters are in MeguLitHook32 but were never run on a
+    real game there, so by default they keep their dedicated folders; MEGULIT_UNIFIED_ADAPTERS=1 switches them for that check */
  static string ChooseRuntime(string runtime,bool euphoria,bool island,bool steinsGate,bool siglus,bool unified){
   Func<string,string> at=name=>Path.Combine(runtime,name);
   string root=File.Exists(Path.Combine(at("megulithook"),"MeguLitHook32.dll"))?at("megulithook"):at("hook-readonly");
   if(euphoria&&Directory.Exists(at("hook"))&&(!unified||!MainRuntimeHas(root,"EmbedEuphoria474_DrawHide_TEST2")))root=at("hook");
-  if(island&&Directory.Exists(at("hook-island"))&&!MainRuntimeHas(root,"ToMeCS2_DRAW"))root=at("hook-island");
+  if(island&&Directory.Exists(at("hook-island"))&&(!unified||!MainRuntimeHas(root,"ToMeCS2_DRAW")))root=at("hook-island");
   if(steinsGate&&Directory.Exists(at("hook-mages"))&&(!unified||!MainRuntimeHas(root,"ToMeSG_EMBED")))root=Directory.Exists(at("hook-mages-e201"))?at("hook-mages-e201"):at("hook-mages");
   if(siglus&&Path.GetFileName(root)=="hook-readonly"&&File.Exists(Path.Combine(at("hook-siglus"),"MeguLitHook32.dll")))root=at("hook-siglus");
   return root;}
@@ -385,11 +385,11 @@ static void Deactivate(string reason){if(WaitHook!=null)WaitHook.Disable();lock(
   try{
    /* new runtime with the adapters, the old pack folders present */
    dll("megulithook","...ToMeCS2_DRAW...ToMeSG_EMBED...EmbedEuphoria474_DrawHide_TEST2...");foreach(var d in new[]{"hook","hook-island","hook-mages","hook-mages-e201","hook-readonly"})Directory.CreateDirectory(Path.Combine(dir,d));dll("hook-siglus","x");
-   expect("new, island",leaf(ChooseRuntime(dir,false,true,false,false,false)),"megulithook");expect("new, steins;gate by default",leaf(ChooseRuntime(dir,false,false,true,false,false)),"hook-mages-e201");expect("new, steins;gate unified",leaf(ChooseRuntime(dir,false,false,true,false,true)),"megulithook");
+   expect("new, island by default",leaf(ChooseRuntime(dir,false,true,false,false,false)),"hook-island");expect("new, island unified",leaf(ChooseRuntime(dir,false,true,false,false,true)),"megulithook");expect("new, steins;gate by default",leaf(ChooseRuntime(dir,false,false,true,false,false)),"hook-mages-e201");expect("new, steins;gate unified",leaf(ChooseRuntime(dir,false,false,true,false,true)),"megulithook");
    expect("new, siglus",leaf(ChooseRuntime(dir,false,false,false,true,false)),"megulithook");expect("new, other",leaf(ChooseRuntime(dir,false,false,false,false,false)),"megulithook");expect("new, euphoria by default",leaf(ChooseRuntime(dir,true,false,false,false,false)),"hook");expect("new, euphoria unified",leaf(ChooseRuntime(dir,true,false,false,false,true)),"megulithook");
    /* an older MeguLitHook without the adapters: the dedicated folders as before */
    dll("megulithook","older build");
-   expect("old, island",leaf(ChooseRuntime(dir,false,true,false,false,false)),"hook-island");expect("old, steins;gate unified",leaf(ChooseRuntime(dir,false,false,true,false,true)),"hook-mages-e201");expect("old, other",leaf(ChooseRuntime(dir,false,false,false,false,false)),"megulithook");expect("old, euphoria unified",leaf(ChooseRuntime(dir,true,false,false,false,true)),"hook");
+   expect("old, island unified",leaf(ChooseRuntime(dir,false,true,false,false,true)),"hook-island");expect("old, steins;gate unified",leaf(ChooseRuntime(dir,false,false,true,false,true)),"hook-mages-e201");expect("old, other",leaf(ChooseRuntime(dir,false,false,false,false,false)),"megulithook");expect("old, euphoria unified",leaf(ChooseRuntime(dir,true,false,false,false,true)),"hook");
    /* the old pack folders gone (a runtime without them): MeguLitHook for all */
    dll("megulithook","...ToMeCS2_DRAW...ToMeSG_EMBED...EmbedEuphoria474_DrawHide_TEST2...");foreach(var d in new[]{"hook","hook-island","hook-mages","hook-mages-e201","hook-siglus"})Directory.Delete(Path.Combine(dir,d),true);
    expect("no pack, island",leaf(ChooseRuntime(dir,false,true,false,false,false)),"megulithook");expect("no pack, steins;gate",leaf(ChooseRuntime(dir,false,false,true,false,false)),"megulithook");expect("no pack, euphoria",leaf(ChooseRuntime(dir,true,false,false,false,false)),"megulithook");
@@ -398,7 +398,7 @@ static void Deactivate(string reason){if(WaitHook!=null)WaitHook.Disable();lock(
    expect("no megulithook, siglus",leaf(ChooseRuntime(dir,false,false,false,true,false)),"hook-siglus");expect("no megulithook, other",leaf(ChooseRuntime(dir,false,false,false,false,false)),"hook-readonly");
   }finally{try{Directory.Delete(dir,true);}catch{}}
   if(fails.Count>0){Console.WriteLine("FAIL runtime choice: "+String.Join("; ",fails.ToArray()));return 1;}
-  Console.WriteLine("PASS runtime choice: MeguLitHook for ISLAND and Siglus (the old folders only for an older build or without it); STEINS;GATE and euphoria HD keep their folders unless MEGULIT_UNIFIED_ADAPTERS=1");return 0;}
+  Console.WriteLine("PASS runtime choice: ISLAND, STEINS;GATE and euphoria HD keep their folders unless MEGULIT_UNIFIED_ADAPTERS=1 (then MeguLitHook when it carries the adapter); Siglus on MeguLitHook, its folder only without it");return 0;}
  static bool IsSiglusProcess(string[] args){if(args.Length<3)return false;string name=(args[2]??"").ToLowerInvariant();if(name.Contains("siglusengine")||name.StartsWith("siglus~"))return true;try{uint pid;if(!UInt32.TryParse(args[0],out pid))return false;using(var process=Process.GetProcessById((int)pid))return File.Exists(Path.Combine(Path.GetDirectoryName(process.MainModule.FileName),"SiglusEngine.exe"));}catch{return false;}}
  static bool IsSupportedSteinsGate(string[] args){
   if(args.Length!=5||!String.Equals(args[2],"Game",StringComparison.OrdinalIgnoreCase))return false;

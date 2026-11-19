@@ -33,7 +33,7 @@ test('the adapters are engines of MeguLitHook32, listed first, each for its exac
 test('HookBridge: MeguLitHook for every game; the old folders only for an older build or without one',()=>{
  const b=read('native/HookBridge.cs');
  assert.match(b,/string root=ChooseRuntime\(Path\.GetFullPath\(Path\.Combine\(AppDomain\.CurrentDomain\.BaseDirectory,"\.\.","runtime"\)\),/);
- assert.match(b,/if\(island&&Directory\.Exists\(at\("hook-island"\)\)&&!MainRuntimeHas\(root,"ToMeCS2_DRAW"\)\)root=at\("hook-island"\);/);
+ assert.match(b,/if\(island&&Directory\.Exists\(at\("hook-island"\)\)&&\(!unified\|\|!MainRuntimeHas\(root,"ToMeCS2_DRAW"\)\)\)root=at\("hook-island"\);/,'ISLAND keeps its folder unless unified');
  assert.match(b,/if\(steinsGate&&Directory\.Exists\(at\("hook-mages"\)\)&&\(!unified\|\|!MainRuntimeHas\(root,"ToMeSG_EMBED"\)\)\)root=/,'STEINS;GATE keeps its folder unless unified');
  assert.match(b,/Environment\.GetEnvironmentVariable\("MEGULIT_UNIFIED_ADAPTERS"\)=="1"/,'unified only on request (never verified on a real game)');
  assert.match(b,/if\(siglus&&Path\.GetFileName\(root\)=="hook-readonly"&&/,'Siglus already on MeguLitHook; its folder only without MeguLitHook');
