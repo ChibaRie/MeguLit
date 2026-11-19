@@ -185,7 +185,10 @@ public sealed class PageLocator : IDisposable {
      thumb = Thumb(image);
      bool pending = false; foreach (var it in ScanItems) if (!it.Shown || it.Misses > 0) pending = true;
      // The same picture: what is shown stays; a candidate seen once (or missed once) is read again to settle it.
-     if (last != null && !Changed(last, thumb) && !pending) continue;
+     /* 2026-11-19 (素晴らしき日々, live: 「私（あるいはこれを読むあなた）は世界に属さない。」 in dark grey on black was never read): faint
+        text on a dark picture barely moves the thumbnail, so a dark picture is read again every 4 s even when it looks the same */
+     bool darkRecheck = Dark(thumb) && (DateTime.UtcNow - lastOcr).TotalMilliseconds >= 4000;
+     if (last != null && !Changed(last, thumb) && !pending && !darkRecheck) continue;
      // A picture that keeps moving with no Japanese on it (video, particles) is read every 2.1 s instead of 0.7 s.
      if (idle >= 4 && (DateTime.UtcNow - lastOcr).TotalMilliseconds < 2000) continue;
      last = thumb; lastOcr = DateTime.UtcNow;
@@ -258,6 +261,8 @@ public sealed class PageLocator : IDisposable {
    if (px[Math.Min(px.Count - 1, px.Count / 4)].Key > 30) r.Glow = mean(px.Count / 6, px.Count / 3);
   } catch { }
  }
+ /* a picture that is mostly black (the thumbnail's mean grey under 40) */
+ public static bool Dark(byte[] thumb) { if (thumb == null || thumb.Length == 0) return false; long s = 0; foreach (byte b in thumb) s += b; return s / thumb.Length < 40; }
  static byte[] Thumb(Bitmap image) {
   using (var small = new Bitmap(64, 36, PixelFormat.Format24bppRgb)) {
    using (var g = Graphics.FromImage(small)) { g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.Bilinear; g.DrawImage(image, 0, 0, 64, 36); }

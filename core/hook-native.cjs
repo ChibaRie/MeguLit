@@ -322,14 +322,17 @@ class HookNative{
  ocrSchedule(ms){const O=this.ocr;clearTimeout(O.timer);O.timer=setTimeout(()=>this.ocrFlush(),ms);O.timer.unref?.();}
  ocrFlush(){const O=this.ocr;if(!O)return;const now=this.now(),items=[...O.shown.values()].filter(it=>!O.done.has(it.id));
   if(items.length>=OCR_LINE_MAX_BLOCKS){this.trace('ocr lines skipped: '+items.length+' text groups at once (menu or settings page)');return;}
-  let wait=0;
+  let wait=0;const take=[];
   for(const it of items){const age=now-it.changedAt;if(age<OCR_LINE_SETTLE_MS){wait=Math.max(wait,OCR_LINE_SETTLE_MS-age);continue;}
    O.done.add(it.id);if(O.done.size>400)O.done.delete(O.done.values().next().value);
    const why=this.ocrLineRefused(it,now);if(why){this.trace('ocr line refused ('+why+') '+JSON.stringify(it.text.slice(0,40)));continue;}
-   const flat=HookNative.flat(it.text);O.said.set(flat,now);if(O.said.size>200)O.said.delete(O.said.keys().next().value);
-   const box=it.rows.reduce((b,r)=>{const x=+r?.x,y=+r?.y,w=+r?.w,h=+r?.h;if(![x,y,w,h].every(Number.isFinite))return b;return b?{x0:Math.min(b.x0,x),y0:Math.min(b.y0,y),x1:Math.max(b.x1,x+w),y1:Math.max(b.y1,y+h)}:{x0:x,y0:y,x1:x+w,y1:y+h};},null);
-   this.trace('ocr line '+JSON.stringify(it.text.slice(0,40)));O.lastText=it.text.trim();
-   this.source({type:'hookSource',text:it.text,origin:'ocr',hookActive:true,...(box&&it.sw&&it.sh?{ocrRect:{...box,sw:it.sw,sh:it.sh}}:{})},'ocr');}
+   const flat=HookNative.flat(it.text);O.said.set(flat,now);if(O.said.size>200)O.said.delete(O.said.keys().next().value);take.push(it);}
+  /* 2026-11-19 (素晴らしき日々, live: the notice screen's three paragraphs came as three lines in 30 ms, the reader kept only the last):
+     the groups taken together are one screen, one line, top to bottom */
+  if(take.length){const box=take.flatMap(it=>it.rows).reduce((b,r)=>{const x=+r?.x,y=+r?.y,w=+r?.w,h=+r?.h;if(![x,y,w,h].every(Number.isFinite))return b;return b?{x0:Math.min(b.x0,x),y0:Math.min(b.y0,y),x1:Math.max(b.x1,x+w),y1:Math.max(b.y1,y+h)}:{x0:x,y0:y,x1:x+w,y1:y+h};},null);
+   const top=it=>Math.min(...it.rows.map(r=>+r?.y).filter(Number.isFinite),Infinity),text=take.slice().sort((a,b)=>top(a)-top(b)).map(it=>it.text.trim()).join(String.fromCharCode(10)),sw=take[0].sw,sh=take[0].sh;
+   this.trace('ocr line '+JSON.stringify(text.slice(0,40)));O.lastText=text;
+   this.source({type:'hookSource',text,origin:'ocr',hookActive:true,...(box&&sw&&sh?{ocrRect:{...box,sw,sh}}:{})},'ocr');}
   if(wait>0)this.ocrSchedule(wait+20);}
  ocrLineRefused(it,now){const f=require('./art-filter.cjs'),t=String(it.text||'').trim(),flat=HookNative.flat(t),n=[...flat].length,O=this.ocr,kana=/[぀-ヿ]/.test(flat);
   if(it.dialogSeen)return 'the dialogue line is on the picture';

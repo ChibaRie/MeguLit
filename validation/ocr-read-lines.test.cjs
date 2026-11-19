@@ -66,6 +66,13 @@ test('dialogue: no OCR line while the dialogue line is on the picture or a hook 
   assert.ok(r.traces.some(t=>/text groups at once \(menu or settings page\)/.test(t)));
   assert.equal(r.h.dialogueHook,'EmbedBGI','an OCR line never becomes the dialogue stream');
  }finally{r.done();}});
+test('a notice screen of three paragraphs is one line, top to bottom (live: three lines in 30 ms, the reader kept the last)',()=>{
+ const r=rig();try{
+  const rows=(t,y)=>[{text:t,x:100,y,w:600,h:24}];
+  const screen={sw:1280,sh:960,others:0,groups:[{text:'本作品はフィクションです。登場する人物名は全て架空のものです。',rows:rows('本作品はフィクションです。登場する人物名は全て架空のものです。',400)},{text:'本作品に登場するキャラクターは全て18歳以上です。',rows:rows('本作品に登場するキャラクターは全て18歳以上です。',300)}]};
+  const ids=r.show(screen,{at:2000});r.show(screen,{ids,at:2400});r.run(5000);
+  assert.deepEqual(r.lines(),['本作品に登場するキャラクターは全て18歳以上です。'+String.fromCharCode(10)+'本作品はフィクションです。登場する人物名は全て架空のものです。']);
+ }finally{r.done();}});
 test('wiring: the scan runs without artText (5 s quiet), artText only decides the drawing over the picture; the scan reports dialogSeen and others',()=>{
  const g=fs.readFileSync(path.join(__dirname,'..','core','gal-native.cjs'),'utf8');
  assert.match(g,/if\(message\.type==='artText'\)\{if\(this\.preferences\?\.artText===true\)this\.onEvent\(message\);this\.hooks\.ocrLine\(message\);return;\}/);
@@ -75,4 +82,5 @@ test('wiring: the scan runs without artText (5 s quiet), artText only decides th
  assert.match(p,/dialogSeen = ScanDialogSeen, others = ScanOthers, at =/);
  assert.match(p,/Priority = ThreadPriority\.BelowNormal/,'the scan stays a low-priority thread');
  assert.match(g,/if\(!art\)s\.slow=true;/,'read lines only: the slow rate');assert.match(p,/Thread\.Sleep\(busy \? 400 : ScanSlow \? 1500 : 700\)/);
- assert.match(p,/if \(last != null && !Changed\(last, thumb\) && !pending\) continue;/,'OCR only when the picture changed');});
+ assert.match(p,/if \(last != null && !Changed\(last, thumb\) && !pending && !darkRecheck\) continue;/,'OCR only when the picture changed');
+ assert.match(p,/bool darkRecheck = Dark\(thumb\) && \(DateTime\.UtcNow - lastOcr\)\.TotalMilliseconds >= 4000;/,'or, on a dark picture, every 4 s (faint grey text on black)');});
