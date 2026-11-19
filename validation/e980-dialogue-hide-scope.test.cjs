@@ -8,10 +8,10 @@ function fixture(){
  const st={trT:undefined,trOp:undefined,trRec:undefined,trOwner:undefined,trText:'',trKey:'',trLine:0,charsSent:0,
   trLayer:()=>layer,screen:()=>[640,480],shown:()=>true,abs:()=>[0,280],hideOn:()=>true,report:s=>out.push(s)};
  const ctx=vm.createContext({st,int:Math.trunc});
- for(const name of ['trOwn','trRestore','trHide','trDone']){
+ for(const name of ['trOwn','trRestore','trHide','trNote','trDone']){
   const body=new RegExp('st\\.'+name+'=function\\(([^)]*)\\)\\{([\\s\\S]*?)\\} incontextof st;').exec(script);
   assert.ok(body,name);
-  const source=body[2].replace(/'Object'/g,"'object'").replace(/\.count\b/g,'.length').replace(/\.add\(/g,'.push(').replace(/\bvoid\b/g,'undefined').replace(/isvalid this\.trT/g,'this.trT.valid!==false').replace(/\(inst\.getCharacters incontextof inst\)/g,'inst.getCharacters.bind(inst)');
+  const source=body[2].replace(/%\[\]/g,'({})').replace(/'Object'/g,"'object'").replace(/\.count\b/g,'.length').replace(/\.add\(/g,'.push(').replace(/\bvoid\b/g,'undefined').replace(/isvalid this\.trT/g,'this.trT.valid!==false').replace(/\(inst\.getCharacters incontextof inst\)/g,'inst.getCharacters.bind(inst)');
   vm.runInContext('st.'+name+'=function('+body[1]+'){'+source+'};',ctx);
  }
  const renderer=target=>({textLayer:target.textLayer,getCharacters:()=>[..."これは台詞です"].map((text,i)=>({text,x:20*i,y:0,cw:20,size:24}))});
