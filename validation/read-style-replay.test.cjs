@@ -140,3 +140,6 @@ test('the engine read flag is wired: bridge note, node status, record field',()=
  assert.ok(node.includes("this.emit({hookSourceRead:m.read,hookSourceReadOrigin:'engine'})"));
  const rec=TP.parseChars(TP.formatChars({engine:'krkr',line:3,hidden:true,sw:1280,sh:720,rects:[[1,2,3,4]],text:'あ',color:'#eedefe',read:true}));assert.equal(rec.read,true);assert.equal(rec.color,'#eedefe');
  assert.equal(TP.parseChars('ToMe_CHARS engine=krkr line=3 hidden=1 sw=1280 sh=720 vx=0 vy=0 vw=0 vh=0 n=1 rects=1,2,3,4 text=あ').read,undefined,'records without the field are as before');});
+test('KiriKiri reports the read flag at every click wait, in its own try, and only when the game has the method',()=>{const s=read('native/krkrtext/script.inc');
+ assert.equal(s.split('try {this.flushAll();} catch(e) {} try {this.readNote();} catch(e) {} return (this.old').length-1,3,'line break, page break, page break and clear');
+ assert.ok(s.includes("if(typeof k.getCurrentRead!='Object') return;this.report('ToMe_KRKR read v='+(k.getCurrentRead()?1:0));"));});
