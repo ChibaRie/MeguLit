@@ -108,14 +108,42 @@ test('update: a download cut off near the end resumes with a range request',asyn
  const rel={tag_name:'v9.9.9',assets:[{name:'MeguLit-v9.9.9-win-x64.zip',size:zip.length,digest:'sha256:'+digest,browser_download_url:'https://github.com/ilynthn/MeguLit/releases/download/v9.9.9/MeguLit-v9.9.9-win-x64.zip'}]};
  const root=fs.mkdtempSync(path.join(os.tmpdir(),'upd-'));u.reset();const ranges=[];
  const stream=(data,fail)=>{let sent=false;return {getReader:()=>({read:async()=>{if(!sent){sent=true;return {done:false,value:data};}if(fail)throw Error('ECONNRESET');return {done:true};}})};};
- /* 2026-11-19 core/fast-download.cjs asks in Range pieces from the start; the piece cut off at 8000 bytes is asked again from 8000 */
- let cut=true;
- const r=await u.start(root,'1.0.0',async(url,opts)=>{if(url.endsWith('/latest'))return {ok:true,json:async()=>rel};const range=opts?.headers?.Range;ranges.push(range||'');
-  const m=/bytes=(\d+)-(\d*)/.exec(range||''),from=m?Number(m[1]):0,to=m&&m[2]?Number(m[2])+1:zip.length;
-  if(cut&&from<8000&&to>8000){cut=false;return {ok:true,status:206,url,headers:{'content-range':'bytes '+from+'-'+(to-1)+'/'+zip.length},body:stream(zip.subarray(from,8000),true)};}
-  return {ok:true,status:206,url,headers:{'content-range':'bytes '+from+'-'+(to-1)+'/'+zip.length},body:stream(zip.subarray(from,to),false)};});
+ /* 2026-11-19 core/fast-download.cjs asks every source at once in Range pieces. The connection drops at 8000 bytes on every
+    source (a line that breaks near the end, not one bad mirror), so what arrived is kept and only the rest is asked for. */
+ const cutHosts=new Set();
+ const serve=(url,opts,cut)=>{const range=opts?.headers?.Range;ranges.push(range||'');
+  const m=/bytes=(\d+)-(\d*)/.exec(range||''),from=m?Number(m[1]):0,to=m&&m[2]?Number(m[2])+1:zip.length,host=new URL(url).hostname;
+  if(cut(host,from,to)){cutHosts.add(host);return {ok:true,status:206,url,headers:{'content-range':'bytes '+from+'-'+(to-1)+'/'+zip.length},body:stream(zip.subarray(from,8000),true)};}
+  return {ok:true,status:206,url,headers:{'content-range':'bytes '+from+'-'+(to-1)+'/'+zip.length},body:stream(zip.subarray(from,to),false)};};
+ const r=await u.start(root,'1.0.0',async(url,opts)=>url.endsWith('/latest')?{ok:true,json:async()=>rel}:serve(url,opts,(host,from,to)=>!cutHosts.has(host)&&from<8000&&to>8000));
  assert.equal(r.phase,'ready');assert.equal(r.sha256,digest);assert.ok(ranges.some(x=>/^bytes=8000-/.test(x)),'the rest is asked from 8000: '+ranges.join(' '));
+ assert.ok(ranges.filter(x=>!/^bytes=0-$/.test(x)).every(x=>/^bytes=8000-/.test(x)),'nothing before 8000 is asked again: '+ranges.join(' '));
  u.reset();fs.rmSync(root,{recursive:true,force:true});
+});
+
+/* 2026-11-19: the .part a failed update left behind (cache/update/<name>.part + .part.json) is used by the next start, which
+   asks only for the rest, also from the measuring requests */
+test('update: the next start continues the .part a failed download left behind',async()=>{
+ const fs=require('fs'),os=require('os'),path=require('path'),crypto=require('crypto');
+ const zip=Buffer.concat([Buffer.from('PK'),crypto.randomBytes(9000)]),digest=crypto.createHash('sha256').update(zip).digest('hex');
+ const rel={tag_name:'v9.9.9',assets:[{name:'MeguLit-v9.9.9-win-x64.zip',size:zip.length,digest:'sha256:'+digest,browser_download_url:'https://github.com/ilynthn/MeguLit/releases/download/v9.9.9/MeguLit-v9.9.9-win-x64.zip'}]};
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),'upd-'));u.reset();
+ const stream=(data,fail)=>{let sent=false;return {getReader:()=>({read:async()=>{if(!sent){sent=true;return {done:false,value:data};}if(fail)throw Error('ECONNRESET');return {done:true};}})};};
+ const answer=(url,opts,broken)=>{const m=/bytes=(\d+)-(\d*)/.exec(opts?.headers?.Range||''),from=m?Number(m[1]):0,to=m&&m[2]?Number(m[2])+1:zip.length;
+  if(broken&&from>=8000)throw Error('ECONNRESET');
+  return {ok:true,status:206,url,headers:{'content-range':'bytes '+from+'-'+(to-1)+'/'+zip.length},body:stream(zip.subarray(from,broken?Math.min(to,8000):to),broken&&to>8000)};};
+ try{
+  /* first start: every source breaks at 8000 and nothing after it answers */
+  await assert.rejects(u.start(root,'1.0.0',async(url,opts)=>url.endsWith('/latest')?{ok:true,json:async()=>rel}:answer(url,opts,true)));
+  const part=path.join(root,'cache','update','MeguLit-v9.9.9-win-x64.zip.part');
+  assert.ok(fs.existsSync(part)&&fs.existsSync(part+'.json'),'the .part and its state are kept');
+  /* next start: the line works again */
+  u.reset();const asked=[];
+  const r=await u.start(root,'1.0.0',async(url,opts)=>{if(url.endsWith('/latest'))return {ok:true,json:async()=>rel};asked.push(opts?.headers?.Range||'');return answer(url,opts,false);});
+  assert.equal(r.phase,'ready');assert.equal(r.sha256,digest);
+  assert.ok(asked.length&&asked.every(x=>/^bytes=8000-/.test(x)),'only the rest is asked: '+asked.join(' '));
+  assert.equal(fs.existsSync(part),false);
+ }finally{u.reset();fs.rmSync(root,{recursive:true,force:true});}
 });
 
 // E350: hotfix letters order after the base version, and lettered packages are accepted.

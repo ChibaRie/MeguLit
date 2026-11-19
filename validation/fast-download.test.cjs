@@ -14,7 +14,7 @@ function source(data,opt={}){
   stats.requests++;
   if(opt.status){res.writeHead(opt.status);return res.end();}
   let start=0,end=data.length;const m=/bytes=(\d+)-(\d*)/.exec(req.headers.range||'');
-  if(m&&!opt.noRange){start=Number(m[1]);end=m[2]?Number(m[2])+1:data.length;stats.ranges.push(start+'-'+end);
+  if(m&&!opt.noRange&&!(opt.rangeAfterStart&&Number(m[1])===0)){start=Number(m[1]);end=m[2]?Number(m[2])+1:data.length;stats.ranges.push(start+'-'+end);
    res.writeHead(206,{'content-length':end-start,'content-range':'bytes '+start+'-'+(end-1)+'/'+data.length,'accept-ranges':'bytes'});}
   else res.writeHead(200,{'content-length':data.length});
   stats.open++;stats.maxOpen=Math.max(stats.maxOpen,stats.open);let closed=false;const close=()=>{if(!closed){closed=true;stats.open--;}};
@@ -24,6 +24,7 @@ function source(data,opt={}){
   const pump=()=>{
    if(closed)return;if(at>=end){close();return res.end();}
    if(opt.stallAt!=null&&!stats.stalled&&stats.bytes>=opt.stallAt){stats.stalled=true;return;}
+   if(opt.dropAt!=null&&!stats.dropped&&stats.bytes>=opt.dropAt){stats.dropped=true;res.destroy();return;}
    const rate=opt.slowAfter!=null&&stats.bytes>=opt.slowAfter?opt.slowRate:opt.rate||Infinity;
    const n=Math.min(end-at,rate===Infinity?256*KB:Math.max(1,Math.floor(rate*tick/1000)));
    const chunk=data.subarray(at,at+n);at+=n;stats.bytes+=n;
@@ -84,6 +85,16 @@ test('fast-download: a source without Range support falls back to one connection
  /* size unknown and no hash: taken from the answer */
  const r2=await fd.download({...quick,urls:[plain.url],dest:path.join(dir,'g.bin')});
  assert.equal(r2.size,data.length);assert.equal(sha(fs.readFileSync(r2.file)),sha(data));
+});
+
+test('fast-download: one connection that breaks resumes with a Range request from where it stopped',async t=>{
+ const data=crypto.randomBytes(1*MB),dir=tmp(t);
+ /* 200 for bytes=0- (looks like no Range support), 206 for a later offset; the connection breaks at 400 KB */
+ const src=await source(data,{rate:2*MB,rangeAfterStart:true,dropAt:400*KB});t.after(()=>src.close());
+ const r=await fd.download({...quick,urls:[src.url],dest:path.join(dir,'f.bin'),size:data.length,sha256:sha(data)});
+ assert.equal(sha(fs.readFileSync(r.file)),sha(data));assert.ok(src.stats.dropped);
+ assert.ok(src.stats.ranges.length>=1&&src.stats.ranges.every(x=>Number(x.split('-')[0])>0),'resumed from the break: '+src.stats.ranges.join(' '));
+ assert.ok(src.stats.bytes<data.length+100*KB,'not downloaded twice ('+src.stats.bytes+')');
 });
 
 test('fast-download: a cancelled download resumes with only the missing pieces',async t=>{

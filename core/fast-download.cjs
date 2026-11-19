@@ -118,7 +118,8 @@ async function download(options){
 
  /* measure every source at once; the progress bar already moves with the fastest source's first bytes */
  let shown=covered(done);ctx.onProbe=(n,total)=>{if(done.length||n<=shown||!o.onProgress)return;shown=n;try{o.onProgress({received:n,total:size||total||0});}catch{}};
- const sources=await probe(ctx,urls);check();
+ /* resuming: the measurement already asks for the rest, so its bytes continue the file */
+ const sources=await probe(ctx,urls,size&&covered(done)<size?prefix(done):0);check();
  const alive=sources.filter(s=>s.ok);
  if(sizeFromState&&alive.some(s=>s.total)&&!alive.some(s=>s.total===size)){ctx.log('file changed on the server, starting over');size=0;done=[];}
  if(!size){const best=[...alive].sort((a,b)=>b.speed-a.speed).find(s=>s.total);if(best)size=best.total;}
@@ -131,7 +132,7 @@ async function download(options){
  if(size&&!done.length)await fresh(size);
  /* the probe's own bytes are not thrown away: the fastest source's start of the file (or all of a small file) */
  const head=usable.find(s=>s.kept&&s.kept.length);
- if(head&&size&&head.kept.length<=size&&(head.ranged||head.complete)){const h=await fsp.open(part,'r+');try{await h.write(head.kept,0,head.kept.length,0);}finally{await h.close();}done=addRange(done,0,head.kept.length);saveState(true);report();}
+ if(head&&size&&head.keptAt+head.kept.length<=size&&(head.ranged||head.complete)){const h=await fsp.open(part,'r+');try{await h.write(head.kept,0,head.kept.length,head.keptAt);}finally{await h.close();}done=addRange(done,head.keptAt,head.keptAt+head.kept.length);saveState(true);report();}
  for(const s of sources)s.kept=null;
 
  /* rounds: all fast sources together; after a hash mismatch each source alone, fastest first */
@@ -184,20 +185,20 @@ async function request(ctx,url,range,signal){
 
 /* All sources at once for ~probeMs (only until the answer headers when there is a single source). Speed = bytes that
    arrived per second since the request went out, so a slow first byte counts too. */
-async function probe(ctx,urls){
+async function probe(ctx,urls,from=0){
  const t0=Date.now(),window=urls.length>1?ctx.probeMs:0,deadline=t0+window;
  const list=urls.map((url,index)=>({url,index,ok:false,ranged:false,total:null,bytes:0,speed:0,error:null,kept:null,complete:false,strikes:0,active:0,banned:''}));
  await Promise.all(list.map(async s=>{
   const ac=new AbortController(),stop=()=>ac.abort();if(ctx.signal)ctx.signal.addEventListener('abort',stop,{once:true});
   const cap=setTimeout(stop,ctx.probeCapMs);
   try{
-   const h=await request(ctx,s.url,[0,null],ac.signal);
-   s.ok=true;s.ranged=h.ranged&&h.start===0;s.total=h.total;
+   const h=await request(ctx,s.url,[from,null],ac.signal);
+   s.ok=true;s.ranged=h.ranged&&h.start===from;s.total=h.total;s.keptAt=s.ranged?from:0;
    const keep=[];let kept=0;
    try{
     if(window>0){
      const end=await drain(h.res,c=>{s.bytes+=c.length;if(kept+c.length<=ctx.keepProbe){keep.push(c);kept+=c.length;if(ctx.onProbe&&(s.ranged||s.bytes===kept))ctx.onProbe(kept,s.total);}},{signal:ac.signal,deadline});
-     if(end==='end'){s.complete=kept===s.bytes;if(!s.total||s.total<s.bytes)s.total=s.bytes;}
+     if(end==='end'){s.complete=kept===s.bytes&&s.keptAt===0;if(!s.total||s.total<s.keptAt+s.bytes)s.total=s.keptAt+s.bytes;}
     }
    }catch(e){
     /* the source answered; a reset or the 4 s cap while reading only ends the measurement (a reset is one strike) */
@@ -292,7 +293,8 @@ async function single(ctx,sources,st){
   for(let attempt=0;attempt<3;attempt++){
    if(ctx.signal&&ctx.signal.aborted)throw abortError(ctx.signal);
    const ac=new AbortController(),stop=()=>ac.abort();if(ctx.signal)ctx.signal.addEventListener('abort',stop,{once:true});
-   let from=st.size&&src.ranged?prefix(st.done):0,fh=null;const before=covered(st.done);
+   /* a source that answered the measurement with 200 may still honour a Range from an offset: ask for the rest anyway, a 200 answer starts over */
+   let from=st.size?prefix(st.done):0,fh=null;const before=covered(st.done);
    try{
     const h=await request(ctx,src.url,from?[from,null]:null,ac.signal);
     if(from&&(!h.ranged||h.start!==from))from=0;
