@@ -1,5 +1,6 @@
 
 #include "MinHook.h"
+#include <tlhelp32.h>
 #include "veh_hook.h"
 #include "lunarpc.h"
 #include "MeguLitGdiHide.h"
@@ -577,11 +578,105 @@ bool TextHook::InsertReadCode()
 	return true;
 }
 
+namespace
+{
+	/* MeguLit 2026-11-19 (死に逝く君、館に芽吹く憎悪: 0xC000041D at one fixed non-module address, Alt+M about 9 s after start):
+	   a hook removed while the game thread was still inside it. useCount only covers the body of Send; a thread in the
+	   stub before or after it, in Send's prologue/epilogue, or in MinHook's trampoline still returns to `original`, which
+	   MH_RemoveHook frees. Removal therefore waits until, with every other thread suspended at once, none of them is in
+	   the stub or the trampoline, none has the stub's return address near the top of its stack, and useCount is 0. */
+	bool ReadWord(uintptr_t at, uintptr_t &out)
+	{
+		__try
+		{
+			out = *(volatile uintptr_t *)at;
+			return true;
+		}
+		__except (EXCEPTION_EXECUTE_HANDLER)
+		{
+			return false;
+		}
+	}
+	size_t StubCallReturn()
+	{
+		for (size_t i = 0; i + 1 < sizeof(common_hook); i++)
+			if (common_hook[i] == 0xff && (common_hook[i + 1] == 0xd3 || common_hook[i + 1] == 0xd0))
+				return i + 2;
+		return 0;
+	}
+	/* no heap use while threads are suspended (one of them may hold the heap lock) */
+	bool HookQuiet(uintptr_t stub, size_t stubSize, uintptr_t original, volatile DWORD *useCount)
+	{
+		DWORD ids[2048];
+		DWORD count = 0, self = GetCurrentThreadId(), pid = GetCurrentProcessId();
+		HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
+		if (snap == INVALID_HANDLE_VALUE)
+			return true;
+		THREADENTRY32 te;
+		te.dwSize = sizeof(te);
+		for (BOOL ok = Thread32First(snap, &te); ok && count < 2048; ok = Thread32Next(snap, &te))
+			if (te.th32OwnerProcessID == pid && te.th32ThreadID != self)
+				ids[count++] = te.th32ThreadID;
+		CloseHandle(snap);
+		HANDLE held[2048];
+		DWORD n = 0;
+		for (DWORD i = 0; i < count; i++)
+		{
+			HANDLE h = OpenThread(THREAD_SUSPEND_RESUME | THREAD_GET_CONTEXT | THREAD_QUERY_INFORMATION, FALSE, ids[i]);
+			if (!h)
+				continue;
+			if (SuspendThread(h) == (DWORD)-1)
+			{
+				CloseHandle(h);
+				continue;
+			}
+			held[n++] = h;
+		}
+		uintptr_t ret = stub + StubCallReturn();
+		bool busy = *useCount != 0;
+		for (DWORD i = 0; i < n && !busy; i++)
+		{
+			CONTEXT c;
+			memset(&c, 0, sizeof(c));
+			c.ContextFlags = CONTEXT_CONTROL;
+			if (!GetThreadContext(held[i], &c))
+				continue;
+#ifdef _WIN64
+			uintptr_t ip = c.Rip, sp = c.Rsp;
+#else
+			uintptr_t ip = c.Eip, sp = c.Esp;
+#endif
+			if ((ip >= stub && ip < stub + stubSize) || (original && ip >= original && ip < original + 64))
+				busy = true;
+			for (uintptr_t at = sp; !busy && at < sp + 4096; at += sizeof(uintptr_t))
+			{
+				uintptr_t v;
+				if (!ReadWord(at, v))
+					break;
+				if (v == ret)
+					busy = true;
+			}
+		}
+		for (DWORD i = 0; i < n; i++)
+		{
+			ResumeThread(held[i]);
+			CloseHandle(held[i]);
+		}
+		return !busy;
+	}
+}
 void TextHook::RemoveHookCode()
 {
 	MH_DisableHook(location);
 	while (useCount != 0)
 		;
+	uintptr_t original = *(uintptr_t *)(trampoline + original_offset);
+	for (DWORD start = GetTickCount(); GetTickCount() - start < 2000;)
+	{
+		if (HookQuiet((uintptr_t)trampoline, sizeof(common_hook), original, &useCount))
+			break;
+		Sleep(1);
+	}
 	MH_RemoveHook(location);
 }
 
