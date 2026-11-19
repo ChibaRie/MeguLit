@@ -91,5 +91,5 @@ test('2026-11-16: closing the Alt+T menu hands the page the host state, never th
 });
 test('2026-11-16 #299: an open Alt+T menu keeps the reading layer up before its hit region is ready',()=>{
  const s=require('fs').readFileSync(require('path').join(__dirname,'../native/GalWindowBridge.cs'),'utf8');
- assert.match(s,/ReadingVisible\(contextActive\|\|menuPinned,IsIconic\(Target\),IsIconic\(Overlay\),CoverEnabled,DialogVisible,MenuOpen\)/);
+ assert.match(s,/ReadingVisible\(Layer\.Context,IsIconic\(Target\),IsIconic\(Overlay\),CoverEnabled,DialogVisible,MenuOpen\)/);
 });

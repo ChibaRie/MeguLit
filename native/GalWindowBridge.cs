@@ -378,10 +378,10 @@ public class GalWindowBridge {
         // Another application in front (Alt+Tab): the layer stays directly above the game, below that application.
         if(!front){if(!below)return;IntPtr above=GetWindow(gameTop,3);if(above==Overlay)return;SetWindowPos(Overlay,above==IntPtr.Zero?IntPtr.Zero:above,0,0,0,0,0x0001|0x0002|0x0010);
             Emit(new{type="coverDebug",text="Alt+T 菜单打开、前台是其他程序：阅读层放回游戏正上方"});return;}
-        if(menu&&(GetWindowLong(Overlay,-20)&8)==0)below=true;
+        if(Layer.Float&&(GetWindowLong(Overlay,-20)&8)==0)below=true;
         if(!below)return;
         // Menu open: topmost, so neither clicking the game nor focusing another MeguLit window puts the menu under the game.
-        SetWindowPos(Overlay,menu||GetAncestor(GetForegroundWindow(),3)==gameRoot?new IntPtr(-1):IntPtr.Zero,0,0,0,0,0x0001|0x0002|0x0010);
+        SetWindowPos(Overlay,Layer.Float?new IntPtr(-1):IntPtr.Zero,0,0,0,0,0x0001|0x0002|0x0010);
         Emit(new{type="coverDebug",text=menu?"Alt+T 菜单打开：阅读层固定到游戏上方":"阅读层已移到前台游戏上方"});}
     /* P0 2026-11-13 (user, ファタモルガーナの館 full screen: the game flashed and kept dropping to the desktop; Alt+T sent it
        to the desktop). A full-screen game (its window covers its whole monitor: KiriKiri fsmethod=cds, TOPMOST popup, E533)
@@ -483,7 +483,7 @@ public class GalWindowBridge {
         // The page passes where the button went down, so the strip stays under the same spot of the cursor even though
         // the drag only starts after a few pixels of movement.
         else if(type=="floatDrag"){if(TranslationMode&&Target==IntPtr.Zero&&Overlay!=IntPtr.Zero&&GetCursorPos(out DragStart)&&GetWindowRect(Overlay,out DragRect)){if(d.ContainsKey("x")&&d.ContainsKey("y")){DragStart.X=(int)Num(d,"x",DragStart.X);DragStart.Y=(int)Num(d,"y",DragStart.Y);}Dragging=true;}}
-        else if(type=="menu"){LastReaderContext=null;bool open=Bool(d,"open");if(open!=MenuOpen)RegionAckPending=false;if(open&&!MenuOpen){MenuFocusPending=true;FindOverlay();if(Overlay!=IntPtr.Zero&&IsIconic(Overlay))ShowWindow(Overlay,4);}bool returning=MenuOpen&&!open&&TranslationMode&&Target!=IntPtr.Zero&&GetAncestor(GetForegroundWindow(),2)==Overlay;MenuOpen=open;ReaderActivationPolicy();RefreshReaderPointer();if(returning)SetForegroundWindow(GetAncestor(Target,2));if(!open){MenuRegionReady=false;MenuFocusPending=false;}if(open&&!TranslationMode&&PreferredOverlay==IntPtr.Zero){FindOverlay();if(Overlay!=IntPtr.Zero){
+        else if(type=="menu"){LastReaderContext=null;ReaderLayerPolicy.Unsettle();bool open=Bool(d,"open");if(open!=MenuOpen)RegionAckPending=false;if(open&&!MenuOpen){MenuFocusPending=true;FindOverlay();if(Overlay!=IntPtr.Zero&&IsIconic(Overlay))ShowWindow(Overlay,4);}bool returning=MenuOpen&&!open&&TranslationMode&&Target!=IntPtr.Zero&&GetAncestor(GetForegroundWindow(),2)==Overlay;MenuOpen=open;ReaderActivationPolicy();RefreshReaderPointer();if(returning)SetForegroundWindow(GetAncestor(Target,2));if(!open){MenuRegionReady=false;MenuFocusPending=false;}if(open&&!TranslationMode&&PreferredOverlay==IntPtr.Zero){FindOverlay();if(Overlay!=IntPtr.Zero){
             // Only when needed: re-showing and re-activating the already visible, already active main window made it
             // hide and reappear once (with the Windows open animation) on the first menu after start.
             bool keepGame=FullscreenTarget()&&GetAncestor(GetForegroundWindow(),3)==GetAncestor(Target,3);if(!IsWindowVisible(Overlay))ShowWindow(Overlay,keepGame?4:5);if(!keepGame&&GetAncestor(GetForegroundWindow(),3)!=GetAncestor(Overlay,3))SetForegroundWindow(Overlay);IsShown=true;MenuFocusPending=false;}}}
@@ -514,6 +514,8 @@ public class GalWindowBridge {
         if(Overlay==IntPtr.Zero||!TranslationMode||Target==IntPtr.Zero)return;
         IntPtr fgWindow=GetForegroundWindow(),fg=GetAncestor(fgWindow,3),gameRoot=GetAncestor(Target,3),overlayRoot=GetAncestor(Overlay,3);
         bool alive=IsWindow(Target),iconic=alive&&IsIconic(Target);
+        /* no foreground window: an activation is in flight (menu closing, focus handed back to the game); the next event or tick decides */
+        if(fgWindow==IntPtr.Zero&&alive&&!iconic)return;
         uint fgPid=0,gamePid=0;GetWindowThreadProcessId(fgWindow,out fgPid);if(alive)GetWindowThreadProcessId(Target,out gamePid);
         bool gameFront=alive&&(fg==gameRoot||fgPid!=0&&(fgPid==gamePid||ImeHost(ProcessName(fgPid))));
         bool ownFront=fg==overlayRoot||MenuOpen&&MenuRegionReady&&fgPid!=0&&fgPid==(uint)OverlayPid;
@@ -558,10 +560,29 @@ public class GalWindowBridge {
         PointerGate.Current=new ReaderPointerGate.Context(Overlay,GetAncestor(Target,2),client,LookupOpen,HitRegions.FindAll(h=>!h.Pass).ConvertAll(h=>h.Bounds).ToArray());
     }
     static bool? LastReaderContext;
+    /* 2026-11-19 one reading of the foreground per tick and one decision for the layer (native/ReaderLayerPolicy.cs):
+       float / shown / probes believed. Every place below uses it; none reads the foreground for itself any more. */
+    static ReaderLayerPolicy.State Layer;static bool ProbesSettled;static string LastLayerKey="";
+    static long NowMs(){return DateTime.UtcNow.Ticks/10000;}
+    static int FrontNow(){
+        IntPtr w=GetForegroundWindow();if(w==IntPtr.Zero)return ReaderLayerPolicy.None;
+        IntPtr fg=GetAncestor(w,3);uint fgPid=0,gamePid=0;GetWindowThreadProcessId(w,out fgPid);
+        bool target=Target!=IntPtr.Zero&&IsWindow(Target);if(target)GetWindowThreadProcessId(Target,out gamePid);
+        return ReaderLayerPolicy.Classify(true,target&&fg==GetAncestor(Target,3),target&&fgPid!=0&&(fgPid==gamePid||ImeHost(ProcessName(fgPid))),Overlay!=IntPtr.Zero&&fg==GetAncestor(Overlay,3),fgPid!=0&&fgPid==(uint)OverlayPid);}
+    static ReaderLayerPolicy.State DecideLayer(){
+        bool bound=TranslationMode&&Target!=IntPtr.Zero&&IsWindow(Target);
+        var s=ReaderLayerPolicy.Decide(bound?FrontNow():ReaderLayerPolicy.Foreign,MenuOpen,MenuRegionReady,PreferredOverlay!=IntPtr.Zero,bound&&IsIconic(Target),NowMs());
+        if(!bound){s.Float=false;s.Pinned=false;}
+        /* every change is logged (reader-host.log "layerState"): a report of the text vanishing is matched against it */
+        string key=s.Front+"|"+s.Float+"|"+s.Context+"|"+s.Pinned+"|"+MenuOpen+"|"+IsShown+"|"+DialogVisible+"|"+CoverEnabled;
+        if(bound&&key!=LastLayerKey){LastLayerKey=key;Emit(new{type="layerState",front=s.Front,floating=s.Float,context=s.Context,pinned=s.Pinned,menu=MenuOpen,shown=IsShown,dialog=DialogVisible,cover=CoverEnabled,topmost=Overlay!=IntPtr.Zero&&(GetWindowLong(Overlay,-20)&8)!=0});}
+        return s;}
     static void ReaderInputTick(bool foregroundGame){ReaderActivationPolicy();RefreshReaderPointer();
         bool mouse=(GetAsyncKeyState(0x01)&0x8000)!=0,space=(GetAsyncKeyState(0x20)&0x8000)!=0,enter=(GetAsyncKeyState(0x0d)&0x8000)!=0;
         bool allowed=foregroundGame&&!MenuOpen&&!LookupOpen&&CoverEnabled&&!IsIconic(Target);
-        if(LastReaderContext!=allowed){LastReaderContext=allowed;if(WaitMarker!=null)WaitMarker.ResetPresence();Emit(new{type="readerContext",active=allowed});}
+        /* the probes are believed only after the game has been back in front, menu and word card closed, for the settle time; a click or key below is a fact and is reported at once */
+        bool settled=ReaderLayerPolicy.Settled(allowed,NowMs());ProbesSettled=settled;
+        if(LastReaderContext!=settled){LastReaderContext=settled;if(WaitMarker!=null)WaitMarker.ResetPresence();Emit(new{type="readerContext",active=settled});}
         bool complete=allowed&&((mouse&&!ReaderMouseDown&&!ReaderOwnsPointer())||(space&&!ReaderSpaceDown)||(enter&&!ReaderEnterDown));
         bool skip=allowed&&(GetAsyncKeyState(0x11)&0x8000)!=0;
         ReaderMouseDown=mouse;ReaderSpaceDown=space;ReaderEnterDown=enter;
@@ -574,6 +595,7 @@ public class GalWindowBridge {
         if(CheckGameExit())return;
         // Demote inherited/older topmost state in every mode, including minimised or foreign-application states.
         bool foregroundGame=TranslationMode&&Target!=IntPtr.Zero&&IsWindow(Target)&&!IsIconic(Overlay)&&GetAncestor(GetForegroundWindow(),3)==GetAncestor(Target,3);
+        Layer=DecideLayer();
         ReaderInputTick(foregroundGame);
         bool sceneInput=foregroundGame&&!MenuOpen&&!LookupOpen&&((GetAsyncKeyState(0x01)<0||GetAsyncKeyState(0x02)<0)&&!ReaderOwnsPointer()||GetAsyncKeyState(0x1B)<0||GetAsyncKeyState(0x20)<0||GetAsyncKeyState(0x0D)<0);
         if(sceneInput&&!ReaderMenuDown){GameUi.Clear();Scene.Input();}ReaderMenuDown=sceneInput;
@@ -582,7 +604,7 @@ public class GalWindowBridge {
         if(Target!=IntPtr.Zero&&GetClientRect(Target,out uiRect)&&ClientToScreen(Target,ref uiOrigin))GameUi.Tick(Target,new System.Drawing.Rectangle(uiOrigin.X,uiOrigin.Y,uiRect.Right,uiRect.Bottom),foregroundGame&&!MenuOpen&&!LookupOpen&&!IsIconic(Target));
         else GameUi.Clear();
         /* E578: the text-window probe runs with immersion off too (Scene.Full limits the rest to immersion) */
-        if(foregroundGame&&!MenuOpen&&!LookupOpen&&CoverEnabled&&Target!=IntPtr.Zero&&!GameCapture.Busy(Target)){
+        if(ProbesSettled&&Target!=IntPtr.Zero&&!GameCapture.Busy(Target)){
             Rect sceneRect;var sceneOrigin=new Point();if(GetClientRect(Target,out sceneRect)&&ClientToScreen(Target,ref sceneOrigin)){
                 /* E322: the game window itself, never the screen with MeguLit's own layer on it */string kept=Scene.Reason;bool? present=Scene.Tick(Target,sceneRect.Right,sceneRect.Bottom);if(present.HasValue)Emit(new{type="dialogScene",visible=present.Value,reason=Scene.Reason,box=Scene.Box});else if(Scene.Reason!=kept&&Scene.Reason.StartsWith("kept"))Emit(new{type="dialogSceneKept",reason=Scene.Reason});
             }
@@ -593,8 +615,8 @@ public class GalWindowBridge {
         uint hostGamePid=0;if(Target!=IntPtr.Zero)GetWindowThreadProcessId(Target,out hostGamePid);
         bool hostContext=hostForegroundPid==(uint)OverlayPid||hostForegroundPid==hostGamePid||ImeHost(ProcessName(hostForegroundPid));
         bool menuPinned=TranslationMode&&Target!=IntPtr.Zero&&MenuOpen&&MenuRegionReady&&hostContext;
-        LayersMayFloat=foregroundGame||menuPinned;
-        if(!foregroundGame&&!menuPinned&&(GetWindowLong(Overlay,-20)&8)!=0){if(Target!=IntPtr.Zero&&IsWindow(Target))TopmostGuard.Sink(Overlay,GetAncestor(Target,2));else SetWindowPos(Overlay,new IntPtr(-2),0,0,0,0,0x0001|0x0002|0x0010);}
+        LayersMayFloat=Layer.Float;
+        if(!Layer.Float&&(GetWindowLong(Overlay,-20)&8)!=0){if(Target!=IntPtr.Zero&&IsWindow(Target))TopmostGuard.Sink(Overlay,GetAncestor(Target,2));else SetWindowPos(Overlay,new IntPtr(-2),0,0,0,0,0x0001|0x0002|0x0010);}
         if(IsIconic(Overlay)){MenuFocusPending=false;if(MaskLayer!=null)MaskLayer.Hide();if(TextMask!=null)TextMask.Hide();if(WaitMarker!=null)WaitMarker.Hide();return;}
         if(Dragging)DragTick();
         // Keep the current surface during the first menu construction instead of hiding and immediately showing it again.
@@ -632,12 +654,12 @@ public class GalWindowBridge {
         Rect probeRect;if(VisualDetection&&GetClientRect(Target,out probeRect)){bool? presence=Dialog.Tick(Target,probeRect.Right,probeRect.Bottom);if(presence.HasValue)Emit(new{type="dialogEvidence",visible=presence.Value});}
         // The game's own popups (IME candidate list, dialogs) belong to its process but not to its window tree: the IME
         // list of a Chinese input method used to hide the whole reading layer as "fg=other" in Subahibi.
-        uint fgPid=0,gamePid=0;GetWindowThreadProcessId(GetForegroundWindow(),out fgPid);GetWindowThreadProcessId(Target,out gamePid);bool gameOwned=fg==gameRoot||(fgPid!=0&&(fgPid==gamePid||ImeHost(ProcessName(fgPid))));
-        bool homeOwned=PreferredOverlay!=IntPtr.Zero&&fgPid==(uint)OverlayPid&&fg!=overlayRoot;bool contextActive=gameOwned||fg==overlayRoot||homeOwned;bool visible=ReadingVisible(contextActive||menuPinned,IsIconic(Target),IsIconic(Overlay),CoverEnabled,DialogVisible,MenuOpen);/* 2026-11-16 #299 (Strawberry Nauts: the Alt+T menu vanished as it opened): an open menu keeps the layer up from the first tick, before its hit region is reported, whatever the engine's dialogue flag does */
+        uint fgPid=0,gamePid=0;GetWindowThreadProcessId(GetForegroundWindow(),out fgPid);GetWindowThreadProcessId(Target,out gamePid);bool gameOwned=Layer.Front==ReaderLayerPolicy.Game;
+        bool homeOwned=PreferredOverlay!=IntPtr.Zero&&Layer.Front==ReaderLayerPolicy.OwnHome;bool contextActive=gameOwned||Layer.Front==ReaderLayerPolicy.OwnLayer||homeOwned;bool visible=ReadingVisible(Layer.Context,IsIconic(Target),IsIconic(Overlay),CoverEnabled,DialogVisible,MenuOpen);/* 2026-11-16 #299 (Strawberry Nauts: the Alt+T menu vanished as it opened): an open menu keeps the layer up from the first tick, before its hit region is reported, whatever the engine's dialogue flag does */
         if(!contextActive)MenuFocusPending=false;
         // Another application in front: never topmost, also with the menu open (it stays visible, just above the game;
         // KeepAboveGame keeps it there). Topmost over everything after Alt+Tab was wrong (user, 2026-11-03).
-        if(!contextActive&&(GetWindowLong(Overlay,-20)&8)!=0)TopmostGuard.Sink(Overlay,GetAncestor(Target,2));
+        if(!Layer.Float&&(GetWindowLong(Overlay,-20)&8)!=0)TopmostGuard.Sink(Overlay,GetAncestor(Target,2));
         if(!visible){if(IsShown){HideReason("menu="+MenuOpen+"/"+MenuRegionReady+" cover="+CoverEnabled+" dialog="+DialogVisible+" iconic="+IsIconic(Target)+" fg="+(fg==gameRoot?"game":fg==overlayRoot?"overlay":"other"));ShowWindow(Overlay,0);}IsShown=false;if(TextMask!=null)TextMask.Hide();
             // Hidden only because no dialogue was detected: keep looking for the wait marker, so its return brings the layer back.
             Rect probeClient;Point probeOrigin=new Point();
@@ -667,7 +689,7 @@ public class GalWindowBridge {
            the opening and first lines never showed, while the game hid its own text): the cached LastRect said the window
            was already placed. The real window rect is checked too, so a window moved by any other path is put back. */
         Rect placed;bool strayed=HasLastRect&&GetWindowRect(Overlay,out placed)&&(placed.Left!=box.Left||placed.Top!=box.Top||placed.Right!=box.Right||placed.Bottom!=box.Bottom);
-        if(strayed||!HasLastRect||!IsShown||box.Left!=LastRect.Left||box.Top!=LastRect.Top||box.Right!=LastRect.Right||box.Bottom!=LastRect.Bottom){SetWindowPos(Overlay,homeOwned?JustAboveGame(gameRoot):gameOwned?new IntPtr(-1):IntPtr.Zero,box.Left,box.Top,box.Right-box.Left,box.Bottom-box.Top,(uint)(0x0010|0x0040|(!HasLastRect?0x0020:0)));LastRect=box;HasLastRect=true;}IsShown=true;AckRegion();
+        if(strayed||!HasLastRect||!IsShown||box.Left!=LastRect.Left||box.Top!=LastRect.Top||box.Right!=LastRect.Right||box.Bottom!=LastRect.Bottom){SetWindowPos(Overlay,homeOwned?JustAboveGame(gameRoot):Layer.Float?new IntPtr(-1):IntPtr.Zero,box.Left,box.Top,box.Right-box.Left,box.Bottom-box.Top,(uint)(0x0010|0x0040|(!HasLastRect?0x0020:0)));LastRect=box;HasLastRect=true;}IsShown=true;AckRegion();
         FocusMenuOnce();
         /* 2026-11-14 (user, beta.36: a translation drawn big over MeguLit's own game page while a file picker was open):
            with a MeguLit window in front the layer went directly under that window. An unowned window of MeguLit (the file
@@ -690,6 +712,7 @@ public class GalWindowBridge {
         NoGhostWindows();
         if(args.Length==3&&args[0]=="--same-image"){Emit(new{type="sameImage",same=SameImage(args[1],args[2]),a=ImageIdentity(args[1]),b=ImageIdentity(args[2])});return 0;}
         if(args.Length>0&&args[0]=="--topmost-guard-self-test")return TopmostGuardSelfTest();
+        if(args.Length>0&&args[0]=="--layer-policy-self-test"){string failure=ReaderLayerPolicy.SelfTest();Emit(new{type="layer-policy-selftest",passed=failure=="",failure=failure});return failure==""?0:1;}
         if(args.Length>0&&args[0]=="--host-frame-self-test"){
             int original=0x16cf0000,hosted=HostedStyle(original);
             if((hosted&0x00c40000)!=0||(hosted&unchecked((int)0x80000000))==0||HostedStyle(hosted)!=hosted)return 8;

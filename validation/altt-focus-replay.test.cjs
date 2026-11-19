@@ -68,13 +68,17 @@ test('fresh marker loss after returning still hides, explicit engine and scene h
  h.event({type:'markerPresence',present:true});assert.equal(h.immersion.visible,true);
  h.event({type:'readerContext',active:false});h.event({type:'hookDialog',visible:false,engine:'cs2'});h.advance(650);
  assert.deepEqual(h.visibility.at(-1),{dialogVisible:false,reason:'engine'});
+ /* a scene probe is an inference: refused while the context is frozen, applied once the game is back and settled */
+ h.immersion.scene(true);h.immersion.scene(false,'game-ui settings');
+ assert.deepEqual(h.visibility.at(-1),{dialogVisible:false,reason:'engine'});
+ h.event({type:'readerContext',active:true});h.advance(600);
  h.immersion.scene(true);h.immersion.scene(false,'game-ui settings');
  assert.deepEqual(h.visibility.at(-1),{dialogVisible:false,reason:'game-ui settings'});
 });
 
 test('compiled bridge reports 20 focus/menu cycles without activating any window',{skip:process.platform!=='win32'||!require('node:fs').existsSync(require('node:path').join(__dirname,'../native/GalWindowBridge.exe'))},async()=>{
  const exe=require('node:path').join(__dirname,'../native/GalWindowBridge.exe');
- const script=`$a=[Reflection.Assembly]::LoadFrom($env:MEGULIT_REPLAY_BRIDGE);$t=$a.GetType('GalWindowBridge');$flags=[Reflection.BindingFlags]'NonPublic,Static';$tick=$t.GetMethod('ReaderInputTick',$flags);$menu=$t.GetField('MenuOpen',$flags);for($i=0;$i -lt 20;$i++){$menu.SetValue($null,$false);$null=$tick.Invoke($null,@($false));$null=$tick.Invoke($null,@($true));$menu.SetValue($null,$true);$null=$tick.Invoke($null,@($true));$menu.SetValue($null,$false);$null=$tick.Invoke($null,@($true))}`;
+ const script=`$a=[Reflection.Assembly]::LoadFrom($env:MEGULIT_REPLAY_BRIDGE);$t=$a.GetType('GalWindowBridge');$flags=[Reflection.BindingFlags]'NonPublic,Static';$a.GetType('ReaderLayerPolicy').GetField('SettleMs',[Reflection.BindingFlags]'Public,Static').SetValue($null,0);$tick=$t.GetMethod('ReaderInputTick',$flags);$menu=$t.GetField('MenuOpen',$flags);for($i=0;$i -lt 20;$i++){$menu.SetValue($null,$false);$null=$tick.Invoke($null,@($false));$null=$tick.Invoke($null,@($true));$menu.SetValue($null,$true);$null=$tick.Invoke($null,@($true));$menu.SetValue($null,$false);$null=$tick.Invoke($null,@($true))}`;
  const r=require('node:child_process').spawnSync('powershell.exe',['-NoProfile','-NonInteractive','-Command',script],{encoding:'utf8',windowsHide:true,timeout:20000,env:{...process.env,MEGULIT_REPLAY_BRIDGE:exe}});
  assert.equal(r.status,0,r.stderr);
  const events=r.stdout.trim().split(/\r?\n/).filter(Boolean).map(line=>JSON.parse(line)).filter(e=>e.type==='readerContext');
