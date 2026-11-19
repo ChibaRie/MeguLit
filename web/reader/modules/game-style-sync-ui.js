@@ -64,7 +64,7 @@
  // Measurement (game client pixels) -> MeguLit settings (japaneseSize and spacing in px of a 1280-wide game).
  function convert(r){
   const s=r.style||{},cw=Number(r.width),ch=Number(r.height);if(!(cw>0&&ch>0))return null;const k=1280/cw,f=metrics(),out={autoScale:true,paddingX:0,paddingY:0};
-  for(const key of ['textColor','readTextColor','speechTextColor','narrationTextColor','textGradient','textGradientTop','textGradientBottom','readTextGradient','readTextGradientTop','readTextGradientBottom'])if(s[key]!==undefined)out[key]=s[key];
+  for(const key of ['textColor','readTextColor','speechTextColor','narrationTextColor','textGradient','textGradientTop','textGradientBottom','readTextGradient','readTextGradientTop','readTextGradientBottom'])if(s[key]!==undefined)out[key]=s[key];/* the outline measured with the fill (core/game-style-sync.cjs outlineFor): one colour for the Japanese line, its translation and the furigana */if(/^#[0-9a-f]{6}$/i.test(s.outlineColor||'')&&out.textColor!==undefined){out.japaneseOutlineColor=out.chineseOutlineColor=out.rubyOutlineColor=s.outlineColor;}
   const size=r.inkHeight>0?r.inkHeight*k/f.ink:Number(s.japaneseSize);if(Number.isFinite(size)&&size>4){out.japaneseSize=Math.round(size*10)/10;out.translationSize=Math.round(Math.max(12,
    Math.min(60,out.japaneseSize))*10)/10;}
   if(out.japaneseSize&&r.advance>0)out.japaneseSpacingPx=Math.round(clamp(r.advance*k-out.japaneseSize*f.adv,-out.japaneseSize*.45,out.japaneseSize)*10)/10;

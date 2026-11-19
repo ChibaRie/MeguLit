@@ -46,41 +46,57 @@ test('a second calibration started while one runs does not leave the first one\'
  r.control.beginStyleSync(true,'all');r.control.beginStyleSync(true,'text');r.control.finishStyleSync(false);
  assert.deepEqual(r.hide(),before);assert.equal(r.switches().at(-1).type,'enable');assert.equal(r.switches().filter(m=>m.type==='disable').length,1);});
 
-test('a fill as dark as the outline it is drawn with is a mis-measure: the colours stay, position and size apply',()=>{
- assert.equal(combine.darkOnDark({textColor:'#0b0b10'},{japaneseOutline:true,japaneseOutlineColor:'#000000',shadow:'outline'}),'#000000');
- assert.equal(combine.darkOnDark({textColor:'#0b0b10'},undefined),'#000000','the default outline is black');
- assert.equal(combine.darkOnDark({textColor:'#fefefe'},{japaneseOutlineColor:'#000000'}),'','light text on a dark outline: the common case');
- assert.equal(combine.darkOnDark({textColor:'#101010'},{japaneseOutlineColor:'#ffffff'}),'','black text with a white outline is readable');
- assert.equal(combine.darkOnDark({textColor:'#101010'},{japaneseOutline:false,japaneseOutlineColor:'#000000'}),'','black text without an outline (light text box)');
- assert.equal(combine.darkOnDark({textColor:'#101010'},{shadow:'none',japaneseOutlineColor:'#000000'}),'');
- assert.equal(combine.darkOnDark({textColor:'#703020'},{japaneseOutlineColor:'#000000'}),'','a dark red is a colour, not a mis-measure');
- const sample=(color,read)=>({read,lineKind:'narration',style:{x:10,y:70,width:60,height:10,japaneseSize:30,japaneseSpacingPx:0,lineHeight:1.4,textColor:color},width:1280,height:720,inkHeight:30,advance:30,lineStep:42,wrapWidth:700,inkLeft:130,inkTop:500,rows:1});
- const sync=new GameStyleSync({native:__dirname,config:null},()=>{},()=>null);sync.p={textColor:'#f8f8f8',japaneseOutline:true,japaneseOutlineColor:'#000000',shadow:'outline'};
- const statuses=[];sync.status=(s,x)=>statuses.push({s,x});
- sync.samples=[sample('#07070a',false)];
- {assert.equal(sync.publish(),true);const st=sync.latest.style;
-  for(const k of ['textColor','narrationTextColor','speechTextColor','readTextColor'])assert.equal(st[k],undefined,k+' is not written');
-  assert.equal(sync.latest.colourRejected,true);assert.equal(sync.rejected.textColor,'#07070a');assert.ok(Number.isFinite(st.x)&&Number.isFinite(st.japaneseSize),'position and size still apply');}
- sync.samples=[sample('#fdfdfd',false)];
- {assert.equal(sync.publish(),true);assert.equal(sync.latest.style.textColor,'#fdfdfd');assert.equal(sync.latest.colourRejected,undefined);}
- assert.ok(combine([sample('#fdfdfd',false)]),'the fixture sample is a valid one');});
+test('colours: light on dark, dark on light, plain and gradient are written; a fill that does not stand out from its background is not',()=>{
+ const sample=(style,read=false)=>({read,lineKind:'narration',style:{x:10,y:70,width:60,height:10,japaneseSize:30,japaneseSpacingPx:0,lineHeight:1.4,...style},width:1280,height:720,inkHeight:30,advance:30,lineStep:42,wrapWidth:700,inkLeft:130,inkTop:500,rows:1});
+ const run=style=>{const sync=new GameStyleSync({native:__dirname,config:null},()=>{},()=>null);sync.p={textColor:'#f8f8f8',japaneseOutline:true,japaneseOutlineColor:'#000000',shadow:'outline'};sync.status=()=>{};sync.samples=[sample(style),sample(style)];assert.equal(sync.publish(),true);return sync;};
+ /* light text, dark outline (measured on the user's 死に逝く君 frame: #fdf479 / #060201 on #49296a) */
+ {const s=run({textColor:'#fdf479',textEdgeColor:'#060201',textBackColor:'#49296a'}).latest;assert.equal(s.style.textColor,'#fdf479');assert.equal(s.style.outlineColor,'#060201');assert.equal(s.colourRejected,undefined);}
+ /* dark text, white halo too thin to measure (the user's 素晴らしき日々 frame: #000001 on #799ebe, no edge): black is written, with a white outline, not the saved black one */
+ {const s=run({textColor:'#000001',textBackColor:'#799ebe'}).latest;assert.equal(s.style.textColor,'#000001');assert.equal(s.style.outlineColor,'#ffffff');}
+ /* dark text with a measured light outline keeps the measured one */
+ {const s=run({textColor:'#101018',textEdgeColor:'#f4f4ff',textBackColor:'#799ebe'}).latest;assert.equal(s.style.outlineColor,'#f4f4ff');}
+ /* dark text on a light text box, no outline: legitimate, written */
+ {const s=run({textColor:'#282430',textBackColor:'#f0ece1'}).latest;assert.equal(s.style.textColor,'#282430');assert.equal(s.style.outlineColor,'#ffffff');}
+ /* plain light text without an outline keeps the saved outline */
+ {const s=run({textColor:'#fefefe',textBackColor:'#101820'}).latest;assert.equal(s.style.textColor,'#fefefe');assert.equal(s.style.outlineColor,undefined);}
+ /* a gradient is passed as measured */
+ {const s=run({textColor:'#fffaf2',textGradient:true,textGradientTop:'#fffaf2',textGradientBottom:'#a8c8ff',textBackColor:'#101820'}).latest;assert.equal(s.style.textGradient,true);assert.equal(s.style.textGradientTop,'#fffaf2');assert.equal(s.style.textGradientBottom,'#a8c8ff');}
+ /* the fill is the background: nothing of the colours is written, position and size are */
+ {const sync=run({textColor:'#7a9cba',textBackColor:'#799ebe'}),st=sync.latest.style;for(const k of ['textColor','narrationTextColor','speechTextColor','readTextColor','outlineColor'])assert.equal(st[k],undefined,k+' is not written');
+  assert.equal(sync.latest.colourRejected,true);assert.equal(sync.rejected.background,'#799ebe');assert.ok(Number.isFinite(st.x)&&Number.isFinite(st.japaneseSize));}
+ assert.equal(combine.lostInBackground({textColor:'#000001',textBackColor:'#799ebe'}),'');assert.equal(combine.lostInBackground({textColor:'#fefefe'}),'','no background known: not judged');
+ /* the reader takes the outline for the Japanese line, its translation and the furigana, only together with a colour */
+ assert.ok(read('web/reader/modules/game-style-sync-ui.js').includes("if(/^#[0-9a-f]{6}$/i.test(s.outlineColor||'')&&out.textColor!==undefined){out.japaneseOutlineColor=out.chineseOutlineColor=out.rubyOutlineColor=s.outlineColor;}"));});
+
+test('a dark sentence sampled from the game window brings its own outline; a light one keeps the saved outline',async t=>{
+ const os=require('node:os'),{PassThrough}=require('node:stream');
+ const native=fs.mkdtempSync(path.join(os.tmpdir(),'megulit-line-outline-'));fs.writeFileSync(path.join(native,'GameStyleProbe.exe'),'');t.after(()=>fs.rmSync(native,{recursive:true,force:true}));
+ const requests=[],events=[],stdout=new PassThrough();const child={stdin:{write:l=>requests.push(JSON.parse(l)),on(){},end(){}},stdout,on(){},kill(){}};
+ const sync=new GameStyleSync({native,config:null},m=>events.push(m),()=>child);sync.lineDelay=0;sync.configure({autoGameStyle:true},{bound:true,gameHwnd:'100',gameProcessId:7,gameStarted:1});t.after(()=>sync.stop());
+ const wait=()=>new Promise(r=>setTimeout(r,15));
+ const once=async(text,style)=>{const before=events.length,asked=requests.length;assert.equal(sync.lineStyle(text,true,false),true);await wait();assert.equal(requests.length,asked+1,'the helper was asked');stdout.write(JSON.stringify({id:requests.at(-1).id,result:{valid:true,style}})+'\n');await wait();return events.slice(before).find(m=>m.type==='lineStyleSample')||null;};
+ const dark=await once('やっぱり……いい女になったなと屋上で思う。',{textColor:'#000001',textBackColor:'#799ebe'});
+ assert.ok(dark);assert.equal(dark.style.fill,'#000001');assert.equal(dark.style.edge,'#ffffff');
+ const light=await once('そして――殺人――――。',{textColor:'#fdf479',textEdgeColor:'#060201',textBackColor:'#49296a'});
+ assert.ok(light);assert.equal(light.style.fill,'#fdf479');assert.equal(light.style.edge,undefined);
+ assert.equal(await once('空の下で、街は静かに息をしている。',{textColor:'#7a9cba',textBackColor:'#799ebe'}),null,'a fill that is its background is no sample');});
 
 test('no per-line pixel sample while MeguLit hides the game text: what is found then is a leftover of the hide',()=>{
  const sync=new GameStyleSync({native:__dirname,config:null},()=>{},()=>null);sync.lineDelay=0;sync.configure({autoGameStyle:true},{bound:true,gameHwnd:'100',gameProcessId:7,gameStarted:1});
  try{assert.equal(sync.lineStyle('当たり前と言えば当たり前……、',true,true),false);assert.equal(sync.lineStyle('当たり前と言えば当たり前……、',true,false),true);}finally{sync.stop();}
  assert.ok(read('core/gal-native.cjs').includes("this.styleSync.lineStyle(message.hookSource,message.hookSourceOrigin!=='history',this.hooks.enabled===true&&this.hooks.preflight!==true);"));});
 
-test('the glyph pass-through is taken back by a cache report or two lines with unblanked glyphs; the writable stream is written back hidden again',()=>{const hb=read('native/HookBridge.cs');
+test('the glyph pass-through is taken back by a cache report or a line with unblanked glyphs; the writable stream is written back hidden again',()=>{const hb=read('native/HookBridge.cs');
  const ok=hb.slice(hb.indexOf('public static bool GlyphAllOk(string text){'));
  assert.ok(ok.indexOf('if(GlyphPassLeaked)return false;')>0&&ok.indexOf('if(GlyphPassLeaked)return false;')<ok.indexOf('if(GlyphProven)return true;'),'the verdict outranks the proof');
  assert.ok(hb.includes('static void GlyphAllProof(string by){if(GlyphProven||GlyphPassLeaked)return;'),'a later hit does not prove it again');
  assert.ok(hb.includes('if(GlyphMode!="dot")GlyphPassLeak("cache "+s.Substring(6));'),'the cache report on the dots channel counts in blank mode');
  assert.ok(hb.includes('static void GlyphReport(string s){Diagnostic("glyph hide "+s);GlyphLineReport(s);'));
- assert.ok(hb.includes('if(Interlocked.Increment(ref GlyphLeakLines)>=2)GlyphPassLeak('));
+ assert.ok(hb.includes('Interlocked.Increment(ref GlyphLeakLines);GlyphPassLeak("a line with glyphs that were not blanked ("+s.Substring(5)+")");'),'the first leaking line is enough');
  assert.ok(hb.includes('if(!GlyphLeakSelfTest()){'));
  /* the recorded lines of that session */
  assert.ok(hb.includes('GlyphLineReport("line seq=6 chars=13 placed=2 hidden=2 requested=3 repeat=2 missing=2");')&&hb.includes('GlyphDots("cache seq=15 missing=3 of 3");'));});
 
 test('discarding the new settings also drops the colour painted on the current sentence; the probe knows white text on a light sky',()=>{
  assert.ok(read('web/reader/modules/game-style-sync-ui.js').includes('const before=session.cancel();apply(before.prefs,before.map);/* the colour painted on the current sentence from a sample taken during the discarded calibration goes with it */b.lineColorReset?.();'));
- assert.ok(read('native/GameStyleProbe.cs').includes('new[]{Color.FromArgb(120,170,230),Color.White,Color.FromArgb(16,16,24)},new[]{Color.FromArgb(190,215,240),Color.FromArgb(250,250,250),Color.Black}};'));});
+ {const probe=read('native/GameStyleProbe.cs');for(const c of ['new[]{Color.FromArgb(120,170,230),Color.White,Color.FromArgb(16,16,24)}','new[]{Color.FromArgb(121,158,190),Color.Black,Color.White}','new[]{Color.FromArgb(240,236,225),Color.FromArgb(40,36,48),Color.Transparent}','style["textBackColor"]=backColor;','Text background colour mismatch'])assert.ok(probe.includes(c),c);}});
