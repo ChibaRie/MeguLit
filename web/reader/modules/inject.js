@@ -110,6 +110,9 @@
     bridge.current = text;
     const id = ++bridge.serial;
     bridge.lastTranslationError = '';
+    /* 2026-11-19 (素晴らしき日々: the grown line's request failed and 「翻译暂不可用」 replaced the translation already shown) a grown
+       line that gets no translation keeps the one on screen and asks again, twice at most (deliver) */
+    bridge.growingId = growing ? id : 0; if (!growing) bridge.growRetries = 0;
     if (!growing) { setText(bridge.quietTranslation ? '' : '翻译中…'); output.dataset.state = 'pending'; }
     try {
       window.__tomoyoTranslateRequest(JSON.stringify({ id, text, options: bridge.options?.() || {} }));
@@ -142,9 +145,26 @@
     host.appendChild(note);
     setTimeout(() => { note.style.opacity = '0'; setTimeout(() => note.remove(), 700); }, 9000);
   };
+  /* 2026-11-19 (user rule: no line stays 「未翻译」) a translation that came from the background retry (services/translation-chain.cjs)
+     fills the line still on screen when it shows none or an error; a line already translated is left as it is */
+  bridge.deliverBackfill = (source, text) => {
+    if (!enabled || !translationVisible || !output?.isConnected || !String(text || '').trim()) return;
+    if (flat(bridge.current) !== flat(source)) return;
+    if (output.dataset.state === 'ready' && output.textContent.trim() && !bridge.lastTranslationError) return;
+    bridge.lastTranslationError = ''; setText(text, false, true); bridge.alignText?.();
+  };
   bridge.deliver = (id, text, error, message = '') => {
     if(bridge.deliverPageTranslation?.(id,text,error,message))return;
     if (id !== bridge.serial || !enabled || !translationVisible || !output?.isConnected) return;
+    if ((error || !String(text || '').trim()) && bridge.growingId === id && output.textContent) {
+      const source = bridge.current;
+      if ((bridge.growRetries = (bridge.growRetries || 0) + 1) <= 2) setTimeout(() => {
+        if (bridge.serial !== id || bridge.current !== source || !enabled || !translationVisible) return;
+        const again = ++bridge.serial; bridge.growingId = again;
+        try { window.__tomoyoTranslateRequest(JSON.stringify({ id: again, text: source, options: bridge.options?.() || {} })); } catch {}
+      }, 1500);
+      return;
+    }
     bridge.lastTranslationError = error ? message || '暂时无法翻译，请检查网络' : '';
     const local = /^LOCAL_RUNTIME_DOWNLOADING:?(\d*)/.exec(message||'') ? (Number(/:(\d+)/.exec(message)?.[1])>0 ? `正在下载本地翻译服务程序 ${/:(\d+)/.exec(message)[1]}%，下载完自动开始翻译` : '正在下载本地翻译服务程序，下载完自动开始翻译')
       : message === 'LOCAL_STARTING' ? '服务程序已就绪，正在启动本地模型…'

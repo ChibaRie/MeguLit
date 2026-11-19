@@ -414,7 +414,7 @@ class Matcher{
   const dice=t=>{const b=grams(t);let both=0;for(const [g,n] of a)both+=Math.min(n,b.get(g)||0);return 2*both/Math.max(1,s.length-1+t.length-1);};
   const from=this.last>=0?Math.max(0,this.last-40):0,to=this.last>=0?Math.min(this.normalized.length,this.last+600):this.normalized.length;let best=-1,score=0;
   for(let i=from;i<to;i++){const t=this.normalized[i];if(!t||t.length<s.length*.6||s.length<t.length*.6&&t.length-s.length>12)continue;const d=dice(t.slice(0,s.length+2));if(d>score){score=d;best=i;}}
-  if(best<0||score<.8||s.length<this.normalized[best].length*.6)return -1;this.last=best;return best;}
+  if(best<0||score<.8||s.length<this.normalized[best].length*.6)return -1;this.moveTo(best);return best;}
  constructor(runtimeLines,originalLines){this.rt=runtimeLines;this.og=originalLines;this.normalized=runtimeLines.map(matchKey);this.heads=new Map();this.normalized.forEach((t,i)=>{if(!t)return;const k=t.slice(0,4);if(!this.heads.has(k))this.heads.set(k,[]);this.heads.get(k).push(i);});this.last=-1;}
  /* 2026-11-13 (涙 name screen: 「あなたの現在の名前は『春日　光一』、」 lost its head as if it were a speaker): a line after the
     first of a joined text is also tried whole, without the speaker cut */
@@ -422,13 +422,22 @@ class Matcher{
     them; the bridge hands them over as one line): after the first line, a script line that is only a resource name (ASCII, no
     space: ev0001_l, yuki_000002_d, bgm017) and does not continue the text is stepped over, up to 3 in a row; it is no part of the cover */
  cover(start,s){let at=0,i=start,skipped=0;const used=[];while(at<s.length&&i<this.normalized.length){let t=this.normalized[i];if(!t){i++;continue;}if(!s.startsWith(t,at)){const whole=i>start?plainKey(this.rt[i]):'';if(whole&&s.startsWith(whole,at))t=whole;else if(i>start&&skipped<3&&RESOURCE_LINE.test(t)){i++;skipped++;continue;}else return null;}used.push(i);at+=t.length;i++;skipped=0;}return at===s.length?used:null;}
+ /* 2026-11-19 (素晴らしき日々, user test: lines read from the game's LOG screen, たとえば……。 #13845 and 「まだ作り途中…」 #13774, moved the
+    reading position 600 lines back; the story lines after it, 700 ahead, were taken for repeated lines and had no translation):
+    the last positions read are kept; with no line ahead of the current one, a line ahead of a recent one is taken, then a line
+    at most 60 before the current one (a LOG line just read) */
+ moveTo(i){this.last=i;(this.recent||(this.recent=[])).push(i);if(this.recent.length>8)this.recent.shift();}
+ recentPick(found){for(const a of [...(this.recent||[])].reverse()){if(a===this.last)continue;const c=found.filter(c=>c[0]>a&&c[0]-a<=400).sort((x,y)=>x[0]-y[0]);if(c.length)return {c:c[0],method:'recent'};}
+  const near=found.filter(c=>c[0]<this.last&&this.last-c.at(-1)<=60).sort((x,y)=>y[0]-x[0]);return near.length?{c:near[0],method:'near-back'}:null;}
  match(text){
   const s=matchKey(text);if(!s)return {status:'none',method:'empty'};const starts=new Set();for(let k=Math.min(4,s.length);k>=1;k--)for(const i of this.heads.get(s.slice(0,k))||[])if(s.startsWith(this.normalized[i]))starts.add(i);
   const found=[...starts].map(i=>this.cover(i,s)).filter(Boolean);if(!found.length)return {status:'none',method:'no-cover'};
-  let pick,method,status;
+  let pick,method,status,alt;
   if(found.length===1){pick=found[0];method='unique';status='exact';}
-  else{/* a line that grew (core/sentence-pieces.cjs) starts on the line already read and ends past it */const ahead=found.filter(c=>(c[0]>this.last||c.length>1&&c.at(-1)>this.last&&this.last-c[0]<=12)&&c[0]-this.last<=400).sort((a,b)=>a[0]-b[0]);if(this.last>=0&&ahead.length){pick=ahead[0];method='position';status='high';}else{/* E520 (first line after a restart or a load: no reading position yet): a repeated line whose every occurrence has the same original and translation gives the same answer wherever it is, so it is used; the reading position stays unknown */const same=c=>c.map(i=>(this.rt[i]??'')+''+(this.og[i]??'')).join('');if(this.last<0&&found.every(c=>same(c)===same(found[0]))){pick=found[0];method='same-text';status='high';}else return {status:'uncertain',method:'repeated',candidates:found.length};}}
-  if(method!=='same-text')this.last=pick.at(-1);const named=SPEAKER.test(norm(text)),original=pick.map((i,k)=>{const o=inlineTags(this.og[i]??'');return k||named||!SPEAKER.test(norm(this.rt[i]))?o:o.replace(/^[\s　]*/,'').replace(SPEAKER,'');}),already=pick.every(i=>japaneseLine(this.rt[i]));
+  else{/* a line that grew (core/sentence-pieces.cjs) starts before the reading position and ends on or past it: the piece's own
+     lookup (the embed request comes before the source line) has already moved the position to the piece. It comes first;
+     a one-line re-read of the line just read comes after the lines ahead. */const fwd=c=>c[0]>this.last&&c[0]-this.last<=400,back=c=>c[0]<=this.last&&c.at(-1)>=this.last&&this.last-c[0]<=12;const ahead=[...found.filter(c=>back(c)&&c.length>1),...found.filter(fwd).sort((a,b)=>a[0]-b[0]),...found.filter(c=>back(c)&&c.length===1)];if(this.last>=0&&ahead.length){pick=ahead[0];method='position';status='high';}else if(this.last>=0&&(alt=this.recentPick(found))){pick=alt.c;method=alt.method;status='high';}else{/* E520 (first line after a restart or a load: no reading position yet): a repeated line whose every occurrence has the same original and translation gives the same answer wherever it is, so it is used; the reading position stays unknown */const same=c=>c.map(i=>(this.rt[i]??'')+''+(this.og[i]??'')).join('');if(this.last<0&&found.every(c=>same(c)===same(found[0]))){pick=found[0];method='same-text';status='high';}else return {status:'uncertain',method:'repeated',candidates:found.length};}}
+  if(method!=='same-text')this.moveTo(pick.at(-1));const named=SPEAKER.test(norm(text)),original=pick.map((i,k)=>{const o=inlineTags(this.og[i]??'');return k||named||!SPEAKER.test(norm(this.rt[i]))?o:o.replace(/^[\s　]*/,'').replace(SPEAKER,'');}),already=pick.every(i=>japaneseLine(this.rt[i]));
   if(original.some(t=>!t.trim()))return {status:'uncertain',method:'empty-original',indices:pick};
   return {status,method,indices:pick,japanese:original.join('\n'),captured:text,alreadyJapanese:already};
  }

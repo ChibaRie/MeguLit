@@ -15,13 +15,13 @@ const ZH=["打","  ","变","  跟站在街上的喧嚣中时截然不同，这�
 const flat=s=>String(s||'').replace(/\s+/g,'');
 const tmp=p=>fs.mkdtempSync(path.join(os.tmpdir(),p));
 
-function rig(){
+function rig(ja=JA,zh=ZH){
  const {HookNative}=require('../core/hook-native.cjs'),events=[];let clock=1795075577000;
  const out=new PassThrough(),child=Object.assign(new EventEmitter(),{stdout:out,stdin:{write:()=>true,on(){}},kill(){}});
  const native=tmp('n-'),hook=tmp('h-');fs.writeFileSync(path.join(native,'HookBridge.exe'),'');for(const n of ['LunaHost64.dll','LunaHook32.dll','LunaHook64.dll'])fs.writeFileSync(path.join(hook,n),'');
  const h=new HookNative({native,hook,logs:tmp('l-')},e=>events.push(e),()=>child,()=>clock);clearInterval(h.timer);
  h.start({pid:process.pid,hwnd:'1',name:'BGI',started:'1234567890123'});h.process=child;h.send=()=>{};
- const m=new Matcher(JA,ZH);h.originalText={kind:'patch',resolve:text=>{const r=m.match(text);return r.japanese===undefined?r:{...r,translation:r.japanese,japanese:undefined};},near:()=>-1};
+ const m=new Matcher(ja,zh);h.originalText={kind:'patch',resolve:text=>{const r=m.match(text);return r.japanese===undefined?r:{...r,translation:r.japanese,japanese:undefined};},near:()=>-1};
  const shown=[],translations=new Map();const notify=h.notify.bind(h);h.notify=s=>{if(typeof s.hookSource==='string'&&s.hookSource)shown.push(s.hookSource);return notify(s);};
  const emit=h.emit?.bind(h);h.emit=e=>{if(e?.type==='hookPatchTranslation')translations.set(flat(e.japanese),flat(e.chinese));return emit?.(e);};
  const feed=(text,gap=1500)=>{clock+=gap;h.source({type:'hookSource',text,sourceCode:'HS-1C@43B350:BGI.exe',sourceName:'EmbedBGI'},'EmbedBGI');};
@@ -85,4 +85,19 @@ test('any engine, counter-example: two KiriKiri lines, each a closed quotation o
  const {shown,feed}=plain('KiriKiri','HW-8@1E5C40:SenrenBanka.exe');
  for(const piece of ['「おはよう」','「今日もいい天気だね」','　空には雲ひとつない','　風が少し冷たい'])feed(piece);
  assert.deepEqual(shown.map(flat),['「おはよう」','「今日もいい天気だね」','空には雲ひとつない','風が少し冷たい']);
+});
+
+/* 2026-11-19 user test e6f5def8 (11:14Z): the live order has the embed request of each piece first (the game asks for the
+   piece's replacement before the source line is flushed), so the script position already stood on the piece when the grown
+   line was looked up: the grown line was taken for a repeated line and had no translation. And the bridge lost
+   「……そして」 that time, so the last stage cannot be covered as a whole: its pieces' translations are put together. */
+test('live order with the embed lookups first: five stages, each with a translation, the last the whole sentence',()=>{
+ /* the real script holds this scene twice (lines 84-103 and 13703-13723, one narration line worded apart): only the reading position tells them apart */
+ const early=JA.slice();early[4]='　こんな時にこんな場所で過ごしている人間がいたとしたら……、';
+ for(const lost of [false,true]){const {h,shown,translations,feed}=rig(early.concat(JA),ZH.concat(ZH));feed(JA[4]);feed(JA[5]);shown.length=0;
+  const pieces=lost?['「ふぅ……」','「やっぱり……いい女には、','たばこと','屋上と','ヒラヒラ服だわね……」']:['「ふぅ……」','「やっぱり……いい女には、','たばこと','屋上と','……そして\nヒラヒラ服だわね……」'];
+  for(const piece of pieces){for(const part of piece.split(/(?<=\n)/))h.scriptTranslation(part);feed(piece);}
+  const stages=shown.map(flat).slice(1);assert.equal(stages.length,4,JSON.stringify(shown));
+  for(const s of stages)assert.ok(translations.get(s),(lost?'lost そして: ':'')+'no translation for '+s);
+  assert.equal(translations.get(stages.at(-1)),lost?'「果然……好女人要有的是，烟、楼顶轻飘飘的衣服呀……」':'「果然……好女人要有的是，烟、楼顶……还有轻飘飘的衣服呀……」');}
 });
