@@ -28,7 +28,7 @@
 #include <vector>
 #include <map>
 #include <set>
-#include "minhook/include/MinHook.h"
+#include "../shared/minhook/include/MinHook.h"
 #include "modules/modules.h"
 #include "modules/dump_api.h"
 

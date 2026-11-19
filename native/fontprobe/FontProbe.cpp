@@ -44,7 +44,7 @@
 #include <map>
 #include <set>
 #include <algorithm>
-#include "../scncapture/minhook/include/MinHook.h"
+#include "../shared/minhook/include/MinHook.h"
 #include "GlyphMatch.h"
 
 #define MEGULIT_FONT_VERSION 3
@@ -717,8 +717,11 @@ void STDMETHODCALLTYPE HDrawGlyphRun(ID2D1RenderTarget *rt, D2D1_POINT_2F at, co
  ODrawGlyphRun(rt, at, run, brush, mm);
 }
 
-bool Hook(HMODULE m, const char *name, void *detour, void **orig) { if (!m) return false; void *fn = (void *)GetProcAddress(m, name); if (!fn) return false; if (MH_CreateHook(fn, detour, orig) != MH_OK) return false; return MH_EnableHook(fn) == MH_OK; }
-bool HookAt(void *fn, void *detour, void **orig) { MH_STATUS s = MH_CreateHook(fn, detour, orig); if (s == MH_ERROR_ALREADY_CREATED) return true; return s == MH_OK && MH_EnableHook(fn) == MH_OK; }
+// 2026-11-19 (perf/minhook-freeze): hooks are queued and switched on together by Apply, so each batch freezes the game's
+// threads once instead of once per hook (MinHook suspends every other thread for each MH_EnableHook).
+bool Hook(HMODULE m, const char *name, void *detour, void **orig) { if (!m) return false; void *fn = (void *)GetProcAddress(m, name); if (!fn) return false; if (MH_CreateHook(fn, detour, orig) != MH_OK) return false; return MH_QueueEnableHook(fn) == MH_OK; }
+bool HookAt(void *fn, void *detour, void **orig) { MH_STATUS s = MH_CreateHook(fn, detour, orig); if (s == MH_ERROR_ALREADY_CREATED) return true; return s == MH_OK && MH_QueueEnableHook(fn) == MH_OK; }
+bool Apply() { return MH_ApplyQueued() == MH_OK; }
 bool GdipDone, DwriteDone, D2dDone;
 void LateHooks() {
  HMODULE gp = GetModuleHandleW(L"gdiplus.dll");
@@ -728,7 +731,7 @@ void LateHooks() {
   Hook(gp, "GdipPrivateAddFontFile", (void *)&HGdipPrivateAddFontFile, (void **)&OGdipPrivateAddFontFile);
   Hook(gp, "GdipDrawString", (void *)&HGdipDrawString, (void **)&OGdipDrawString);
   bool driver = Hook(gp, "GdipDrawDriverString", (void *)&HGdipDrawDriverString, (void **)&OGdipDrawDriverString);
-  GdipDotApis(gp);
+  GdipDotApis(gp); if (!Apply()) driver = false;
   Send(std::string("ToMe_FONT status gdiplus hooked") + (driver ? " driver" : "")); }
  HMODULE dw = GetModuleHandleW(L"dwrite.dll");
  if (dw && !DwriteDone) { DwriteDone = true;
@@ -738,7 +741,7 @@ void LateHooks() {
    bool a = HookAt(vt[15], (void *)&HCreateTextFormat, (void **)&OCreateTextFormat);
    bool b = HookAt(vt[7], (void *)&HCreateFontFileReference, (void **)&OCreateFontFileReference);
    bool c = HookAt(vt[18], (void *)&HCreateTextLayout, (void **)&OCreateTextLayout) && HookAt(vt[19], (void *)&HCreateGdiCompatibleTextLayout, (void **)&OCreateGdiCompatibleTextLayout);
-   factory->Release(); Send(std::string("ToMe_FONT status dwrite hooked ") + (a ? "format" : "-") + (b ? " file" : " -") + (c ? " layout" : " -")); } }
+   if (!Apply()) a = b = c = false; factory->Release(); Send(std::string("ToMe_FONT status dwrite hooked ") + (a ? "format" : "-") + (b ? " file" : " -") + (c ? " layout" : " -")); } }
  HMODULE d2 = GetModuleHandleW(L"d2d1.dll");
  if (d2 && !D2dDone) { D2dDone = true;
   // ID2D1RenderTarget: 27 DrawText, 28 DrawTextLayout, 29 DrawGlyphRun. d2d1.dll implements them once for its render targets; the
@@ -748,6 +751,7 @@ void LateHooks() {
    D2D1_RENDER_TARGET_PROPERTIES props = {D2D1_RENDER_TARGET_TYPE_DEFAULT, {DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED}, 0, 0, D2D1_RENDER_TARGET_USAGE_NONE, D2D1_FEATURE_LEVEL_DEFAULT};
    if (SUCCEEDED(factory->CreateDCRenderTarget(&props, &rt)) && rt) { void **vt = *(void ***)rt; ok = HookAt(vt[27], (void *)&HDrawText, (void **)&ODrawText) && HookAt(vt[28], (void *)&HDrawTextLayout, (void **)&ODrawTextLayout); run = HookAt(vt[29], (void *)&HDrawGlyphRun, (void **)&ODrawGlyphRun); rt->Release(); }
    factory->Release(); }
+  if (!Apply()) ok = run = false;
   Send(std::string("ToMe_FONT status d2d1 ") + (ok ? "hooked text" : "not hooked") + (run ? " run" : "")); }
 }
 
@@ -791,6 +795,7 @@ DWORD WINAPI Run(void *) {
  n += Hook(gdi, "AddFontMemResourceEx", (void *)&HAddFontMemResourceEx, (void **)&OAddFontMemResourceEx);
  n += Hook(gdi, "AddFontResourceExW", (void *)&HAddFontResourceExW, (void **)&OAddFontResourceExW);
  n += Hook(gdi, "AddFontResourceExA", (void *)&HAddFontResourceExA, (void **)&OAddFontResourceExA);
+ if (!Apply()) n = 0;
  Send("ToMe_FONT status gdi hooks " + std::to_string(n) + "/11");
  // Early injection (MeguLitLaunch<bit>.exe, docs/text-architecture.md): the starting mode and dialogue font come from the
  // game's environment, since HookBridge connects only later; then the launcher is told the hooks are in place.

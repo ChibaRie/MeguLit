@@ -260,7 +260,85 @@ static VOID ProcessThreadIPs(HANDLE hThread, UINT pos, UINT action)
 }
 
 //-------------------------------------------------------------------------
+// MeguLit local patch (2026-11-19, see THIRD-PARTY.md): Freeze used to enumerate threads with a system-wide toolhelp
+// snapshot, every thread of every process (about 50 ms on x64 and 200 ms on x86 on a desktop with ~6,500 threads), once
+// per MH_EnableHook / MH_DisableHook call, on the calling thread (often the game's). Only this process's threads are
+// walked now, with NtGetNextThread; the snapshot stays as the fallback where that call is missing.
+typedef LONG (NTAPI *NTGETNEXTTHREAD)(HANDLE, HANDLE, ACCESS_MASK, ULONG, ULONG, PHANDLE);
+
+static BOOL AddThreadId(PFROZEN_THREADS pThreads, DWORD tid)
+{
+    if (pThreads->pItems == NULL)
+    {
+        pThreads->capacity = INITIAL_THREAD_CAPACITY;
+        pThreads->pItems
+            = (LPDWORD)HeapAlloc(g_hHeap, 0, pThreads->capacity * sizeof(DWORD));
+        if (pThreads->pItems == NULL)
+            return FALSE;
+    }
+    else if (pThreads->size >= pThreads->capacity)
+    {
+        LPDWORD p;
+        pThreads->capacity *= 2;
+        p = (LPDWORD)HeapReAlloc(
+            g_hHeap, 0, pThreads->pItems, pThreads->capacity * sizeof(DWORD));
+        if (p == NULL)
+            return FALSE;
+        pThreads->pItems = p;
+    }
+    pThreads->pItems[pThreads->size++] = tid;
+    return TRUE;
+}
+
+static int EnumerateOwnThreads(PFROZEN_THREADS pThreads)
+{
+    static NTGETNEXTTHREAD next = NULL;
+    static BOOL looked = FALSE;
+    HANDLE hThread = NULL, hNext = NULL;
+    DWORD self = GetCurrentThreadId();
+    BOOL succeeded = TRUE;
+    if (!looked)
+    {
+        HMODULE ntdll = GetModuleHandleW(L"ntdll.dll");
+        next = ntdll ? (NTGETNEXTTHREAD)GetProcAddress(ntdll, "NtGetNextThread") : NULL;
+        looked = TRUE;
+    }
+    if (next == NULL)
+        return -1;
+    while (next(GetCurrentProcess(), hThread, THREAD_QUERY_LIMITED_INFORMATION, 0, 0, &hNext) >= 0)
+    {
+        DWORD tid;
+        if (hThread != NULL)
+            CloseHandle(hThread);
+        hThread = hNext;
+        tid = GetThreadId(hThread);
+        if (tid != 0 && tid != self && !AddThreadId(pThreads, tid))
+        {
+            succeeded = FALSE;
+            break;
+        }
+    }
+    if (hThread != NULL)
+        CloseHandle(hThread);
+    if (!succeeded && pThreads->pItems != NULL)
+    {
+        HeapFree(g_hHeap, 0, pThreads->pItems);
+        pThreads->pItems = NULL;
+    }
+    return succeeded ? 1 : 0;
+}
+
+static BOOL EnumerateThreadsSnapshot(PFROZEN_THREADS pThreads);
 static BOOL EnumerateThreads(PFROZEN_THREADS pThreads)
+{
+    int own = EnumerateOwnThreads(pThreads);
+    if (own >= 0)
+        return own == 1;
+    return EnumerateThreadsSnapshot(pThreads);
+}
+
+//-------------------------------------------------------------------------
+static BOOL EnumerateThreadsSnapshot(PFROZEN_THREADS pThreads)
 {
     BOOL succeeded = FALSE;
 
