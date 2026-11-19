@@ -50,7 +50,7 @@
  const clamp=(v,a,z)=>Math.max(a,Math.min(z,v));
  let gameIdentity='',last={gameStyleState:'waiting'},message='',saving=null,saveSerial=0,aligning=false,correctionTimer=0,measurementSerial=0,repainting=false;
  const getMap=()=>window.__tomeTextPosition?.getMap?.()||null;
- function values(){const p=pick(b.galPreferences());if(window.__tomeTextPosition?.state?.().following){p.x=session.base.prefs.x;p.y=session.base.prefs.y;}return p;
+ function values(){const p=pick(b.galPreferences());const tp=window.__tomeTextPosition;if(tp?.state?.().following){p.x=session.base.prefs.x;p.y=session.base.prefs.y;/* a width the follow fitted to the window is not a setting either */const fw=tp.followState?.().setWidth;if(fw!=null&&p.width===fw&&Number.isFinite(Number(session.base.prefs.width)))p.width=session.base.prefs.width;}return p;
   }
  const dirty=()=>session.dirty(values(),getMap());
  const apply=(prefs,map,preview=true)=>{if(map!==undefined)window.__tomeTextPosition?.setMap?.(map);return b.applyGalPreferences(tools.followFont?tools.followFont(pick(prefs)):pick(prefs),{preview,persist:!preview});
