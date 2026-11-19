@@ -29,6 +29,15 @@ const html = `<!doctype html><html><head><meta charset="utf-8"><style>
     /* back to the original values: back on the game line */
     await page.evaluate(() => { window.__prefs = { x: 16.6, y: 82.2, anchorDX: 0, anchorDY: 0 }; document.documentElement.style.setProperty('--tomoyo-reader-x', '2px'); });
     await frame(); assert.deepStrictEqual(await first(), [430, 560]);
+    /* a stray offset (y 43 % written as an offset) never takes the line out of the game: it stays inside the client */
+    await page.evaluate(() => { window.__prefs = { x: 24.63, y: 79.7, anchorDX: 24.63, anchorDY: 79.7 }; document.documentElement.style.setProperty('--tomoyo-reader-x', '3px'); });
+    await frame(); { const p = await first(); assert.ok(p[0] < 1280 - 30 && p[1] < 720 - 30, 'kept inside the game client ' + JSON.stringify(p)); }
+    /* typed back to 0: back on the game line */
+    await page.evaluate(() => { window.__prefs = { x: 24.63, y: 79.7, anchorDX: 0, anchorDY: 0 }; document.documentElement.style.setProperty('--tomoyo-reader-x', '4px'); });
+    await frame(); assert.deepStrictEqual(await first(), [430, 560], 'offset 0: on the game line again');
+    /* the wrap width dragged after calibration (the window narrower): the first character stays on the game line */
+    await page.evaluate(() => { document.querySelector('.sentence-window').style.width = '420px'; document.documentElement.style.setProperty('--tomoyo-gal-width', '33%'); });
+    await frame(); assert.deepStrictEqual(await first(), [430, 560], 'wrap width changes the wrap, never the place');
     console.log('ok text-place sliders');
   } finally { await browser.close(); }
 })().catch(e => { console.error(e); process.exit(1); });
@@ -40,5 +49,13 @@ const html = `<!doctype html><html><head><meta charset="utf-8"><style>
   assert.match(fs.readFileSync(path.join(__dirname, '..', 'web', 'reader', 'modules', 'game-style.js'), 'utf8'), /\['anchorDX','anchorDY'\]/);
   assert.deepStrictEqual(gp.pick({ x: 1, anchorDX: 3, anchorDY: -1 }, 'position'), { x: 1, anchorDX: 3, anchorDY: -1 });
   const gal = fs.readFileSync(path.join(__dirname, '..', 'web', 'reader', 'modules', 'gal.js'), 'utf8');
-  assert.match(gal, /anchoredNow\(\) \? \{ x: preferences\.x, y: preferences\.y, anchorDX: Number\(f\('galX'\)\.value\) \|\| 0, anchorDY: Number\(f\('galY'\)\.value\) \|\| 0 \}/, 'anchored: the fields write the offset, x/y stay');
-  assert.match(gal, /if \(anchoredNow\(\)\) \{ f\('galX'\)\.value = Number\(preferences\.anchorDX\) \|\| 0;/, 'anchored: the fields show the offset'); }
+  assert.match(gal, /fieldsAreOffset \? \{ x: preferences\.x, y: preferences\.y, anchorDX: Number\(f\('galX'\)\.value\) \|\| 0, anchorDY: Number\(f\('galY'\)\.value\) \|\| 0 \}/, 'anchored: the fields write the offset, x/y stay');
+  assert.match(gal, /fieldsAreOffset = anchoredNow\(\); if \(fieldsAreOffset\) \{ f\('galX'\)\.value = Number\(preferences\.anchorDX\) \|\| 0;/, 'anchored: the fields show the offset'); }
+
+/* the fields' meaning is fixed when they are filled and refilled when the mode changes while the menu is open; nothing is read
+   in the other meaning (user: 校准后拖换行宽度，再也恢复不了正确位置) */
+{ const gal = fs.readFileSync(path.join(__dirname, '..', 'web', 'reader', 'modules', 'gal.js'), 'utf8');
+  assert.match(gal, /let fieldsAreOffset = false;/); assert.match(gal, /\.\.\.\(fieldsAreOffset \? \{ x: preferences\.x, y: preferences\.y, anchorDX:/);
+  assert.match(gal, /x: Number\(f\('galX'\)\.value\), y: Number\(f\('galY'\)\.value\), anchorDX: Number\(preferences\.anchorDX\) \|\| 0/, 'box mode keeps the saved offset as it was');
+  assert.match(gal, /new MutationObserver\(\(\) => \{ if \(anchoredNow\(\) !== fieldsAreOffset/, 'a mode change refills the fields');
+  assert.doesNotMatch(gal, /\.\.\.\(anchoredNow\(\) \? \{ x: preferences\.x/, 'never decided at write time'); }
