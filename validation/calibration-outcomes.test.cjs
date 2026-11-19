@@ -100,3 +100,25 @@ test('the glyph pass-through is taken back by a cache report or a line with unbl
 test('discarding the new settings also drops the colour painted on the current sentence; the probe knows white text on a light sky',()=>{
  assert.ok(read('web/reader/modules/game-style-sync-ui.js').includes('const before=session.cancel();apply(before.prefs,before.map);/* the colour painted on the current sentence from a sample taken during the discarded calibration goes with it */b.lineColorReset?.();'));
  {const probe=read('native/GameStyleProbe.cs');for(const c of ['new[]{Color.FromArgb(120,170,230),Color.White,Color.FromArgb(16,16,24)}','new[]{Color.FromArgb(121,158,190),Color.Black,Color.White}','new[]{Color.FromArgb(240,236,225),Color.FromArgb(40,36,48),Color.Transparent}','style["textBackColor"]=backColor;','Text background colour mismatch'])assert.ok(probe.includes(c),c);}});
+
+test('a calibration changes only what it was asked for: text keeps the place, position keeps colours and size',()=>{
+ const tools=require('../core/game-profile.js');
+ const measured={x:19.4,y:79.3,width:64,anchorDX:0,anchorDY:0,japaneseSize:30.9,translationSize:30.9,japaneseSpacingPx:0,lineHeight:-1.25,lineHeightMode:'offset',textColor:'#fdf479',japaneseOutlineColor:'#060201',chineseOutlineColor:'#060201',rubyOutlineColor:'#060201',paddingX:0,paddingY:0,autoScale:true};
+ const text=tools.pick(measured,'text'),position=tools.pick(measured,'position');
+ for(const k of ['x','y','width','anchorDX','anchorDY','paddingX','paddingY'])assert.equal(text[k],undefined,'仅校准文字 leaves '+k);
+ for(const k of ['textColor','japaneseOutlineColor','chineseOutlineColor','rubyOutlineColor','japaneseSize','translationSize','lineHeight','japaneseSpacingPx'])assert.equal(position[k],undefined,'仅校准位置 leaves '+k);
+ assert.deepEqual(Object.keys(position).sort(),['anchorDX','anchorDY','paddingX','paddingY','width','x','y']);
+ assert.equal(text.textColor,'#fdf479');assert.equal(text.japaneseOutlineColor,'#060201');assert.equal(text.japaneseSize,30.9);
+ const ui=read('web/reader/modules/game-style-sync-ui.js');
+ assert.ok(ui.includes("apply(pick(out,part));message=t('measured');aligning=part!=='text';"),'the measured style goes through the part filter');
+ assert.ok(ui.includes("if(part!=='text'){const target={...r,"),'the position map is only finished for a calibration that includes the position');});
+
+test('a position calibration puts the line back on the game\'s own place: the saved offset of an anchored line goes to 0',()=>{
+ /* live 死に逝く君 2026-11-19 08:07:13Z: "placement placed: line 100006, 12 characters, first box 322,743,31,34 in client 1671x939";
+    the reader's first glyph was at client y 868 (layoutDiagnostic firstGlyphTop 940.8, clientY 73), the game's own at about 750 */
+ const ui=read('web/reader/modules/game-style-sync-ui.js');
+ assert.ok(ui.includes("if(part!=='text'){out.anchorDX=0;out.anchorDY=0;}\n  apply(pick(out,part));"),'reset before the part filter, so 仅校准文字 never resets it');
+ const tools=require('../core/game-profile.js');assert.deepEqual(tools.pick({anchorDX:0,anchorDY:0,textColor:'#ffffff'},'position'),{anchorDX:0,anchorDY:0});
+ /* text-place: offset 0 = on the game's first character */
+ assert.ok(read('web/reader/modules/text-place.js').includes('(anchorDX/anchorDY, client %, 0 = on the game\'s first character)'));
+ const engineTop=743,gameTop=750,readerTopBefore=940.8-73;assert.ok(Math.abs(engineTop-gameTop)<=10&&readerTopBefore-gameTop>100,'the engine place was right, the offset was the error');});
