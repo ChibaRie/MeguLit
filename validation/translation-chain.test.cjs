@@ -68,3 +68,12 @@ test('a LOG line far back does not cost the story lines after it their translati
 test('a merged skip text: the line kept is looked up itself',()=>{
  assert.match(fs.readFileSync(path.join(__dirname,'../core/hook-native.cjs'),'utf8'),/text=last;\/\*[^*]*\*\/try\{this\.originalTextFor\(text\);\}catch\{\}\}\}/);
 });
+
+test('old single-engine paths are gone: art text, art rows and the line written into the game use the chain; no in-place switch to Microsoft',()=>{
+ const reader=fs.readFileSync(path.join(__dirname,'../services/reader.cjs'),'utf8');
+ assert.doesNotMatch(reader,/localReady\(options,null,/,'no single-engine translation left');
+ assert.doesNotMatch(reader,/Object\.assign\(options,\{provider:'microsoft'\}\)/,'E406 in-place switch deleted');
+ assert.equal((reader.match(/this\.chainTranslate\(/g)||[]).length>=5,true,'reader.translate, retries, art text, art rows, embed');
+ assert.doesNotMatch(fs.readFileSync(path.join(__dirname,'../web/reader/modules/inject.js'),'utf8'),/LOCAL_MODEL_MISSING/,'the unreachable message is deleted');
+ assert.match(fs.readFileSync(path.join(__dirname,'../core/hook-native.cjs'),'utf8'),/if\(r&&\(r\.status==='exact'\|\|r\.status==='high'\)\)this\.sourceCache\.set\(key,\{provider,r\}\);/,'only a confident script match is cached');
+});

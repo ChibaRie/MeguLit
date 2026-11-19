@@ -177,12 +177,7 @@ class Reader{
  async localReady(options,id,current){
   const llm=this.runtime.local(),push=message=>{if(Number.isSafeInteger(id))this.runtime.emit('reader-event',{type:'call',method:'deliver',args:[id,'',true,message]});};
   try{return await llm.ensure(options);}catch(error){
-   /* E406 (user: 零延迟翻译有时报错无本地大模型): lines the translation script does not cover go to the engine; with
-      a local engine but no model downloaded, use the free online engine for them instead of showing an error */
-   if(error?.code==='LOCAL_MODEL_MISSING'){Object.assign(options,{provider:'microsoft'});
-    /* E415 (user: 提示用户是微软机翻): the overlay says so once per reader session, in one small line */
-    if(!this.mtNoticed){this.mtNoticed=true;this.runtime.emit('reader-event',{type:'call',method:'mtNotice',args:[]});}
-    return;}
+   /* E406's in-place switch to Microsoft (no local model downloaded) is gone: the error goes to services/translation-chain.cjs, which goes on to the next source */
    if(!/^LOCAL_RUNTIME_DOWNLOADING/.test(error.message))throw error;}
   while(llm.job?.state==='downloading'&&current()){const j=llm.job;push('LOCAL_RUNTIME_DOWNLOADING:'+(j.total?Math.min(100,Math.floor(j.received/j.total*100)):0));await new Promise(r=>setTimeout(r,500));}
   if(!current())throw Error('SUPERSEDED');
@@ -237,14 +232,13 @@ class Reader{
    /* E540 (WHITE ALBUM2 opening: every card read, almost none shown): a card lasts 3-4 s and the translator can take as long,
       so the hide came first and the show was dropped. The line goes out at once (its readable copy), the translation follows. */
    if(!translation&&turns.get(message.id)===turn)this.runtime.emit('reader-event',{...message,text,translation:'',...(shown&&{shown})});
-   if(!translation){const options=this.langOptions(require('../core/providers.cjs').resolveOptions({...this.prefs(),translationPrompt:this.workPrompt||''}));if(options.provider!=='google'&&!require('../core/engines.cjs').ENGINES[options.provider]?.keyless)this.loadKeys();
-    const until=Date.now()+4000,inTime=()=>Date.now()<until;await this.localReady(options,null,inTime);translation=normalizeTranslation(await this.translator().translate(text,options,()=>true));if(translation)this.embedCached(text,translation);}}catch{}}
+   if(!translation){const until=Date.now()+4000;try{translation=(await this.chainTranslate(text,this.baseOptions(),{current:()=>Date.now()<until})).text;this.embedCached(text,translation);}catch{}}}catch{}}
   /* E540: a translator's apology, or the drawn line given back unchanged (a Chinese-patched title menu read as a kanji card), is no translation */
   if(translation&&artNoTranslation(text,translation))translation='';
   if(turns.get(message.id)!==turn)return;if(message.visible!==true)turns.delete(message.id);this.runtime.emit('reader-event',{...message,text,translation,...(shown&&{shown})});}
  /* E578: one translation per menu row (cached per row, so an item seen again costs nothing); an empty string where none came in time */
- async artRows(list){let options;try{options=this.langOptions(require('../core/providers.cjs').resolveOptions({...this.prefs(),translationPrompt:this.workPrompt||''}));if(options.provider!=='google'&&!require('../core/engines.cjs').ENGINES[options.provider]?.keyless)this.loadKeys();const until=Date.now()+4000;await this.localReady(options,null,()=>Date.now()<until);}catch{return list.map(()=>'');}
-  return Promise.all(list.map(async row=>{try{let t=this.embedCached(row)||'';if(!t){t=normalizeTranslation(await this.translator().translate(row,options,()=>true));if(t)this.embedCached(row,t);}return t||'';}catch{return '';}}));}
+ async artRows(list){let options;try{options=this.baseOptions();}catch{return list.map(()=>'');}const until=Date.now()+4000;
+  return Promise.all(list.map(async row=>{try{let t=this.embedCached(row)||'';if(!t){t=(await this.chainTranslate(row,options,{current:()=>Date.now()<until})).text;this.embedCached(row,t);}return t||'';}catch{return '';}}));}
  async embedTranslate(id,text){
   let trans='';
   /* E352: the engine's string still carries its ruby markup (HuneX <rふ>触</r>, ISLAND \x1d pairs): translate the text the player reads. */
@@ -257,8 +251,7 @@ class Reader{
   try{
    trans=this.embedCached(text)||'';
    if(!trans&&this.displayLanguage()!=='en'){trans=this.gal?.hooks?.scriptTranslation?.(text)||'';if(trans)this.embedCached(text,trans);}
-   if(!trans){const options=this.langOptions(require('../core/providers.cjs').resolveOptions({...this.prefs(),translationPrompt:this.workPrompt||''}));if(options.provider!=='google'&&!require('../core/engines.cjs').ENGINES[options.provider]?.keyless)this.loadKeys();
-    const until=Date.now()+3500,inTime=()=>Date.now()<until;await this.localReady(options,null,inTime);trans=normalizeTranslation(await this.translator().translate(text,options,()=>true));if(trans)this.embedCached(text,trans);}
+   if(!trans){const until=Date.now()+3500;try{trans=(await this.chainTranslate(text,this.baseOptions(),{current:()=>Date.now()<until})).text;this.embedCached(text,trans);}catch{}}
   }catch(error){try{fs.appendFileSync(path.join(this.root,'logs','reader-host.log'),JSON.stringify({at:new Date().toISOString(),type:'embedTranslateFailed',error:String(error?.message||error).slice(0,200)})+'\n');}catch{}}
   /* E358: never let the game draw a translation with holes: a line its font cannot draw is hidden in the game and MeguLit draws it. */
   /* 2026-11-15 never write garbage into a game: a translation with replacement characters, control codes or mojibake goes back empty (the game keeps its line); HookBridge checks the code page (EmbedTextPolicy.GuardWrite) */
@@ -277,7 +270,9 @@ class Reader{
  async chainTranslate(text,options,{id=null,current=()=>true}={}){const chain=require('./translation-chain.cjs'),engines=require('../core/engines.cjs').ENGINES;this.loadKeys();
   let localInstalled=false;try{localInstalled=!!this.runtime.local().status().installed&&this.runtime.models().status().models.some(m=>m.installed);}catch{}
   const list=chain.candidates(options,{hasKey:base=>this.translator().hasKey(base,''),localInstalled});
-  return chain.translate(text,list,async o=>{const opts=this.langOptions({...o,translationPrompt:this.workPrompt||''});if(chain.isLocal(opts.provider)){await this.localReady(opts,id,current);if(opts.provider!==o.provider)return ''; /* no local model after all: the chain goes on to the next source */}return normalizeTranslation(await this.translator().translate(text,opts,current));},{isCurrent:current});}
+  return chain.translate(text,list,async o=>{const opts=this.langOptions({...o,translationPrompt:this.workPrompt||''});if(chain.isLocal(opts.provider))await this.localReady(opts,id,current);return normalizeTranslation(await this.translator().translate(text,opts,current));},{isCurrent:current}).then(r=>{/* E415 (user: 提示用户是微软机翻): said once per reader session when machine translation stood in for the chosen engine */if(r.source==='mt'&&!chain.isMt(options.provider)&&!this.mtNoticed){this.mtNoticed=true;this.runtime.emit('reader-event',{type:'call',method:'mtNotice',args:[]});}return r;});}
+ /* The reader's own options (preferences, display language, work prompt) */
+ baseOptions(){return this.langOptions(require('../core/providers.cjs').resolveOptions({...this.prefs(),translationPrompt:this.workPrompt||''}));}
  translationRetries(){return this.retryQueue??=new(require('./translation-chain.cjs').Retries)((text,c)=>this.chainTranslate(text,c.options||this.langOptions(require('../core/providers.cjs').resolveOptions({...this.prefs(),translationPrompt:this.workPrompt||''}))),(text,r,c)=>this.fillTranslation(text,r,c));}
  /* A translation that came late: the cache, the dialogue log (reading_events, never as a group pairing) and the line on screen */
  fillTranslation(text,r,{gameId}={}){this.embedCached(text,r.text);if(gameId)try{this.stats.translation(gameId,text,r.text);}catch{}this.runtime.emit('reader-event',{type:'call',method:'deliverBackfill',args:[text,r.text,r.source]});}
