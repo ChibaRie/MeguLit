@@ -34,6 +34,7 @@ namespace MeguLitCrash
 		volatile LONG busy;
 		volatile LONG seenCount;
 		volatile LONG unhandledWritten;
+		volatile bool exiting;
 		void *seen[MaxSeen];
 		DWORD armedTick;
 		wchar_t report[MAX_PATH];
@@ -213,6 +214,33 @@ namespace MeguLitCrash
 		InterlockedExchange(&s.busy, 0);
 		return EXCEPTION_CONTINUE_SEARCH;
 	}
+	/* this process's top-level windows a player can see: visible, not a tool window, at least 200x150 */
+	inline BOOL CALLBACK CountVisible(HWND h, LPARAM count)
+	{
+		DWORD pid = 0;
+		RECT r;
+		GetWindowThreadProcessId(h, &pid);
+		if (pid == GetCurrentProcessId() && IsWindowVisible(h) && !(GetWindowLongW(h, GWL_EXSTYLE) & WS_EX_TOOLWINDOW) && GetWindowRect(h, &r) && r.right - r.left >= 200 && r.bottom - r.top >= 150)
+			++*(int *)count;
+		return TRUE;
+	}
+	inline int VisibleWindows()
+	{
+		int count = 0;
+		EnumWindows(CountVisible, (LPARAM)&count);
+		return count;
+	}
+	/* From the owning DLL's DLL_PROCESS_DETACH at process exit (lpReserved set): the process is in ExitProcess, so an
+	   exception from here on is part of the game's normal end. Only a flag and a line: no waiting under the loader lock. */
+	inline void NoteExit()
+	{
+		State &s = S();
+		if (!s.vectored || s.exiting)
+			return;
+		s.exiting = true;
+		static const char line[] = "exit: process exiting (ExitProcess)\r\n";
+		Append(line, sizeof line - 1);
+	}
 	inline LONG WINAPI Unhandled(EXCEPTION_POINTERS *e)
 	{
 		State &s = S();
@@ -222,6 +250,11 @@ namespace MeguLitCrash
 				Sleep(5);
 			WriteBlock("UNHANDLED", e);
 			char line[400];
+			/* 2026-11-19 (千恋＊万花: the user closed the game, the close ended in 0xC000041D and the gpu canary took it for a
+			   crash in play): was the game still showing a window? DestroyWindow hides a window before it sends WM_DESTROY, so
+			   an exception in the close flow sees none; one in play sees the game's window. HookBridge reads this line. */
+			size_t len = Put(line, sizeof line, 0, " state: visible windows=%d%s\r\n", VisibleWindows(), s.exiting ? ", exiting" : "");
+			Append(line, len);
 			bool ok = false;
 			if (s.writeDump)
 			{

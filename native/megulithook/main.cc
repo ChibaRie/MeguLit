@@ -299,6 +299,8 @@ BOOL WINAPI DllMain(HINSTANCE hModule, DWORD fdwReason, LPVOID lpReserved)
 		   gone and nothing needs freeing. The unload from Pipe comes after every hook was removed safely and MinHook
 		   was uninitialized; any other unload with hooks still on cannot be made safe here, and freeing their stubs
 		   would only add to it. */
+		if (lpReserved) /* process exit: the crash witness notes it, so an exception from here on is part of the exit */
+			MeguLitCrash::NoteExit();
 		if (lpReserved || !SafelyDetached)
 			break;
 		delete[] hooks;

@@ -77,6 +77,13 @@ static uintptr_t OffsetAfter(const std::string &s, const std::string &marker, co
 		return 0;
 	return (uintptr_t)strtoull(s.c_str() + p + strlen(exe) + 3, nullptr, 16);
 }
+static volatile bool CrashOnDestroy;
+static LRESULT CALLBACK GameProc(HWND h, UINT m, WPARAM w, LPARAM l)
+{
+	if (m == WM_DESTROY && CrashOnDestroy)
+		CrashHere();
+	return DefWindowProcW(h, m, w, l);
+}
 static int Child(const char *what)
 {
 	SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX);
@@ -96,6 +103,29 @@ static int Child(const char *what)
 	}
 	ProbeNull();
 	ProbeNull(); /* same address: one block */
+	/* a game window: visible to the system, but owned (no taskbar button), never activated and far off screen */
+	WNDCLASSW wc = {};
+	wc.lpfnWndProc = GameProc;
+	wc.hInstance = GetModuleHandleW(NULL);
+	wc.lpszClassName = L"MeguLitWitnessGame";
+	RegisterClassW(&wc);
+	HWND owner = CreateWindowExW(0, wc.lpszClassName, L"", WS_POPUP, -32000, -32000, 1, 1, NULL, NULL, wc.hInstance, NULL);
+	HWND game = CreateWindowExW(WS_EX_NOACTIVATE, wc.lpszClassName, L"", WS_POPUP, -32000, -32000, 640, 480, owner, NULL, wc.hInstance, NULL);
+	if (!game)
+		return 6;
+	SetWindowPos(game, HWND_BOTTOM, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
+	if (!strcmp(what, "close"))
+	{
+		CrashOnDestroy = true; /* the player closes the game; its WM_DESTROY handler fails */
+		DestroyWindow(game);
+		return 5;
+	}
+	if (!strcmp(what, "exit"))
+	{
+		MeguLitCrash::NoteExit(); /* as the hook DLL's DLL_PROCESS_DETACH at exit */
+		CrashHere();
+		return 5;
+	}
 	Mode = !strcmp(what, "throw") ? 2 : 1;
 	HHOOK hook = SetWindowsHookExW(WH_GETMESSAGE, OnMessage, NULL, GetCurrentThreadId());
 	if (!hook)
@@ -171,7 +201,19 @@ int main(int argc, char **argv)
 	WIN32_FILE_ATTRIBUTE_DATA a = {};
 	bool dump = GetFileAttributesExW(Report("dmp").c_str(), GetFileExInfoStandard, &a) && a.nFileSizeLow > 4096;
 	Check(dump && r.find(" dump written") != std::string::npos, "a minidump is written next to the report");
+	Check(r.find(" state: visible windows=1\r\n") != std::string::npos, "a crash in play: the game's window is still shown");
 	printf("     report:\n%s", r.c_str());
+	DeleteFileW(Report("txt").c_str());
+	DeleteFileW(Report("dmp").c_str());
+
+	code = Run("close");
+	r = ReadAll(Report("txt").c_str());
+	Check(code == 0xC000041D && r.find(" state: visible windows=0\r\n") != std::string::npos, "the player closes the game and its WM_DESTROY fails: 0xC000041D, and no window is shown (the close flow)");
+	DeleteFileW(Report("txt").c_str());
+	DeleteFileW(Report("dmp").c_str());
+	code = Run("exit");
+	r = ReadAll(Report("txt").c_str());
+	Check(code >= 0xC0000000 && r.find("exit: process exiting") != std::string::npos && r.find(", exiting\r\n") != std::string::npos, "an exception after the exit note is marked as part of the exit");
 	DeleteFileW(Report("txt").c_str());
 	DeleteFileW(Report("dmp").c_str());
 
