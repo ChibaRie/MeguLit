@@ -105,3 +105,9 @@ const SERVICE=fs.readFileSync(path.join(__dirname,'..','services','reader.cjs'),
 test('reader service hands the dialogue box state (known reasons only) to the hook source',()=>{
  assert.match(SERVICE,/this\.gal\.hooks\.dialogGoneAt=message\.dialogVisible\?0:\/\^\(\?:window\|scene\|engine\)\$\//);
 });
+
+test('choice capture: names glued while skipping (死に逝く君 Ctrl skip, live) are no options',()=>{
+ const C=new ChoiceCapture(()=>1000);
+ assert.deepEqual(C.add('美亜美亜美亜美亜血塗れの男血塗れの男血塗れの男血塗れの男'),[]);assert.deepEqual(C.add('美亜美亜血塗れの男血塗れの男'),[]);
+ assert.ok(C.names.has('血塗れの男'));assert.deepEqual(C.add('逃げる／戦う'),['逃げる','戦う']);
+});

@@ -67,7 +67,7 @@ class ChoiceCapture{
    /* 2026-11-13 (ファタモルガーナの館: a stream glued the maid's last line to the options) text already read in a recent dialogue line is not an option */if(key.length>6&&this.lines.some(l=>l!==key&&l.includes(key)))continue;
    if(NAME.test(key)){this.names.add(key.slice(1,-1));continue;}/* a bracketed name teaches the name too */
    if(/^[「『]/.test(key)&&this.lines.includes(key)||partOf(line,dialogue||this.dialogue))continue;
-   /* 2026-11-19 a piece with an opening or closing bracket left unmatched is a cut piece of a longer text (a stage note split at ／) */if(!balanced(line)||!symbolic&&doubledGlyphs(key))continue;
+   /* 2026-11-19 a piece with an opening or closing bracket left unmatched is a cut piece of a longer text (a stage note split at ／) */if(!balanced(line)||!symbolic&&doubledGlyphs(key))continue;{const nm=require('./line-once.js').nameStack(key);if(nm){this.names.add(nm);continue;}}/* names glued while skipping (美亜美亜…血塗れの男血塗れの男…) are names, not options */
    /* 2026-11-15 a per-glyph stream's typewriter dump (「公公園公園で公園での…」, growing prefixes glued) is no option */if(require('./language-tracks.cjs').typedOut(line))continue;
    if(/^[\x00-\x7f]+$/.test(line)||/[{}<>\\\/=_]|\.(png|ogg|wav|bmp|txt|ks|ybn)$/i.test(line))continue;
    const old=this.items.find(x=>x.key===key);if(old){old.at=now;continue;}
