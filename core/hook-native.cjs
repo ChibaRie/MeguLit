@@ -143,6 +143,8 @@ class HookNative{
       current line's dot table is kept in state (hookGlyphDots: seq, text, dots by index, cached). */
    if(m.type==='hookGlyphDots'){this.glyphDots(m);this.glyphColorFlush();return;}
    if(m.type==='hookGlyphColor'){this.glyphColor(m);return;}
+   /* the engine's own read flag for the sentence at its click wait: passed on as the read state of the current source */
+   if(m.type==='hookEngineRead'){if(typeof m.read==='boolean')this.emit({hookSourceRead:m.read,hookSourceReadOrigin:'engine'});return;}
    if(m.type==='hookGlyphExtra'){this.glyphExtra(m);return;}
    /* 2026-11-15 layer 4 glyph trace: where the GetGlyphOutline glyphs of the line were drawn (core/gpu-glyph-pos.cjs fills the
       positions of ① records whose space is "-"); the latest is kept in state without a UI broadcast. */
