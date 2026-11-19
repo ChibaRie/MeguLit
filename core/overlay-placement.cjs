@@ -67,6 +67,7 @@ class OverlayPlacement {
      g / - = no device position (not placeable). A character the engine drew from its glyph cache has no record: it sits
      right after the previous placed one on the same row (advance), as long as a later character of the line was drawn. */
   glyph(table) {
+    if (table && typeof table.text === 'string' && table.text && !this.on) this.why('goff:' + (Number(table.seq) || 0), 'off: glyph line ' + (Number(table.seq) || 0) + ' not placed (文字显示 is not 画进游戏画面, or no window bound)');
     if (!this.on || !table || typeof table.text !== 'string' || !table.text) return;
     const chars = [...table.text], { rects, drawn: recorded, sizes } = this.rectsOf(table, ['d', 'c']);
     const id = 'glyph:' + (Number(table.seq) || 0);
@@ -81,6 +82,7 @@ class OverlayPlacement {
        any line has come back as hidden by the game, so nothing proves the game's line is gone. A guessed place (anchor
        estimate, locator) would put MeguLit's Japanese next to the game's own: the line goes out as `visible` instead
        (the reader keeps the translation and never draws its Japanese over the game's). Every engine. */
+    if (!this.hideSeen) this.why('gshown:' + id, 'not placed: glyph line ' + (Number(table.seq) || 0) + ' has no hidden glyph yet (the game draws it itself)');
     if (!this.hideSeen) { const vis = chars.filter(c => !/\s/.test(c)).join(''); if (this.current?.id === id) this.clear(); if (vis && vis !== this.visibleKey) { this.visibleKey = vis; this.send({ type: 'textPlace', visible: true, text: vis }); } return; }
     const typed = this.typed(table, chars.length, recorded), drawn = new Set(chars.map((c, i) => i).filter(i => i < typed));
     let first = -1, last = -1; for (let i = 0; i < rects.length; i++) if (rects[i]) { if (first < 0) first = i; last = i; }
@@ -97,6 +99,7 @@ class OverlayPlacement {
     const located = this.locator?.(table, typed);
     if (Array.isArray(located) && located.length === chars.length && located.some(Boolean)) return this.emitLine({ id, engine: 'glyph', text: table.text, rects: located, client: this.client.slice(), located: true });
     if (this.anchorBox) return this.emitLine({ id, engine: 'glyph', text: table.text, rects: this.estimate(chars, drawn, sizes), client: this.client.slice(), approx: true });
+    this.why('gfall:' + id, 'not placed: glyph line ' + (Number(table.seq) || 0) + ' has no device position for its glyphs (' + rects.filter(Boolean).length + '/' + chars.length + ' with a place); the reader keeps its own box');
     this.emitLine({ id, engine: 'glyph', text: table.text, fallback: true, client: this.client.slice() });
   }
   /* how many characters of the line the game has drawn: up to the last one with a record, all of them once no record
