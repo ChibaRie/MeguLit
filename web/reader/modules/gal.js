@@ -130,8 +130,6 @@
     body.tome-surface-pending .sentence-window, body.tome-surface-pending .tomoyo-native-mask, body.tome-surface-pending .tome-inline-wait { visibility:hidden!important; }
     body.tome-box-dragging .sentence-window { outline:2px dashed var(--theme-primary,#e0495a)!important; outline-offset:2px; cursor:move!important; }
     body.tome-box-dragging .sentence-window * { cursor:move!important; pointer-events:none!important; }
-    /* greyed for real: the menu's own disabled rule is outranked by the control-system layers */
-    html:not(#mga0):not(#mga1):not(#mga2):not(#mga3):not(#mga4):not(#mga5):not(#mga6):not(#mga7):not(#mga8):not(#mga9) .tomoyo-cn-dialog [data-gal-anchor-reset]:disabled { opacity:.45!important; cursor:not-allowed!important; }
     [data-gal-drag].tome-dragging { background:var(--theme-primary,#e0495a)!important; color:#fff!important; border-color:transparent!important; }
     .sentence-text .megulit-ruby-base[data-tomoyo-reading]::before { content:attr(data-tomoyo-reading); position:absolute; left:calc(50% - var(--megulit-ruby-trailing-space,0px)/2 + var(--tomoyo-ruby-offset-x,0px) + var(--megulit-ruby-row-x,0px)); top:calc(var(--megulit-ruby-top,0px) - var(--megulit-ruby-lift,calc(.22em - var(--tomoyo-ruby-offset-y,0px)))); transform:translate(-50%,-100%); font-size:var(--tomoyo-ruby-actual-size,max(6px,var(--tomoyo-ruby-scale,.52em))); line-height:1; font-weight:var(--tomoyo-jp-weight,400); white-space:nowrap; pointer-events:none; letter-spacing:var(--megulit-ruby-letter-spacing,0em); margin-left:calc(var(--megulit-ruby-letter-spacing,0em)/2); text-shadow:var(--tomoyo-gal-shadow,0 1px 2px #000e); }
     body.tomoyo-gal-bound [data-gal-reader-container] > :not([data-gal-reader-container]):not(.sentence-window):not(.tomoyo-cn-dialog):not(.word-image-preview-portal):not(.tomoyo-native-mask):not(.tome-backlog):not(.tome-box-deco):not(.tome-mode-veil):not(.mg-bubble) { display:none!important; }
@@ -439,6 +437,9 @@
     const root = document.documentElement.style;
     const scaled = value => (value * gameScale).toFixed(2) + 'px';
     root.setProperty('--tomoyo-gal-jp-size', scaled(preferences.japaneseSize));
+    /* the anchored offset is on the root too: text-place re-pins on a root style change, so a new offset (slider, calibration,
+       回到游戏原字位置) moves the line at once even when nothing else changed */
+    root.setProperty('--megulit-anchor-offset', (Number(preferences.anchorDX) || 0) + ' ' + (Number(preferences.anchorDY) || 0));
     root.setProperty('--tomoyo-gal-cn-size', scaled(preferences.translationSize));
     const insets=appearance.insets(preferences);
     root.setProperty('--tomoyo-gal-pad-x', scaled(insets.padX));
