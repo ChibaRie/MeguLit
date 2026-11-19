@@ -17,7 +17,7 @@ function speakerName(raw){const n=String(raw||'').replace(/[\x00-\x1f]/g,'').rep
    名前 line. Returns {name,text}; text is '' when the string was only a name. */
 /* side-stream text waits this long for the dialogue line of the same moment before it may be art text */const AUX_ART_DELAY_MS=120;
 /* OCR read lines (2026-11-19): a read group waits this long for the rest of the screen's groups; this many groups at once is a menu or settings page; a hook line this recent is current; the same text again within this long is the same screen */
-const OCR_LINE_SETTLE_MS=500,OCR_LINE_MAX_BLOCKS=4,OCR_LINE_QUIET_MS=5000,OCR_LINE_REPEAT_MS=60000;
+const OCR_LINE_SETTLE_MS=500,OCR_LINE_MAX_BLOCKS=4,OCR_LINE_QUIET_MS=5000,OCR_LINE_REPEAT_MS=60000,OCR_LINE_STALE_MS=60000;
 const QUOTE_OPEN='「『（(',QUOTE_CLOSE='」』）)';
 function splitSpeaker(raw,known){const s=String(raw||'');const t=s.replace(/^[\s　]+/,'');if(!t)return {name:'',text:s};
  const kn=n=>!!known&&typeof known.has==='function'&&known.has(n);
@@ -319,11 +319,15 @@ class HookNative{
   if(m.visible!==true||typeof m.text!=='string'){O.shown.delete(m.id);return;}
   /* a group is taken once, when its reading has stopped changing (a fade in or out reads as garble); later readings of the same group are ignored */
   if(O.done.has(m.id))return;const was=O.shown.get(m.id),now=this.now();
-  O.shown.set(m.id,{id:m.id,text:m.text,rows:Array.isArray(m.rows)?m.rows:[],sw:+m.sw||0,sh:+m.sh||0,dialogSeen:m.dialogSeen===true,others:+m.others||0,once:m.once===true,changedAt:m.once===true?now-OCR_LINE_SETTLE_MS:was&&was.text===m.text?was.changedAt:now});/* once: read a single time and already gone (a card that faded within a second): taken at once, under the stricter once rule */
+  O.shown.set(m.id,{id:m.id,text:m.text,rows:Array.isArray(m.rows)?m.rows:[],sw:+m.sw||0,sh:+m.sh||0,dialogSeen:m.dialogSeen===true,others:+m.others||0,once:m.once===true,seenAt:now,changedAt:m.once===true?now-OCR_LINE_SETTLE_MS:was&&was.text===m.text?was.changedAt:now});/* once: read a single time and already gone (a card that faded within a second): taken at once, under the stricter once rule */
   this.ocrSchedule(OCR_LINE_SETTLE_MS);}catch{}}
  ocrSchedule(ms){const O=this.ocr;clearTimeout(O.timer);O.timer=setTimeout(()=>this.ocrFlush(),ms);O.timer.unref?.();}
- ocrFlush(){const O=this.ocr;if(!O)return;const now=this.now(),items=[...O.shown.values()].filter(it=>!O.done.has(it.id));
-  if(items.length>=OCR_LINE_MAX_BLOCKS){this.trace('ocr lines skipped: '+items.length+' text groups at once (menu or settings page)');return;}
+ ocrFlush(){const O=this.ocr;if(!O)return;const now=this.now();
+  /* 2026-11-19 (素晴らしき日々, user build: the quotes were refused as 「19 text groups at once」 while the scan read one): a group read once
+     is already gone and never gets a hide, so it is dropped once looked at, taken or not; any group not heard of for a minute is gone too */
+  for(const [id,it] of O.shown)if(O.done.has(id)||now-(it.seenAt||0)>OCR_LINE_STALE_MS)O.shown.delete(id);
+  const items=[...O.shown.values()];
+  if(items.length>=OCR_LINE_MAX_BLOCKS){this.trace('ocr lines skipped: '+items.length+' text groups at once (menu or settings page)');for(const it of items)if(it.once){O.done.add(it.id);O.shown.delete(it.id);}return;}
   let wait=0;const take=[];
   for(const it of items){const age=now-it.changedAt;if(age<OCR_LINE_SETTLE_MS){wait=Math.max(wait,OCR_LINE_SETTLE_MS-age);continue;}
    O.done.add(it.id);if(O.done.size>400)O.done.delete(O.done.values().next().value);if(it.once)O.shown.delete(it.id);

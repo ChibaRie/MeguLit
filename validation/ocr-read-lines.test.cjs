@@ -84,6 +84,17 @@ test('ファタモルガーナの館 live: a card read once before it faded is a
   assert.ok(r.traces.some(t=>/refused \(read once, too short or without kana\)/.test(t)));assert.ok(r.traces.some(t=>/refused \(OCR noise\) "ノベクタク丿レ"/.test(t)));assert.ok(r.traces.some(t=>/refused \(OCR noise\) "Dロ,ロ"/.test(t)));
   assert.ok(!r.traces.some(t=>/title card to art/.test(t)),'an OCR line is not sent back to the art path');
  }finally{r.done();}});
+test('素晴らしき日々 user build: groups read once on the MeguLit menu do not linger and turn the next quote into a "menu" (19 groups at once)',()=>{
+ const r=rig();try{
+  /* the Alt+T menu over the game: 24 groups, each read once and gone (once: true, no hide ever follows) */
+  r.run(1000);for(let i=0;i<24;i++)r.h.ocrLine({type:'artText',source:'ocr',id:500+i,text:'内嵌替换の項目'+i,visible:true,once:true,rows:[{text:'x',x:10,y:10+i*20,w:100,h:16}],sw:1280,sh:960,dialogSeen:false,others:0});
+  r.run(3000);
+  /* the quote screens a minute later: one group each, read twice (shown) */
+  const q1=r.show(read('intro-1'),{at:60000});r.show(read('intro-2'),{ids:q1,at:60400});r.hide(q1,64000);
+  const q2=r.show(read('intro-3'),{at:65000});r.show(read('intro-4'),{ids:q2,at:65400});r.hide(q2,70000);r.run(75000);
+  assert.deepEqual(r.lines(),[read('intro-1').groups[0].text,read('intro-3').groups[0].text],JSON.stringify(r.traces.filter(t=>t.startsWith('ocr'))));
+  assert.equal(r.h.ocr.shown.size,0,'nothing left behind');
+ }finally{r.done();}});
 test('wiring: the scan runs without artText (5 s quiet), artText only decides the drawing over the picture; the scan reports dialogSeen and others',()=>{
  const g=fs.readFileSync(path.join(__dirname,'..','core','gal-native.cjs'),'utf8');
  assert.match(g,/if\(message\.type==='artText'\)\{if\(this\.preferences\?\.artText===true&&message\.once!==true\)this\.onEvent\(message\);this\.hooks\.ocrLine\(message\);return;\}/);
