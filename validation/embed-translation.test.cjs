@@ -44,7 +44,7 @@ test('the native bridge holds the line, answers with the translation, and lets t
  const cs=fs.readFileSync(path.join(__dirname,'..','native','HookBridge.cs'),'utf8');
  assert.match(cs,/Emit\(new\{type="embedRequest",id=id,text=text\}\)/);
  assert.match(cs,/new Timer\(_=>FinishEmbed\(id,null\),null,3700,Timeout\.Infinite\)/);
- assert.match(cs,/type=="embedReply"/);assert.match(cs,/TranslateMode\?4000u:1000u/);
+ assert.match(cs,/type=="embedReply"/);assert.match(cs,/TranslateMode\?4000u:HideWaitMs/);assert.match(cs,/const uint HideWaitMs=100;/,'hide mode waits at most about 100 ms (2026-11-19 embed wait)');
 });
 
 // Chinese-patched game read in Japanese (original-text import): the patch's own line becomes the translation, ready
