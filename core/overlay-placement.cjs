@@ -33,6 +33,12 @@ class OverlayPlacement {
     const size = state?.layout?.clientWidth ? state.layout : state;
     if (size?.clientWidth && size?.clientHeight) this.client = [size.clientWidth, size.clientHeight];
     const on = this.wanted(preferences) && state?.bound === true;
+    /* 2026-11-19 (user, 千恋＊万花: "有时候原文还是会出来一下，就一下，然后又没了"; log 11:20:44-48Z: the reader left for 3 s, the engine side
+       handed the text back to the game after its 1.6 s, the next line was drawn by the game (hidden=0), the reader came back with that
+       line at once and the engine hid the game's text 0.56 s later: two Japanese lines on each other in between). While MeguLit is
+       hiding the game's text, a line the game draws itself is on screen only until the hide is back; the reader is told so and leaves
+       the Japanese to the game for that time. Reading without hiding (the reader as a second text) is not touched. */
+    this.hiding = (preferences?.hookProfile === 'embed' || preferences?.hookProfile === 'euphoria474') && preferences?.hookHide !== false;
     if (on !== this.on) { this.on = on; if (!on) { this.clear(); if (this.extraKey && this.extraKey !== '[]') this.send({ type: 'textPlaceExtra', items: [] }); this.extraKey = ''; } this.send({ type: 'textPlaceMode', on }); }
   }
   clear() { if (this.current) { this.current = null; this.send({ type: 'textPlace', clear: true }); } }
@@ -57,7 +63,7 @@ class OverlayPlacement {
          already showed hidden from its cached glyphs, and the repaint reports it as not hidden. That is the same line,
          still hidden on screen: it stays placed. */
       if (m.hidden !== true && m.engine !== 'gpu' && this.current && !this.current.fallback && this.current.id === id && this.current.text === flat.join('')) return; /* GPU hiding is decided per frame: there, not hidden is the game showing it */
-      if (m.hidden !== true) { this.why('shown:' + id, 'not placed: line ' + (Number(m.line) || 0) + ' is drawn by the game itself (hidden=0)'); if (this.current?.id === id) this.clear(); const vis = flat.join(''); if (vis && vis !== this.visibleKey) { this.visibleKey = vis; this.send({ type: 'textPlace', visible: true, text: vis }); } return; }
+      if (m.hidden !== true) { this.why('shown:' + id, 'not placed: line ' + (Number(m.line) || 0) + ' is drawn by the game itself (hidden=0)'); if (this.current?.id === id) this.clear(); const vis = flat.join(''); if (vis && vis !== this.visibleKey) { this.visibleKey = vis; this.send({ type: 'textPlace', visible: true, text: vis, ...(this.hiding === true ? { hiding: true } : {}) }); } return; }
       this.visibleKey = ''; this.why('placed:' + id + ':' + rects.length, 'placed: line ' + (Number(m.line) || 0) + ', ' + rects.length + ' characters, first box ' + (rects[0] ? [].concat(rects[0]).map(v => Math.round(Number(v) || 0)).join(',') : '-') + ' in client ' + this.client.join('x'));
       this.emitLine({ id, engine: m.engine, text: flat.join(''), rects, client: this.client.slice(), ...(m.color ? { color: m.color } : {}), ...(typeof m.read === 'boolean' ? { read: m.read } : {}) });
     }
@@ -83,7 +89,7 @@ class OverlayPlacement {
        estimate, locator) would put MeguLit's Japanese next to the game's own: the line goes out as `visible` instead
        (the reader keeps the translation and never draws its Japanese over the game's). Every engine. */
     if (!this.hideSeen) this.why('gshown:' + id, 'not placed: glyph line ' + (Number(table.seq) || 0) + ' has no hidden glyph yet (the game draws it itself)');
-    if (!this.hideSeen) { const vis = chars.filter(c => !/\s/.test(c)).join(''); if (this.current?.id === id) this.clear(); if (vis && vis !== this.visibleKey) { this.visibleKey = vis; this.send({ type: 'textPlace', visible: true, text: vis }); } return; }
+    if (!this.hideSeen) { const vis = chars.filter(c => !/\s/.test(c)).join(''); if (this.current?.id === id) this.clear(); if (vis && vis !== this.visibleKey) { this.visibleKey = vis; this.send({ type: 'textPlace', visible: true, text: vis, ...(this.hiding === true ? { hiding: true } : {}) }); } return; }
     const typed = this.typed(table, chars.length, recorded), drawn = new Set(chars.map((c, i) => i).filter(i => i < typed));
     let first = -1, last = -1; for (let i = 0; i < rects.length; i++) if (rects[i]) { if (first < 0) first = i; last = i; }
     if (last >= 0) {
