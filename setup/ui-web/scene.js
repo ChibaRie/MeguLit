@@ -180,8 +180,8 @@
   /* while downloading the camera wanders around the cloud; near 62 % it passes a viewpoint that is almost, not quite, the right one */
   const AZ = [[0, -62], [0.3, -34], [0.75, 8], [0.88, 26], [1, 46]], EL = [[0, 18], [0.35, 11], [0.75, 9], [0.9, 14], [1, 19]], RR = [[0, 2900], [0.75, 2350], [1, 3000]];
   const POSE = {
-    welcome: () => ({ cx: -800, cy: -20, cz: 0, rx: 0, ry: 0, rz: 0 }),
-    loc: () => ({ cx: 1200, cy: -20, cz: 0, rx: 0, ry: -6, rz: 0 }),
+    welcome: () => ({ cx: 4700, cy: -900, cz: 2800, rx: 15, ry: -26, rz: 0 }),
+    loc: () => ({ cx: 3900, cy: -330, cz: 1500, rx: 4, ry: -10, rz: 0 }),
     field: (s) => { const p = s && s.total ? clamp(s.got / s.total) : 0; return orbit(key(AZ, p), key(EL, p), key(RR, p)); },
     unpack: () => orbit(30, 52, 3000),
     done: () => ({ ...FINAL })
@@ -203,7 +203,7 @@
     if (window.GL) { GL.setCamera(c, cx - c.cx, cy - c.cy); if (!GLraf) { GLraf = true; requestAnimationFrame(() => { GLraf = false; GL.draw(); }); } }
     const sk = $('#streaks'); sk.style.opacity = e.streak || 0; $('#flash').style.opacity = e.flash || 0;
   }
-  const UI = { welcome: [], loc: ['#ui-loc'], field: ['#hud'], unpack: ['#hud'], done: ['#ui-done'] };
+  const UI = { welcome: ['#ui-welcome'], loc: ['#ui-loc'], field: ['#hud'], unpack: ['#hud'], done: ['#ui-done'] };
   const ORDER = ['welcome', 'loc', 'field', 'unpack', 'done'];
   const STEPN = new Proxy({}, { get: (_, k) => tr('step_' + k) });
   function setSteps() { const k = ORDER.indexOf(section); document.querySelectorAll('#steps i').forEach((el, i) => el.classList.toggle('on', i < Math.min(4, k + 1) || section === 'done')); $('#stepname').textContent = STEPN[section]; }
@@ -309,7 +309,7 @@
   { const t = document.getElementById('topLogo'); if (t) t.src = INK; }
   { const map = { '#ui-loc .card h2': 'locT', '#browse': 'change', '#install': 'install', '#ui-loc .note': 'locNote', '#retry': 'retry', '#copylog': 'copylog', '#manual': 'manual', '#doneT': 'doneT', '#launch': 'launch', '.card.quit h2': 'quitT', '.card.quit p': 'quitM', '#stay': 'stay', '#leave': 'leave' };
     for (const [sel, k] of Object.entries(map)) { const el = $(sel); if (el) el.textContent = tr(k); }
-    $('#ui-loc .card .en').textContent = tr('locEn'); $('#lblPath').textContent = tr('lblPath'); $('#lblSugg').textContent = tr('lblSugg'); $('.card.quit .en').textContent = ''; $('#doneEn').textContent = tr('doneEn');
+    $('#ui-loc .card .en').textContent = tr('locEn'); $('#lblPath').textContent = tr('lblPath'); $('#lblSugg').textContent = tr('lblSugg'); $('.card.quit .en').textContent = ''; $('#doneEn').textContent = tr('doneEn'); const ws = $('#welcomeSub'); if (ws) ws.textContent = tr('welcomeSub');
     $('#swDesk').lastChild.textContent = tr('swDesk'); $('#swMenu').lastChild.textContent = tr('swMenu');
     $('#btnMin').setAttribute('aria-label', tr('minimize')); $('#btnClose').setAttribute('aria-label', tr('close')); document.title = tr('title'); document.documentElement.lang = LANG === 'en' ? 'en' : 'zh-CN'; }
   let drives = [], need = 1.4 * 1073741824, freeNow = 182 * 1073741824, pathState = 'ok';
@@ -330,7 +330,7 @@
   Scene.t = tr; Scene.setOverride = (p) => { override = p; };
   /* day / night: one number (0..1) drives the WebGL colours; the DOM flips at the half way point and eases its colours with a short CSS transition */
   let themeMix = startDark ? 1 : 0, themeTween = null; const htmlEl = document.documentElement;
-  function paintTheme(m) { themeMix = m; const dark = m > 0.5, th = dark ? 'night' : 'edge'; if (THEME !== th) { THEME = th; htmlEl.dataset.theme = th; const t = $('#topLogo'); if (t) t.src = 'logos/logo-' + LK + '-' + (dark ? 'white' : 'black') + '.svg'; syncThemeBtn(); }
+  function paintTheme(m) { themeMix = m; const dark = m > 0.5, th = dark ? 'night' : 'edge'; if (THEME !== th) { THEME = th; htmlEl.dataset.theme = th; const t = $('#topLogo'); if (t) t.src = 'logos/logo-' + LK + '-' + (dark ? 'white' : 'black') + '.svg'; const wl = $('#welcomeLogo'); if (wl) wl.src = 'logos/logo-' + LK + '-' + (dark ? 'white' : 'black') + '.svg'; syncThemeBtn(); }
     if (window.GL && GL.setMix) GL.setMix(m); }
   function syncThemeBtn() { const b = $('#btnTheme'); if (!b) return; const dark = THEME === 'night'; b.setAttribute('aria-pressed', dark); const lab = dark ? tr('toLight') : tr('toDark'); b.setAttribute('aria-label', lab); b.title = lab; b.innerHTML = dark ? '<svg width="14" height="14" viewBox="0 0 14 14"><circle cx="7" cy="7" r="2.8" fill="currentColor"/><g stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M7 1v1.6M7 11.4V13M1 7h1.6M11.4 7H13M2.8 2.8l1.1 1.1M10.1 10.1l1.1 1.1M2.8 11.2l1.1-1.1M10.1 3.9l1.1-1.1"/></g></svg>' : '<svg width="14" height="14" viewBox="0 0 14 14"><path d="M11.6 8.6A5.2 5.2 0 0 1 5.4 2.4a5.2 5.2 0 1 0 6.2 6.2z" fill="currentColor"/></svg>'; }
   Scene.setTheme = (dark, instant) => { try { localStorage.setItem(STORE, dark ? 'dark' : 'light'); } catch (e) { /* no memory */ } act('theme', { dark }); const to = dark ? 1 : 0;
@@ -341,7 +341,7 @@
   htmlEl.dataset.theme = THEME; syncThemeBtn(); paintTheme(themeMix);
   window.Scene = Scene;
   buildStatic();
-  Object.assign(cam, REDUCE ? POSE.welcome() : { cx: -420, cy: -150, cz: 800, rx: 6, ry: -12, rz: 0 }); apply(); setSteps();
+  Object.assign(cam, REDUCE ? POSE.welcome() : { cx: 5400, cy: -1200, cz: 3600, rx: 18, ry: -34, rz: 0 }); apply(); setSteps();
   /* welcome plate is visible at once; the opening push-in settles on it (demo/host starts it) */
   Scene.intro = () => { const o = { p: 0 }, A = { ...cam }; return gsap.to(o, { p: 1, duration: 2.4, ease: 'power3.out', onUpdate() { const B = POSE.welcome(); for (const k in B) cam[k] = lerp(A[k], B[k], o.p); apply(); } }); };
 })();

@@ -15,12 +15,12 @@
   const P = 820, FY = 1200, D2R = Math.PI / 180;
   const el = renderer.domElement; el.id = 'gl'; el.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;display:block'; view.insertBefore(el, view.firstChild);
   const wd = document.getElementById('world'); if (wd) wd.style.display = 'none';
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, REDUCE ? 1 : 1.5)); renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, REDUCE ? 1 : 2)); renderer.outputColorSpace = THREE.SRGBColorSpace;
   const col = (a, b, m) => new THREE.Color(a).lerp(new THREE.Color(b), m), themed = [];
   let night = NIGHT ? 1 : 0; const isDark = () => night > 0.5;
   renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   const scene = new THREE.Scene(); scene.background = new THREE.Color(0xc4cfe0); scene.fog = new THREE.Fog(0xc4cfe0, 3200, 15000);
-  themed.push((m) => { const c0 = col(0xcdd8e8, 0x0a0c10, m); scene.background.copy(c0); scene.fog.color.copy(c0); });
+  themed.push((m) => { const c0 = col(0xd5e0ef, 0x0a0c10, m); scene.background.copy(c0); scene.fog.color.copy(c0); });
   const camera = new THREE.PerspectiveCamera(40, 1.5, 30, 40000); camera.rotation.order = 'YXZ';
   function resize() { const w = view.clientWidth || 1000, h = view.clientHeight || 640; renderer.setSize(w, h, false); camera.aspect = w / h; camera.fov = 2 * Math.atan((h / 2) / P) / D2R; camera.updateProjectionMatrix(); }
   resize(); if (window.ResizeObserver) new ResizeObserver(resize).observe(view);
@@ -42,20 +42,57 @@
   const mat = (map, extra) => new THREE.MeshBasicMaterial(Object.assign({ map, transparent: true, depthWrite: false }, extra || {}));
   const lineMats = []; const lineMat = (map, extra) => { const m = mat(map, extra); lineMats.push(m); return m; };
 
-  /* ---- the city: plain blocks, one facet of magic cut into them as colourless line work ---- */
-  const bMat = new THREE.MeshStandardMaterial({ color: 0xf0f4fa, roughness: 0.92, metalness: 0 });
-  const eMat = new THREE.LineBasicMaterial({ color: 0xaab3c2, transparent: true, opacity: 0.9 });
-  themed.push((m) => { bMat.color.copy(col(0xeef3fa, 0x1b1f28, m)); eMat.color.copy(col(0x9aa8bd, 0x3b4456, m)); });
-  const addBox = (x, z, w, hh, d) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, hh, d), bMat); m.position.set(x, -(FY - hh / 2), z); m.castShadow = true; m.receiveShadow = true; scene.add(m); const l = new THREE.LineSegments(new THREE.EdgesGeometry(m.geometry), eMat); l.position.copy(m.position); scene.add(l); };
-  [[-800, -6200, 520, 2600, 420], [700, -7000, 420, 3200, 380], [1900, -6000, 600, 2300, 500], [3300, -7400, 260, 3400, 300], [4700, -6100, 560, 2500, 460], [5900, -6900, 420, 3000, 400], [7100, -6000, 520, 2400, 440], [8300, -7200, 460, 3100, 420], [-1900, -7000, 500, 2800, 420],
-    [900, -2300, 360, 1700, 320], [300, -1200, 300, 1500, 280], [5800, -1700, 360, 1800, 320], [7200, -900, 320, 1500, 300], [-1200, -2600, 400, 2000, 360], [8200, -2400, 420, 2100, 380], [-200, -3200, 1500, 2400, 300], [6600, -3000, 1500, 2400, 300]].forEach((b) => addBox(...b));
-  { const gc = cnv(256, 256), g = gc.getContext('2d'); g.fillStyle = 'rgba(0,0,0,0)'; g.fillRect(0, 0, 256, 256); g.strokeStyle = 'rgba(255,255,255,.6)'; g.lineWidth = 2; g.strokeRect(1, 1, 255, 255);
-    const t = new THREE.CanvasTexture(gc); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(100, 75);
-    const flMat = new THREE.MeshBasicMaterial({ map: t, transparent: true, depthWrite: false }); themed.push((m) => flMat.color.copy(col(0x8d9bb2, 0x586478, m))); const fl = new THREE.Mesh(new THREE.PlaneGeometry(12000, 9000), flMat); fl.visible = false;   /* the grid made moire through the relief */ fl.rotation.x = -Math.PI / 2; fl.position.set(1700, -FY, -1000); scene.add(fl);
-    let gMat; const ground = new THREE.Mesh(new THREE.PlaneGeometry(12000, 9000), gMat = new THREE.MeshStandardMaterial({ color: 0xe6ecf5, roughness: 1 })); themed.push((m) => gMat.color.copy(col(0xe4eaf3, 0x0f1217, m))); ground.receiveShadow = true; ground.rotation.x = -Math.PI / 2; ground.position.set(1700, -FY - 2, -1000); scene.add(ground); }
-  /* guide beam + etched circles + halo rings + a band of travelling light */
-  let beamMat; const beam = new THREE.Mesh(new THREE.PlaneGeometry(3400, 14), beamMat = new THREE.MeshBasicMaterial({ color: 0x20242c, transparent: true, opacity: 0.8 })); themed.push((m) => { beamMat.color.copy(col(0x20242c, 0xe8f0ff, m)); beamMat.opacity = 0.8 + 0.1 * m; }); beam.rotation.x = -Math.PI / 2; beam.position.set(1700, -300, -1000); scene.add(beam);
+  /* ---- the city: a white-model block of an Akihabara-like main street (prototype, no real names, logos or characters). A very wide avenue,
+     rows of mid-rise shop buildings facing it with upright signboards, blank ad panels, light boxes, AC units, roof tanks and ad frames,
+     an elevated railway crossing the street (truss + piers, the one crimson railing), poles and wires. Bodies and signs are instanced. ---- */
   const place = (m, x, y, z) => { m.position.set(x, y, z); scene.add(m); return m; };
+  const X0 = 3300, FLOORY = -FY;
+  const bMat = new THREE.MeshStandardMaterial({ color: 0xf0f4fa, roughness: 0.92, metalness: 0 });
+  const sMat = new THREE.MeshStandardMaterial({ color: 0xdfe6f0, roughness: 0.8, metalness: 0, emissive: 0x000000 });
+  const eMat = new THREE.LineBasicMaterial({ color: 0xaab3c2, transparent: true, opacity: 0.9 });
+  const wMat = new THREE.LineBasicMaterial({ color: 0x2a3140, transparent: true, opacity: 0.85 });
+  const redMat = new THREE.MeshBasicMaterial({ color: 0xd6203f });
+  const roadMat = new THREE.MeshStandardMaterial({ color: 0xdbe1ea, roughness: 1 }), markMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85 });
+  themed.push((m) => { bMat.color.copy(col(0xeef3fa, 0x1b1f28, m)); sMat.color.copy(col(0xdde5ef, 0x232a36, m)); sMat.emissive.copy(col(0x000000, 0xa9c0ff, m)); sMat.emissiveIntensity = 0.55 * m; eMat.color.copy(col(0x9aa8bd, 0x3b4456, m)); wMat.color.copy(col(0x2a3140, 0x8fa2c6, m)); roadMat.color.copy(col(0xd3dae5, 0x101319, m)); markMat.opacity = 0.85 - 0.45 * m; });
+  let sd2 = 77; const r2 = () => (sd2 = (sd2 * 16807) % 2147483647) / 2147483647;
+  const bodies = [], signs = [], panels = [], boxesS = [], tanks = [], edgePts = [];
+  const pushBox = (arr, x, y, z, w, h, d) => arr.push([x, y, z, w, h, d]);
+  const edgeOf = (x, y, z, w, h, d) => { const hx = w / 2, hy = h / 2, hz = d / 2, v = [[-1, -1, -1], [1, -1, -1], [1, 1, -1], [-1, 1, -1], [-1, -1, 1], [1, -1, 1], [1, 1, 1], [-1, 1, 1]].map((q) => [x + q[0] * hx, y + q[1] * hy, z + q[2] * hz]); [[0, 1], [1, 2], [2, 3], [3, 0], [4, 5], [5, 6], [6, 7], [7, 4], [0, 4], [1, 5], [2, 6], [3, 7]].forEach(([a, b]) => edgePts.push(...v[a], ...v[b])); };
+  for (const side of [-1, 1]) {
+    let z = 2300; const INNER = 2450;
+    while (z > -9500) {
+      const w = 300 + r2() * 300, dep = 620 + r2() * 300, h = 1300 + Math.pow(r2(), 1.5) * 2300; z -= w; if (z < -4800 && z > -4200) { z = -4200; continue; }
+      const cx = X0 + side * (INNER + dep / 2), cz = z + w / 2, cy = FLOORY + h / 2; pushBox(bodies, cx, cy, cz, dep, h, w); edgeOf(cx, cy, cz, dep, h, w);
+      const face = X0 + side * INNER, nS = 3 + Math.floor(r2() * 5);
+      for (let i = 0; i < nS; i++) { const sh = 420 + r2() * 760, sy = FLOORY + 260 + r2() * Math.max(10, h - sh - 360), sz = z + 30 + r2() * (w - 60); pushBox(signs, face - side * 36, sy + sh / 2, sz, 72, sh, 34 + r2() * 40); }
+      for (let i = 0; i < 2 + Math.floor(r2() * 3); i++) { const ph = 380 + r2() * 420, sy = FLOORY + 220 + r2() * Math.max(10, h - ph - 300); pushBox(panels, face - side * 12, sy + ph / 2, z + w / 2, 24, ph, w * (0.5 + r2() * 0.35)); }
+      for (let i = 0; i < 9; i++) pushBox(boxesS, face - side * (30 + r2() * 30), FLOORY + 150 + r2() * (h - 250), z + 20 + r2() * (w - 40), 60 + r2() * 50, 60 + r2() * 90, 70 + r2() * 70);
+      if (r2() < 0.7) tanks.push([cx + (r2() - 0.5) * dep * 0.5, FLOORY + h + 100, cz + (r2() - 0.5) * w * 0.4, 70, 200]);
+      if (r2() < 0.6) pushBox(panels, cx + side * (r2() - 0.5) * dep * 0.3, FLOORY + h + 190, cz, 24, 380, w * 0.7);
+      z -= 14 + r2() * 30;
+    } }
+  const inst = (list, mat0, geo, shadow) => { const m = new THREE.InstancedMesh(geo, mat0, list.length), o = new THREE.Object3D(); list.forEach((b, i) => { o.position.set(b[0], b[1], b[2]); o.scale.set(b[3], b[4], b[5]); o.updateMatrix(); m.setMatrixAt(i, o.matrix); }); m.castShadow = shadow; m.receiveShadow = true; m.frustumCulled = false; scene.add(m); return m; };
+  const unit = new THREE.BoxGeometry(1, 1, 1); inst(bodies, bMat, unit, true); inst(signs, sMat, unit, true); inst(panels, sMat, unit, false); inst(boxesS, sMat, unit, false);
+  { const cg = new THREE.CylinderGeometry(0.5, 0.5, 1, 14), m = new THREE.InstancedMesh(cg, bMat, tanks.length), o = new THREE.Object3D(); tanks.forEach((t, i) => { o.position.set(t[0], t[1], t[2]); o.scale.set(t[3] * 2, t[4], t[3] * 2); o.updateMatrix(); m.setMatrixAt(i, o.matrix); }); m.castShadow = true; m.frustumCulled = false; scene.add(m); }
+  { const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(edgePts, 3)); const l = new THREE.LineSegments(g, eMat); l.frustumCulled = false; scene.add(l); }
+  /* road, markings, the crimson path line that leads the eye (and the camera) down the street */
+  const road = new THREE.Mesh(new THREE.PlaneGeometry(4900, 12000), roadMat); road.rotation.x = -Math.PI / 2; road.position.set(X0, FLOORY - 1, -3500); road.receiveShadow = true; scene.add(road);
+  { const mk = []; for (let z = 2000; z > -9500; z -= 260) pushBox(mk, X0 + 600, FLOORY + 2, z, 14, 2, 120), pushBox(mk, X0 - 600, FLOORY + 2, z, 14, 2, 120); for (const zc of [1300, -2600]) for (let x = -2000; x <= 2000; x += 150) pushBox(mk, X0 + x, FLOORY + 2, zc, 70, 2, 260); inst(mk, markMat, unit, false); }
+  const guide = new THREE.Mesh(new THREE.PlaneGeometry(26, 11000), new THREE.MeshBasicMaterial({ color: 0xd6203f })); guide.rotation.x = -Math.PI / 2; guide.position.set(X0, FLOORY + 3, -3500); scene.add(guide);
+  /* elevated railway across the street: piers, deck, truss lines, one crimson railing */
+  { const zc = -4500, deckY = FLOORY + 430, L = 11200, pie = []; for (let x = -5400; x <= 5400; x += 700) { pushBox(pie, X0 + x, FLOORY + 190, zc - 170, 100, 380, 90); pushBox(pie, X0 + x, FLOORY + 190, zc + 170, 100, 380, 90); }
+    inst(pie, bMat, unit, true); const deck = new THREE.Mesh(unit, bMat); deck.scale.set(L, 110, 520); deck.position.set(X0, deckY, zc); deck.castShadow = true; deck.receiveShadow = true; scene.add(deck);
+    const rl = new THREE.Mesh(unit, redMat); rl.scale.set(L, 20, 20); rl.position.set(X0, deckY + 130, zc - 250); scene.add(rl); const rl2 = rl.clone(); rl2.position.z = zc + 250; scene.add(rl2);
+    const tp = []; for (const zz of [zc - 250, zc + 250]) for (let x = -5400; x < 5400; x += 360) { tp.push(X0 + x, deckY + 56, zz, X0 + x + 180, deckY + 300, zz, X0 + x + 180, deckY + 300, zz, X0 + x + 360, deckY + 56, zz); } tp.push(X0 - 5400, deckY + 300, zc - 250, X0 + 5400, deckY + 300, zc - 250, X0 - 5400, deckY + 300, zc + 250, X0 + 5400, deckY + 300, zc + 250);
+    const tg = new THREE.BufferGeometry(); tg.setAttribute('position', new THREE.Float32BufferAttribute(tp, 3)); const tl = new THREE.LineSegments(tg, wMat); tl.frustumCulled = false; scene.add(tl); }
+  /* poles and wires along the street, a few across it */
+  { const wp = [], poles = []; for (const side of [-1, 1]) for (let z = 1900; z > -9000; z -= 700) { pushBox(poles, X0 + side * 2380, FLOORY + 450, z, 24, 900, 24); }
+    const cat = (a, b, sag) => { let prev = a; for (let i = 1; i <= 10; i++) { const t = i / 10, p = [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t - sag * 4 * t * (1 - t), a[2] + (b[2] - a[2]) * t]; wp.push(...prev, ...p); prev = p; } };
+    for (const side of [-1, 1]) for (let z = 1900; z - 700 > -9000; z -= 700) for (const hh of [830, 760, 690]) cat([X0 + side * 2380, FLOORY + hh, z], [X0 + side * 2380, FLOORY + hh, z - 700], 40);
+    for (let z = 1900; z > -9000; z -= 1400) for (const hh of [800, 700]) cat([X0 - 2380, FLOORY + hh, z], [X0 + 2380, FLOORY + hh, z], 220);
+    inst(poles, bMat, unit, false); const wg = new THREE.BufferGeometry(); wg.setAttribute('position', new THREE.Float32BufferAttribute(wp, 3)); const wl = new THREE.LineSegments(wg, wMat); wl.frustumCulled = false; scene.add(wl); }
+  /* far skyline so the street does not end in nothing */
+  { const far = []; for (let i = 0; i < 26; i++) pushBox(far, X0 + (r2() - 0.5) * 12000, FLOORY + 700 + r2() * 1300, -9800 - r2() * 1500, 300 + r2() * 600, 1400 + r2() * 2600, 380); inst(far, bMat, unit, false); }
   /* welcome + location plates, text and logo drawn onto planes */
   const logoImg = new Image(); const plates = [];
   function plate(x, y, z, title, sub, withLogo) { const cv = cnv(1520, 720), t = tex(cv); const m = place(new THREE.Mesh(new THREE.PlaneGeometry(760, 360), mat(t, { depthWrite: true })), x, y, z); plates.push({ cv, t, title, sub, withLogo }); redrawPlate(plates[plates.length - 1]); return m; }
@@ -64,7 +101,7 @@
     g.fillStyle = NIGHT ? '#8d95a3' : '#6d7480'; g.font = '500 52px "Segoe UI","Microsoft YaHei UI",sans-serif'; g.fillText(p.sub || '', 104, 640); p.t.needsUpdate = true; }
   logoImg.onload = () => plates.forEach(redrawPlate); logoImg.src = 'logos/logo-C-' + (NIGHT ? 'white' : 'black') + '.svg'; let plateDark = NIGHT;
   const copy = window.SceneCopy || { welcomeSub: '先把东西备齐', locSub: '你想装在哪儿' };
-  plate(-800, 20, -1000, '', copy.welcomeSub, true);
+  
 
   /* ---- the glass plates ---- */
   const etchImg = new Image(), etchTexs = []; let shards = [], LWg = 840, LHg = 356, built = false, cells = null;
@@ -159,9 +196,9 @@
   const FINAL = { cx: 3300, cy: -260, cz: 1000 }, LCYg = -30;
   /* ---------- merged mode: one cracked pane (radial + ring cracks), every plate is thick clear glass with the logo as a clear relief inside ---------- */
   const clipHalf = (poly, a, b, c0) => { const out = []; for (let i = 0; i < poly.length; i++) { const p = poly[i], q = poly[(i + 1) % poly.length], fp = a * p[0] + b * p[1] - c0, fq = a * q[0] + b * q[1] - c0; if (fp <= 0) out.push(p); if ((fp <= 0) !== (fq <= 0)) { const t = fp / (fp - fq); out.push([p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t]); } } return out; };
-  const edgeMats = []; let gplates = [], merged = false, reliefTex = null, maskTex = null; const MX = 120, MY = 100;
+  const edgeMats = []; let gplates = [], merged = false, reliefTex = null, maskTex = null; const MX = 70, MY = 60;
   function buildMerged() {
-    if (!silImg.complete || !silImg.naturalWidth) return; const MW = FMW, MH = FMH, RW = MW + 2 * MX, RH = MH + 2 * MY, S2 = 2;
+    if (!silImg.complete || !silImg.naturalWidth) return; const MW = FMW, MH = FMH, RW = MW + 2 * MX, RH = MH + 2 * MY, S2 = 3;
     const oc = cnv(MW, MH), og = oc.getContext('2d'); og.drawImage(silImg, 0, 0, MW, MH); const od = og.getImageData(0, 0, MW, MH).data;
     const mk = cnv(RW * S2, RH * S2), mg = mk.getContext('2d'); mg.fillStyle = '#000'; mg.fillRect(0, 0, mk.width, mk.height);
     const lc = cnv(MW, MH), lg = lc.getContext('2d'), li = lg.createImageData(MW, MH);
@@ -172,7 +209,7 @@
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const dx = (hh(x + 1, y - 1) + 2 * hh(x + 1, y) + hh(x + 1, y + 1)) - (hh(x - 1, y - 1) + 2 * hh(x - 1, y) + hh(x - 1, y + 1)), dy = (hh(x - 1, y + 1) + 2 * hh(x, y + 1) + hh(x + 1, y + 1)) - (hh(x - 1, y - 1) + 2 * hh(x, y - 1) + hh(x + 1, y - 1)); let nx = -dx * 5.2, ny = dy * 5.2, nz = 1; const L = Math.hypot(nx, ny, nz); const o = (y * W + x) * 4; ni.data[o] = (nx / L * 0.5 + 0.5) * 255; ni.data[o + 1] = (ny / L * 0.5 + 0.5) * 255; ni.data[o + 2] = (nz / L * 0.5 + 0.5) * 255; ni.data[o + 3] = 255; }
     ng.putImageData(ni, 0, 0); const sc2 = cnv(W, H), sg2 = sc2.getContext('2d'); sg2.filter = 'blur(1.6px)'; sg2.drawImage(nc, 0, 0); reliefTex = new THREE.CanvasTexture(sc2); reliefTex.anisotropy = 8; maskTex = new THREE.CanvasTexture(mk); maskTex.colorSpace = THREE.SRGBColorSpace;
     /* crack pattern: rays and rings around an impact point, boundaries wobbled so no crack is a straight ruler line */
-    let sd = 47; const rr = () => (sd = (sd * 16807) % 2147483647) / 2147483647, C0 = [MW * 0.47, MH * 0.5], rad = [0, 55, 140, 260, 420, 640, 1000], cnt = [5, 8, 10, 11, 9, 8];
+    let sd = 47; const rr = () => (sd = (sd * 16807) % 2147483647) / 2147483647, C0 = [MW * 0.47, MH * 0.5], rad = [0, 50, 125, 230, 360, 520, 700], cnt = [5, 8, 10, 11, 9, 8];
     const wob = (k, th) => 1 + 0.11 * Math.sin(3 * th + k * 1.7) + 0.06 * Math.sin(7 * th + k * 2.9) + 0.04 * Math.sin(13 * th + k);
     const clipRect = (poly) => { let p = poly; p = clipHalf(p, -1, 0, MX); p = clipHalf(p, 1, 0, MW + MX); p = clipHalf(p, 0, -1, MY); p = clipHalf(p, 0, 1, MH + MY); return p; };
     const cellsP = []; for (let k = 0; k < 6; k++) { const n = cnt[k], off = rr() * 6.28; const ang = Array.from({ length: n }, (_, i) => off + (i + (rr() - 0.5) * 0.7) * 6.2832 / n).sort((a, b) => a - b);
@@ -183,7 +220,10 @@
     /* some of the big ones split again along a random line, a few splinters and dust around the pane */
     const out = []; const cut = (q) => { const g = q.reduce((a, p) => [a[0] + p[0] / q.length, a[1] + p[1] / q.length], [0, 0]), th = rr() * 3.14, nx = Math.cos(th), ny = Math.sin(th), c0 = nx * g[0] + ny * g[1]; return [clipHalf(q, nx, ny, c0), clipHalf(q, -nx, -ny, -c0)]; };
     cellsP.forEach((q) => { if (Math.abs(area2(q)) > 38000 && rr() < 0.6) { const [a, b] = cut(q); [a, b].forEach((z) => { if (z.length >= 3 && Math.abs(area2(z)) > 220) out.push(z); }); } else out.push(q); });
-    const nCore = out.length; for (let i = 0; i < 34; i++) { const g = [rr() * (RW + 200) - MX - 100, rr() * (RH + 160) - MY - 80], s = 14 + rr() * 38, a = rr() * 6.28; out.push([[g[0], g[1]], [g[0] + s * Math.cos(a), g[1] + s * Math.sin(a)], [g[0] + s * 0.4 * Math.cos(a + 2.2), g[1] + s * 0.4 * Math.sin(a + 2.2)]]); }
+    const maskAt = (x, y) => { const xi = Math.round(x), yi = Math.round(y); if (xi < 0 || yi < 0 || xi >= MW || yi >= MH) return false; const k = (yi * MW + xi) * 4; const lum = 0.2126 * od[k] + 0.7152 * od[k + 1] + 0.0722 * od[k + 2]; return od[k + 3] > 110 && (lum >= 66 || (xi < MW * 0.5 && yi < MH * 0.38)); };
+    const carries = (q) => { const xs = q.map((p) => p[0]), ys = q.map((p) => p[1]); let hit = 0; for (let y = Math.min(...ys); y <= Math.max(...ys); y += 7) for (let x = Math.min(...xs); x <= Math.max(...xs); x += 7) if (inPoly([x, y], q) && maskAt(x, y)) hit++; return hit; };
+    const kept = out.filter((q) => carries(q) >= 3).map((q) => { const g = q.reduce((a, p) => [a[0] + p[0] / q.length, a[1] + p[1] / q.length], [0, 0]); return q.map((p) => [g[0] + (p[0] - g[0]) * 0.88, g[1] + (p[1] - g[1]) * 0.88]); }); out.length = 0; out.push(...kept);
+    const nCore = out.length; for (let i = 0; i < 18; i++) { const g = [rr() * (MW + 160) - 80, rr() * (MH + 120) - 60], s = 14 + rr() * 34, a = rr() * 6.28; out.push([[g[0], g[1]], [g[0] + s * Math.cos(a), g[1] + s * Math.sin(a)], [g[0] + s * 0.4 * Math.cos(a + 2.2), g[1] + s * 0.4 * Math.sin(a + 2.2)]]); }
     const glassMat = new THREE.MeshPhysicalMaterial({ color: 0xffffff, metalness: 0, roughness: 0.012, transmission: 1, thickness: 26, ior: 1.52, dispersion: 0.7, attenuationColor: new THREE.Color(0xa9e6d8), attenuationDistance: 900, clearcoat: 1, clearcoatRoughness: 0.015, envMapIntensity: NIGHT ? 1.5 : 1.7, specularIntensity: 1, depthWrite: false, normalMap: reliefTex });
     FU = (window.SceneCells ? window.SceneCells.LW : 860) / MW;
     out.forEach((q, idx) => {
@@ -197,7 +237,7 @@
       const edgeMat = new THREE.LineBasicMaterial({ color: 0xe9f2ff, transparent: true, opacity: 0.1, blending: THREE.AdditiveBlending, depthWrite: false }); edgeMats.push(edgeMat); const line = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(shape.getPoints().map((p) => new THREE.Vector3(p.x, p.y, 13.4))), edgeMat); line.renderOrder = 3;
       const ghost = new THREE.Mesh(new THREE.ShapeGeometry(shape, 1), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: NIGHT ? 0.035 : 0.1, depthWrite: false })); ghost.renderOrder = 0;
       const g3 = new THREE.Group(); g3.add(glass, ghost, glow, line); scene.add(g3);
-      const core = idx < nCore, dpt = core ? 380 + Math.pow(rr(), 1.05) * 6400 : 200 + rr() * 6800, k = (dpt + P) / P;
+      const core = idx < nCore, dpt = core ? 900 + Math.pow(rr(), 1.1) * 2700 : 700 + rr() * 2900, k = (dpt + P) / P;
       gplates.push({ g3, glass, ghost, glowMat, edgeMat, mat, core, area: Math.abs(area2(q)), w: x1 - x0, h: y1 - y0, cx, cy, d: dpt, k, thr: rr(), X: FINAL.cx + ((cx - MW / 2) * FU) * k, Y: FINAL.cy + ((cy - MH / 2) * FU + LCYg) * k, Z: FINAL.cz - dpt,
         rx: (rr() < 0.5 ? -1 : 1) * (28 + rr() * 58), ry: (rr() < 0.5 ? -1 : 1) * (28 + rr() * 58), rz: (rr() - 0.5) * 130, ph: rr() * 6.28, amp: 24 + rr() * 90, spin: 0.1 + rr() * 0.25 });
     });
