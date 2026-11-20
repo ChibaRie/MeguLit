@@ -26,6 +26,10 @@
  .tome-ac:not(#q1):not(#q2):not(#q3) .tome-text-general .tomoyo-cn-grid>label{margin:0!important}
  .tome-ac:not(#q1):not(#q2):not(#q3) .tome-ac-pair{display:grid;grid-template-columns:minmax(0,1fr);column-gap:24px}
  @container (min-width:600px){.tome-ac:not(#q1):not(#q2):not(#q3) .tome-ac-pair{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.tome-ac:not(#q1):not(#q2):not(#q3) .tome-ac-pair.tome-ac-switch-slider{grid-template-columns:max-content minmax(0,1fr)}}
+ .tome-ac:not(#q1):not(#q2):not(#q3):not(#q4) .tome-ac-group>label:has(>input[type=checkbox])+*,.tome-ac:not(#q1):not(#q2):not(#q3):not(#q4) .tome-ac-group>label:has(>select)+label{margin-top:12px!important;padding-top:10px!important}
+ .tome-ac:not(#q1):not(#q2):not(#q3):not(#q4) .tome-ac-pane label:has(>input[type=checkbox]){margin-top:14px!important;margin-bottom:6px!important;padding-top:10px!important;padding-bottom:6px!important}
+ .tome-ac:not(#q1):not(#q2):not(#q3) .tome-ac-mode{padding:10px 0}
+ .tome-ac:not(#q1):not(#q2):not(#q3):not(#q4) .tome-ac-mode>*+*{margin-top:10px!important}
  .tome-ac:not(#q1):not(#q2):not(#q3) .tome-ac-group{padding:10px 0;border-top:1px solid color-mix(in srgb,var(--theme-text,#eee) 9%,transparent)}
  .tome-ac:not(#q1):not(#q2):not(#q3) .tome-text-general>.tome-ac-group:first-of-type{border-top:0;padding-top:6px}
  .tome-ac:not(#q1):not(#q2):not(#q3) .tome-ac-group>:is(label,.tome-ac-pair,.tomoyo-cn-grid){margin-top:0!important}
@@ -104,20 +108,24 @@
   const text=dialog.querySelector('[data-menu-category=text]'),cal=dialog.querySelector('[data-menu-category=calibrate]');if(!text||!cal)return;
   const general=text.querySelector('.tome-text-general');if(!general)return;
   /* pairs of short rows share a line when the panel is wide */
-  wrapPair(byName(general,'galAutoScale'),byName(general,'galEmbedTranslation'));
   const tw=byName(general,'galTypewriter'),sp=byName(general,'galTypewriterSpeed');
   if(tw&&sp&&!tw.parentElement.classList.contains('tome-ac-pair')){wrapPair(tw,sp,'tome-ac-switch-slider');}
  /* top common rows: three loose groups with air and a hairline between them (nodes are moved, never rebuilt) */
   if(!general.querySelector(':scope>.tome-ac-group')){
    const grp=(first,nodes)=>{const nn=nodes.filter(Boolean);if(!first||!nn.length)return;const g=mk('div','tome-ac-group');first.before(g);g.append(...nn);};
    const bold=general.querySelector(':scope>.tomoyo-cn-grid'),pair=tw?.parentElement?.classList.contains('tome-ac-pair')?tw.parentElement:tw,hintA=pair?.nextElementSibling?.tagName==='SMALL'?pair.nextElementSibling:null;
-   const disp=byName(general,'galDisplay'),sw=byName(general,'galAutoScale')?.parentElement,hot=general.querySelector(':scope>small.tomoyo-hotkey-hint');
-   grp(bold,[bold]);grp(pair,[pair,hintA]);grp(disp,[disp,sw&&sw.classList.contains('tome-ac-pair')?sw:byName(general,'galAutoScale'),sw&&sw.classList.contains('tome-ac-pair')?null:byName(general,'galEmbedTranslation'),hot]);}
+   const disp=byName(general,'galDisplay'),au=byName(general,'galAutoScale');
+   /* rarely used rows leave the top: blur goes to the Chinese tab, embed-by-game + Alt+H note to a display-mode tab */
+   const blurL=byName(general,'galTranslationBlur')?.closest('label'),embL=byName(general,'galEmbedTranslation')?.closest('label');
+   const hots=[...general.querySelectorAll(':scope>small.tomoyo-hotkey-hint')];
+   if(embL){const m=mk('div','tome-ac-mode');m.append(embL,...hots);general.after(m);}
+   grp(bold,[bold]);grp(pair,[pair,hintA]);grp(disp,[disp,au&&au.closest('label')||au]);}
   const det=n=>text.querySelector(':scope>details[data-text-'+n+']'),jp=det('japanese'),cn=det('chinese'),en=det('megulit-english')||text.querySelector(':scope>details[data-megulit-english]'),ruby=det('ruby'),pal=det('colours'),spc=det('spacing'),gf=det('game-font');
-  const groups=[jp,cn,en,ruby,pal,spc,gf].filter(Boolean);
+  const modeBox=text.querySelector('.tome-ac-mode');{const anchor=ruby||pal||gf;if(modeBox&&anchor&&modeBox.nextElementSibling!==anchor)anchor.before(modeBox);}const modeBox2=modeBox,blurLb=byName(text,'galTranslationBlur')?.closest('label');if(cn&&blurLb&&!cn.contains(blurLb))cn.append(blurLb);
+  const groups=[jp,cn,en,modeBox2,ruby,pal,spc,gf].filter(Boolean);
   const calNodes={sync:cal.querySelector(':scope>.tome-game-style-sync'),pos:cal.querySelector(':scope>[data-calibration-position]'),bind:cal.querySelector('[data-calibration-window-bind]'),imp:cal.querySelector('.tome-calibration-imports'),hist:cal.querySelector('.tome-calibration-history')};
   if(V==='b'){
-   chips(text,groups[0],'text',groups.map(g=>({pane:true,label:()=>strip(g.querySelector('summary')?.textContent),nodes:()=>[g]})),st.text);
+   chips(text,groups[0],'text',groups.map(g=>({pane:true,label:()=>g.classList.contains('tome-ac-mode')?I('显示方式'):strip(g.querySelector('summary')?.textContent),nodes:()=>[g]})),st.text);
       chips(cal,calNodes.sync||cal.firstElementChild,'cal',[
     {label:()=>I('校准与位置'),nodes:()=>[calNodes.sync,calNodes.pos].filter(Boolean)},
     {label:()=>I('导入与历史'),nodes:()=>[calNodes.imp,calNodes.hist].filter(Boolean)}],st.cal);
@@ -132,7 +140,7 @@
    const btn=bar.querySelector('button'),t=I(bst.expanded?'收起':'换一个窗口');if(btn.textContent!==t)btn.textContent=t;btn.setAttribute('aria-expanded',String(bst.expanded));}
   for(const s of dialog.querySelectorAll('[data-menu-category=text] small,[data-menu-category=calibrate] small'))if(!s.dataset.acT){s.dataset.acT='1';s.addEventListener('mouseover',()=>{if(!s.title&&s.scrollHeight>s.clientHeight+1)s.title=s.textContent.trim();});s.addEventListener('click',()=>s.classList.toggle('tome-ac-open'));}
  }
- const L={en:{'校准与位置':'Calibrate & position','导入与历史':'Import & history','换一个窗口':'Change window','收起':'Hide','更多文字设置':'More text settings','绑定与导入':'Binding & import'},ja:{'校准与位置':'調整と位置','导入与历史':'取り込みと履歴','换一个窗口':'ウィンドウを変更','收起':'閉じる','更多文字设置':'その他の文字設定','绑定与导入':'バインドと取り込み'}};
+ const L={en:{'校准与位置':'Calibrate & position','导入与历史':'Import & history','换一个窗口':'Change window','收起':'Hide','显示方式':'Display mode','更多文字设置':'More text settings','绑定与导入':'Binding & import'},ja:{'校准与位置':'調整と位置','导入与历史':'取り込みと履歴','换一个窗口':'ウィンドウを変更','收起':'閉じる','显示方式':'表示方法','更多文字设置':'その他の文字設定','绑定与导入':'バインドと取り込み'}};
  const I=k=>(L[document.documentElement.lang.slice(0,2)]||{})[k]||k;
  let queued=0;
  const run=()=>{queued=0;const d=document.querySelector('.tomoyo-cn-dialog[data-menu-organized]:not([data-leaving])');if(!d)return;d.classList.add('tome-ac');d.dataset.alttUi=V;try{organize(d);}catch(e){console.error('altt-compact',e);}};
