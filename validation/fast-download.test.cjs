@@ -7,12 +7,15 @@ const fd=require('../core/fast-download.cjs');
 const KB=1024,MB=1024*KB;
 const sha=b=>crypto.createHash('sha256').update(b).digest('hex');
 /* rate: bytes per second per connection; slowAfter/slowRate: after that many bytes served in total the source slows
-   down; noRange: always 200 with the whole file; status: fixed error status; hang: headers then nothing */
+   down; noRange: always 200 with the whole file; status: fixed error status; hang: headers then nothing;
+   failFirst: the first n Range requests after the probe answer 503; html: a 200 HTML page for everything */
 function source(data,opt={}){
  const stats={requests:0,ranges:[],bytes:0,open:0,maxOpen:0};
  const server=http.createServer((req,res)=>{
   stats.requests++;
   if(opt.status){res.writeHead(opt.status);return res.end();}
+  if(opt.html){res.writeHead(200,{'content-type':'text/html; charset=utf-8'});return res.end('<html>login</html>');}
+  if(opt.failFirst&&stats.requests>1&&(stats.failed=(stats.failed||0)+1)<=opt.failFirst){res.writeHead(503);return res.end();}
   let start=0,end=data.length;const m=/bytes=(\d+)-(\d*)/.exec(req.headers.range||'');
   if(m&&!opt.noRange&&!(opt.rangeAfterStart&&Number(m[1])===0)){start=Number(m[1]);end=m[2]?Number(m[2])+1:data.length;stats.ranges.push(start+'-'+end);
    res.writeHead(206,{'content-length':end-start,'content-range':'bytes '+start+'-'+(end-1)+'/'+data.length,'accept-ranges':'bytes'});}
@@ -39,7 +42,7 @@ const quick={probeMs:400,probeCapMs:800,segment:256*KB,connections:6,stallMs:150
 test('fast-download: mainland China puts cn-dl before dl, elsewhere the order stays',()=>{
  const gh='https://github.com/a/b/releases/download/v1/x.zip',dl='https://dl.megulit.com/gh/x.zip',cn='https://cn-dl.megulit.com/gh/x.zip',px='https://gh-proxy.com/'+gh;
  assert.deepEqual(fd.orderSources([dl,cn,px,gh],true),[cn,dl,px,gh]);
- assert.deepEqual(fd.orderSources([gh,dl,px,cn],true),[gh,cn,dl,px]);
+ assert.deepEqual(fd.orderSources([gh,dl,px,cn],true),[cn,dl,px,gh],'mainland order from setup/runtime.json: GitHub itself last');
  assert.deepEqual(fd.orderSources([dl,cn,gh],false),[dl,cn,gh]);
  assert.deepEqual(fd.orderSources([dl,dl,gh],true),[dl,gh],'duplicates dropped');
 });
@@ -72,7 +75,7 @@ test('fast-download: a source that slows down halfway or stops sending loses its
 test('fast-download: a connection that goes silent is dropped after the stall time and its piece fetched again',async t=>{
  const data=crypto.randomBytes(2*MB),dir=tmp(t);
  const src=await source(data,{rate:2*MB,stallAt:600*KB});t.after(()=>src.close());
- const logs=[];const r=await fd.download({...quick,urls:[src.url],dest:path.join(dir,'f.bin'),size:data.length,sha256:sha(data),log:l=>logs.push(l)});
+ const logs=[];const r=await fd.download({...quick,endgame:false,urls:[src.url],dest:path.join(dir,'f.bin'),size:data.length,sha256:sha(data),log:l=>logs.push(l)});
  assert.equal(sha(fs.readFileSync(r.file)),sha(data));assert.ok(src.stats.stalled);assert.ok(logs.some(l=>/stalled/.test(l)),logs.join(' | '));
 });
 
@@ -127,4 +130,61 @@ test('fast-download: a source serving a different file is found by the hash and 
 test('fast-download: every source down gives DOWNLOAD_FAILED with the reason',async t=>{
  const a=await source(Buffer.alloc(10),{status:404}),b=await source(Buffer.alloc(10),{status:503});t.after(()=>[a,b].forEach(s=>s.close()));
  await assert.rejects(fd.download({...quick,urls:[a.url,b.url],dest:path.join(tmp(t),'f.bin'),size:10}),e=>e.code==='DOWNLOAD_FAILED'&&/HTTP/.test(e.message));
+});
+
+/* ---- 2026-11-20 super assembly ---- */
+const lines=logs=>logs.join(' | ');
+test('fast-download: more connections while that still adds speed (8 -> 16 style), per-host limit kept',async t=>{
+ const data=crypto.randomBytes(6*MB),dir=tmp(t);
+ /* every connection is capped at 120 KB/s, so the total only grows with more connections */
+ const a=await source(data,{rate:120*KB}),b=await source(data,{rate:120*KB}),capped=await source(data,{rate:120*KB});
+ t.after(()=>[a,b,capped].forEach(s=>s.close()));
+ const logs=[];const r=await fd.download({...quick,connections:4,maxConnections:12,scaleMs:500,urls:[a.url,b.url,capped.url],limits:u=>u===capped.url?1:0,dest:path.join(dir,'f.bin'),size:data.length,sha256:sha(data),log:l=>logs.push(l)});
+ assert.equal(sha(fs.readFileSync(r.file)),sha(data));
+ assert.ok(logs.some(l=>/^connections (8|10|12) /.test(l)),'grew past the start: '+lines(logs));
+ assert.ok(a.stats.maxOpen+b.stats.maxOpen+capped.stats.maxOpen>4,'more than 4 connections at once');
+ assert.ok(capped.stats.maxOpen<=2,'the limited host held 1 piece connection at a time (+ the probe still closing): '+capped.stats.maxOpen);
+});
+
+test('fast-download: end game fetches the slowest last piece again from another source, first one wins',async t=>{
+ const data=crypto.randomBytes(2*MB),dir=tmp(t);
+ /* fast until 1.6 MB served, then a trickle; slow drops are off so only the end game can save the tail */
+ const fading=await source(data,{rate:3*MB,slowAfter:1.6*MB,slowRate:4*KB}),other=await source(data,{rate:600*KB});
+ t.after(()=>[fading,other].forEach(s=>s.close()));
+ const logs=[],t0=Date.now();
+ const r=await fd.download({...quick,slowRatio:0,minSteal:4*MB,dupMinMs:400,urls:[fading.url,other.url],dest:path.join(dir,'f.bin'),size:data.length,sha256:sha(data),log:l=>logs.push(l)});
+ assert.equal(sha(fs.readFileSync(r.file)),sha(data));
+ assert.ok(logs.some(l=>/^end game/.test(l)),lines(logs));
+ assert.ok(Date.now()-t0<15000,'tail not left on the trickle ('+(Date.now()-t0)+' ms)');
+});
+
+test('fast-download: a source that errors cools down and is used again, not dropped',async t=>{
+ const data=crypto.randomBytes(3*MB),dir=tmp(t);
+ const flaky=await source(data,{rate:1*MB,failFirst:2}),steady=await source(data,{rate:500*KB});
+ t.after(()=>[flaky,steady].forEach(s=>s.close()));
+ const logs=[];const r=await fd.download({...quick,coolMs:300,urls:[flaky.url,steady.url],dest:path.join(dir,'f.bin'),size:data.length,sha256:sha(data),log:l=>logs.push(l)});
+ assert.equal(sha(fs.readFileSync(r.file)),sha(data));
+ assert.ok(logs.some(l=>/^cool /.test(l)),'cooled down: '+lines(logs));
+ assert.ok(!logs.some(l=>/^dropped /.test(l)),'not dropped: '+lines(logs));
+ assert.ok(flaky.stats.ranges.length>=2,'served pieces after the cool-down: '+flaky.stats.ranges.length);
+});
+
+test('fast-download: an HTML page instead of the file drops that source at once',async t=>{
+ const data=crypto.randomBytes(1*MB),dir=tmp(t);
+ const page=await source(data,{html:true}),good=await source(data,{rate:2*MB});
+ t.after(()=>[page,good].forEach(s=>s.close()));
+ const logs=[];const r=await fd.download({...quick,urls:[page.url,good.url],dest:path.join(dir,'f.bin'),size:data.length,sha256:sha(data),log:l=>logs.push(l)});
+ assert.equal(sha(fs.readFileSync(r.file)),sha(data));
+ assert.equal(page.stats.requests,1,'asked once');assert.ok(logs.some(l=>/HTML/.test(l)),lines(logs));
+});
+
+test('fast-download: a relay serving a bad file in a mixed download: next round uses the first-party sources only',async t=>{
+ /* every byte from the relay is wrong (it is the fastest source, so it always serves part of the file) */
+ const data=crypto.randomBytes(3*MB),bad=crypto.randomBytes(3*MB);const dir=tmp(t);
+ const relay=await source(bad,{rate:2*MB}),own=await source(data,{rate:1*MB}),relay2=await source(data,{rate:1*MB});
+ t.after(()=>[relay,own,relay2].forEach(s=>s.close()));
+ const logs=[];const r=await fd.download({...quick,trusted:[own.url],urls:[relay.url,own.url,relay2.url],dest:path.join(dir,'f.bin'),size:data.length,sha256:sha(data),log:l=>logs.push(l)});
+ assert.equal(sha(fs.readFileSync(r.file)),sha(data));
+ assert.ok(logs.some(l=>/first-party sources only/.test(l)),lines(logs));
+ assert.deepEqual(r.sources,[own.url]);
 });

@@ -6,7 +6,7 @@
 const fs=require('node:fs'),path=require('node:path'),{spawn}=require('node:child_process');
 
 /* E383 a mirror template may use {url} (whole GitHub URL), or {tag} and {file} (release tag and file name) for our own mirror dl.megulit.com */
-function mirrorUrl(template,url){const parts=String(url).split('/'),file=parts.pop()||'',tag=parts.pop()||'';return template.replace('{url}',url).replace('{tag}',tag).replace('{file}',file);}
+const mirrorUrl=(template,url)=>require('./download-sources.cjs').fill(typeof template==='string'?template:template.url,url);
 const MARKERS={base:'runtime/node.exe',reading:'runtime/reading/sudachidict_full/resources/system.dic',voice:'runtime/aivis/run.exe',archives:'runtime/garbro/ArcFormats.dll','runtime-dump':'runtime/runtime-dump/MeguLitDump64.dll','unity-text':'runtime/unity-text/MeguLitUnityText.dll'};
 /* E470 "archives": GARbro (morkt, MIT) downloaded only when a game's scripts sit in an archive MeguLit's own readers cannot open.
    onDemand packs are left out of "download full", unpack into their own dest folder (the upstream release is not laid out as runtime/...)
@@ -52,12 +52,13 @@ class RuntimePacks{
      every source at once and pulls Range pieces from the fast ones in parallel; a slow or silent connection is moved to
      another source, finished pieces survive a retry (runtime-<id>.zip.part.json). Mainland China (time zone / locale, no IP
      lookup) still lists the mirrors first; SHA-256 has to match. */
-  const direct=pack.urls||[],mirrored=(this.manifest().mirrors||[]).flatMap(m=>direct.map(u=>mirrorUrl(m,u)));
-  if(!direct.length&&!mirrored.length)throw Error('没有下载地址');
-  const china=require('./fast-download.cjs').inChina();
+  /* 2026-11-20: sources and their order from the same setup/runtime.json "mirrors" list setup uses (core/download-sources.cjs) */
+  const china=require('./fast-download.cjs').inChina(),list=require('./download-sources.cjs').normalize(this.manifest().mirrors||[]);
+  const all=(pack.urls||[]).flatMap(u=>require('./download-sources.cjs').expand(u,{china,list}));
+  if(!all.length)throw Error('没有下载地址');
   job.state='downloading';job.stage='download';job.received=0;job.controller=new AbortController();
   try{
-   await require('./fast-download.cjs').download({urls:china?[...mirrored,...direct]:[...direct,...mirrored],china,dest:part,size:pack.size||0,sha256:pack.sha256,signal:job.controller.signal,userAgent:'MeguLit-runtime',
+   await require('./fast-download.cjs').download({urls:all,china,dest:part,size:pack.size||0,sha256:pack.sha256,signal:job.controller.signal,userAgent:'MeguLit-runtime',
     onProgress:p=>{job.received=p.received;if(p.total)job.total=p.total;},log:line=>{try{fs.mkdirSync(path.join(this.root,'logs'),{recursive:true});fs.appendFileSync(path.join(this.root,'logs','runtime-download.log'),new Date().toISOString()+' '+id+' '+line+'\n');}catch{}}});
   }catch(error){throw /^(HASH|SIZE)_MISMATCH$/.test(error.code||'')?Error('文件校验失败'):error.code==='ABORTED'?error:Error(String(error.message||error).replace(/^DOWNLOAD_FAILED /,''));}
   job.stage='unpack';

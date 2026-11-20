@@ -19,7 +19,7 @@
 using System;
 
 internal static class ReaderLayerPolicy {
-    public const int Game=0,OwnLayer=1,OwnHome=2,Foreign=3,None=4;
+    public const int Game=0,OwnLayer=1,OwnHome=2,Foreign=3,None=4,Capture=5;
     public static int SettleMs=700,HoldMs=1000;
     public struct State{public int Front;public bool Float,Context,Pinned;}
     static int Anchor=Foreign;static long NoneSince=-1,SettledSince=-1;
@@ -28,19 +28,30 @@ internal static class ReaderLayerPolicy {
 
     /// <summary>What is in front. gameTree: the foreground window belongs to the game's window tree; gameProcess: to its
     /// process or its IME; ownLayer: it is the reading layer; ownProcess: another window of MeguLit.</summary>
-    public static int Classify(bool hasForeground,bool gameTree,bool gameProcess,bool ownLayer,bool ownProcess){
+    public static int Classify(bool hasForeground,bool gameTree,bool gameProcess,bool ownLayer,bool ownProcess){return Classify(hasForeground,gameTree,gameProcess,ownLayer,ownProcess,false);}
+    /// <summary>captureSurface: the foreground is a screenshot surface over the game (CaptureSurface()).</summary>
+    public static int Classify(bool hasForeground,bool gameTree,bool gameProcess,bool ownLayer,bool ownProcess,bool captureSurface){
         if(!hasForeground)return None;
         if(ownLayer)return OwnLayer;
         if(gameTree||gameProcess)return Game;
         if(ownProcess)return OwnHome;
-        return Foreign;
+        return captureSurface?Capture:Foreign;
     }
+    /// <summary>#468 (2026-11-20, 「一打开截图软件，译文就全都消失了」): Snipaste, WeChat/QQ capture, Win+Shift+S, ShareX take the
+    /// foreground with a topmost, captionless window laid over the whole game (their frozen desktop or a dimmed sheet).
+    /// That is not "the user switched to another program": the game is still what is on screen and the layer must stay in
+    /// the picture. Judged by behaviour, never by process name: topmost + no caption + covers the game's client area +
+    /// the game is not minimised. A normal application (caption, not topmost) is still Foreign.</summary>
+    public static bool CaptureSurface(bool topmost,bool caption,bool coversGame,bool gameIconic){return topmost&&!caption&&coversGame&&!gameIconic;}
 
     /// <summary>front: Classify() of this tick. homeCounts: another MeguLit window in front keeps the layer shown (the
     /// main window hosts it). Float: the layer may be topmost above the game. Context: the layer may be shown at all
     /// (cover, dialogue and menu still decide). Pinned: the open menu holds it above the game.</summary>
     public static State Decide(int front,bool menu,bool menuReady,bool homeCounts,bool gameIconic,long nowMs){
-        if(front==None){
+        /* a screenshot surface in front changes nothing: the layer keeps the place and visibility it had (no timer, the
+           user may take a while to drag the rectangle) */
+        if(front==Capture){NoneSince=-1;}
+        else if(front==None){
             if(NoneSince<0)NoneSince=nowMs;
             if(nowMs-NoneSince>=HoldMs)Anchor=Foreign;
         }else{NoneSince=-1;Anchor=front;}
@@ -147,6 +158,14 @@ internal static class ReaderLayerPolicy {
             if(!Decide(None,false,false,false,false,500).Float)return "no foreground for 0.5 s: layer sunk";
             Decide(None,false,false,false,false,600);
             if(Decide(None,false,false,false,false,1600).Float)return "no foreground for over 1 s: layer still floating";
+            /* 4b. #468: a screenshot surface over the game keeps the layer floating and shown for any time; a normal
+                   program after it still hides it; a screenshot surface while another program was in front shows nothing */
+            Reset();Decide(Game,false,false,false,false,0);
+            for(long ct=16;ct<60000;ct+=997){State c=Decide(Capture,false,false,false,false,ct);if(!c.Float||!c.Context)return "screenshot surface in front: layer sunk or hidden at "+ct+" ms";}
+            if(Decide(Foreign,false,false,false,false,60100).Context)return "normal program after a screenshot: layer still shown";
+            if(Decide(Capture,false,false,false,false,60200).Context)return "screenshot over another program: layer shown";
+            if(!CaptureSurface(true,false,true,false)||CaptureSurface(false,false,true,false)||CaptureSurface(true,true,true,false)||CaptureSurface(true,false,false,false)||CaptureSurface(true,false,true,true))return "capture surface rule";
+            if(Classify(true,false,false,false,false,true)!=Capture||Classify(true,false,false,false,false,false)!=Foreign||Classify(true,true,false,false,false,true)!=Game)return "classify capture";
             /* 5. another MeguLit window in front: shown only where the main window hosts the layer, pinned by an open menu */
             Reset();
             if(Decide(OwnHome,false,false,false,false,0).Context)return "MeguLit window in front without hosting: layer shown";

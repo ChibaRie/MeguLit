@@ -17,7 +17,8 @@ const HOSTS=new Set(['github.com','objects.githubusercontent.com','release-asset
 /* E??? (user report 2026-11-13: "更新显示下载失败"): the site's own R2 mirror (dl.megulit.com, what the
    download buttons on megulit.com use) is tried as well. It serves GitHub's own package by file name, supports Range
    requests and is reachable in mainland China when GitHub and the gh proxies are not; the sha256 digest still decides. */
-const MIRRORS=['https://gh-proxy.com/{url}','https://ghproxy.net/{url}','https://ghfast.top/{url}'];
+/* 2026-11-20: the GitHub relays come from setup/runtime.json (core/download-sources.cjs), the list setup uses too */
+const MIRRORS=(()=>{try{const r=require('../core/download-sources.cjs').relays().map(m=>m.url);if(r.length)return r;}catch{}return ['https://gh-proxy.com/{url}','https://ghproxy.net/{url}','https://ghfast.top/{url}'];})();
 const DL_MIRRORS=['https://dl.megulit.com/','https://cn-dl.megulit.com/'];
 const MIRROR_HOSTS=new Set([...MIRRORS.map(m=>new URL(m.replace('{url}','')).hostname),...DL_MIRRORS.map(u=>new URL(u).hostname)]);
 const inChina=()=>{try{const o=Intl.DateTimeFormat().resolvedOptions();return o.timeZone==='Asia/Shanghai'||o.timeZone==='Asia/Urumqi'||/^zh-CN/i.test(o.locale||'');}catch{return false;}};
@@ -185,7 +186,11 @@ function launchScript(root,{run=spawn}={}){
  });
 }
 /* the page could not finish a silent hot update (hot_reload refused or failed after the files were written) */
-function hotFail(root,reason){const version=state.version||found?.version||'';if(!version)return {recorded:false};markHotFailed(root,version,String(reason||'HOT_FAILED').slice(0,200));if(found)found.useHot=false;return {recorded:true,version};}
+function hotFail(root,reason){const version=state.version||found?.version||'';if(!version)return {recorded:false};markHotFailed(root,version,String(reason||'HOT_FAILED').slice(0,200));if(found)found.useHot=false;
+ /* a hot package downloaded but refused before it was applied (hot_reload dry run) is dropped with its finished job:
+    start() returned that job again and the card got the same small package instead of downloading the full one */
+ if(state.hot&&state.phase==='ready'){try{if(state.zip)fs.rmSync(state.zip,{force:true});}catch{}job=null;state={phase:'available',version,total:found?.size||0,received:0,hot:false};}
+ return {recorded:true,version};}
 async function install(root,options={}){
  if(state.phase!=='ready'||!state.zip||!fs.existsSync(state.zip))throw Error('UPDATE_NOT_READY');
  if(state.hot){

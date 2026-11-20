@@ -91,7 +91,10 @@ function plan(exe,{allowTranslated=true,source=''}={}){
 function roleOf(exe){const list=classify(path.dirname(exe));const e=list.find(x=>x.name.toLowerCase()===path.basename(exe).toLowerCase());return e?{role:e.role,kind:e.kind}:{role:'clean',kind:''};}
 /* Words for a launch that failed: why, and what to choose instead. */
 function hint(p,locale='zh'){
- if(!p)return '';const L=locale==='zh'?0:locale==='ja'?2:1,name=(p.name||RULE.softdenchi.name)[['zh','en','ja'][L]],wrapped=path.basename(p.wrapped||p.original||'');
+ if(!p)return '';const L=locale==='zh'?0:locale==='ja'?2:1;
+ /* E-SteamOwned: Steam's own wrapper (SteamStub) is no crack problem: the game needs Steam running and the account that owns it */
+ if(p.kind==='steam'){const w=path.basename(p.wrapped||p.original||'');return [`${w} 是 Steam 版，需要 Steam 在运行并登录购买它的账号才能启动（这是 Steam 自带的正版保护，不用找破解）。请先打开 Steam，确认在 Steam 库里能正常启动；也可以直接从 Steam 启动游戏，再在 MeguLit 按 Alt+M 绑定窗口`,`${w} is a Steam build: Steam must be running and signed in to the account that owns it (this is Steam's own licence check, no crack needed). Open Steam and check the game starts from the Steam library, or start it from Steam and press Alt+M in MeguLit to bind its window`,`${w} は Steam 版で、購入したアカウントで Steam を起動・ログインしている必要があります（Steam 標準の認証です）。Steam を開いてライブラリから起動できるか確認するか、Steam から起動して MeguLit で Alt+M を押してウィンドウを紐付けてください`][L];}
+ const name=(p.name||RULE.softdenchi.name)[['zh','en','ja'][L]],wrapped=path.basename(p.wrapped||p.original||'');
  const via=p.launchVia?path.basename(p.launchVia):'',alt=p.alternatives?.[0]||'';
  if(via)return [`${wrapped} 需要${name}，已改用同目录的 ${via} 启动。如果它也弹窗报错，请在「编辑作品」里换成其他能直接双击打开的程序`,`${wrapped} needs the ${name}, so MeguLit started it through ${via} in the same folder. If that also fails, choose another program that opens by double-click under Edit game`,`${wrapped} は${name}が必要なため、同じフォルダーの ${via} から起動しました。それも失敗する場合は「作品を編集」でダブルクリックで起動できる実行ファイルを選んでください`][L];
  if(alt)return [`${wrapped} 需要${name}，没装就会退出。请在「编辑作品」里换成 ${alt}`,`${wrapped} needs the ${name} and quits without it. Choose ${alt} under Edit game`,`${wrapped} は${name}が必要で、ないと終了します。「作品を編集」で ${alt} を選んでください`][L];
