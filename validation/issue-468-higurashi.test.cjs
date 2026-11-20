@@ -71,3 +71,32 @@ test('a bridge that keeps failing on the same game process is given up on with a
   }finally{fs.rmSync(dir,{recursive:true,force:true});}
  })();
 });
+
+test('NVL page: another stream holding the page makes the lines stack, a turned page resets, a line once',()=>{
+ /* higurashi-page.jsonl: the recorded TextController lines, each followed 40 ms later by the page as TMP holds it
+    (hookPageText, the shape seen live: lines with <#FFFFFFxx> fade tags, blank padding); the page turns before 「でも…薄々は気付いてる。」 */
+ const r=replay(path.join(dir,'higurashi-page.jsonl'),{name:EXE});
+ const pages=r.events.filter(e=>e&&e.type==='hookPage');
+ assert.ok(pages.filter(p=>p.same===true&&!p.reset).length>=5,'lines join the page: '+JSON.stringify(pages));
+ const reset=pages.findIndex(p=>p.reset===true);assert.ok(reset>0,'the turned page is reported');
+ const srcs=shown(r).map(l=>l.text);
+ const turnAt=r.events.indexOf(pages[reset]),before=r.events.slice(0,turnAt).filter(e=>typeof e?.hookSource==='string'&&e.hookSource).map(e=>e.hookSource);
+ assert.equal(before.at(-1),'でも…薄々は気付いてる。','reset follows the first line of the new page');
+ assert.equal(pages.filter(p=>p.reset).length,1,'one reset per turn');
+ const full=srcs.filter(l=>/[。…]$/.test(l));assert.equal(new Set(full).size,full.length,'no line twice');
+ const fs=require('node:fs');const reader=fs.readFileSync(path.join(__dirname,'..','web','reader','modules','hook-reader.js'),'utf8');
+ assert.match(reader,/b\.hookPage=m=>\{[^]*?if\(m&&m\.reset===true\)\{b\.hookPageReset\(\);return;\}/,'the reader clears its page on the reset');
+});
+
+test('font size: the home-page value (text-defaults) wins over a stale live-session size when the work has no saved settings',()=>{
+ /* rig 2026-11-20: Alt+T 29 (live session, gal-preferences.json) then the home settings page 34 (text-defaults.json); the
+    next bind must show 34, the value set last. A work's own saved Alt+T settings still win over the preset (E215). */
+ const fs=require('node:fs'),os=require('node:os'),{Settings}=require('../services/settings.cjs');
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),'m468s-'));
+ try{
+  const cfg=path.join(root,'data','config');fs.mkdirSync(cfg,{recursive:true});
+  fs.writeFileSync(path.join(cfg,'gal-preferences.json'),JSON.stringify({translationSize:29,japaneseSize:30}));
+  const s=new Settings(root);s.save({scope:'text',values:{translationSize:34}});
+  assert.equal(s.read('text').translationSize,34);
+ }finally{fs.rmSync(root,{recursive:true,force:true});}
+});
