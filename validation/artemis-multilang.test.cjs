@@ -66,3 +66,13 @@ test('real Japanese ast containing テキスト or a single *...* sound effect i
  assert.deepEqual(r.lines,['テキストを表示する。','*ガサゴソ*','おはようございます。']);
  assert.deepEqual(r.zh,['显示文本。','*沙沙声*','早上好。']);
 });
+
+test('one text table for the whole file (text = { [1] = { ja, cn }, ... }) gives one line per message',()=>{
+ const src='astver=2.0\nast={{{"savetitle",text="『三夜目』",text_cn="『三夜目』"},{"bg",file="room",path=":bg/"},{"text"},},{{"text"},},{},'
+  +'text={[1]={ja={name={"name",name="滋比古"},{"「はっ……」",},},cn={name={"name",name="滋比古"},{"「哈……」",},},},'
+  +'[2]={ja={{"鳥の声で目覚めた。",},},cn={{"我被鸟叫声吵醒了。",},},},'
+  +'[3]={ja={name={"name",name="滋比古"},{"「キリエ……！」",},},cn={name={"name",name="滋比古"},{"「雾枝……！」",},},},},}\n';
+ const r=sc.ENGINES.artemis.parse(Buffer.from(src,'utf8'));
+ assert.deepEqual(r.lines,['「はっ……」','鳥の声で目覚めた。','「キリエ……！」']);
+ assert.deepEqual(r.zh,['「哈……」','我被鸟叫声吵醒了。','「雾枝……！」']);
+});
