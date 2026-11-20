@@ -58,23 +58,54 @@
   const bodies = [], signs = [], panels = [], boxesS = [], tanks = [], edgePts = [];
   const pushBox = (arr, x, y, z, w, h, d) => arr.push([x, y, z, w, h, d]);
   const edgeOf = (x, y, z, w, h, d) => { const hx = w / 2, hy = h / 2, hz = d / 2, v = [[-1, -1, -1], [1, -1, -1], [1, 1, -1], [-1, 1, -1], [-1, -1, 1], [1, -1, 1], [1, 1, 1], [-1, 1, 1]].map((q) => [x + q[0] * hx, y + q[1] * hy, z + q[2] * hz]); [[0, 1], [1, 2], [2, 3], [3, 0], [4, 5], [5, 6], [6, 7], [7, 4], [0, 4], [1, 5], [2, 6], [3, 7]].forEach(([a, b]) => edgePts.push(...v[a], ...v[b])); };
+  /* Eight building types with a real massing: a body, setbacks, a roof plant layer, floor bands and a window grid cut as fine lines, awnings over the
+     shop floor, upright signboards in aligned columns of three fixed sizes, flat blank ad panels, AC units in tidy columns, roof ad frames, outside stairs.
+     Along the street they alternate with a rhythm (tall, wide, low, corner), near ones carry the detail, far ones are plain masses that the haze eats. */
+  const FL = 130, fins = [], bands = [], cyls = [], awn = [];
+  const SIGN = [[54, 300], [66, 480], [80, 720]];
+  function facade(face, side, z0, z1, y0, h, detail) {
+    const w = z1 - z0, zc = (z0 + z1) / 2; if (!detail) return;
+    for (let y = y0 + FL * 2; y < y0 + h - 80; y += FL * 2) pushBox(bands, face - side * 7, y, zc, 14, 9, w);
+    const fx = face - side * 1.5; for (let zz = z0 + 34; zz < z1 - 20; zz += 92) edgePts.push(fx, y0 + FL + 20, zz, fx, y0 + h - 50, zz); for (let y = y0 + FL + 20; y < y0 + h - 50; y += FL) edgePts.push(fx, y, z0 + 16, fx, y, z1 - 16);
+    pushBox(awn, face - side * 48, y0 + 132, zc, 96, 12, w * 0.96);                                        /* the shop floor awning */
+  }
+  function signColumn(face, side, zc, y0, h, spec, count) { const [sw, sh] = SIGN[spec]; let y = y0 + 250; for (let i = 0; i < count && y + sh < y0 + h - 160; i++) { pushBox(signs, face - side * 46, y + sh / 2, zc, 70, sh, sw); y += sh + 22; } }
+  function acColumn(face, side, zc, y0, h) { for (let y = y0 + FL * 2 + 30; y < y0 + h - 120; y += FL * 2) pushBox(boxesS, face - side * 40, y, zc, 70, 56, 84); }
+  function roofFrame(cx, side, y, zc, w) { pushBox(signs, cx, y + 150, zc - w * 0.4, 18, 300, 18); pushBox(signs, cx, y + 150, zc + w * 0.4, 18, 300, 18); pushBox(panels, cx, y + 300, zc, 22, 30, w * 0.9); pushBox(panels, cx, y + 190, zc, 14, 200, w * 0.8); }
+  function stairs(face, side, zc, y0, h) { const fx = face - side * 4; let y = y0 + 40; let k = 0; while (y < y0 + h - 80) { const za = zc - 90 + (k % 2) * 180, zb = zc + 90 - (k % 2) * 180; edgePts.push(fx, y, za, fx, y + FL, zb); pushBox(bodies, face - side * 30, y + FL, zb, 60, 10, 70); y += FL; k++; } }
+  const TYPES = ['pencil', 'mall', 'terrace', 'screen', 'old', 'fins', 'bands', 'corner'];
+  const crossAt = [[-2900, -2400], [1000, 1500], [-800, -200]];
   for (const side of [-1, 1]) {
-    let z = 2300; const INNER = 2450;
+    let z = 2300, idx = 0; const INNER = 2450;
     while (z > -9500) {
-      const w = 300 + r2() * 300, dep = 620 + r2() * 300, h = 1300 + Math.pow(r2(), 1.5) * 2300; z -= w; if (z < -800 && z > -200) { z = -200; continue; }
-      const cx = X0 + side * (INNER + dep / 2), cz = z + w / 2, cy = FLOORY + h / 2; pushBox(bodies, cx, cy, cz, dep, h, w); edgeOf(cx, cy, cz, dep, h, w);
-      const face = X0 + side * INNER, nS = 3 + Math.floor(r2() * 5);
-      for (let i = 0; i < nS; i++) { const sh = 420 + r2() * 760, sy = FLOORY + 260 + r2() * Math.max(10, h - sh - 360), sz = z + 30 + r2() * (w - 60); pushBox(signs, face - side * 36, sy + sh / 2, sz, 72, sh, 34 + r2() * 40); }
-      for (let i = 0; i < 2 + Math.floor(r2() * 3); i++) { const ph = 380 + r2() * 420, sy = FLOORY + 220 + r2() * Math.max(10, h - ph - 300); pushBox(panels, face - side * 12, sy + ph / 2, z + w / 2, 24, ph, w * (0.5 + r2() * 0.35)); }
-      for (let i = 0; i < 4; i++) { const sh = 700 + r2() * 900, sy = FLOORY + 300 + r2() * Math.max(10, h - sh - 400); pushBox(signs, face - side * (95 + r2() * 30), sy + sh / 2, z + 40 + r2() * (w - 80), 46, sh, 26 + r2() * 24); }
-      { const sx = face - side * 6; let sy = FLOORY + 120; const stz = z + w - 40; for (let k = 0; sy < FLOORY + h - 200; k++) { edgePts.push(sx, sy, stz - (k % 2) * 70, sx, sy + 90, stz - ((k + 1) % 2) * 70); sy += 90; } }
-      for (let i = 0; i < 9; i++) pushBox(boxesS, face - side * (30 + r2() * 30), FLOORY + 150 + r2() * (h - 250), z + 20 + r2() * (w - 40), 60 + r2() * 50, 60 + r2() * 90, 70 + r2() * 70);
-      if (r2() < 0.7) tanks.push([cx + (r2() - 0.5) * dep * 0.5, FLOORY + h + 100, cz + (r2() - 0.5) * w * 0.4, 70, 200]);
-      if (r2() < 0.6) pushBox(panels, cx + side * (r2() - 0.5) * dep * 0.3, FLOORY + h + 190, cz, 24, 380, w * 0.7);
-      z -= 14 + r2() * 30;
+      const near = z > -4600, type = TYPES[Math.floor(r2() * TYPES.length)], tall = idx % 3 === 0;
+      let w, dep, h; switch (type) { case 'pencil': w = 250 + r2() * 90; dep = 560; h = 2500 + r2() * 1100; break; case 'mall': w = 640 + r2() * 160; dep = 820; h = 1250 + r2() * 500; break; case 'terrace': w = 440 + r2() * 120; dep = 760; h = 1900 + r2() * 900; break; case 'screen': w = 460 + r2() * 100; dep = 700; h = 1700 + r2() * 700; break; case 'old': w = 300 + r2() * 100; dep = 620; h = 720 + r2() * 300; break; case 'fins': w = 380 + r2() * 120; dep = 700; h = 1500 + r2() * 800; break; case 'bands': w = 420 + r2() * 160; dep = 740; h = 1400 + r2() * 700; break; default: w = 460; dep = 820; h = 1600 + r2() * 600; }
+      if (tall && type !== 'old') h *= 1.18;
+      z -= w; let cornerLeft = false; for (const [lo, hi] of crossAt) { if (z + w > lo && z < hi) { z = lo; cornerLeft = true; break; } } if (cornerLeft) continue;
+      const z1 = z + w, zc = z + w / 2, y0 = FLOORY, face = X0 + side * INNER, cx = face + side * dep / 2;
+      /* main body (+ setbacks for the stepped type) */
+      if (type === 'terrace') { const h1 = h * 0.52; pushBox(bodies, cx, y0 + h1 / 2, zc, dep, h1, w); edgeOf(cx, y0 + h1 / 2, zc, dep, h1, w); const h2 = h * 0.26, d2 = dep * 0.82, c2 = face + side * (60 + d2 / 2); pushBox(bodies, c2, y0 + h1 + h2 / 2, zc, d2, h2, w * 0.86); edgeOf(c2, y0 + h1 + h2 / 2, zc, d2, h2, w * 0.86); const h3 = h * 0.22, d3 = dep * 0.6, c3 = face + side * (140 + d3 / 2); pushBox(bodies, c3, y0 + h1 + h2 + h3 / 2, zc, d3, h3, w * 0.66); edgeOf(c3, y0 + h1 + h2 + h3 / 2, zc, d3, h3, w * 0.66); }
+      else { pushBox(bodies, cx, y0 + h / 2, zc, dep, h, w); edgeOf(cx, y0 + h / 2, zc, dep, h, w); }
+      if (type === 'mall') { pushBox(bodies, face + side * (dep / 2 - 30), y0 + FL * 1.1, zc, dep + 60, FL * 2.2, w + 20); }                 /* wider podium */
+      if (type === 'corner') { const r = 190; cyls.push([face + side * r, y0 + h / 2, z1 - r + 6, r, h]); cyls.push([face + side * r, y0 + h / 2, z + r - 6, r, h]); }          /* rounded street corners */
+      const top = y0 + h; pushBox(bodies, cx + side * dep * 0.1, top + 60, zc, dep * 0.55, 120, w * 0.6);                                        /* roof plant */
+      if (r2() < 0.7) tanks.push([cx + side * dep * 0.25, top + 190, zc + w * 0.2, 70, 200]);
+      if (near) {
+        facade(face, side, z, z1, y0, h, true);
+        if (type === 'pencil') { signColumn(face, side, z + 40, y0, h, 1, 7); signColumn(face, side, z1 - 40, y0, h, 0, 8); acColumn(face, side, zc, y0, h); }
+        else if (type === 'mall') { pushBox(panels, face - side * 14, y0 + h * 0.62, zc, 22, h * 0.34, w * 0.76); roofFrame(cx, side, top + 120, zc, w); signColumn(face, side, z + 40, y0, h * 0.6, 2, 2); }
+        else if (type === 'screen') { pushBox(panels, face - side * 14, y0 + h * 0.52, zc, 22, h * 0.58, w * 0.82); signColumn(face, side, z + 36, y0, h, 0, 8); signColumn(face, side, z1 - 36, y0, h, 0, 8); }
+        else if (type === 'old') { stairs(face, side, zc, y0, h); signColumn(face, side, z + 40, y0, h, 0, 2); roofFrame(cx, side, top + 120, zc, w * 0.9); }
+        else if (type === 'fins') { for (let zz = z + 30; zz < z1 - 20; zz += 64) pushBox(fins, face - side * 20, y0 + h * 0.5, zz, 38, h * 0.92, 14); signColumn(face, side, zc, y0, h, 2, 3); }
+        else if (type === 'bands') { for (let y = y0 + FL * 3; y < top - 120; y += FL * 3) pushBox(bands, face - side * 28, y, zc, 56, 16, w); acColumn(face, side, z + 60, y0, h); acColumn(face, side, z1 - 60, y0, h); signColumn(face, side, zc, y0, h, 1, 4); }
+        else if (type === 'terrace') { signColumn(face, side, z + 40, y0, h * 0.52, 1, 3); acColumn(face, side, zc, y0, h * 0.5); }
+        else { signColumn(face, side, z + 36, y0, h, 1, 6); pushBox(panels, face - side * 14, y0 + h * 0.5, zc, 22, h * 0.4, w * 0.6); }
+      }
+      z -= 8 + r2() * 14; idx++;
     } }
   const inst = (list, mat0, geo, shadow) => { const m = new THREE.InstancedMesh(geo, mat0, list.length), o = new THREE.Object3D(); list.forEach((b, i) => { o.position.set(b[0], b[1], b[2]); o.scale.set(b[3], b[4], b[5]); o.updateMatrix(); m.setMatrixAt(i, o.matrix); }); m.castShadow = shadow; m.receiveShadow = true; m.frustumCulled = false; scene.add(m); return m; };
-  const unit = new THREE.BoxGeometry(1, 1, 1); inst(bodies, bMat, unit, true); inst(signs, sMat, unit, true); inst(panels, sMat, unit, false); inst(boxesS, sMat, unit, false);
+  const unit = new THREE.BoxGeometry(1, 1, 1); inst(bodies, bMat, unit, true); inst(signs, sMat, unit, true); inst(panels, sMat, unit, false); inst(boxesS, sMat, unit, false); inst(bands, bMat, unit, true); inst(fins, bMat, unit, false); inst(awn, sMat, unit, true);
+  { const cg = new THREE.CylinderGeometry(0.5, 0.5, 1, 28), m = new THREE.InstancedMesh(cg, bMat, cyls.length), o = new THREE.Object3D(); cyls.forEach((q, i) => { o.position.set(q[0], q[1], q[2]); o.scale.set(q[3] * 2, q[4], q[3] * 2); o.updateMatrix(); m.setMatrixAt(i, o.matrix); }); m.castShadow = true; m.frustumCulled = false; scene.add(m); }
   { const cg = new THREE.CylinderGeometry(0.5, 0.5, 1, 14), m = new THREE.InstancedMesh(cg, bMat, tanks.length), o = new THREE.Object3D(); tanks.forEach((t, i) => { o.position.set(t[0], t[1], t[2]); o.scale.set(t[3] * 2, t[4], t[3] * 2); o.updateMatrix(); m.setMatrixAt(i, o.matrix); }); m.castShadow = true; m.frustumCulled = false; scene.add(m); }
   { const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(edgePts, 3)); const l = new THREE.LineSegments(g, eMat); l.frustumCulled = false; scene.add(l); }
   /* road, markings, the crimson path line that leads the eye (and the camera) down the street */
@@ -201,10 +232,11 @@
   const edgeMats = []; let gplates = [], merged = false, reliefTex = null, maskTex = null; const MX = 36, MY = 32;
   function buildMerged() {
     if (!silImg.complete || !silImg.naturalWidth) return; const MW = FMW, MH = FMH, RW = MW + 2 * MX, RH = MH + 2 * MY, S2 = 3;
+    const DARK = [[48, 25, 25], [68, 41, 42], [122, 31, 43]], keepPx = (r, g, b, a, x, y) => { if (a <= 110) return false; if (x < MW * 0.52 && y < MH * 0.42) return true; let bd = 1e9, di = false; for (let k = 0; k < 3; k++) { const d = (r - DARK[k][0]) ** 2 + (g - DARK[k][1]) ** 2 + (b - DARK[k][2]) ** 2; if (d < bd) { bd = d; di = true; } } const others = [[215, 144, 86], [237, 181, 110], [241, 224, 210], [244, 203, 142], [178, 39, 48], [208, 91, 52]]; for (const o of others) { const d = (r - o[0]) ** 2 + (g - o[1]) ** 2 + (b - o[2]) ** 2; if (d < bd) { bd = d; di = false; } } return !di; };
     const oc = cnv(MW, MH), og = oc.getContext('2d'); og.drawImage(silImg, 0, 0, MW, MH); const od = og.getImageData(0, 0, MW, MH).data;
     const mk = cnv(RW * S2, RH * S2), mg = mk.getContext('2d'); mg.fillStyle = '#000'; mg.fillRect(0, 0, mk.width, mk.height);
     const lc = cnv(MW, MH), lg = lc.getContext('2d'), li = lg.createImageData(MW, MH);
-    for (let i = 0; i < MW * MH; i++) { const x = i % MW, y = (i / MW) | 0, lum = 0.2126 * od[i * 4] + 0.7152 * od[i * 4 + 1] + 0.0722 * od[i * 4 + 2], hat = x < MW * 0.5 && y < MH * 0.38, on = od[i * 4 + 3] > 110 && (lum >= 66 || hat); li.data[i * 4] = li.data[i * 4 + 1] = li.data[i * 4 + 2] = 255; li.data[i * 4 + 3] = on ? 255 : 0; }
+    for (let i = 0; i < MW * MH; i++) { const x = i % MW, y = (i / MW) | 0, on = keepPx(od[i * 4], od[i * 4 + 1], od[i * 4 + 2], od[i * 4 + 3], x, y); li.data[i * 4] = li.data[i * 4 + 1] = li.data[i * 4 + 2] = 255; li.data[i * 4 + 3] = on ? 255 : 0; }
     lg.putImageData(li, 0, 0); mg.drawImage(lc, MX * S2, MY * S2, MW * S2, MH * S2);
     /* relief: signed distance to the stroke edge (float, two chamfer passes), a smooth bevel profile, normals from its gradient */
     { const W = mk.width, H = mk.height, md = mk.getContext('2d').getImageData(0, 0, W, H).data, N0 = W * H, inside = new Float32Array(N0), outside = new Float32Array(N0), BIG = 1e6;
@@ -229,17 +261,17 @@
     /* some of the big ones split again along a random line, a few splinters and dust around the pane */
     const out = []; const cut = (q) => { const g = q.reduce((a, p) => [a[0] + p[0] / q.length, a[1] + p[1] / q.length], [0, 0]), th = rr() * 3.14, nx = Math.cos(th), ny = Math.sin(th), c0 = nx * g[0] + ny * g[1]; return [clipHalf(q, nx, ny, c0), clipHalf(q, -nx, -ny, -c0)]; };
     cellsP.forEach((q) => { if (Math.abs(area2(q)) > 38000 && rr() < 0.6) { const [a, b] = cut(q); [a, b].forEach((z) => { if (z.length >= 3 && Math.abs(area2(z)) > 220) out.push(z); }); } else out.push(q); });
-    const maskAt = (x, y) => { const xi = Math.round(x), yi = Math.round(y); if (xi < 0 || yi < 0 || xi >= MW || yi >= MH) return false; const k = (yi * MW + xi) * 4; const lum = 0.2126 * od[k] + 0.7152 * od[k + 1] + 0.0722 * od[k + 2]; return od[k + 3] > 110 && (lum >= 66 || (xi < MW * 0.5 && yi < MH * 0.38)); };
+    const maskAt = (x, y) => { const xi = Math.round(x), yi = Math.round(y); if (xi < 0 || yi < 0 || xi >= MW || yi >= MH) return false; const k = (yi * MW + xi) * 4; return keepPx(od[k], od[k + 1], od[k + 2], od[k + 3], xi, yi); };
     const carries = (q) => { const xs = q.map((p) => p[0]), ys = q.map((p) => p[1]); let hit = 0; for (let y = Math.min(...ys); y <= Math.max(...ys); y += 7) for (let x = Math.min(...xs); x <= Math.max(...xs); x += 7) if (inPoly([x, y], q) && maskAt(x, y)) hit++; return hit; };
-    const kept = out.filter((q) => carries(q) >= 3 && q.every((p) => p[0] > -20 && p[0] < MW + 20 && p[1] > -16 && p[1] < MH + 16)).map((q) => { const g = q.reduce((a, p) => [a[0] + p[0] / q.length, a[1] + p[1] / q.length], [0, 0]); return q.map((p) => [g[0] + (p[0] - g[0]) * 0.88, g[1] + (p[1] - g[1]) * 0.88]); }); out.length = 0; out.push(...kept);
+    const kept = out.filter((q) => carries(q) >= 3).map((q) => { const g = q.reduce((a, p) => [a[0] + p[0] / q.length, a[1] + p[1] / q.length], [0, 0]); return q.map((p) => [g[0] + (p[0] - g[0]) * 0.94, g[1] + (p[1] - g[1]) * 0.94]); }); out.length = 0; out.push(...kept);
     const nCore = out.length; for (let i = 0; i < 16; i++) { const g = [rr() * (MW + 80) - 40, rr() * (MH + 60) - 30], s = 14 + rr() * 34, a = rr() * 6.28; out.push([[g[0], g[1]], [g[0] + s * Math.cos(a), g[1] + s * Math.sin(a)], [g[0] + s * 0.4 * Math.cos(a + 2.2), g[1] + s * 0.4 * Math.sin(a + 2.2)]]); }
-    const glassMat = new THREE.MeshPhysicalMaterial({ color: 0xffffff, metalness: 0, roughness: 0.012, transmission: 1, thickness: 26, ior: 1.52, dispersion: 0.7, attenuationColor: new THREE.Color(0xa9e6d8), attenuationDistance: 900, clearcoat: 1, clearcoatRoughness: 0.015, envMapIntensity: NIGHT ? 1.5 : 1.7, specularIntensity: 1, depthWrite: false, normalMap: reliefTex });
+    const glassMat = new THREE.MeshPhysicalMaterial({ color: 0xffffff, metalness: 0, roughness: 0.012, transmission: 1, thickness: 14, ior: 1.45, dispersion: 0.5, attenuationColor: new THREE.Color(0xa9e6d8), attenuationDistance: 900, clearcoat: 1, clearcoatRoughness: 0.015, envMapIntensity: NIGHT ? 1.5 : 1.7, specularIntensity: 1, depthWrite: false, normalMap: reliefTex });
     FU = (window.SceneCells ? window.SceneCells.LW : 860) / MW;
     out.forEach((q, idx) => {
       const xs = q.map((p) => p[0]), ys = q.map((p) => p[1]), x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys), cx = (x0 + x1) / 2, cy = (y0 + y1) / 2, T = (p) => new THREE.Vector2(p[0] - cx, -(p[1] - cy));
       const shape = new THREE.Shape(q.map(T)); const geo = new THREE.ExtrudeGeometry(shape, { depth: 26, bevelEnabled: true, bevelThickness: 3.2, bevelSize: 2.8, bevelOffset: -2.8, bevelSegments: 2, curveSegments: 1 }); geo.translate(0, 0, -13);
       const gp = geo.attributes.position, gu = geo.attributes.uv; for (let k = 0; k < gp.count; k++) gu.setXY(k, (gp.getX(k) + cx + MX) / RW, 1 - (cy - gp.getY(k) + MY) / RH); gu.needsUpdate = true;
-      const mat = glassMat.clone(); mat.normalScale = new THREE.Vector2(0.2, 0.2); const glass = new THREE.Mesh(geo, mat); glass.renderOrder = 1; glass.castShadow = true;
+      const mat = Q.get('flat') === '1' ? new THREE.MeshBasicMaterial({ color: 0xffffff, alphaMap: maskTex, transparent: true }) : glassMat.clone(); if (mat.normalScale) mat.normalScale = new THREE.Vector2(0.2, 0.2); const glass = new THREE.Mesh(geo, mat); glass.renderOrder = 1; glass.castShadow = true;
       const sg = new THREE.ShapeGeometry(shape, 1), sp = sg.attributes.position, su = sg.attributes.uv; for (let k = 0; k < sp.count; k++) su.setXY(k, (sp.getX(k) + cx + MX) / RW, 1 - (cy - sp.getY(k) + MY) / RH); su.needsUpdate = true;
       const glowMat = new THREE.ShaderMaterial({ uniforms: { map: { value: maskTex }, box: { value: new THREE.Vector4((x0 + MX) / RW, 0, (x1 + MX) / RW, 1) }, prog: { value: 0 }, lit: { value: 0 }, time: { value: 0 }, uGain: { value: 1 } }, vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }', fragmentShader: glowFrag, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending });
       const glow = new THREE.Mesh(sg, glowMat); glow.position.z = 0.6; glow.renderOrder = 3;
@@ -267,9 +299,9 @@
           else { lit = prog > p.thr ? 1 : 0; f = lit; }
           const ox = Math.sin(ft * 0.5 + p.ph) * p.amp * damp * br, oy = Math.cos(ft * 0.4 + p.ph) * p.amp * damp * br, oz = Math.sin(ft * 0.6 + p.ph * 2) * p.amp * 2 * damp * br;
           p.g3.position.set(p.X + ox, -(p.Y + oy), p.Z + oz); p.g3.rotation.set(-(p.rx + Math.sin(ft * p.spin + p.ph) * 8 * br) * kk * D2R, (p.ry + Math.cos(ft * p.spin + p.ph) * 8 * br) * kk * D2R, -p.rz * kk * D2R, 'ZYX'); p.g3.scale.setScalar(p.k * FU);
-          const inten = lit ? 1 : f > 0 ? 0.3 + 0.7 * f : 0.16; p.mat.normalScale.set(1.5 * inten, 1.5 * inten); p.ghost.visible = !lit && f <= 0;
+          const inten = lit ? 1 : f > 0 ? 0.3 + 0.7 * f : 0.16; if (p.mat.normalScale) p.mat.normalScale.set(1.5 * inten, 1.5 * inten); p.ghost.visible = !lit && f <= 0;
           p.glowMat.uniforms.prog.value = f; p.glowMat.uniforms.lit.value = p.core ? lit : 0; p.glowMat.uniforms.time.value = m.t; p.glowMat.uniforms.uGain.value = p.core ? (m.reveal > 0.5 ? 0.55 : 1) : 0;
-          p.edgeMat.opacity = lit ? (m.reveal > 0.5 ? 0.22 : 0.5) : f > 0 ? 0.18 + 0.4 * f : 0.05; });
+          p.edgeMat.opacity = lit ? (m.reveal > 0.5 ? 0.12 : 0.3) : f > 0 ? 0.1 + 0.25 * f : 0.04; });
          return; }
       if (MODE === 'A') { if (!fragBuilt) buildFragments(); if (!fragBuilt) return; const s = m.s, N = s.st.length, K = frags.length, br = REDUCE ? 0 : 1, ft = m.t * br, damp = 1 - m.reveal, kk = 1 - m.reveal;
         frags.forEach((f, i) => { const seg = Math.min(N - 1, Math.floor(i * N / K)), st = s.st[seg], fr = st === 2 ? 1 : (st === 1 || st === 3 ? s.fr[seg] : 0), lit = st === 2 ? 1 : 0;
