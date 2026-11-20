@@ -123,7 +123,16 @@
     /* 2026-11-20 release check (user 2026-11-19, windowed 千恋＊万花: 「只要显示器上还有位置就不要这样」): the button-strip rule is for a game that
        fills the screen; when the work area has room for the translation below the game window it goes there at full size (the rule further down) */
     const roomBelow = (() => { const i = b.galLayoutInfo?.(), d = devicePixelRatio || 1, wb = (Number.isFinite(i?.workBottom) && i.workBottom > 0 ? i.workBottom / d : innerHeight) - 8; return row ? wb - (cy0 + chc) >= row.getBoundingClientRect().height : false; })();
-    if (row && !roomBelow && !anchor.center && tr && tr.height) { const glyph = tr.height, uiLimit = cy0 + chc - glyph * 2;
+    /* 2026-11-20 release check (CHAOS;CHILD rig: with room below the window the strip rule was skipped whole and the Japanese third row
+       sat on AUTO/SKIP). Both rules hold: MeguLit's Japanese never enters the game's button strip (rows close up, the block moves up),
+       and with room on the monitor the translation keeps its size; when it would land on the strip it goes below the window instead. */
+    if (row) row.style.removeProperty('margin-top');
+    if (row && roomBelow && !anchor.center && tr && tr.height) { const glyph = tr.height, uiLimit = cy0 + chc - glyph * 2;
+      sentence.style.removeProperty('line-height'); let sx = sentence.getBoundingClientRect();
+      if (sx.bottom > uiLimit && sentence.querySelector('br.megulit-row-br')) { set(sentence, 'line-height', '1.45'); sx = sentence.getBoundingClientRect(); }
+      if (sx.bottom > uiLimit) { const up = Math.min(sx.bottom - uiLimit, Math.max(0, win.getBoundingClientRect().top - cy0)); set(win, 'top', (parseFloat(win.style.top) || win.getBoundingClientRect().top) - up + 'px'); }
+      const rr = row.getBoundingClientRect(); if (rr.bottom > uiLimit && rr.top < cy0 + chc) set(row, 'margin-top', Math.ceil(cy0 + chc - rr.top + 4) + 'px'); }
+    else if (row && !roomBelow && !anchor.center && tr && tr.height) { const glyph = tr.height, uiLimit = cy0 + chc - glyph * 2;
       sentence.style.removeProperty('line-height');
       if (row.getBoundingClientRect().bottom > uiLimit && sentence.querySelector('br.megulit-row-br')) set(sentence, 'line-height', '1.45');
       const fsx = parseFloat(getComputedStyle(parts[0] || row).fontSize) || 16; let rx = row.getBoundingClientRect();
