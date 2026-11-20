@@ -31,6 +31,7 @@
 #include "../shared/minhook/include/MinHook.h"
 #include "modules/modules.h"
 #include "modules/dump_api.h"
+#include "threadflag.h"
 
 // ---- feature modules (modules/modules.h, docs/runtime-dump-pack.md) -------------------------------------------------
 #define MODULE(Name) void Name##Start(const wchar_t *out); void Name##Tick();
@@ -55,7 +56,7 @@ namespace {
 HMODULE Self;
 wchar_t Out[1024];
 CRITICAL_SECTION Gate;
-DWORD Tls = TLS_OUT_OF_INDEXES;
+ThreadFlags ThreadBusy;             // per-thread "inside a hook" flag, never allocates (threadflag.h)
 volatile LONG Ready, Seq;
 volatile DWORD ArmedUntil;          // tick until which heap allocations are watched (fast path check, no lock)
 volatile LONG ArmMin, ArmMax;       // size window for allocations after the last tracked read
@@ -68,11 +69,11 @@ const DWORD WatchMs = 8000;
 typedef ULONG(NTAPI *Crc32Fn)(ULONG, const void *, ULONG);
 Crc32Fn Crc32;
 
-// TlsGetValue/TlsSetValue reset the thread's last error; the hooks run right after the game's own API call, whose last
+// GetLastError-saving: TlsGetValue/TlsSetValue (used before 2026-11-20) reset the thread's last error; the hooks run right after the game's own API call, whose last
 // error the game is about to read (ERROR_FILE_NOT_FOUND, ERROR_ALREADY_EXISTS ...). Guard and Inside() keep it, and every
 // hook also saves it right after the original call and puts it back on every path (review 2026-11-13, item 1).
-struct Guard { bool was; DWORD e; Guard() { e = GetLastError(); was = TlsGetValue(Tls) != NULL; TlsSetValue(Tls, (void *)1); SetLastError(e); } ~Guard() { if (!was) TlsSetValue(Tls, NULL); SetLastError(e); } };
-bool Inside() { DWORD e = GetLastError(); bool r = Tls == TLS_OUT_OF_INDEXES || TlsGetValue(Tls) != NULL; SetLastError(e); return r; }
+struct Guard { bool was; DWORD e; Guard() { e = GetLastError(); was = ThreadBusy.Raise(); SetLastError(e); } ~Guard() { ThreadBusy.Lower(was); SetLastError(e); } };
+bool Inside() { return ThreadBusy.On(); }
 // Gate held by scope, so a C++ exception (bad_alloc) inside a hook cannot leave it locked (review item 4).
 struct Lock { Lock(); ~Lock(); };
 
@@ -697,7 +698,7 @@ void ModulesRun(bool starting) {
  }
 }
 DWORD WINAPI Run(void *) {
- TlsSetValue(Tls, (void *)1); // this thread's own file and heap use is never watched
+ThreadBusy.Raise(); // this thread's own file and heap use is never watched
  wchar_t self[1024], game[1024], root[1024];
  if (!GetModuleFileNameW(Self, self, 1024) || !GetModuleFileNameW(NULL, game, 1024)) return 0;
  for (int k = 0; k < 2; k++) { wchar_t *s = wcsrchr(self, L'\\'); if (!s) return 0; *s = 0; }
@@ -778,8 +779,8 @@ bool DumpActive(const char *module) {
  for (auto &m : Modules) if (m.name && module && !strcmp(m.name, module)) return !m.off;
  return true;
 }
-DumpScope::DumpScope() { e = GetLastError(); was = TlsGetValue(Tls) != NULL; TlsSetValue(Tls, (void *)1); SetLastError(e); }
-DumpScope::~DumpScope() { if (!was) TlsSetValue(Tls, NULL); SetLastError(e); }
+DumpScope::DumpScope() { e = GetLastError(); was = ThreadBusy.Raise(); SetLastError(e); }
+DumpScope::~DumpScope() { ThreadBusy.Lower(was); SetLastError(e); }
 bool DumpSkipped(const wchar_t *path) { try { return !path || Skipped(path); } catch (...) { return true; } }
 // MinHook freezes every other thread while it patches, then calls CloseHandle, VirtualProtect, heap functions on this
 // thread. A frozen thread may hold Gate (inside one of our hooks), so while MinHook runs this thread is marked as
@@ -806,14 +807,13 @@ extern "C" __declspec(dllexport) int MeguLitDumpSelfTest(int what, DWORD ms) {
 bool DumpReadable(const void *p, SIZE_T n) { return Readable(p, n); }
 
 // modules.h DumpQuiet: the same thread mark Guard sets, for module code that runs on game threads.
-bool DumpQuietEnter() { DWORD e = GetLastError(); bool was = Tls == TLS_OUT_OF_INDEXES || TlsGetValue(Tls) != NULL; if (Tls != TLS_OUT_OF_INDEXES) TlsSetValue(Tls, (void *)1); SetLastError(e); return was; }
-void DumpQuietLeave(bool was) { DWORD e = GetLastError(); if (!was && Tls != TLS_OUT_OF_INDEXES) TlsSetValue(Tls, NULL); SetLastError(e); }
+bool DumpQuietEnter() { return ThreadBusy.Raise(); }
+void DumpQuietLeave(bool was) { ThreadBusy.Lower(was); }
 
 BOOL WINAPI DllMain(HINSTANCE h, DWORD reason, void *) {
  if (reason == DLL_PROCESS_ATTACH) {
   Self = h; DisableThreadLibraryCalls(h);
   InitializeCriticalSection(&Gate);
-  Tls = TlsAlloc();
   HMODULE pin; GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_PIN, (LPCWSTR)&DllMain, &pin);
   HANDLE t = CreateThread(NULL, 0, Run, NULL, 0, NULL);
   if (t) CloseHandle(t);
