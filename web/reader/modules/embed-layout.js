@@ -15,13 +15,13 @@
   b.tomeEmbedLayout = true;
   const lang = (document.documentElement.lang || 'zh').slice(0, 2);
   const ALL = {
-    zh: { trouble: '文字不对或没反应？', troubleHint: '点开：重新选来源、重新读取、反馈', reselect: '文字读错了？换一个来源', reselectTip: '游戏里可能同时有好几处文字来源（称为文本流），读到乱码或不是台词时，点这里让 MeguLit 重新挑',
+    zh: { tHide: '隐藏原文', tWait: '沉浸与等待图标', tOcr: '图形识别', tDiag: '诊断', trouble: '文字不对或没反应？', troubleHint: '点开：重新选来源、重新读取、反馈', reselect: '文字读错了？换一个来源', reselectTip: '游戏里可能同时有好几处文字来源（称为文本流），读到乱码或不是台词时，点这里让 MeguLit 重新挑',
       advanced: '更多：读取方式与来源列表', check: '检查原文有没有藏好', restart: '重新开始读取', stop: '停止读取', streams: '游戏里找到的文字来源', auto: '全自动：自动读台词、同步原文样式、替换原文',
       autoTip: '开启后进游戏就自动读取台词并把原文换成 MeguLit 的显示', blur: '只在本机处理游戏画面，不会调用翻译 API；少数游戏可能读不到', method: '原文隐藏方式', methodOpt: '读取台词并替换原文（推荐）' },
-    en: { trouble: 'Wrong text or nothing happens?', troubleHint: 'Open for: pick another source, restart reading, send feedback', reselect: 'Text misread? Try another source', reselectTip: 'A game can have several places its text comes from (called streams). If the text is garbled or not dialogue, click to let MeguLit pick again',
+    en: { tHide: 'Hide original', tWait: 'Immersion & wait icon', tOcr: 'Picture recognition', tDiag: 'Diagnostics', trouble: 'Wrong text or nothing happens?', troubleHint: 'Open for: pick another source, restart reading, send feedback', reselect: 'Text misread? Try another source', reselectTip: 'A game can have several places its text comes from (called streams). If the text is garbled or not dialogue, click to let MeguLit pick again',
       advanced: 'More: reading method and source list', check: 'Check the original is hidden', restart: 'Restart reading', stop: 'Stop reading', streams: 'Text sources found in the game', auto: 'Automatic: read lines, match the style, replace the original',
       autoTip: 'When on, MeguLit reads the lines as soon as the game starts and replaces the original text with its own', blur: 'Only processes the game picture on this PC and never calls a translation API; a few games may not be readable', method: 'How the original is hidden', methodOpt: 'Read the lines and replace the original (recommended)' },
-    ja: { trouble: '文字が違う・反応しない？', troubleHint: '開く：別の取得元を選ぶ・読み取りをやり直す・フィードバック', reselect: '文字が違う？別の取得元にする', reselectTip: 'ゲームには文字の取得元（ストリーム）が複数ある場合があります。文字化けや台詞でないときはここで選び直します',
+    ja: { tHide: '原文を隠す', tWait: '没入と待機アイコン', tOcr: '画像認識', tDiag: '診断', trouble: '文字が違う・反応しない？', troubleHint: '開く：別の取得元を選ぶ・読み取りをやり直す・フィードバック', reselect: '文字が違う？別の取得元にする', reselectTip: 'ゲームには文字の取得元（ストリーム）が複数ある場合があります。文字化けや台詞でないときはここで選び直します',
       advanced: '詳細：読み取り方式と取得元一覧', check: '原文が隠れているか確認', restart: '読み取りをやり直す', stop: '読み取りを停止', streams: 'ゲーム内で見つかった取得元', auto: '全自動：台詞を読み取り、スタイルを合わせ、原文を置き換える',
       autoTip: 'オンにすると起動後すぐに台詞を読み取り、原文を MeguLit の表示に置き換えます', blur: '画面の処理はこのPC内だけで行い、翻訳APIは呼びません。一部のゲームは読み取れないことがあります', method: '原文の隠し方', methodOpt: '台詞を読み取り原文を置き換える（推奨）' }
   };
@@ -82,10 +82,25 @@
     }
     return true;
   }
+  /* second-level tabs: the reusable .mg-subtabs from altt-compact.js; one page per tab, the source card stays on top */
+  const tabState = { i: 0 };
+  function tabs(panel) {
+    const sub = window.__megulitSubTabs?.mount, hide = panel.querySelector(':scope>.tome-mask-hide');
+    if (!sub || !hide) return;
+    const k = s => () => [...panel.querySelectorAll(':scope>' + s)];
+    sub(panel, hide, 'embed', [
+      { label: () => T.tHide, nodes: k('.tome-mask-hide') },
+      { label: () => T.tWait, nodes: () => [...panel.querySelectorAll(':scope>.tome-mask-wait, :scope>.tomoyo-v4-immersion')] },
+      { label: () => T.tOcr, pane: true, nodes: () => [...panel.querySelectorAll(':scope>details:not(.tome-mask-diag)')] },
+      { label: () => T.tDiag, pane: true, nodes: k('details.tome-mask-diag') }
+    ], tabState);
+  }
   function mount() {
     for (const p of document.querySelectorAll('.tome-hooks')) {
+      const panel = p.closest('.tome-mask-hide')?.parentElement;
+      if (p.dataset.embedLayout && panel) tabs(panel);
       if (p.dataset.embedLayout || !p.querySelector('.tome-src')) continue;
-      if (arrange(p)) p.dataset.embedLayout = '1';
+      if (arrange(p)) { p.dataset.embedLayout = '1'; tabs(p.closest('.tome-mask-hide').parentElement); }
     }
   }
   new MutationObserver(mount).observe(document.documentElement, { childList: true, subtree: true });

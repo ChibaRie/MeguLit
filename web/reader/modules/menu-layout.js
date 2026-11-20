@@ -236,7 +236,7 @@
   const scan=[...panel.querySelectorAll(':scope>details')].find(d=>d!==diag);
   // Immersion mode sits in the embed tab right below the click-wait icon card (user, 2026-11-03), as a card of its own.
   const imm=q(':scope>.tomoyo-v4-immersion');if(imm&&!imm.classList.contains('tome-mask-card'))imm.classList.add('tome-mask-card');
-  /* owner 2026-11-20: the hiding card sits low, just above the picture-recognition (scan) group */const order=[wait,imm,hide,scan,diag].filter(Boolean),kids=[...panel.children].filter(n=>order.includes(n));
+  /* owner 2026-11-20: the hiding card sits low, just above the picture-recognition (scan) group */const order=[hide,wait,imm,scan,diag].filter(Boolean),kids=[...panel.children].filter(n=>order.includes(n));
   if(kids.length!==order.length||kids.some((n,i)=>n!==order[i]))for(const n of order)panel.append(n);
  }
  // Opening animation, and a short fold-away for closing (settings.js hands the closed dialog to menuLeave).
