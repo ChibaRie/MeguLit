@@ -49,9 +49,12 @@ class GameStyleSync{
  constructor(layout,emit,spawnHelper=spawn){this.layout=layout;this.emit=emit;this.spawn=spawnHelper;this.seq=0;this.source='';this.enabled=true;this.lastAt=0;this.generation=0;this.samples=[];this.profiles={};
   // Settings the user confirmed for a game (keyed by the game executable's hash), applied at every launch.
   this.profileFile=layout.config?path.join(layout.config,'game-style-profiles.json'):null;
-  try{const v=JSON.parse(fs.readFileSync(this.profileFile,'utf8'));if(v&&[1,2,3].includes(v.version)&&v.entries&&typeof v.entries==='object')this.profiles=Object.fromEntries(Object.entries(v.entries).map(([k,e])=>[k.toLowerCase(),profileTools.normalize(e)]).filter(([k,e])=>/^[a-f0-9]{64}$/.test(k)&&e));}catch{}
+  this.reloadProfiles();
   // How engine draw-hook coordinates map to the screen for each game (text-position.js), from a position sync.
   this.mapFile=layout.config?path.join(layout.config,'game-position-maps.json'):null;this.maps={};try{const v=JSON.parse(fs.readFileSync(this.mapFile,'utf8'));if(v&&v.version===1&&v.entries&&typeof v.entries==='object')this.maps=v.entries;}catch{}for(const [key,entry]of Object.entries(this.profiles))if(Object.hasOwn(entry,'positionMap')){const m=profileTools.map(entry.positionMap);if(m)this.maps[key]=m;else if(m===null)delete this.maps[key];}}
+ /* The file is read again when someone else wrote it (Settings → 重置所有设置, a game's style edited in Settings): every
+    save writes all entries from this.profiles, so a copy from the reader's start put the reset or edited styles back. */
+ reloadProfiles(){if(!this.profileFile)return;try{const v=JSON.parse(fs.readFileSync(this.profileFile,'utf8'));if(v&&[1,2,3].includes(v.version)&&v.entries&&typeof v.entries==='object')this.profiles=Object.fromEntries(Object.entries(v.entries).map(([k,e])=>[k.toLowerCase(),profileTools.normalize(e)]).filter(([k,e])=>/^[a-f0-9]{64}$/.test(k)&&e));}catch{}}
  get profile(){return this.profileKey?this.profiles[this.profileKey]||null:null;}
  configure(p,s){const identity=String(s.gameProcessId||'')+'|'+String(s.gameStarted||'');if(identity!==this.identity){this.identity=identity;this.generation++;this.source='';this.latest=null;this.profileKey=null;this.samples=[];this.lastAt=0;this.calibrating=false;clearTimeout(this.timer);}this.p=p;this.s=s;
   const key=/^[a-f0-9]{64}$/i.test(String(s.gameStyleKey||''))?String(s.gameStyleKey).toLowerCase():null;

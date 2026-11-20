@@ -105,7 +105,14 @@ function cancel(root){const key=path.resolve(root),live=runs.get(key);if(live){l
 function resumeLater(root,openDb,{delay=180000}={}){if(process.env.NODE_TEST_CONTEXT)return null;const s=load(root);if(!s.run||!['running','paused'].includes(s.run.state))return null;
  const t=setTimeout(()=>{let db;try{db=openDb();const games=libraryGames(db);try{db.close();}catch{}resume(root,{prepare:()=>({all:()=>games})});}catch{try{db?.close();}catch{}}},delay);t.unref?.();return t;}
 /* the games whose probe found a problem: [{id,title,step,detail}] */
-function problems(root){return Object.entries(results(root)).filter(([,r])=>r.step&&r.step!=='ok'&&r.step!=='no-script'&&r.step!=='preparing').map(([id,r])=>({id,title:r.title||'',step:r.step,detail:r.detail||''}));}
+/* #468 (ひぐらしのなく頃に解: the library probe found Unity and its script, step ok, while the reader fell back to OCR every few
+   lines; nothing was ever uploaded). What the reader saw at runtime counts too: a game whose lines came from OCR is a problem
+   game whatever the static probe said. data/adapter-probe/runtime.json {gameId:{step,detail,at}}; kept 30 days. */
+const runtimeFile=root=>path.join(root,'data','adapter-probe','runtime.json');
+function runtimeProblems(root){const v=readJSON(runtimeFile(root))||{},now=Date.now(),out={};for(const [id,r] of Object.entries(v))if(r&&typeof r.step==='string'&&now-(+r.at||0)<30*86400000)out[id]=r;return out;}
+function markRuntime(root,id,step,detail=''){id=String(id||'');if(!id||!step)return false;const v=runtimeProblems(root);if(v[id]?.step===step)return false;v[id]={step:String(step),detail:String(detail).slice(0,200),at:Date.now()};atomic(runtimeFile(root),v);try{require('./probe-auto.cjs').kick(root);}catch{}return true;}
+function problems(root){const rs=results(root),rt=runtimeProblems(root),out=Object.entries(rs).filter(([,r])=>r.step&&r.step!=='ok'&&r.step!=='no-script'&&r.step!=='preparing').map(([id,r])=>({id,title:r.title||'',step:r.step,detail:r.detail||''}));
+ for(const [id,r] of Object.entries(rt))if(rs[id]&&!out.some(x=>x.id===id))out.push({id,title:rs[id].title||'',step:r.step,detail:r.detail||''});return out;}
 /* one row for the 适配总览 dialog: {step,detail,lines,pairing,at} or null */
 function brief(root,id){const r=results(root)[String(id)];if(!r)return null;return {step:r.step,detail:r.detail||'',engine:r.detected||null,lines:r.lines||0,japaneseLines:r.japaneseLines||0,pairing:r.pairing?.rate??null,at:r.at||null};}
-module.exports={partialResult,inWorker,sampleInWorker,fullInWorker,start,resume,cancel,status,results,problems,brief,resumeLater,load,fileOf,LOW_PAIRING,finish,pairingOf,libraryGames};
+module.exports={markRuntime,runtimeProblems,partialResult,inWorker,sampleInWorker,fullInWorker,start,resume,cancel,status,results,problems,brief,resumeLater,load,fileOf,LOW_PAIRING,finish,pairingOf,libraryGames};

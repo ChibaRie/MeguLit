@@ -29,7 +29,17 @@ function parsePre(src){const lines=[],ruby=[],anchors=[];
    if(!text){if(buf.length)flush();continue;}buf.push(text);}
   flush();}
  return {lines,anchors,ruby};}
-function parse(buf){const src=decode(buf);if(/<\/PRE>/i.test(src))return parsePre(src);
+/* Steins;Gate ships its scripts compiled (.nsb): records of u32 line, u16 opcode, u16 argument count, then each argument as
+   u32 length + bytes. The text is the <PRE @box>…</PRE> argument, the same source as an .nss. → those blocks, or null
+   when the buffer is not a record list that ends exactly at its end */
+const PRE_OPEN=Buffer.from('<PRE','latin1');
+function nsbText(buf){if(buf.length<8)return null;let q=0;const out=[];
+ while(q+8<=buf.length){const n=buf.readUInt16LE(q+6);q+=8;
+  for(let k=0;k<n;k++){if(q+4>buf.length)return null;const l=buf.readUInt32LE(q);q+=4;if(q+l>buf.length)return null;const a=buf.subarray(q,q+l);q+=l;
+   if(a.subarray(0,8).includes(PRE_OPEN))out.push(a);}}
+ return q===buf.length?out:null;}
+function parse(buf){const nsb=nsbText(buf);if(nsb)return nsb.length?parsePre(decode(Buffer.concat(nsb.flatMap(b=>[b,Buffer.from('\n')])))):{lines:[],anchors:[],ruby:[]};
+ const src=decode(buf);if(/<\/PRE>/i.test(src))return parsePre(src);
  const lines=[],ruby=[],anchors=[];
  for(const raw of src.split(/\r\n|\r|\n/)){const t=raw.trim();if(!t||t.startsWith('//')){continue;}
   const name=(/<VOICE\b[^>]*\bname="([^"]*)"/i.exec(t)||[])[1];const pairs=[];
@@ -38,5 +48,5 @@ function parse(buf){const src=decode(buf);if(/<\/PRE>/i.test(src))return parsePr
   if(name){lines.push(name);ruby.push(null);}lines.push(text);ruby.push(pairs.length?pairs:null);}
  return {lines,anchors,ruby};}
 const engine=kit.engine({id:'nitro-npa',hint:'nss.npa',overlay:false,
- archives:{name:/\.npa$/i,subs:['','..'],list,entry:/\.nss$/i,sort:false},parse,test:n=>/\.nss$/i.test(n)});
-module.exports={list,parse,engine};
+ archives:{name:/\.npa$/i,subs:['','..'],list,entry:/\.ns[sb]$/i,sort:false},parse,test:n=>/\.ns[sb]$/i.test(n)});
+module.exports={list,parse,nsbText,engine};

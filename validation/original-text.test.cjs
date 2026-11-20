@@ -114,3 +114,12 @@ test('AAR archives (v0 raw/ZLB, v2 obfuscated names + symlink) list and extract'
   const file=path.join(dir,'t'+ver+'.red');fs.writeFileSync(file,Buffer.concat([head,...ents.map(e=>e.idx),...files.filter(f=>f[2]!==2).map(f=>f[1])]));
   const l=listAar(file);assert.equal(l.length,files.length);assert.equal(l[1].name,'b/c.bin');assert.equal(readAarEntry(file,l[0]).toString(),'plain');assert.equal(readAarEntry(file,l[1]).toString(),'ハロー世界');if(ver>=2)assert.equal(l[2].link,'a.txt');}
  fs.rmSync(dir,{recursive:true,force:true});});
+
+test('a few kana lines in a big translated script (translator notes) do not decide the layout',()=>{
+ const n=60000,zh=Array.from({length:n},(_,i)=>'中文台词'+i),ja=Array.from({length:n},(_,i)=>'日本語のセリフ'+i);
+ for(const i of [100,200,300])zh[i]='原文：「キタキツネ」（北极狐）';
+ const s={messages:1,functionHash:'x'},a=ot.align({lines:zh,structure:s},{lines:ja,structure:s});
+ assert.equal(a.keptJapanese,3);assert.equal(a.keptEqual,0);assert.equal(a.reliable,true);
+ for(let i=1000;i<1100;i++)zh[i]='原文：「キタキツネ」（北极狐）';
+ assert.equal(ot.align({lines:zh,structure:s},{lines:ja,structure:s}).reliable,false);
+});
