@@ -121,8 +121,9 @@ test('window closed mid-way: next launch reuses the finished pack and resumes th
   assert.equal(ev2.at(-1).code,0,JSON.stringify(ev2));
   assert.equal(ev2.find(e=>e.kind==='downloaded'&&e.id==='base').reused,true,'base not downloaded again');
   assert.equal(src.served.base,before.base,'no base bytes on the second run');
-  assert.ok(ev2.find(e=>e.kind==='downloaded'&&e.id==='reading').resumed>0,'reading resumed');
-  assert.ok(src.served.reading-before.reading<P.reading.length*0.8,'only the missing part of reading fetched: '+(src.served.reading-before.reading));
+  /* the first 4 MB segment was finished before the window closed: it must be reused, not fetched again. The bytes the server sent also include the 3 s source probe, which on a fast machine alone is half the 6 MB pack, so the served total is only bounded loosely. */
+  assert.ok(ev2.find(e=>e.kind==='downloaded'&&e.id==='reading').resumed>=4*MB,'reading resumed with its finished 4 MB segment: '+ev2.find(e=>e.kind==='downloaded'&&e.id==='reading').resumed);
+  assert.ok(src.served.reading-before.reading<P.reading.length*1.5,'reading not fetched twice over: '+(src.served.reading-before.reading));
   for(const id of ['base','reading','voice'])assert.ok(has(root,id),id);
  }finally{src.close();fs.rmSync(work,{recursive:true,force:true,maxRetries:30,retryDelay:300});}
 });

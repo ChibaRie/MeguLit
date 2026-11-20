@@ -56,10 +56,16 @@ const manifest = JSON.parse(fs.readFileSync(path.join(SRC, 'setup', 'runtime.jso
     for (const d of [DST, STAGE]) try { fs.rmSync(d, { recursive: true, force: true }); } catch (e) { /* none */ }
     const env = { MEGULIT_SETUP_WEB_DPI: String(dpi), WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: '--remote-debugging-port=9333' + (factor !== 1 ? ' --force-device-scale-factor=' + factor : '') }; if (stage === 'lowspace') env.MEGULIT_SETUP_FREE = '1000000000';
     launch(env); const c = await connect(); await waitFor(async () => (await c.ev('window.Scene&&Scene.section')) === 'loc', 60000, 'location screen'); await sleep(2500);
-    const pid = +cp.execFileSync('powershell.exe', ['-NoProfile', '-Command', "(Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'powershell.exe' -and $_.CommandLine -match 'setup-runtime.ps1' } | Select-Object -First 1).ProcessId"], { encoding: 'utf8' }).trim();
+    const pid = +cp.execFileSync('powershell.exe', ['-NoProfile', '-Command', "(Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'powershell.exe' -and $_.ProcessId -ne $PID -and $_.CommandLine -match '-File .*setup-runtime.ps1' } | Sort-Object CreationDate -Descending | Select-Object -First 1).ProcessId"], { encoding: 'utf8' }).trim();
     const hwnd = () => { const o = cp.execFileSync(HID, ['list', String(pid)], { encoding: 'utf8' }); const l = o.split('\n').find((x) => /vis=True/.test(x) && / (1000|1500|1940)x/.test(x)); return l ? l.split(' ')[0] : ''; };
     const logs = () => events().filter((e) => e.kind === 'web').map((e) => e.text);
-    const post = (h, m, w) => cp.execFileSync('powershell.exe', ['-NoProfile', '-Command', `Add-Type -Name P -Namespace A -MemberDefinition '[DllImport("user32.dll")] public static extern bool PostMessage(IntPtr h,uint m,IntPtr w,IntPtr l);'; [A.P]::PostMessage([IntPtr]${h},${m},[IntPtr]${w},[IntPtr]0) | Out-Null`]);
+    /* window handles only exist on the hidden desktop: the message has to be posted from a process that runs there too */
+    const post = (h, m, w) => {
+      const f = path.join(WORK, 'post-msg.ps1'), res = path.join(WORK, 'post-result.txt');
+      fs.writeFileSync(f, "Add-Type -Name P -Namespace A -MemberDefinition '[DllImport(\"user32.dll\")] public static extern bool PostMessage(IntPtr h,uint m,IntPtr w,IntPtr l);'\r\n[A.P]::PostMessage([IntPtr]" + h + "," + m + ",[IntPtr]" + w + ",[IntPtr]0) | Out-File '" + res + "'\r\n");
+      try { fs.rmSync(res); } catch (e) { /* none */ }
+      cp.spawn(HID, ['run', 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', f], { stdio: 'ignore', detached: true }).unref();
+    };
     const dims = await c.ev('JSON.stringify({w:innerWidth,h:innerHeight,dpr:devicePixelRatio})'); ok(`${dpi} dpi: CSS viewport stays 1000x640 and the device ratio is ${factor}`, /"w":1000,"h":640/.test(dims) && Math.abs(JSON.parse(dims).dpr - factor) < 0.01, dims); await c.shot(tag + '-1-location');
     ok('skin window enabled and in the taskbar; the control surface is not', logs().some((t) => /enabled=True visible=True taskbar: skin=True classic=False/.test(t)), logs().filter((t) => /enabled=/.test(t))[0]);
     if (stage === 'lowspace') {
