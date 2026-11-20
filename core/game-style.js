@@ -6,8 +6,8 @@
   'use strict';
   const defaults = Object.freeze({
     translationPrompt:'',choiceFont:'game',choiceSelectedColor:'',choiceUnselectedColor:'',
-    typewriter:true,typewriterSpeed:35, layoutVersion: 22, style: 'classic', display: 'bilingual', furigana: true, japaneseSize: 34,
-    translationSize: 30, rubyScale: .55, rubyOffsetX:0, rubyOffsetY:0, rubyRowOffsets:'',rubyRowOffsetsX:'', lineHeight: 0, lineHeightMode:'offset', translationLineHeight:0, japaneseSpacing:0, japaneseSpacingPx:0,chineseSpacingPx:0, gap: 6, translationWidth: 75,
+    typewriter:true,typewriterSpeed:35, layoutVersion: 22, spacingDefaults: 1, style: 'classic', display: 'bilingual', furigana: true, japaneseSize: 34,
+    translationSize: 30, rubyScale: .55, rubyOffsetX:0, rubyOffsetY:3, rubyRowOffsets:'',rubyRowOffsetsX:'', lineHeight: 0, lineHeightMode:'offset', translationLineHeight:0, japaneseSpacing:0, japaneseSpacingPx:0,chineseSpacingPx:0, gap: 2, translationWidth: 75,
     paddingX: 20, paddingY: 10, textColor: '#fffaf2', readTextColor: '', speechTextColor: '', narrationTextColor: '', textGradient:false, textGradientTop:'#fffaf2', textGradientBottom:'#a8c8ff', readTextGradient:false, readTextGradientTop:'#b0e2ff', readTextGradientBottom:'#639bd1', textGradientStart:0, readTextGradientStart:0, shadow: 'outline', autoScale: true,
     bindEnabled: false, interfaceMode:'normal', gameProcess: '', x: 4, y: 70, width: 92, height: 27, anchorDX: 0, anchorDY: 0,
     autoGameStyle:true, livePosition:false, hookProfile:'read', embedTranslation:false, hookAutoStart:true, hookHide:true, hookFast:true, mask: false, maskMode: 'hook', maskColor: '#171923',
@@ -82,6 +82,10 @@ if(typeof value.rubyRowOffsetsX==='string')result.rubyRowOffsetsX=value.rubyRowO
       result.japaneseSize = Math.max(34, result.japaneseSize);
       result.translationSize = Math.max(30, result.translationSize);
     }
+    /* 2026-11-20 (user: 假名注音默认往下一点、日文和译文间距默认小一点): settings still on the old defaults (gap 6, ruby Y 0) move to the
+       new ones once; a value the user set stays */
+    if (value.spacingDefaults !== 1) { if (Number(value.gap) === 6) result.gap = 2; if (Number(value.rubyOffsetY) === 0) result.rubyOffsetY = 3; }
+    result.spacingDefaults = 1;
     for (const key of ['textColor','maskColor']) if (/^#[0-9a-f]{6}$/i.test(value[key])) result[key] = value[key];
     // Colour of lines the game marks as already read; empty = same as textColor.
     if (value.readTextColor === '' || /^#[0-9a-f]{6}$/i.test(value.readTextColor)) result.readTextColor = value.readTextColor;

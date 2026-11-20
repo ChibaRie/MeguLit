@@ -22,7 +22,7 @@ class PageText {
   /* the next line joins the page of the lines shown before it: the game sends its page again when it turns it (verified
      live, CHAOS;CHILD: "…。 発生は、突然だった。" came with the click that cleared that page), so no such resend since the last
      line means the page is still on screen */
-  samePage() { return !this.ended; }
+  samePage() { return !this.ended && (this.onPage || 0) < 6; } /* a text page holds a few lines: more in a row came without a resend (skipping), so a new page */
   /* only a stream that has sent a page again is a page stream; others (ADV games) get no page reports at all */
   get pages() { return this.paging === true; }
   /* what part of `text` is new: { drop: reason } or { text } (the new part, original spacing kept) */
@@ -60,6 +60,9 @@ class PageText {
     if (best < 6) return { text: raw };
     /* the shown line grown (a sentence the game adds to piece by piece, core/sentence-pieces.cjs): the whole of it is the line */
     if (parts === 1 && newest && !ENDED.test(this.recent[lastPart].key)) return { text: raw };
+    /* the page came whole with its new part (skipping): the lines shown before it are no longer what the reader stacks above
+       it (live, Ctrl-skip piled every skipped line into one wall); the new part starts the stack again */
+    this.ended = true; this.paging = true;
     return { text: tail(raw, best), page: parts };
   }
   /* the text the reader shows for `text` (the new part), and how much of it came before */
@@ -79,7 +82,7 @@ class PageText {
   shown(part, shown, now = Date.now()) {
     const k = key(part);
     if (k) { this.recent.push({ key: k, at: now }); if (this.recent.length > RECENT) this.recent.shift(); }
-    this.display = String(shown || part || ''); this.displayAt = now; this.ended = false;
+    this.display = String(shown || part || ''); this.displayAt = now; this.onPage = this.ended || (this.onPage || 0) >= 6 ? 1 : (this.onPage || 0) + 1; this.ended = false;
   }
 }
 /* the original text after its first `n` key characters (spaces and speaker tags not counted) */

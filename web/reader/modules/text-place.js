@@ -107,6 +107,12 @@
        (appearance and this game's style profile): 2026-11-19 (user, windowed 千恋＊万花: 「为啥译文一直有投影，很重很烦还关不掉」) the
        automatic heavy shadow over the game's bottom bar is gone. */
     const row = win.querySelector('.tomoyo-cn-row'), parts = row ? [...row.querySelectorAll('*')] : [];
+    /* 2026-11-20 (user, CHAOS;CHILD: 「译文咋没对齐」「译文排版同步一下」): the translation takes the Japanese block's width and side,
+       centred under a centred page, from the first character of a left-aligned box; never narrower than half the box (a short line keeps a readable translation) */
+    if (row) { for (const p of ['max-width', 'margin-left', 'margin-right']) row.style.removeProperty(p);
+      const toks = [...sentence.querySelectorAll('.char-token')].filter(t => !t.closest('.tome-page-lines')).map(t => t.getBoundingClientRect()).filter(r => r.width > 0);
+      if (toks.length) { const l = Math.min(...toks.map(r => r.left)), r = Math.max(...toks.map(r => r.right)), rr = row.getBoundingClientRect(), w = Math.max(r - l, wr.width * .5);
+        set(row, 'max-width', Math.ceil(w) + 'px'); if (anchor.center) { set(row, 'margin-left', 'auto'); set(row, 'margin-right', 'auto'); } else set(row, 'margin-left', Math.max(0, Math.round(l - rr.left)) + 'px'); } }
     for (const o of row ? [row, ...parts] : []) o.style.removeProperty('font-size');
     if (row) { const info = b.galLayoutInfo?.(), dpr = devicePixelRatio || 1, limit = (Number.isFinite(info?.workBottom) && info.workBottom > 0 ? info.workBottom / dpr : innerHeight) - 8;
       const fs0 = parseFloat(getComputedStyle(parts[0] || row).fontSize) || 16; let rb = row.getBoundingClientRect();
@@ -119,7 +125,7 @@
     document.body.classList.remove('megulit-anchored');
     for (const br of document.querySelectorAll('br.megulit-row-br')) br.remove();
     for (const w of document.querySelectorAll('.megulit-anchor-center,.megulit-page-fresh')) w.classList.remove('megulit-anchor-center', 'megulit-page-fresh');
-    for (const w of document.querySelectorAll('.megulit-anchor-window')) { w.classList.remove('megulit-anchor-window'); for (const p of ['left', 'top', 'right', 'bottom', 'margin']) w.style.removeProperty(p); }
+    for (const w of document.querySelectorAll('.megulit-anchor-window')) { w.classList.remove('megulit-anchor-window'); const cr = w.querySelector('.tomoyo-cn-row'); if (cr) for (const p of ['max-width', 'margin-left', 'margin-right']) cr.style.removeProperty(p); for (const p of ['left', 'top', 'right', 'bottom', 'margin']) w.style.removeProperty(p); }
     document.body.classList.toggle('megulit-place-fallback', fallback === true);
     for (const w of document.querySelectorAll('.megulit-place-window')) {
       w.classList.remove('megulit-place-window');
