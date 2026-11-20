@@ -30,7 +30,7 @@ function Web-Writable([string]$p) {
 function Web-Check([string]$p) {
   $ok = $true; try { [void][IO.Path]::GetFullPath($p); if (-not [IO.Path]::IsPathRooted($p)) { $ok = $false } } catch { $ok = $false }
   if (-not $ok) { return @{ state = 'readonly'; free = 0; need = (Need-Bytes $pathBox.Text) } }
-  $need = Need-Bytes $p
+  try { $need = Need-Bytes $p } catch { return @{ state = 'readonly'; free = 0; need = (Need-Bytes $pathBox.Text) } }   # e.g. a drive letter that does not exist
   @{ state = $(if (Web-Writable $p) { 'ok' } else { 'readonly' }); free = (Drive-Free $p); need = $need }
 }
 function Web-Info {
@@ -65,6 +65,7 @@ function Web-Abort([string]$why) {
   try { if ($script:webTimer) { $script:webTimer.Stop() } } catch {}
   try { $script:win.AllowClose = $true; $script:win.Close(); $script:win.Dispose() } catch {}
   $script:win = $null
+  try { [SetupWin]::ToolWindow($form.Handle, $false) } catch {}
   try { $wa = [Windows.Forms.Screen]::PrimaryScreen.WorkingArea; $px = [int][math]::Max($wa.Left, $wa.Left + ($wa.Width - $form.Width) / 2); $py = [int][math]::Max($wa.Top, $wa.Top + ($wa.Height - $form.Height) / 2); $form.Location = New-Object Drawing.Point($px, $py); $form.Opacity = 1; $form.Activate() } catch { Web-Log ('restoring the classic window failed: ' + $_) }
 }
 function Web-Act($m) {
@@ -122,6 +123,9 @@ public class SetupWin : Form {
   [StructLayout(LayoutKind.Sequential)] struct MARGINS { public int l, r, t, b; }
   public bool AllowClose = false; public Action AskClose; public Control Web;
   protected override CreateParams CreateParams { get { CreateParams cp = base.CreateParams; cp.Style |= 0x00020000 | 0x00080000; return cp; } }
+  [DllImport("user32.dll")] static extern int GetWindowLong(IntPtr h, int i);
+  [DllImport("user32.dll")] static extern int SetWindowLong(IntPtr h, int i, int v);
+  public static void ToolWindow(IntPtr h, bool on) { int ex = GetWindowLong(h, -20); SetWindowLong(h, -20, on ? (ex | 0x80) : (ex & ~0x80)); }   // keeps the hidden control surface out of Alt+Tab
   public void Drag() { ReleaseCapture(); SendMessage(Handle, 0xA1, (IntPtr)2, IntPtr.Zero); }
   public void Dress() { int round = 2; DwmSetWindowAttribute(Handle, 33, ref round, 4); MARGINS m = new MARGINS(); m.l = 1; m.r = 1; m.t = 1; m.b = 1; DwmExtendFrameIntoClientArea(Handle, ref m); }
   protected override void OnFormClosing(FormClosingEventArgs e) { if (!AllowClose && AskClose != null) { e.Cancel = true; AskClose(); } base.OnFormClosing(e); }
@@ -130,6 +134,7 @@ public class SetupWin : Form {
     # per-monitor DPI awareness for the skin's window only: the old window keeps its own (system-scaled) behaviour
     $oldCtx = [IntPtr]::Zero; try { $oldCtx = [SetupWin]::SetThreadDpiAwarenessContext([IntPtr](-4)) } catch {}
     $scale = 1.0; try { $scale = [SetupWin]::GetDpiForSystem() / 96.0 } catch {}
+    $wa0 = [Windows.Forms.Screen]::PrimaryScreen.WorkingArea; $scale = [math]::Max(0.5, [math]::Min($scale, [math]::Min($wa0.Width / 1000.0, $wa0.Height / 640.0)))   # never larger than the work area (small screens)
     if ($testLog -and $env:MEGULIT_SETUP_WEB_DPI) { $scale = [double]$env:MEGULIT_SETUP_WEB_DPI / 96.0 }   # tests: emulate 125/150/200 % (with --force-device-scale-factor)
     $win = New-Object SetupWin
     $win.Text = 'MeguLit 安装'; $win.FormBorderStyle = 'None'; $win.StartPosition = 'CenterScreen'; $win.ShowInTaskbar = $true; $win.BackColor = [Drawing.Color]::FromArgb(236, 241, 249)
@@ -157,6 +162,7 @@ public class SetupWin : Form {
     $script:webActive = $true
     # the old window becomes the invisible control surface: same controls, same handlers, no second taskbar button
     $form.ShowInTaskbar = $false; $form.StartPosition = 'Manual'; $form.Location = New-Object Drawing.Point(-32000, -32000); $form.Opacity = 0
+    $form.add_Shown({ try { [SetupWin]::ToolWindow($form.Handle, $true) } catch {} })
     $form.add_FormClosing({ Web-Log ('classic window closing: ' + $_.CloseReason + ', hold=' + $script:webHold + ', done=' + $script:done + ' ' + ((Get-PSCallStack | ForEach-Object { $_.FunctionName + ':' + $_.ScriptLineNumber }) -join ' < ')); if ($script:webHold) { $_.Cancel = $true } })
     $form.add_FormClosed({ try { if ($script:win) { $script:win.AllowClose = $true; $script:win.Close() } } catch {} })
     $script:webTimer = New-Object Windows.Forms.Timer; $script:webTimer.Interval = 150
