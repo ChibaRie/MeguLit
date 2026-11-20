@@ -98,7 +98,7 @@ function Web-Act($m) {
       'manual' { if ($shim) { try { Start-Process 'https://github.com/ilynthn/MeguLit/releases/latest' } catch {} } }
       'launch' { if ($shim) { Web-Close } }
     }
-  } catch { Web-Log ('action ' + $t + ' failed: ' + $_) }
+  } catch { Web-Log ('action ' + $t + ' failed: ' + $_); if ($m.id) { Web-Post @{ t = 'reply'; id = $m.id; r = @{ state = 'readonly'; free = 0; need = 0 } } } }
 }
 
 function Start-WebSkin {
@@ -141,7 +141,7 @@ public class SetupWin : Form {
     $win.ClientSize = New-Object Drawing.Size([int](1000 * $scale), [int](640 * $scale)); $win.MinimumSize = $win.Size
     $ico = Join-Path $sourceRoot 'MeguLit.exe'; if (Test-Path $ico) { try { $win.Icon = [Drawing.Icon]::ExtractAssociatedIcon($ico) } catch {} }
     $web = New-Object Microsoft.Web.WebView2.WinForms.WebView2; $web.Dock = 'Fill'; $win.Controls.Add($web); $win.Web = $web
-    $props = New-Object Microsoft.Web.WebView2.WinForms.CoreWebView2CreationProperties; $props.UserDataFolder = $(if ($testLog -and $env:MEGULIT_SETUP_WEBVIEW2_DATA) { $env:MEGULIT_SETUP_WEBVIEW2_DATA } else { Join-Path $env:LOCALAPPDATA 'MeguLit\setup-webview2' }); $web.CreationProperties = $props
+    $props = New-Object Microsoft.Web.WebView2.WinForms.CoreWebView2CreationProperties; $script:webData = $(if ($env:MEGULIT_SETUP_WEBVIEW2_DATA) { $env:MEGULIT_SETUP_WEBVIEW2_DATA } elseif ($env:WEBVIEW2_USER_DATA_FOLDER) { $env:WEBVIEW2_USER_DATA_FOLDER } else { Join-Path $env:LOCALAPPDATA ('MeguLit\setup-webview2' + $PID) }); $props.UserDataFolder = $script:webData   # one folder per setup process: two setups at once do not fight over it; $web.CreationProperties = $props
     $script:win = $win; $script:webReady = $false
     $win.AskClose = { $script:askAt = [DateTime]::Now; try { $script:win.Web.CoreWebView2.ExecuteScriptAsync('window.__askClose&&window.__askClose()') | Out-Null } catch { Web-Close } }
     $web.Add_CoreWebView2InitializationCompleted({ param($s, $e)
@@ -164,7 +164,7 @@ public class SetupWin : Form {
     $form.ShowInTaskbar = $false; $form.StartPosition = 'Manual'; $form.Location = New-Object Drawing.Point(-32000, -32000); $form.Opacity = 0
     $form.add_Shown({ try { [SetupWin]::ToolWindow($form.Handle, $true) } catch {} })
     $form.add_FormClosing({ Web-Log ('classic window closing: ' + $_.CloseReason + ', hold=' + $script:webHold + ', done=' + $script:done + ' ' + ((Get-PSCallStack | ForEach-Object { $_.FunctionName + ':' + $_.ScriptLineNumber }) -join ' < ')); if ($script:webHold) { $_.Cancel = $true } })
-    $form.add_FormClosed({ try { if ($script:win) { $script:win.AllowClose = $true; $script:win.Close() } } catch {} })
+    $form.add_FormClosed({ try { if ($script:webData -and $script:webData -like '*setup-webview2\*') { Start-Process -WindowStyle Hidden -FilePath "$env:SystemRoot\System32\cmd.exe" -ArgumentList ('/c ping -n 8 127.0.0.1 >nul & rmdir /s /q "' + $script:webData + '"') } } catch {}; try { if ($script:win) { $script:win.AllowClose = $true; $script:win.Close() } } catch {} })
     $script:webTimer = New-Object Windows.Forms.Timer; $script:webTimer.Interval = 150
     $script:webTimer.add_Tick({
       if (-not $script:webActive) { return }
