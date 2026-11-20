@@ -50,19 +50,21 @@ function fakeRoot(dir,src,{installed=[]}={}){
  return dir;
 }
 /* Starts the setup window on the hidden desktop and resolves with its event log once it has exited. */
-/* HidDesk is started async: a blocking spawn would also stall the HTTP sources this process serves. */
-function hid(args,env){return new Promise(ok=>{const p=spawn(hiddesk,args,{env,windowsHide:true});let out='';p.stdout.on('data',d=>out+=d);p.stderr.on('data',d=>out+=d);p.on('close',()=>ok(out));});}
+/* HidDesk is started async: a blocking spawn would also stall the HTTP sources this process serves.
+   Resolve on exit, not close: the window it starts can keep an inherited pipe open. */
+function hid(args,env){return new Promise(ok=>{const p=spawn(hiddesk,args,{env,windowsHide:true});let out='';p.stdout.on('data',d=>out+=d);p.stderr.on('data',d=>out+=d);p.on('exit',()=>setTimeout(()=>ok(out),300));});}
 async function runWindow(root,env,{timeout=90000,shots={}}={}){
  const log=path.join(tmpBase,'msf-events-'+crypto.randomUUID()+'.jsonl');
  const e={...process.env,MEGULIT_SETUP_TEST:log,MEGULIT_SETUP_TARGET:root,...env};
  const out=await hid(['run',ps,'-NoProfile','-ExecutionPolicy','Bypass','-STA','-File',path.join(root,'setup','setup-runtime.ps1'),'-Root',root],e);
  const pid=+out.trim().split(/\s+/)[0];assert.ok(pid>0,'HidDesk run failed: '+out);
- const t0=Date.now(),taken=new Set();
+ const t0=Date.now(),taken=new Set();let seen;/* after its exit event the window still holds its files until the process is gone */
  return new Promise((ok,bad)=>{
   const tick=()=>{
    let ev=[];try{ev=fs.readFileSync(log,'utf8').trim().split(/\r?\n/).filter(Boolean).map(l=>JSON.parse(l.replace(/^\uFEFF/,'')));}catch{}
    for(const [kind,png] of Object.entries(shots))if(!taken.has(kind)&&ev.some(x=>x.kind===kind)){taken.add(kind);hid(['shot',String(pid),png],process.env);}
-   const end=ev.find(x=>x.kind==='exit');
+   const end=ev.find(x=>x.kind==='exit');if(end)end.seen=seen??=Date.now();
+   if(end&&alive(pid)&&Date.now()-end.seen<10000)return setTimeout(tick,150);
    if(end){try{fs.rmSync(log);}catch{}const err=ev.filter(x=>x.kind==='error');return err.length?bad(new Error('error inside the setup window: '+err.map(x=>x.text).join(' | '))):ok(ev);}
    if(Date.now()-t0>timeout){try{process.kill(pid);}catch{}return bad(new Error('setup window did not finish\n'+JSON.stringify(ev)));}
    setTimeout(tick,150);
@@ -71,6 +73,7 @@ async function runWindow(root,env,{timeout=90000,shots={}}={}){
 }
 const at=(ev,kind,f=()=>true)=>{const x=ev.find(e=>e.kind===kind&&f(e));return x?x.t:Infinity;};
 const has=(dir,id)=>MARKERS[id].every(m=>fs.existsSync(path.join(dir,'runtime',m)));
+const alive=pid=>{try{process.kill(pid,0);return true;}catch{return false;}};
 const tmp=p=>fs.mkdtempSync(path.join(tmpBase,p));
 
 test('Install pressed first: download keeps going, each pack is unpacked as soon as it arrives',{skip,timeout:120000},async()=>{
@@ -107,7 +110,7 @@ test('window closed mid-way: next launch reuses the finished pack and resumes th
  const src=await server(MB,{slow:{id:'reading',from:4*MB,rate:96*1024}}),work=tmp('msf-resume-'),root=fakeRoot(path.join(work,'MeguLit'),src),stage=path.join(work,'stage');
  const P=packs();
  try{
-  const ev1=await runWindow(root,{MEGULIT_SETUP_STAGING:stage,MEGULIT_SETUP_CLOSE_AT:String(P.base.length+4*MB+MB/2)});
+  const ev1=await runWindow(root,{MEGULIT_SETUP_STAGING:stage,MEGULIT_SETUP_CLOSE_AT:String(P.base.length+5*MB)});
   assert.equal(ev1.at(-1).code,1);assert.ok(ev1.some(e=>e.kind==='close'));
   assert.ok(fs.existsSync(path.join(stage,'runtime-base.setup.part.ok')),'finished pack marked');
   assert.ok(fs.existsSync(path.join(stage,'runtime-reading.setup.part.json')),'half pack has resume state');
