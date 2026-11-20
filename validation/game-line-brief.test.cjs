@@ -43,7 +43,7 @@ test('reader: the Japanese line steps aside only while the mark is on, the trans
   const js = read('web/reader/modules/text-place.js');
   assert.ok(js.includes("'body.megulit-place-game-drawn.megulit-game-line-brief .sentence-window.tomoyo-hook-reader .sentence-text:not(.megulit-old-line){visibility:hidden!important}',"), 'tied to the game-drawn state, so every path that ends that state ends this too');
   assert.ok(js.includes("'body.megulit-place-game-drawn .sentence-window.tomoyo-hook-reader .tomoyo-cn-row{visibility:visible!important}',"), 'the translation is still drawn');
-  assert.ok(js.includes("drawnByGame = [...String(m.text || '')].filter(c => !blank(c)).join(''); drawnHiding = m.hiding === true; schedule(); return; }"));
+  /* a86e4913 computes the game-drawn text once as vis (same filter) before its page-clear check */assert.ok(js.includes("const vis = [...String(m.text || '')].filter(c => !blank(c)).join('')"));assert.ok(js.includes("drawnByGame = vis; drawnHiding = m.hiding === true; schedule(); return; }"));
   assert.ok(js.includes('briefSync(drawn && drawnHiding);'));
   assert.ok(js.includes("if (m && Array.isArray(m.rects) && m.text) drawnByGame = '';"), 'a placed line (hidden again) clears it');
   assert.ok(!/SenrenBanka|BGI|krkr/i.test(js.slice(js.indexOf('megulit-game-line-brief') - 300, js.indexOf('megulit-game-line-brief') + 300)), 'no engine or game name');

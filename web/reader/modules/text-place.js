@@ -120,7 +120,10 @@
        the box's bottom edge): a text box's line stays inside the game client above the strip a game keeps under its last text row
        for its own buttons (two glyph rows). What does not fit there: first the Japanese rows close up (ruby on top, no game pitch),
        then the translation is at most 15 % smaller, then the block moves up, for that sentence only. A centred page is not a box. */
-    if (row && !anchor.center && tr && tr.height) { const glyph = tr.height, uiLimit = cy0 + chc - glyph * 2;
+    /* 2026-11-20 release check (user 2026-11-19, windowed 千恋＊万花: 「只要显示器上还有位置就不要这样」): the button-strip rule is for a game that
+       fills the screen; when the work area has room for the translation below the game window it goes there at full size (the rule further down) */
+    const roomBelow = (() => { const i = b.galLayoutInfo?.(), d = devicePixelRatio || 1, wb = (Number.isFinite(i?.workBottom) && i.workBottom > 0 ? i.workBottom / d : innerHeight) - 8; return row ? wb - (cy0 + chc) >= row.getBoundingClientRect().height : false; })();
+    if (row && !roomBelow && !anchor.center && tr && tr.height) { const glyph = tr.height, uiLimit = cy0 + chc - glyph * 2;
       sentence.style.removeProperty('line-height');
       if (row.getBoundingClientRect().bottom > uiLimit && sentence.querySelector('br.megulit-row-br')) set(sentence, 'line-height', '1.45');
       const fsx = parseFloat(getComputedStyle(parts[0] || row).fontSize) || 16; let rx = row.getBoundingClientRect();
