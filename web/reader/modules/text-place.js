@@ -20,6 +20,10 @@
     'body.megulit-placed .tome-box-deco,body.megulit-placed .sentence-window:not(.megulit-place-window){display:none!important}',
     'body.megulit-placed .megulit-place-window .sentence-text{position:absolute!important;left:0!important;top:0!important;width:100vw!important;height:100vh!important;margin:0!important;padding:0!important;transform:none!important;overflow:visible!important}',
     'body.megulit-placed .megulit-place-window .tome-page-lines{display:none!important}',
+    '.megulit-anchor-window.megulit-anchor-center .sentence-text,.megulit-anchor-window.megulit-anchor-center .tomoyo-cn-row,.megulit-anchor-window.megulit-anchor-center .tomoyo-cn-output,.megulit-anchor-window.megulit-anchor-center .tome-page-lines{text-align:center!important;text-align-last:center!important}',
+    '.megulit-anchor-window .sentence-text{position:relative}',
+    '.megulit-anchor-window .tome-page-lines{opacity:.6;position:absolute;left:0;right:0;bottom:100%}',
+    '.megulit-anchor-window.megulit-page-fresh .tome-page-lines{display:none!important}',
     'body.megulit-placed .megulit-place-window .megulit-ruby-base{position:absolute!important;display:block!important;margin:0!important;padding:0!important}',
     'body.megulit-placed .megulit-place-window .char-token{position:absolute!important;display:block!important;margin:0!important;padding:0!important;text-align:center!important;white-space:pre!important;letter-spacing:0!important;text-indent:0!important;pointer-events:auto}',
     'body.megulit-placed .megulit-place-window .char-token.megulit-unplaced{display:none!important}',
@@ -94,7 +98,8 @@
     /* an offset never takes the first character out of the game client (a stray value must not lose the line for good) */
     const cx0 = info0?.clientWidth ? (info0.clientX || 0) / dpr0 : 0, cy0 = info0?.clientHeight ? (info0.clientY || 0) / dpr0 : 0;
     const offX = Math.max(cx0 - anchor[0], Math.min(cx0 + cwc - 40 - anchor[0], (Number(pr.anchorDX) || 0) / 100 * cwc)), offY = Math.max(cy0 - anchor[1], Math.min(cy0 + chc - 40 - anchor[1], (Number(pr.anchorDY) || 0) / 100 * chc));
-    if (tr && tr.width) { set(win, 'left', (wr.left + anchor[0] + offX - tr.left) + 'px'); set(win, 'top', (wr.top + anchor[1] + offY - tr.top) + 'px'); set(win, 'right', 'auto'); set(win, 'bottom', 'auto'); set(win, 'margin', '0'); }
+    if (tr && tr.width && anchor.center) { set(win, 'left', (anchor[0] + offX - wr.width / 2) + 'px'); set(win, 'top', (wr.top + anchor[1] + offY - tr.top) + 'px'); set(win, 'right', 'auto'); set(win, 'bottom', 'auto'); set(win, 'margin', '0'); }
+    else if (tr && tr.width) { set(win, 'left', (wr.left + anchor[0] + offX - tr.left) + 'px'); set(win, 'top', (wr.top + anchor[1] + offY - tr.top) + 'px'); set(win, 'right', 'auto'); set(win, 'bottom', 'auto'); set(win, 'margin', '0'); }
     /* 2026-11-19 (user, windowed 千恋＊万花: 「不要再挤压我的汉字了 我窗口化呢 只要显示器上还有位置就不要这样」): the translation keeps the
        user's size and goes on below the game window as long as the monitor's work area has room (the overlay spans the desktop);
        only a sentence that does not fit above the work-area bottom is made smaller, once and never under 60 %, and if it still
@@ -112,6 +117,8 @@
   function release(fallback = false) {
     if (!page) document.body.classList.remove('megulit-placed');
     document.body.classList.remove('megulit-anchored');
+    for (const br of document.querySelectorAll('br.megulit-row-br')) br.remove();
+    for (const w of document.querySelectorAll('.megulit-anchor-center,.megulit-page-fresh')) w.classList.remove('megulit-anchor-center', 'megulit-page-fresh');
     for (const w of document.querySelectorAll('.megulit-anchor-window')) { w.classList.remove('megulit-anchor-window'); for (const p of ['left', 'top', 'right', 'bottom', 'margin']) w.style.removeProperty(p); }
     document.body.classList.toggle('megulit-place-fallback', fallback === true);
     for (const w of document.querySelectorAll('.megulit-place-window')) {
@@ -324,16 +331,38 @@
   }
   /* the line's top-left: the leftmost box of its top row (the first matched character may sit further right), taken once per
      line and kept while a new line starts within a few px of it (the same text box) */
-  function anchorFrom(got, size, map, lineKey) {
+  /* the game's rows of this line: which reader character starts a new row, and the rows' common centre when the game
+     centres them (two or more rows sharing a centre with different left edges, or one row centred in the client away from
+     its left side) */
+  let rowsLine = '', rowsPrev = null, rowsFresh = false, rowsSeq = 0, rowsCentred = false;
+  function gameRows(boxes, size, map) {
+    const rows = [], rowOf = new Array(boxes.length).fill(-1); let cur = null;
+    boxes.forEach((r, j) => { if (!r || r[3] < size * .7 || r[2] > size * 1.6) return; /* a small glyph (the game's own ruby) or a wide one (a UI button the layer took for a glyph) is no row */ if (!cur || r[1] > cur.t + size * .6 || r[0] < cur.l - size * .5 && r[1] > cur.t + size * .3) { cur = { l: r[0], r: r[0] + r[2], t: r[1], first: j }; rows.push(cur); } else { cur.l = Math.min(cur.l, r[0]); cur.r = Math.max(cur.r, r[0] + r[2]); } rowOf[j] = rows.length - 1; });
+    let center = null; const [L, , R] = map.bounds || [0, 0, innerWidth], mid = r => (r.l + r.r) / 2;
+    if (rows.length >= 2) { const c = mid(rows[0]); if (rows.every(r => Math.abs(mid(r) - c) < size * .75) && Math.max(...rows.map(r => r.l)) - Math.min(...rows.map(r => r.l)) > size * 1.5) center = rows.reduce((t, r) => t + mid(r), 0) / rows.length; }
+    else if (rows.length === 1 && Math.abs(mid(rows[0]) - (L + R) / 2) < size * .75 && rows[0].l > L + (R - L) * .15) center = mid(rows[0]);
+    return { rows, rowOf, center };
+  }
+  /* a line break before each reader character the game put at the start of a new row */
+  function rowBreaks(win, shown, rows) {
+    const want = new Set(); let prev = -1;
+    shown.forEach((t, j) => { const r = rows.rowOf[j]; if (r < 0) return; if (prev >= 0 && r > prev) { const base = t.closest('.megulit-ruby-base'); const at = base && base.querySelector('.char-token') === t ? base : t; if (!base || at === base) want.add(at); } prev = r; });
+    for (const br of win.querySelectorAll('br.megulit-row-br')) if (!want.has(br.nextSibling)) br.remove();
+    for (const at of want) if (!(at.previousSibling && at.previousSibling.nodeName === 'BR' && at.previousSibling.classList.contains('megulit-row-br'))) { const br = document.createElement('br'); br.className = 'megulit-row-br'; at.parentNode.insertBefore(br, at); }
+    win.classList.toggle('megulit-anchor-center', Number.isFinite(rows.center));
+  }
+  function anchorFrom(got, size, map, lineKey, center = null) {
     const top = Math.min(...got.map(b => b[1]));
-    let a = [Math.min(...got.filter(b => b[1] < top + size * .5).map(b => b[0])), top];
+    let a = [Number.isFinite(center) ? center : Math.min(...got.filter(b => b[1] < top + size * .5).map(b => b[0])), top];
+    /* a centred page and a left-aligned box are different places: switching between them moves the line at once */
+    if (anchor && !!anchor.center !== Number.isFinite(center)) anchor = null;
     if (anchor && anchorLine === lineKey && Math.abs(a[0] - anchor[0]) < size * 2 && Math.abs(a[1] - anchor[1]) < size * 2) a = anchor;
     else if (anchor && Math.abs(a[0] - anchor[0]) <= Math.max(6, size * .6) && Math.abs(a[1] - anchor[1]) <= Math.max(6, size * .6)) a = anchor;
     /* 2026-11-19 (audit of 528a2bae): a game that indents narration by one full-width space and starts dialogue with 「 at the
        margin gave two anchors one character apart, and the line jumped sideways at every change between them. On the same row a
        start up to about one and a half characters off is the same text box: the anchor keeps the leftmost (one move at most) */
     else if (anchor && Math.abs(a[1] - anchor[1]) <= Math.max(6, size * .6) && Math.abs(a[0] - anchor[0]) <= size * 1.6) a = [Math.min(a[0], anchor[0]), anchor[1]];
-    anchor = a; anchorLine = lineKey;
+    anchor = a; anchor.center = Number.isFinite(center); anchorLine = lineKey;
     anchorLimit = map.bounds[3] - (median(got.map(b => b[3])) || size) * 1.3;
   }
   function apply() {
@@ -379,9 +408,17 @@
        taken once per line (typing never moves it) and kept while a new line starts within a few px of it (the same text
        box). A box that really moved (another text box, a different scene layout) moves it. */
     if (anchorMode) {
-      /* the line's top-left: the leftmost box of its top row (the first matched character may sit further right) */
-      anchorFrom(boxes.filter(Boolean), size, map, String(line.text || ''));
+      /* 2026-11-20 (user, CHAOS;CHILD: 「排版要贴近游戏」 — narration centred mid-screen, a dialogue box left-aligned): the game's rows
+         decide where the reader breaks the line and whether the block is centred; size and wrap width stay the user's.
+         A sentence whose first part the game drew earlier (core/page-text.cjs `continues`) keeps the place that part had. */
+      const rows = gameRows(boxes, size, map), lead = idx.findIndex(k => k != null); b.textPlaceRows = { text: readerText, rows: rows.rows.map(r => [Math.round(r.l), Math.round(r.r), Math.round(r.t), r.first]), center: rows.center, boxes: boxes.map(r => r && r.map(Math.round)), idx };
+      if (!(anchor && lead >= 3 && Number(b.hookSourceContinues) > 0)) anchorFrom(boxes.filter(Boolean), size, map, String(line.text || ''), rows.center);
+      /* the page's earlier lines stay above only when the game drew this line under them; a line that starts at or above
+         where the last one ended is a new page (a title card, a cleared box), whatever the text stream said */
+      { const k = String(line.text || ''), first = rows.rows[0], seq = Number(sentence.dataset.sequence) || 0; if (k !== rowsLine) { /* only the line placed just before counts (lines skipped through were never placed) */ rowsFresh = !(rowsPrev && rowsSeq && seq - rowsSeq <= 1 && first && first.t >= rowsPrev - size * .3 && Number.isFinite(rows.center) === rowsCentred); /* a centred page and a text box are never one page */ rowsCentred = Number.isFinite(rows.center); rowsPrev = rows.rows.length ? rows.rows[rows.rows.length - 1].t + size : null; rowsLine = k; rowsSeq = seq; } }
       release(true);
+      win.classList.toggle('megulit-page-fresh', rowsFresh); if (rowsFresh) b.hookPageReset?.();
+      rowBreaks(win, shown, rows);
       pin(win, sentence);
       return;
     }

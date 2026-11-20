@@ -45,7 +45,11 @@ struct GlyphLearner {
  bool readOnly = false;
  // line
  std::vector<bool> blankAt; unsigned nb = 0; // the line with its interior blanks (engines that draw a blank glyph for a space)
- std::wstring text; unsigned n = 0, seq = 0, lineAt = 0, prevLineAt = 0, armedUntil = 0; bool reported = false, hitSent = false, hiddenSent = false; unsigned hiddenQuads = 0;
+ /* 2026-11-20 (CHAOS;CHILD: a page keeps its earlier lines while the next one types out): the places the earlier lines of the page
+    were matched on, and when; their glyphs are never the new line's (they made a typed-out line look complete, and the line was
+    hidden and placed on the earlier line's glyphs: its own last row stayed visible) */
+ std::vector<Rect> lastRects, earlierRects; std::set<std::pair<long long, long long>> lastKeys, earlierKeys; unsigned frameNow = 0;
+ unsigned nameN = 0; std::wstring text; unsigned n = 0, seq = 0, lineAt = 0, prevLineAt = 0, armedUntil = 0; bool reported = false, hitSent = false, hiddenSent = false; unsigned hiddenQuads = 0;
  // learned
  bool learned = false; void *areaRt = nullptr; unsigned areaW = 0, areaH = 0; Rect area{}; std::set<long long> atlases; unsigned learnedSeq = 0; float glyphH = 0;
  std::map<void *, unsigned> texFirst; // texture -> first time a glyph quad used it
@@ -70,12 +74,18 @@ struct GlyphLearner {
   return t.substr(0, at[h - 1] + 1);
  }
  void Line(const std::wstring &raw, unsigned now) {
-  const std::wstring t = Undouble(raw);
+  /* 2026-11-20 (CHAOS;CHILD: every voiced line stayed unplaced): a speaker tag the hook puts before the line (【大谷】, LunaHook's
+     MAGES reader and others) is not drawn in the text box (the name has its own plate): the line is the text after it. A game
+     that does draw it inline still matches (Match: the tag's glyphs first, then the line). */
+  std::wstring body = raw; nameN = 0;
+  { size_t a = 0; while (a < body.size() && Blank(body[a])) a++; if (a < body.size() && body[a] == L'\u3010') { size_t c = body.find(L'\u3011', a); if (c != std::wstring::npos && c - a >= 2 && c - a <= 17 && c + 1 < body.size()) { for (size_t k = a; k <= c; k++) if (!Blank(body[k])) nameN++; body = body.substr(c + 1); } } }
+  const std::wstring t = Undouble(body);
   std::wstring s; for (wchar_t c : t) if (!Blank(c)) s += c; if (s.empty()) return;
   if (s == text && Armed(now)) { armedUntil = now + 60000; return; } // the same line again (re-read): keep its state
   { size_t a = 0, b = t.size(); while (a < b && Blank(t[a])) a++; while (b > a && Blank(t[b - 1])) b--; blankAt.clear(); nb = 0;
     for (size_t i = a; i < b; i++) { if (t[i] == L'\n' || t[i] == L'\r' || t[i] == 0x1F) continue; bool bl = Blank(t[i]); blankAt.push_back(bl); if (bl) nb++; } }
   prevLineAt = lineAt; text = s; n = (unsigned)s.size(); seq++; lineAt = now; armedUntil = now + 60000; reported = hitSent = hiddenSent = false; hiddenQuads = 0;
+  if (!lastKeys.empty()) { earlierRects.insert(earlierRects.end(), lastRects.begin(), lastRects.end()); earlierKeys.insert(lastKeys.begin(), lastKeys.end()); if (earlierRects.size() > 512 || earlierKeys.size() > 1024) { earlierRects.clear(); earlierKeys.clear(); } lastRects.clear(); lastKeys.clear(); }
   PageLineAdd(t, n, now);
   if (log) log("LINE seq=%u n=%u", seq, n);
  }
@@ -305,6 +315,7 @@ struct GlyphLearner {
  // glyphs (reading order; the blank positions are dropped from the result).
  const std::vector<Rect> *Match(const std::vector<Rect> &a, const std::vector<Rect> &b, std::vector<Rect> &keep) const {
   if (a.size() == n) return &a; if (b.size() == n) return &b;
+  if (nameN) for (const std::vector<Rect> *src : { &a, &b }) if (src->size() == n + nameN) { keep.assign(src->begin() + nameN, src->end()); return &keep; }
   if (!nb) return nullptr;
   for (const std::vector<Rect> *src : { &a, &b }) if (src->size() > n && src->size() <= n + nb && Blanks(*src, keep)) return &keep;
   return nullptr;
@@ -320,14 +331,21 @@ struct GlyphLearner {
    if (k >= r.size()) return false; keep.push_back(r[k++]); }
   return k == r.size() && keep.size() == n;
  }
+ /* the same place as an earlier glyph, offset copies (shadow, outline) included: the tolerance Chars() merges them with */
+ bool Earlier(const Rect &r) const { for (auto &e : earlierRects) { float w = (std::min)(e.x1 - e.x0, r.x1 - r.x0), h = e.y1 - e.y0; if (std::fabs(e.x0 - r.x0) < 0.4f * w && std::fabs(e.y0 - r.y0) < 0.4f * h) return true; } return false; }
+ /* a glyph of an earlier line of the page (the same glyph on the same place) is never the new line's */
+ bool EarlierGlyph(long long gk, long long k) const { return earlierKeys.count({ gk, k }) > 0; }
  void Frame(unsigned now, unsigned backW, unsigned backH) {
-  bbW = backW; bbH = backH; PageFrame(now); frameNo++; if (pageOn) return; if (!Armed(now)) return;
+  bbW = backW; bbH = backH; frameNow = now; PageFrame(now); frameNo++; if (pageOn) return; if (!Armed(now)) return;
+  /* the earlier lines are on screen while most of their glyphs are still drawn: a text box that replaces its line (most ADV
+     games) drops them at once, and its new glyphs on the old places are the new line's again */
+  if (!earlierKeys.empty()) { size_t on = 0; for (auto &e : earlierKeys) { auto g = groups.find(e.first); if (g == groups.end()) continue; auto it = g->second.keys.find(e.second); if (it != g->second.keys.end() && frameNo - it->second.lastFrame <= 2) on++; } if (on * 2 < earlierKeys.size()) { earlierKeys.clear(); earlierRects.clear(); } }
   if (reported && hiddenSent == (hitSent && !readOnly)) return;
   unsigned since = prevLineAt && now - prevLineAt < 120000 ? (std::max)(prevLineAt + 200, lineAt - 3000) : lineAt - 3000;
   for (auto &kv : groups) {
    Group &g = kv.second; std::vector<Rect> fresh, live;
-   for (auto &s : g.keys) if ((int)(s.second.firstAt - since) >= 0) fresh.push_back(s.second.r);
-   const std::vector<Rect> &last = g.prevFrame == frameNo - 1 ? g.frame : g.prev; live = last;
+   for (auto &s : g.keys) if ((int)(s.second.firstAt - since) >= 0 && !EarlierGlyph(kv.first, s.first)) fresh.push_back(s.second.r);
+   const std::vector<Rect> &last = g.prevFrame == frameNo - 1 ? g.frame : g.prev; for (auto &r : last) if (earlierRects.empty() || !Earlier(r)) live.push_back(r);
    std::vector<Rect> a = Chars(Cluster(Chars(live))), b = Chars(Cluster(Chars(fresh)));
    if (log && (now / 500) != ((now - 17) / 500)) log("frame %u group rt=%p %ux%u live=%u fresh=%u n=%u", frameNo, g.rt, g.tw, g.th, (unsigned)a.size(), (unsigned)b.size(), n);
    std::vector<Rect> keep; const std::vector<Rect> *hit = Match(a, b, keep); if (!hit) continue;
@@ -340,8 +358,8 @@ struct GlyphLearner {
   for (auto &kv : byRt) {
    if (kv.second.size() < 2 || (learned && (kv.second[0]->rtW != areaW || kv.second[0]->rtH != areaH))) continue;
    std::vector<Rect> fresh, live; Group *big = kv.second[0]; size_t most = 0;
-   for (Group *g : kv.second) { const std::vector<Rect> &last = g->prevFrame == frameNo - 1 ? g->frame : g->prev; live.insert(live.end(), last.begin(), last.end()); if (last.size() > most) { most = last.size(); big = g; }
-    for (auto &s : g->keys) if ((int)(s.second.firstAt - since) >= 0) fresh.push_back(s.second.r); }
+   for (Group *g : kv.second) { const std::vector<Rect> &last = g->prevFrame == frameNo - 1 ? g->frame : g->prev; for (auto &r : last) if (earlierRects.empty() || !Earlier(r)) live.push_back(r); if (last.size() > most) { most = last.size(); big = g; }
+    for (auto &s : g->keys) if ((int)(s.second.firstAt - since) >= 0 && !EarlierGlyph(GroupKey(g->rt, g->tex), s.first)) fresh.push_back(s.second.r); }
    std::vector<Rect> a = Chars(Cluster(Chars(live))), b = Chars(Cluster(Chars(fresh)));
    if (log && (now / 500) != ((now - 17) / 500)) log("frame %u target rt=%p pages=%u live=%u fresh=%u n=%u", frameNo, kv.first, (unsigned)kv.second.size(), (unsigned)a.size(), (unsigned)b.size(), n);
    std::vector<Rect> keep; const std::vector<Rect> *hit = Match(a, b, keep); if (!hit) continue;
@@ -369,7 +387,8 @@ struct GlyphLearner {
   bool hidden = hitSent && !readOnly; std::string rects; bool mapped = true;
   for (auto r : cs) { if (!ToScreen(g.rt, g.rtW, g.rtH, r)) { mapped = false; break; } char x[64]; snprintf(x, sizeof x, "%s%.0f,%.0f,%.0f,%.0f", rects.empty() ? "" : ";", r.x0, r.y0, r.x1 - r.x0, r.y1 - r.y0); rects += x; }
   if (!mapped) { if (log && frameNo % 60 == 0) log("rects not mapped yet: render target %p not composited", g.rt); return; } // try again next frame
-  reported = true; hiddenSent = hidden;
+  reported = true; hiddenSent = hidden; lastRects = cs; lastKeys.clear();
+  { long long gk = GroupKey(g.rt, g.tex); for (auto &kv : groups) { if (kv.second.rt != g.rt) continue; for (auto &s : kv.second.keys) { if (frameNo - s.second.lastFrame > 2) continue; for (auto &c : cs) { float w = (std::min)(c.x1 - c.x0, s.second.r.x1 - s.second.r.x0), h = c.y1 - c.y0; if (std::fabs(c.x0 - s.second.r.x0) < 0.4f * w && std::fabs(c.y0 - s.second.r.y0) < 0.4f * h) { lastKeys.insert({ kv.first, s.first }); break; } } } } (void)gk; }
   std::string t;
   { std::string u; for (size_t i = 0; i < text.size(); i++) { unsigned c = text[i]; if (c >= 0xD800 && c < 0xDC00 && i + 1 < text.size()) { c = 0x10000 + ((c - 0xD800) << 10) + (text[++i] - 0xDC00); u += (char)(0xF0 | (c >> 18)); u += (char)(0x80 | ((c >> 12) & 63)); u += (char)(0x80 | ((c >> 6) & 63)); u += (char)(0x80 | (c & 63)); } else if (c < 0x80) u += (char)c; else if (c < 0x800) { u += (char)(0xC0 | (c >> 6)); u += (char)(0x80 | (c & 63)); } else { u += (char)(0xE0 | (c >> 12)); u += (char)(0x80 | ((c >> 6) & 63)); u += (char)(0x80 | (c & 63)); } } t = u; }
   std::string line = "ToMe_CHARS engine=gpu line=" + std::to_string(seq) + " hidden=" + (hidden ? "1" : "0") + " sw=" + std::to_string(bbW) + " sh=" + std::to_string(bbH) + " vx=0 vy=0 vw=" + std::to_string(bbW) + " vh=" + std::to_string(bbH) + " n=" + std::to_string(cs.size()) + " rects=" + rects + " text=" + t;

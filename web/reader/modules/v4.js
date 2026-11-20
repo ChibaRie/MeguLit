@@ -82,7 +82,7 @@
    // Prepare the audio while the reader looks at the card; it only plays on click.
    if(!audio.disabled&&(value.pitch?.length||0)<=1)request('prefetch',scope).catch(()=>{});}).catch(e=>{if(alive())status.textContent=e.message;});
  };
- const oldStatus=b.galStatus;b.galStatus=m=>{oldStatus?.(m);if(m.hookSource!==undefined&&typeof m.hookSource==='string')b.hookSourceText=m.hookSource;if(m.type==='dialogCalibration')for(const node of document.querySelectorAll('[data-v4-calibration]'))node.textContent=m.message;
+ const oldStatus=b.galStatus;b.galStatus=m=>{oldStatus?.(m);if(m.hookSource!==undefined&&typeof m.hookSource==='string'){b.hookSourceText=m.hookSource;/* 2026-11-20 core/page-text.cjs: characters of the shown sentence the game drew before this line */b.hookSourceContinues=Number(m.hookSourceContinues)||0;}if(m.type==='dialogCalibration')for(const node of document.querySelectorAll('[data-v4-calibration]'))node.textContent=m.message;
   if(typeof m.hookSequence==='number')b.hookSequence=m.hookSequence;for(const k of ['processAttached','streamSelected','receivedText','replacementState','hookRecovering'])if(m[k]!==undefined)b[k]=m[k];
   if(typeof m.dialogVisible==='boolean'){document.body.classList.toggle('tomoyo-dialog-hidden',!m.dialogVisible);if(!m.dialogVisible)b.closeLocalSelection?.();}updateDiagnostic();
   };
