@@ -157,8 +157,10 @@ if(typeof value.rubyRowOffsetsX==='string')result.rubyRowOffsetsX=value.rubyRowO
     const s=o.settings||defaults,layout=o.layout,dpr=Math.max(.5,Number(o.dpr)||1),previous=Number.isFinite(o.previous)&&o.previous>0?o.previous:1;
     const cw=Number(layout?.clientWidth),ch=Number(layout?.clientHeight);let scale;
     if(layout&&cw>0)scale=scaleForViewport(cw*s.width/100/dpr,s,o.bound);
-    else if(o.dialogOpen)return previous;
-    else scale=scaleForViewport(layout?Number(layout.readerWidth)/dpr:o.innerWidth,s,o.bound);
+    /* issue 468 (寒蝉, "一不小心就会显示得特别大"): without the game client's size the scale came from the reader layer's width,
+       which is the whole desktop (overlay) or the Alt+T-grown layer, so a windowed game's text jumped to monitor/1280 size
+       until the next layout. The scale only ever comes from the game client; without one it keeps the last one. */
+    else return o.bound?previous:1;
     if(o.bound&&ch>0&&s.sizeSource!=='user'){const largest=Math.max(Number(s.japaneseSize)||0,s.display==='japanese'?0:Number(s.translationSize)||0);if(largest>0)scale=Math.min(scale,ch/dpr*.06/largest);}
     return Math.max(.05,scale);
   }
