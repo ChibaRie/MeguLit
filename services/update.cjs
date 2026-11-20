@@ -185,7 +185,11 @@ function launchScript(root,{run=spawn}={}){
  });
 }
 /* the page could not finish a silent hot update (hot_reload refused or failed after the files were written) */
-function hotFail(root,reason){const version=state.version||found?.version||'';if(!version)return {recorded:false};markHotFailed(root,version,String(reason||'HOT_FAILED').slice(0,200));if(found)found.useHot=false;return {recorded:true,version};}
+function hotFail(root,reason){const version=state.version||found?.version||'';if(!version)return {recorded:false};markHotFailed(root,version,String(reason||'HOT_FAILED').slice(0,200));if(found)found.useHot=false;
+ /* a hot package downloaded but refused before it was applied (hot_reload dry run) is dropped with its finished job:
+    start() returned that job again and the card got the same small package instead of downloading the full one */
+ if(state.hot&&state.phase==='ready'){try{if(state.zip)fs.rmSync(state.zip,{force:true});}catch{}job=null;state={phase:'available',version,total:found?.size||0,received:0,hot:false};}
+ return {recorded:true,version};}
 async function install(root,options={}){
  if(state.phase!=='ready'||!state.zip||!fs.existsSync(state.zip))throw Error('UPDATE_NOT_READY');
  if(state.hot){

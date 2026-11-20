@@ -168,3 +168,16 @@ test('consent: undecided → card at every start (no update, offline too); agree
  assert.equal(await run({ask:false,decided:true,enabled:true},none),0,'agreed: no card');
  assert.equal(await run({ask:false,decided:true,enabled:false},none),0,'declined: no card');
 });
+
+test('a hot package the page refused is not handed out again: the next start downloads the full package',async t=>{
+ const root=installRoot();t.after(()=>{u.reset();fs.rmSync(root,{recursive:true,force:true});});
+ const hotBytes=Buffer.from('PK small package'),fullBytes=Buffer.from('PK full package'),hotName='MeguLit-v1.5.2-hot-from-v1.5.1-ab12cd34ef56.zip';
+ const rel={tag_name:'v1.5.2',body:'- 修复A\n---\n- Fixed A',assets:[{name:'MeguLit-v1.5.2-win-x64.zip',size:fullBytes.length,digest:'sha256:'+sha(fullBytes),browser_download_url:url('MeguLit-v1.5.2-win-x64.zip')},{name:hotName,size:hotBytes.length,digest:'sha256:'+sha(hotBytes),browser_download_url:url(hotName)}]};
+ const fetcher=async x=>x.endsWith('/latest')?{ok:true,json:async()=>rel}:x.includes('-hot-from-')?{ok:true,status:200,url:x,arrayBuffer:async()=>hotBytes}:x.endsWith('-win-x64.zip')?{ok:true,status:200,url:x,arrayBuffer:async()=>fullBytes}:{ok:false,status:404};
+ u.reset();assert.equal((await u.check('1.5.1',fetcher,root)).silent,true);
+ await u.start(root,'1.5.1',fetcher);assert.equal(u.status().hot,true);
+ u.hotFail(root,'hot_reload refused: READER_BUSY');/* silentHotUpdate after a refused dry run */
+ const info=await u.check('1.5.1',fetcher,root);assert.equal(info.hot,false);/* the manual check in the same session */
+ await u.start(root,'1.5.1',fetcher);
+ assert.equal(u.status().phase,'ready');assert.equal(u.status().hot,undefined);assert.match(u.status().zip,/-win-x64\.zip$/);
+});
