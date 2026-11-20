@@ -40,3 +40,13 @@ test('bridge: Steam-owned launches go through Steam, failures say GAME_STEAM_REQ
  assert.doesNotMatch(src,/profile\.source!=='steam'&&require\('\.\.\/core\/locale-emulator/);
  assert.match(fs.readFileSync(path.join(__dirname,'..','web','launch-feedback.js'),'utf8'),/GAME_STEAM_REQUIRED:\[/);
 });
+test('Steam start window beside the game is found; a running launcher keeps the launch waiting',async()=>{
+ const exe=steamLibrary();const dir=path.dirname(exe);fs.writeFileSync(path.join(dir,'launcher.exe'),pe(60000));
+ const names=owned.launcherExes(exe).map(f=>path.basename(f));assert.deepEqual(names,['launcher.exe']);
+ assert.deepEqual((await owned.launchersRunning(exe,async f=>/launcher/i.test(f)?[{pid:1}]:[])).map(f=>path.basename(f)),['launcher.exe']);
+ assert.deepEqual(await owned.launchersRunning(exe,async()=>[]),[]);
+ const src=fs.readFileSync(path.join(__dirname,'..','services','bridge.cjs'),'utf8');
+ assert.match(src,/steam&&error\.message==='GAME_WINDOW_NOT_READY'&&\(await require\('\.\.\/core\/steam-owned\.cjs'\)\.launchersRunning/);
+ assert.match(src,/Error\('STEAM_LAUNCHER_START'\)/);
+ assert.match(fs.readFileSync(path.join(__dirname,'..','web','launch-feedback.js'),'utf8'),/STEAM_LAUNCHER_START:\[/);
+});

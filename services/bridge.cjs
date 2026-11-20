@@ -201,7 +201,12 @@ async function launch(db,id,runtime=null,windowsLaunch=false,{retried=false,redi
      try{state=await waitForVisibleGame(anyProcess,{helper:true,indirect:true,exit:()=>null,trace,attempts:480,timeout:120000});}
      catch(waitError){let waiting='';try{waiting=restart.pendingPrompt(await require('../core/library.cjs').findSteam(),steamAppid,startedAt);}catch{}
       trace('steam-restart-timeout',{waiting});if(waiting==='ShowGameArgs')throw Object.assign(Error('STEAM_CONFIRM_ARGS'),{detail:waiting});if(waiting)throw Object.assign(Error('STEAM_WAITING_USER'),{detail:waiting});throw waitError;}
-    }else{
+    }else if(steam&&error.message==='GAME_WINDOW_NOT_READY'&&(await require('../core/steam-owned.cjs').launchersRunning(game.executable,exe=>gameProcesses(root,exe))).length){
+     /* E-SteamOwned (CHAOS;CHILD live 2026-11-20): Steam starts the folder's own launcher first and the game only after the user clicks Start in it. While that launcher runs this is no failure: wait for the game (10 min), end when the launcher closes without it. */
+     const owned=require('../core/steam-owned.cjs');let gone=false;const poll=setInterval(()=>{owned.launchersRunning(game.executable,exe=>gameProcesses(root,exe)).then(l=>{if(!l.length)gone=true;}).catch(()=>{});},2000);
+     trace('steam-launcher-wait',{});stage='steam-launcher-wait';markLaunch(id,'window-wait');
+     try{state=await waitForVisibleGame(anyProcess,{helper:false,indirect:true,exit:()=>gone?{code:0,signal:null}:null,trace,attempts:2400,timeout:600000});}
+     catch(waitError){throw Object.assign(Error('STEAM_LAUNCHER_START'),{detail:waitError.message});}finally{clearInterval(poll);}    }else{
     const LE=require('../core/locale-emulator.cjs');
     if(error.message!=='GAME_PROCESS_EXITED'||steam||elevation||windowsLaunch||Date.now()-startedAt>3000||!LE.x86(game.executable)||LE.steamApi(game.executable))throw error;
     const lib=runtime?.library?.()||new(require('../core/library.cjs').Library)(require('../core/layout.cjs'));
