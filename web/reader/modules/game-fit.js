@@ -54,7 +54,7 @@
   function check(){frame=0;
    if(!d.body?.classList.contains('tomoyo-gal-bound')){reset();return;}
    /* 2026-11-15 in-place drawing (text-place.js): every character sits on the game's own place and the window fills the client, so there is nothing to fit; measuring it shrank the text and switched the translation's height limit on and off every frame (the translation's second line flashed) */
-   if(d.body.classList.contains('megulit-placed')){reset();return;}
+   if(d.body.classList.contains('megulit-placed')||d.body.classList.contains('megulit-anchored')){reset();return;}/* 2026-11-20 (user, CHAOS;CHILD: 「译文为啥都这么小」): a line anchored on the game's own place is fitted by text-place.js against the monitor's work area (translation at most 15 % smaller); fitting it again to the game client shrank two-row sentences' translation to 60 % */
    const info=b.galLayoutInfo?.(),win=main();if(!win||!info||!(info.clientHeight>0))return;
    const dpr=Math.max(.5,Number(w.devicePixelRatio)||1),client={top:info.clientY/dpr,bottom:(info.clientY+info.clientHeight)/dpr};
    /* measured with the current shift taken out, so moving up is decided again from the real place */

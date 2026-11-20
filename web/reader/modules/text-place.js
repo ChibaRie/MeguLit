@@ -116,7 +116,7 @@
     for (const o of row ? [row, ...parts] : []) o.style.removeProperty('font-size');
     if (row) { const info = b.galLayoutInfo?.(), dpr = devicePixelRatio || 1, limit = (Number.isFinite(info?.workBottom) && info.workBottom > 0 ? info.workBottom / dpr : innerHeight) - 8;
       const fs0 = parseFloat(getComputedStyle(parts[0] || row).fontSize) || 16; let rb = row.getBoundingClientRect();
-      if (rb.bottom > limit) { const fs = Math.max(Math.ceil(fs0 * .6), Math.floor(fs0 * Math.max(.6, (limit - rb.top) / Math.max(1, rb.height)))); for (const o of parts.length ? parts : [row]) set(o, 'font-size', fs + 'px'); rb = row.getBoundingClientRect(); }
+      if (rb.bottom > limit) { /* 2026-11-20 (user: 「译文为啥都这么小啊 别这么小」): at most 15 % smaller; what still does not fit moves the block up instead */ const fs = Math.max(Math.ceil(fs0 * .85), Math.floor(fs0 * Math.max(.85, (limit - rb.top) / Math.max(1, rb.height)))); for (const o of parts.length ? parts : [row]) set(o, 'font-size', fs + 'px'); rb = row.getBoundingClientRect(); }
       if (rb.bottom > limit) { const up = Math.min(rb.bottom - limit, Math.max(0, win.getBoundingClientRect().top)); set(win, 'top', (parseFloat(win.style.top) || win.getBoundingClientRect().top) - up + 'px'); rb = row.getBoundingClientRect(); }
     }
   }
