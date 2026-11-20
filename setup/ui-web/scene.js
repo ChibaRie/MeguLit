@@ -192,6 +192,8 @@
     dive:  { d: 2.2, ease: 'power3.inOut', sph: true, fx: (s) => ({ streak: s * 0.4 }) },
     roll:  { d: 1.9, ease: 'power3.inOut', fx: (s, a, p) => ({ rz: 360 * p, cz: 180 * s }) },
     push:  { d: 1.6, ease: 'power3.inOut', fx: (s) => ({ cz: 220 * s }) },
+    skim:  { d: 2.6, ease: 'power3.inOut', fx: (s) => ({ cx: 380 * s, ry: -8 * s, cy: 60 * s }) },
+    under: { d: 3.4, ease: 'sine.inOut', fx: (s) => ({ cy: 1250 * s }) },
     pull:  { d: 4.4, ease: 'power2.inOut', sph: true, fx: () => ({}) }
   };
   let GLraf = false, override = null;

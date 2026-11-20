@@ -37,7 +37,7 @@
     if (o.fail === 'install') s.err = { kind: 'install' };
     return s;
   }
-  const THEME_ROUTE = { edge: ["whip", "orbit", "dive", "pull"], night: ["roll", "whip", "orbit", "pull"] }; const ROUTE = THEME_ROUTE[Scene.THEME]; let tl = null, fixed = null;
+  const THEME_ROUTE = { edge: ["skim", "under", "dive", "pull"], night: ["skim", "under", "dive", "pull"] }; const ROUTE = THEME_ROUTE[Scene.THEME]; let tl = null, fixed = null;
   function build() {
     tl = gsap.timeline({ paused: true });
     tl.add(Scene.intro(), 0);
@@ -47,14 +47,14 @@
     for (let i = 0; i < typed.length; i++) tl.call(() => { path.value = typed.slice(0, i + 1); }, null, 3.3 + i * 0.05);
     tl.call(() => { Scene.setFree(182 * 1073741824, 1.4 * 1073741824); }, null, 4.2);
     tl.fromTo('#install', { scale: 1 }, { scale: 0.96, duration: 0.12, yoyo: true, repeat: 1 }, 4.7);
-    tl.to({}, { duration: DONE + 7.4 }, 0);
+    tl.to({}, { duration: DONE + 8.6 }, 0);
     return tl;
   }
   /* close-up of one glass plate: eye placed in front of it, a little off to the side (opts: close = plate index, yaw, fill = share of screen height) */
   function closePose(o) { const p = window.GL && GL.pose(o.close); if (!p) return null; const ry = o.yaw === undefined ? -24 : o.yaw, a = ry * Math.PI / 180, D = p.h * p.s * 820 / ((o.fill || 0.62) * 640) * 1; const bx = -Math.sin(a), bz = Math.cos(a);
     return { cx: p.x + bx * (D - 820), cy: p.y, cz: p.z + bz * (D - 820), rx: o.pitch || 0, ry, rz: 0 }; }
   const Demo = {
-    N, TOTAL, T0, TEND, U0, DONE, at, DURATION: DONE + 7.4,
+    N, TOTAL, T0, TEND, U0, DONE, at, DURATION: DONE + 8.6,
     build() { build(); window.__demoTl = tl; return tl; },
     seek(t, o) { fixed = o || null; tl.time(t, false); Scene.setOverride(o && o.close !== undefined ? closePose(o) : null); if (o && o.mix !== undefined) Scene.setThemeMix(o.mix); const G = 1073741824; if (o && o.low) { document.getElementById('path').value = 'C:\\MeguLit'; Scene.setFree(0.9 * G, 1.4 * G, 'ok'); } else if (o && o.readonly) { document.getElementById('path').value = 'C:\\Program Files\\MeguLit'; Scene.setFree(300 * G, 1.4 * G, 'readonly'); } else if (o && o.setup) { document.getElementById('path').value = 'D:\\MeguLit'; Scene.setFree(182 * G, 1.4 * G, 'ok'); } else { Scene.setFree(182 * G, 1.4 * G, 'ok'); } Scene.render(at(t, fixed)); if (window.GL) GL.draw(); const q = document.getElementById("ui-quit"); q.style.visibility = o && o.quit ? "visible" : "hidden"; q.style.opacity = o && o.quit ? 1 : 0; },
     play() { tl.eventCallback('onUpdate', () => Scene.render(at(tl.time()))); tl.play(); }

@@ -54,8 +54,8 @@
   const redMat = new THREE.MeshBasicMaterial({ color: 0xd6203f });
   const ledMats = [0, 1, 2].map(() => new THREE.MeshStandardMaterial({ color: 0xe9eef6, roughness: 0.6, emissive: 0x000000 })), ledBands = [[], [], []], glows = [], ledMat = ledMats[0], led = [], trees = [], arrows = [];
   const wndMat = new THREE.MeshStandardMaterial({ color: 0xaab8cf, roughness: 0.4, metalness: 0.1, emissive: 0x000000 });
-  const roadMat = new THREE.MeshStandardMaterial({ color: 0xdbe1ea, roughness: 1 }), markMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85 });
-  themed.push((m) => { ledMats.forEach((lm, k) => { lm.color.copy(col(0xe4eaf4, 0x1b2029, m)); lm.emissive.copy(col(0x000000, 0x8ea2c8, m)); lm.emissiveIntensity = [0.16, 0.3, 0.2][k] * m; }); wndMat.color.copy(col(0xa9b8d0, 0x222a38, m)); wndMat.emissive.copy(col(0x000000, 0x7d92bb, m)); wndMat.emissiveIntensity = 0.12 * m; bMat.color.copy(col(0xeef3fa, 0x13171e, m)); sMat.color.copy(col(0xc3cddd, 0x1a1f28, m)); sMat.emissive.copy(col(0x000000, 0x93a4c0, m)); sMat.emissiveIntensity = 0.22 * m; eMat.color.copy(col(0x6f7e96, 0x4a5568, m)); wMat.color.copy(col(0x2a3140, 0x8fa2c6, m)); roadMat.color.copy(col(0xd3dae5, 0x101319, m)); markMat.opacity = 0.85 - 0.45 * m; });
+  const roadMat = new THREE.MeshStandardMaterial({ color: 0xaeb9ca, roughness: 1 }), markMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85 });
+  themed.push((m) => { ledMats.forEach((lm, k) => { lm.color.copy(col(0xe4eaf4, 0x1b2029, m)); lm.emissive.copy(col(0x000000, 0x8ea2c8, m)); lm.emissiveIntensity = [0.16, 0.3, 0.2][k] * m; }); wndMat.color.copy(col(0xa9b8d0, 0x222a38, m)); wndMat.emissive.copy(col(0x000000, 0x7d92bb, m)); wndMat.emissiveIntensity = 0.12 * m; bMat.color.copy(col(0xeef3fa, 0x13171e, m)); sMat.color.copy(col(0xc3cddd, 0x1a1f28, m)); sMat.emissive.copy(col(0x000000, 0x93a4c0, m)); sMat.emissiveIntensity = 0.22 * m; eMat.color.copy(col(0x6f7e96, 0x4a5568, m)); wMat.color.copy(col(0x2a3140, 0x8fa2c6, m)); roadMat.color.copy(col(0xaab6c8, 0x101319, m)); mhMat.color.copy(col(0x7f8ca2, 0x2a303b, m)); markMat.opacity = 0.85 - 0.45 * m; });
   let sd2 = 77; const r2 = () => (sd2 = (sd2 * 16807) % 2147483647) / 2147483647;
   const bodies = [], signs = [], panels = [], boxesS = [], tanks = [], edgePts = [];
   const pushBox = (arr, x, y, z, w, h, d, ry) => arr.push([x, y, z, w, h, d, ry]);
@@ -81,11 +81,11 @@
   const TYPES = ['pencil', 'mall', 'terrace', 'screen', 'old', 'fins', 'bands', 'corner', 'tower', 'tower', 'tower'];
   const crossAt = [[-2900, -2400], [1000, 1500], [-800, -200]];
   /* the street: a narrow canyon in front of the glass, opening out behind it so the walls frame the logo and never stand behind it */
-  const innerAt = (zz) => zz > -3300 ? 1650 : zz > -4000 ? 1650 + (-3300 - zz) / 700 * 800 : Math.max(2450, 0.66 * (-1980 - zz));
+  const innerAt = (zz) => zz > -1800 ? 1650 : zz > -2800 ? 1650 + (-1800 - zz) / 1000 * (900 - 1650) : Math.max(900, 0.55 * (-2800 - zz + 820));
   for (const side of [-1, 1]) {
     let z = 2300, idx = 0;
     while (z > -9500) {
-      const near = z > -4600; let type = TYPES[Math.floor(r2() * TYPES.length)]; const tall = idx % 3 === 0; if (idx === 0 || (z < -200 && z > -1300) || (z < 1500 && z > 400 && idx % 2 === 1)) type = 'tower';
+      const near = z > -4600; let type = TYPES[Math.floor(r2() * TYPES.length)]; const tall = idx % 3 === 0; if (z > -3300 && (idx % 2 === 0 || r2() < 0.3)) type = 'tower';
       let w, dep, h; switch (type) { case 'pencil': w = 250 + r2() * 90; dep = 560; h = 2500 + r2() * 1100; break; case 'mall': w = 640 + r2() * 160; dep = 820; h = 1250 + r2() * 500; break; case 'terrace': w = 440 + r2() * 120; dep = 760; h = 1900 + r2() * 900; break; case 'screen': w = 460 + r2() * 100; dep = 700; h = 1700 + r2() * 700; break; case 'tower': w = 430 + r2() * 110; dep = 760; h = 2000 + r2() * 900; break; case 'old': w = 300 + r2() * 100; dep = 620; h = 720 + r2() * 300; break; case 'fins': w = 380 + r2() * 120; dep = 700; h = 1500 + r2() * 800; break; case 'bands': w = 420 + r2() * 160; dep = 740; h = 1400 + r2() * 700; break; default: w = 460; dep = 820; h = 1600 + r2() * 600; }
       if (tall && type !== 'old') h *= 1.18;
       z -= w; let cornerLeft = false; for (const [lo, hi] of crossAt) { if (z + w > lo && z < hi) { z = lo; cornerLeft = true; break; } } if (cornerLeft) continue;
@@ -118,16 +118,24 @@
         else { signColumn(face, side, z + 36, y0, h, 1, 6); pushBox(panels, face - side * 14, y0 + h * 0.5, zc, 22, h * 0.4, w * 0.6); }
       }
       if (near) { const sx = face - side * 130; for (let k = 0; k < 7; k++) pushBox(boxesS, sx + side * 0, y0 + 56, z + 20 + k * (w - 40) / 7, 52, 112, 60); pushBox(boxesS, face - side * 190, y0 + 46, zc, 14, 92, 60); }
+      if (near && type !== 'tower') { signColumn(face, side, z + 30, y0, h, 1, 6); signColumn(face, side, z1 - 30, y0, h, 0, 8); pushBox(panels, face - side * 14, y0 + h * 0.5, zc, 22, h * 0.26, w * 0.66); }
       z -= 8 + r2() * 14; idx++;
     } }
   const inst = (list, mat0, geo, shadow) => { const m = new THREE.InstancedMesh(geo, mat0, list.length), o = new THREE.Object3D(); list.forEach((b, i) => { o.position.set(b[0], b[1], b[2]); o.rotation.set(0, b[6] || 0, 0); o.scale.set(b[3], b[4], b[5]); o.updateMatrix(); m.setMatrixAt(i, o.matrix); }); m.castShadow = shadow; m.receiveShadow = true; m.frustumCulled = false; scene.add(m); return m; };
-  const unit = new THREE.BoxGeometry(1, 1, 1); inst(bodies, bMat, unit, true); inst(signs, sMat, unit, true); inst(panels, sMat, unit, false); inst(boxesS, sMat, unit, false); inst(bands, bMat, unit, true); inst(fins, bMat, unit, false); inst(awn, sMat, unit, true); ledBands.forEach((l, k) => inst(l, ledMats[k], unit, false)); inst(wins, wndMat, unit, false); inst(shopf, wndMat, unit, false);
+  const unit = new THREE.BoxGeometry(1, 1, 1); inst(bodies, bMat, unit, true); inst(signs, sMat, unit, true); { const tones = [0, 1, 2].map(() => new THREE.MeshStandardMaterial({ color: 0xc3cddd, roughness: 0.8, emissive: 0x000000 })); themed.push((m) => { [[0xc9d3e2, 0xd7deea, 0xb9c5d8], [0x1b2029, 0x232a35, 0x2c3441]].forEach(() => 0); tones.forEach((t, k) => { t.color.copy(col([0xc9d3e2, 0xd9e0ec, 0xb7c3d6][k], [0x1b2029, 0x242b37, 0x2e3644][k], m)); t.emissive.copy(col(0x000000, 0x8ea2c8, m)); t.emissiveIntensity = [0.1, 0.2, 0.3][k] * m; }); }); [0, 1, 2].forEach((k) => inst(panels.filter((_, i) => i % 3 === k), tones[k], unit, false)); } inst(boxesS, sMat, unit, false); inst(bands, bMat, unit, true); inst(fins, bMat, unit, false); inst(awn, sMat, unit, true); ledBands.forEach((l, k) => inst(l, ledMats[k], unit, false)); inst(wins, wndMat, unit, false); inst(shopf, wndMat, unit, false);
   { const gc = document.createElement('canvas'); gc.width = gc.height = 128; const g = gc.getContext('2d'), gr = g.createRadialGradient(64, 64, 4, 64, 64, 62); gr.addColorStop(0, 'rgba(190,210,255,.55)'); gr.addColorStop(1, 'rgba(190,210,255,0)'); g.fillStyle = gr; g.fillRect(0, 0, 128, 128); const gt = new THREE.CanvasTexture(gc), gmat = new THREE.MeshBasicMaterial({ map: gt, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0 }); themed.push((m) => { gmat.opacity = 0.5 * m; }); glows.forEach((q) => { const p = new THREE.Mesh(new THREE.PlaneGeometry(q[3] * 1.4, q[3] * 3.2), gmat); p.rotation.x = -Math.PI / 2; p.position.set(q[0], q[1], q[2]); scene.add(p); }); }
   { const ig = new THREE.IcosahedronGeometry(0.5, 1), m = new THREE.InstancedMesh(ig, sMat, trees.length), o = new THREE.Object3D(); trees.forEach((t, i) => { o.position.set(t[0], t[1], t[2]); o.scale.set(t[3], t[3] * 0.9, t[3]); o.updateMatrix(); m.setMatrixAt(i, o.matrix); }); m.castShadow = true; m.frustumCulled = false; scene.add(m); }
   { const cg = new THREE.CylinderGeometry(0.5, 0.5, 1, 28), m = new THREE.InstancedMesh(cg, bMat, cyls.length), o = new THREE.Object3D(); cyls.forEach((q, i) => { o.position.set(q[0], q[1], q[2]); o.scale.set(q[3] * 2, q[4], q[3] * 2); o.updateMatrix(); m.setMatrixAt(i, o.matrix); }); m.castShadow = true; m.frustumCulled = false; scene.add(m); }
   { const cg = new THREE.CylinderGeometry(0.5, 0.5, 1, 14), m = new THREE.InstancedMesh(cg, bMat, tanks.length), o = new THREE.Object3D(); tanks.forEach((t, i) => { o.position.set(t[0], t[1], t[2]); o.scale.set(t[3] * 2, t[4], t[3] * 2); o.updateMatrix(); m.setMatrixAt(i, o.matrix); }); m.castShadow = true; m.frustumCulled = false; scene.add(m); }
   { const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(edgePts, 3)); const l = new THREE.LineSegments(g, eMat); l.frustumCulled = false; scene.add(l); }
   /* road, markings, the crimson path line that leads the eye (and the camera) down the street */
+  const mhMat = new THREE.MeshStandardMaterial({ color: 0x7f8ca2, roughness: 0.9 });
+  { const cu = [], mh = [], jt = []; for (const side of [-1, 1]) for (let z = 2300; z > -9500; z -= 360) cu.push([X0 + side * (innerAt(z - 180) - 120), FLOORY + 9, z - 180, 36, 18, 362]);
+    for (let i = 0; i < 26; i++) { const z = 2000 - i * 430, lane = [-1500, -900, -300, 300, 900, 1500][i % 6]; if (Math.abs(lane) < innerAt(z) - 300) mh.push([X0 + lane + 150, FLOORY + 2, z, 80, 3, 80]); }
+    for (let z = 2300; z > -9500; z -= 420) { const e = innerAt(z) - 130; jt.push(X0 - e, FLOORY + 1.5, z, X0 + e, FLOORY + 1.5, z); }
+    const unit0 = new THREE.BoxGeometry(1, 1, 1); { const m = new THREE.InstancedMesh(unit0, bMat, cu.length), o = new THREE.Object3D(); cu.forEach((b, i) => { o.position.set(b[0], b[1], b[2]); o.scale.set(b[3], b[4], b[5]); o.updateMatrix(); m.setMatrixAt(i, o.matrix); }); m.frustumCulled = false; m.receiveShadow = true; scene.add(m); }
+    { const m = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.5, 0.5, 1, 20), mhMat, mh.length), o = new THREE.Object3D(); mh.forEach((b, i) => { o.position.set(b[0], b[1], b[2]); o.scale.set(b[3], b[4], b[5]); o.updateMatrix(); m.setMatrixAt(i, o.matrix); }); m.frustumCulled = false; scene.add(m); }
+    { const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(jt, 3)); const l = new THREE.LineSegments(g, eMat); l.frustumCulled = false; scene.add(l); } }
   const road = new THREE.Mesh(new THREE.PlaneGeometry(4900, 12000), roadMat); road.rotation.x = -Math.PI / 2; road.position.set(X0, FLOORY - 1, -3500); road.receiveShadow = true; scene.add(road);
   { const mk = []; for (let z = 2000; z > -9500; z -= 260) pushBox(mk, X0 + 600, FLOORY + 2, z, 14, 2, 120), pushBox(mk, X0 - 600, FLOORY + 2, z, 14, 2, 120); for (const zc of [1300, -2600, -3100]) for (let x = -2100; x <= 2100; x += 200) pushBox(mk, X0 + x, FLOORY + 2, zc, 110, 2, 480);
     for (const zc of [700, -1900]) for (const lx of [-1500, -900, -300, 300, 900, 1500]) { pushBox(mk, X0 + lx, FLOORY + 2, zc, 26, 2, 260); pushBox(mk, X0 + lx - 34, FLOORY + 2, zc - 150, 24, 2, 100, 0.7); pushBox(mk, X0 + lx + 34, FLOORY + 2, zc - 150, 24, 2, 100, -0.7); }
@@ -309,7 +317,7 @@
       const glow = new THREE.Mesh(sg, glowMat); glow.position.z = 0.6; glow.renderOrder = 3;
       const edgeMat = new THREE.LineBasicMaterial({ color: 0xe9f2ff, transparent: true, opacity: 0.1, blending: THREE.AdditiveBlending, depthWrite: false }); edgeMats.push(edgeMat); const line = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(shape.getPoints().map((p) => new THREE.Vector3(p.x, p.y, 13.4))), edgeMat); line.renderOrder = 3;
       const ghost = new THREE.Mesh(new THREE.ShapeGeometry(shape, 1), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: NIGHT ? 0.035 : 0.1, depthWrite: false })); ghost.renderOrder = 0;
-      const g3 = new THREE.Group(); g3.add(glass, ghost, glow, line); scene.add(g3);
+      line.visible = false; const g3 = new THREE.Group(); g3.add(glass, ghost, glow, line); scene.add(g3);
       const core = idx < nCore, dpt = core ? 900 + Math.pow(rr(), 1.1) * 2700 : 700 + rr() * 2900, k = (dpt + P) / P;
       gplates.push({ g3, glass, ghost, glowMat, edgeMat, mat, core, area: Math.abs(area2(q)), w: x1 - x0, h: y1 - y0, cx, cy, d: dpt, k, thr: rr(), X: FINAL.cx + ((cx - MW / 2) * FU) * k, Y: FINAL.cy + ((cy - MH / 2) * FU + LCYg) * k, Z: FINAL.cz - dpt,
         rx: (rr() < 0.5 ? -1 : 1) * (28 + rr() * 58), ry: (rr() < 0.5 ? -1 : 1) * (28 + rr() * 58), rz: (rr() - 0.5) * 130, ph: rr() * 6.28, amp: 24 + rr() * 90, spin: 0.1 + rr() * 0.25 });
@@ -325,7 +333,7 @@
       camera.position.set(c.cx + (bx || 0), -(c.cy + (by || 0)), c.cz); camera.rotation.set(-c.rx * D2R, -c.ry * D2R, c.rz * D2R, 'YXZ'); camera.translateZ(P); camera.updateMatrixWorld(true);
     },
     update(frames, m) {
-      if (trainG) trainG.position.x = X0 - 3200 + ((m.t || 0) * 430) % 6400;
+      if (trainG) trainG.position.x = X0 - 6400 + ((m.t || 0) * 520) % 12800;
       if (MODE === 'M') { if (!merged) buildMerged(); if (!merged) return; const s = m.s, N = s.st.length, cores = gplates.filter((p) => p.core), K = cores.length, br = REDUCE ? 0 : 1, ft = m.t * br, damp = 1 - m.reveal, kk = 1 - m.reveal, prog = m.prog || 0;
         gplates.forEach((p) => { let f = 0, lit = 0, fl = 0;
           if (p.core) { const a = Math.floor(p.order * N / K), b = Math.max(a + 1, Math.floor((p.order + 1) * N / K)); let sum = 0, dn = 0, mx = 0; for (let i = a; i < b; i++) { const st = s.st[i]; if (st === 2) { sum += 1; dn++; mx = Math.max(mx, s.doneAt[i] || 0); } else if (st === 1 || st === 3) sum += s.fr[i]; } f = sum / (b - a); lit = dn === b - a ? 1 : 0; fl = lit ? Math.max(0, 1 - (m.t - mx) / 0.9) : 0; }

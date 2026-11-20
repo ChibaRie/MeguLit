@@ -29,11 +29,12 @@ const get = (u) => new Promise((res, rej) => http.get(u, (r) => { let d = ''; r.
     for (const [k, v] of Object.entries(S)) { let t = v[0]; if (k === 'retry') t = await ev('(()=>{for(let t=3;t<12;t+=.05){const s=Demo.at(t);if(s.st.includes(3))return t}return 8})()'); await shot(path.join(a, `${theme}-${k}.png`), t, v[1]); console.log(k, t); }
   }
   if (mode === 'video') {
-    const fr = path.join(dir, 'f'); fs.mkdirSync(fr); const fps = 30, n = Math.floor(T.dur * fps);
+    const fr = path.join(dir, 'f'); fs.mkdirSync(fr); const fps = +process.env.FPS || 24, n = Math.floor(T.dur * fps);
     for (let i = 0; i < n; i++) await shot(path.join(fr, String(i).padStart(4, '0') + '.jpg'), i / fps);
     execFileSync(process.env.FFMPEG || 'D:/ffmpeg/bin/ffmpeg', ['-y', '-loglevel', 'error', '-framerate', String(fps), '-i', path.join(fr, '%04d.jpg'), '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-crf', '18', a]);
     console.log('video', n, 'frames', T.dur.toFixed(1) + 's');
   }
+  if (mode === 'switchvideo') { const fr = path.join(dir, 'f'); fs.mkdirSync(fr); const fps = +process.env.FPS || 24, N = fps * 6, ez = (x) => x * x * (3 - 2 * x); for (let i = 0; i < N; i++) { const tt = i / fps, m = tt < 0.6 ? 0 : tt < 1.5 ? ez((tt - 0.6) / 0.9) : tt < 3.2 ? 1 : tt < 4.1 ? 1 - ez((tt - 3.2) / 0.9) : 0; await shot(path.join(fr, String(i).padStart(4, '0') + '.jpg'), 17.9, { mix: m }); } execFileSync(process.env.FFMPEG || 'D:/ffmpeg/bin/ffmpeg', ['-y', '-loglevel', 'error', '-framerate', String(fps), '-i', path.join(fr, '%04d.jpg'), '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-crf', '18', a]); console.log('switch video', N); }
   ws.close(); ch.kill(); await new Promise((r) => setTimeout(r, 500)); try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
   process.exit(0);
 })();
