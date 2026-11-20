@@ -24,6 +24,7 @@
     '.megulit-anchor-window .sentence-text{position:relative}',
     '.megulit-anchor-window .tome-page-lines{opacity:.6;position:absolute;left:0;right:0;bottom:100%}',
     '.megulit-anchor-window.megulit-page-fresh .tome-page-lines{display:none!important}',
+    '.megulit-anchor-window:not(.megulit-anchor-center) .tome-page-lines{display:none!important}', /* dialogue lines never carry the dimmed page above them (2026-11-20 user: the old lines covered the screen) */
     'body.megulit-placed .megulit-place-window .megulit-ruby-base{position:absolute!important;display:block!important;margin:0!important;padding:0!important}',
     'body.megulit-placed .megulit-place-window .char-token{position:absolute!important;display:block!important;margin:0!important;padding:0!important;text-align:center!important;white-space:pre!important;letter-spacing:0!important;text-indent:0!important;pointer-events:auto}',
     'body.megulit-placed .megulit-place-window .char-token.megulit-unplaced{display:none!important}',
