@@ -2,7 +2,9 @@
 //  1. same bytes: a whole-font read returns FontDot::Patch of the original; a later 4 KiB read inside the font returns
 //     the same patched bytes (the registered range);
 //  2. no waiting: while the background scan walks a 512 MiB region (several scans in 5 s), 4 KiB reads inside the font
-//     must stay fast (p99 < 2 ms, max < 10 ms) - before 2026-11-19 every game read waited for the scan's lock;
+//     must stay fast (p99 < 2 ms, at most one read over 10 ms) - before 2026-11-19 every game read waited for the scan's
+//     lock, which costs one slow read per scan (the scan runs every 2 s here, so two or more in the window); a single
+//     slow read is the runner descheduling the test (CI runs failed on max 10.6 ms and 38 ms with p99 at 0.08 ms);
 //  3. reports still arrive on \\.\pipe\MeguLitFontDot-<pid> (ready, registered, patched), sent off the game thread.
 // Exit code 0 = passed.
 #include <windows.h>
@@ -51,7 +53,8 @@ int wmain(int argc, wchar_t **argv) {
  CloseHandle(h);
  std::sort(ms.begin(), ms.end()); double p99 = ms[ms.size() * 99 / 100], mx = ms.back();
  printf("%s range reads are patched (%zu reads)\n", chunkOk ? "ok  " : "FAIL", ms.size()); fails += !chunkOk;
- bool fast = p99 < 2.0 && mx < 10.0; printf("%s read latency during scans p50=%.3f p99=%.3f max=%.3f ms\n", fast ? "ok  " : "FAIL", ms[ms.size() / 2], p99, mx); fails += !fast;
+ size_t slow = (size_t)std::count_if(ms.begin(), ms.end(), [](double v) { return v >= 10.0; });
+ bool fast = p99 < 2.0 && slow <= 1; printf("%s read latency during scans p50=%.3f p99=%.3f max=%.3f ms, %zu over 10 ms\n", fast ? "ok  " : "FAIL", ms[ms.size() / 2], p99, mx, slow); fails += !fast;
  for (int i = 0; i < 60 && !(Has("ToMe_FONTDOT ready") && Has("ToMe_FONTDOT registered file") && Has("ToMe_FONTDOT patched src=file")); i++) Sleep(100);
  bool rep = Has("ToMe_FONTDOT ready") && Has("ToMe_FONTDOT registered file") && Has("ToMe_FONTDOT patched src=file");
  printf("%s reports arrive on the pipe\n", rep ? "ok  " : "FAIL"); fails += !rep;
