@@ -136,7 +136,7 @@ public class SetupWin : Form {
     $win.ClientSize = New-Object Drawing.Size([int](1000 * $scale), [int](640 * $scale)); $win.MinimumSize = $win.Size
     $ico = Join-Path $sourceRoot 'MeguLit.exe'; if (Test-Path $ico) { try { $win.Icon = [Drawing.Icon]::ExtractAssociatedIcon($ico) } catch {} }
     $web = New-Object Microsoft.Web.WebView2.WinForms.WebView2; $web.Dock = 'Fill'; $win.Controls.Add($web); $win.Web = $web
-    $props = New-Object Microsoft.Web.WebView2.WinForms.CoreWebView2CreationProperties; $props.UserDataFolder = Join-Path $env:LOCALAPPDATA 'MeguLit\setup-webview2'; $web.CreationProperties = $props
+    $props = New-Object Microsoft.Web.WebView2.WinForms.CoreWebView2CreationProperties; $props.UserDataFolder = $(if ($testLog -and $env:MEGULIT_SETUP_WEBVIEW2_DATA) { $env:MEGULIT_SETUP_WEBVIEW2_DATA } else { Join-Path $env:LOCALAPPDATA 'MeguLit\setup-webview2' }); $web.CreationProperties = $props
     $script:win = $win; $script:webReady = $false
     $win.AskClose = { $script:askAt = [DateTime]::Now; try { $script:win.Web.CoreWebView2.ExecuteScriptAsync('window.__askClose&&window.__askClose()') | Out-Null } catch { Web-Close } }
     $web.Add_CoreWebView2InitializationCompleted({ param($s, $e)
