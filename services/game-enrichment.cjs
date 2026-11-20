@@ -40,7 +40,12 @@ class GameEnrichment{
  stop(){this.closed=true;this.queue.length=0;this.abort.abort();}
  enqueue(ids,refresh=false){if(this.closed)return;this.refreshIds??=new Set();for(const id of ids){if(refresh)this.refreshIds.add(id);if(!this.queue.includes(id))this.queue.push(id);}if(!this.pumping)this.pump();}
  async pump(){this.pumping=true;try{while(!this.closed&&this.queue.length){const id=this.queue.shift();const refresh=!!this.refreshIds?.delete(id);try{await this.ensure(id,require('./store.cjs').publicPreferences(this.root).language,refresh);}catch{}}}finally{this.pumping=false;}}
- ensure(id,locale='zh',refresh=false){if(this.closed)return Promise.reject(Error('RUNTIME_STOPPED'));const key=id+':'+locale;if(this.running.has(key))return this.running.get(key);const job=this.run(id,locale,refresh).finally(()=>this.running.delete(key));this.running.set(key,job);return job;}
+ /* A forced refresh asked while a run for the game is still fetching (details opened, then the VNDB entry corrected in the
+    edit dialog) runs again once that run ends: the run read the row before the edit, and joining it lost the correction. */
+ ensure(id,locale='zh',refresh=false){if(this.closed)return Promise.reject(Error('RUNTIME_STOPPED'));const key=id+':'+locale;
+  if(this.running.has(key)){if(!refresh)return this.running.get(key);this.again??=new Map();let next=this.again.get(key);
+   if(!next){next=this.running.get(key).catch(()=>{}).then(()=>{this.again.delete(key);return this.ensure(id,locale,true);});this.again.set(key,next);}return next;}
+  const job=this.run(id,locale,refresh).finally(()=>this.running.delete(key));this.running.set(key,job);return job;}
  async run(id,locale,refresh){const store=require('./store.cjs');let db=store.openStore(this.root),game;try{const row=db.prepare('SELECT * FROM games WHERE id=? AND removed_at IS NULL').get(id);if(!row)throw Error('GAME_NOT_FOUND');game={row,original:JSON.parse(row.original||'{}')};}finally{db.close();}
   // A VNDB entry the user set (save_game) wins over every automatic match and is kept outside `library`, which each
   // library scan rewrites. When it differs from the last match, the cover and synopsis follow it like a correction.
