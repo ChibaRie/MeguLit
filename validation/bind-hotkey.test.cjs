@@ -86,9 +86,9 @@ test('reconnecting to a game an earlier MeguLit injected: HookBridge connects fi
  const start=hb.indexOf('Luna_Start(connected'),connect=hb.indexOf('Luna_ConnectProcess(Pid)',start),check=hb.indexOf('Reattach=!Luna_CheckIfNeedInject(Pid)',start);
  assert.ok(start>0&&connect>start&&check>connect,'ConnectProcess, then inject only if Luna_CheckIfNeedInject');
  /* #468 an already injected process gets the hooks it had again; 490a7b5b the DLL may connect before Reattach is set (CHAOS;CHILD rig: OnConnect ran first, nothing reinserted), so it runs once more when already connected, and only once */
- assert.match(hb,/Connected=true;ReattachHooks();/);
- assert.match(hb,/Reattach=!Luna_CheckIfNeedInject(Pid);if(Reattach){[^}]*if(Connected)ReattachHooks();}/);
- assert.match(hb,/static void ReattachHooks(){if(!Reattach||ReattachDone/,'runs once');
+ assert.ok(hb.includes('Connected=true;ReattachHooks();'));
+ assert.ok(hb.includes('Reattach=!Luna_CheckIfNeedInject(Pid);if(Reattach){')&&hb.includes('if(Connected)ReattachHooks();}'),'run once more when the DLL connected first');
+ assert.ok(hb.includes('static void ReattachHooks(){if(!Reattach||ReattachDone'),'runs once');
  assert.match(hb,/Luna_DetachProcess\(Pid\)/,'a clean exit detaches, so the next start injects a fresh hook');
  const font=read('native/fontprobe/FontProbe.cpp');assert.match(font,/if \(pipe == INVALID_HANDLE_VALUE\) \{ pipe = CreateFileW\(name[^\n]*continue; fresh = true; \}/,'FontProbe redials and replays to a new HookBridge');
  assert.match(font,/CloseHandle\(p\); InterlockedExchange\(&CtlConnected, 0\); Command\("OFF"\)/,'with HookBridge gone nothing stays hidden');
