@@ -11,7 +11,8 @@ const SHA256='808ff584426d52cc775ad6406da00622f454be95bd4c8fbca42eef4b7235ad5c',
    cached in R2), then the gh relays, then GitHub itself. The size and sha256 above still decide. */
 const GH_PATH=URL.replace('https://github.com/','');
 const DL=['https://dl.megulit.com/gh/'+GH_PATH,'https://cn-dl.megulit.com/gh/'+GH_PATH];
-const RELAYS=['https://gh-proxy.com/'+URL,'https://ghproxy.net/'+URL];
+/* 2026-11-20: relays from setup/runtime.json through core/download-sources.cjs (the list setup uses too) */
+const RELAYS=(()=>{try{const r=require('./download-sources.cjs').relays().map(m=>m.url.replace('{url}',URL));if(r.length)return r;}catch{}return ['https://gh-proxy.com/'+URL,'https://ghproxy.net/'+URL];})();
 const inChina=()=>{try{const o=Intl.DateTimeFormat().resolvedOptions();return o.timeZone==='Asia/Shanghai'||o.timeZone==='Asia/Urumqi'||/^zh-CN/i.test(o.locale||'');}catch{return false;}};
 const SOURCES=inChina()?[...[...DL].reverse(),...RELAYS,URL]:[URL,...DL,...RELAYS];
 const REQUIRED=['LEProc.exe','LECommonLibrary.dll','LoaderDll.dll','LocaleEmulator.dll'];

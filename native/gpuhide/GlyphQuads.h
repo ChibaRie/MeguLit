@@ -371,7 +371,7 @@ struct GlyphLearner {
   float h = 0; Rect box{ 1e30f, 1e30f, -1e30f, -1e30f }; for (auto &r : cs) { h += r.y1 - r.y0; box.x0 = (std::min)(box.x0, r.x0); box.y0 = (std::min)(box.y0, r.y0); box.x1 = (std::max)(box.x1, r.x1); box.y1 = (std::max)(box.y1, r.y1); } h /= cs.size();
   char b[256];
   if (!learned) {
-   learned = true; areaRt = g.rt; areaW = g.rtW; areaH = g.rtH; glyphH = h; learnedSeq = seq; area = Rect{ box.x0 - h, box.y0 - h, box.x1 + h * 8, box.y1 + h * 2 };
+   learned = true; areaRt = g.rt; areaW = g.rtW; areaH = g.rtH; glyphH = h; learnedSeq = seq; area = Rect{ 0, box.y0 - h, (std::max)(box.x1 + h * 8, (float)g.rtW), box.y1 + h * 2 };
    // atlases whose quads line up with the matched glyphs (other pages, outline / shadow sheets: top-left within 3 px of a
    // glyph for at least 60 % of their quads in the area); a UI sheet drawing the box frame or body under the text is not
    auto aligned = [&](const Rect &r) { for (auto &c : cs) if (std::fabs(r.x0 - c.x0) <= 3 && std::fabs(r.y0 - c.y0) <= 3) return true; return false; };
@@ -382,7 +382,7 @@ struct GlyphLearner {
    snprintf(b, sizeof b, "ToMe_GPUHIDE learn seq=%u area=%.0f,%.0f,%.0f,%.0f atlas=%ux%u glyphs=%u chars=%u atlases=%u", seq, area.x0, area.y0, area.x1 - area.x0, area.y1 - area.y0, g.tw, g.th, (unsigned)cs.size(), n, (unsigned)atlases.size()); if (emit) emit(b);
   } else {
    // grow the area when a longer line spills over it
-   area.x0 = (std::min)(area.x0, box.x0 - h * 0.5f); area.y0 = (std::min)(area.y0, box.y0 - h * 0.5f); area.x1 = (std::max)(area.x1, box.x1 + h * 0.5f); area.y1 = (std::max)(area.y1, box.y1 + h * 0.5f);
+   area.x0 = 0; /* centred rows (CHAOS;CHILD) start further left than the learned line: the band spans the whole target so a new row's first glyphs never leak */ area.x1 = (std::max)(area.x1, (float)g.rtW); area.y0 = (std::min)(area.y0, box.y0 - h * 0.5f); area.x1 = (std::max)(area.x1, box.x1 + h * 0.5f); area.y1 = (std::max)(area.y1, box.y1 + h * 0.5f);
   }
   bool hidden = hitSent && !readOnly; std::string rects; bool mapped = true;
   for (auto r : cs) { if (!ToScreen(g.rt, g.rtW, g.rtH, r)) { mapped = false; break; } char x[64]; snprintf(x, sizeof x, "%s%.0f,%.0f,%.0f,%.0f", rects.empty() ? "" : ";", r.x0, r.y0, r.x1 - r.x0, r.y1 - r.y0); rects += x; }

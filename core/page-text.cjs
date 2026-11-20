@@ -22,7 +22,9 @@ class PageText {
   /* the next line joins the page of the lines shown before it: the game sends its page again when it turns it (verified
      live, CHAOS;CHILD: "…。 発生は、突然だった。" came with the click that cleared that page), so no such resend since the last
      line means the page is still on screen */
-  samePage() { return !this.ended && (this.onPage || 0) < 6; } /* a text page holds a few lines: more in a row came without a resend (skipping), so a new page */
+  /* #468 a page another stream shows the game holding (hook-native auxPage) is turned by that evidence, not after six lines */
+  cap(now = Date.now()) { return this.auxPageAt && now - this.auxPageAt < 120000 ? 40 : 6; }
+  samePage(now = Date.now()) { return !this.ended && (this.onPage || 0) < this.cap(now) && now - this.displayAt >= 900; } /* skipping (lines under 0.9 s apart, live 2026-11-20 Ctrl-skip piled a wall of lines): no page is stacked */ /* a text page holds a few lines: more in a row came without a resend (skipping), so a new page */
   /* only a stream that has sent a page again is a page stream; others (ADV games) get no page reports at all */
   get pages() { return this.paging === true; }
   /* what part of `text` is new: { drop: reason } or { text } (the new part, original spacing kept) */
@@ -41,6 +43,8 @@ class PageText {
       }
     }
     if (!best) {
+      /* the page sent whole with lines never shown (skipping): its newest line is the one from the last speaker tag on */
+      const tagAt = raw.lastIndexOf('【'); if (tagAt > 0 && raw.indexOf('】', tagAt) > tagAt && key(raw.slice(0, tagAt)).length >= 4) { const nxt = raw.slice(tagAt); if (key(nxt)) return { text: nxt, page: 0 }; }
       /* the page drawn again with its first lines unseen (MeguLit attached mid-page): it ends with the lines just shown */
       let acc = '';
       for (let e = this.recent.length - 1; e >= 0; e--) { acc = this.recent[e].key + acc; if (acc.length >= k.length || !k.endsWith(acc)) break; if (acc.length >= 6) return this.ended = true, this.paging = true, { drop: 'page drawn again (earlier part unseen)' }; }
@@ -82,7 +86,7 @@ class PageText {
   shown(part, shown, now = Date.now()) {
     const k = key(part);
     if (k) { this.recent.push({ key: k, at: now }); if (this.recent.length > RECENT) this.recent.shift(); }
-    this.display = String(shown || part || ''); this.displayAt = now; this.onPage = this.ended || (this.onPage || 0) >= 6 ? 1 : (this.onPage || 0) + 1; this.ended = false;
+    this.display = String(shown || part || ''); this.displayAt = now; this.onPage = this.ended || (this.onPage || 0) >= this.cap(now) ? 1 : (this.onPage || 0) + 1; this.ended = false;
   }
 }
 /* the original text after its first `n` key characters (spaces and speaker tags not counted) */

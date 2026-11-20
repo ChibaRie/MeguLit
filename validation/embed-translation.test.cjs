@@ -43,8 +43,8 @@ test('the reader translates a held line once and shares it with the page',async(
 test('the native bridge holds the line, answers with the translation, and lets the original through on timeout',()=>{
  const cs=fs.readFileSync(path.join(__dirname,'..','native','HookBridge.cs'),'utf8');
  assert.match(cs,/Emit\(new\{type="embedRequest",id=id,text=text\}\)/);
- assert.match(cs,/new Timer\(_=>FinishEmbed\(id,null\),null,3700,Timeout\.Infinite\)/);
- assert.match(cs,/type=="embedReply"/);assert.match(cs,/TranslateMode\?4000u:HideWaitMs/);assert.match(cs,/const uint HideWaitMs=100;/,'hide mode waits at most about 100 ms (2026-11-19 embed wait)');
+ assert.match(cs,/new Timer\(_=>FinishEmbed\(id,null,true\),null,\(int\)TranslateGiveUpMs,Timeout\.Infinite\)/);
+ assert.match(cs,/type=="embedReply"/);assert.match(cs,/TranslateMode\?TranslateWaitMs:HideWaitMs/);assert.match(cs,/const uint TranslateWaitMs=150,TranslateGiveUpMs=110;/,'translate mode never holds the game thread longer than a short budget (2026-11-20 lip sync)');assert.match(cs,/new Timer\(_=>FinishEmbed\(id,null,true\),null,\(int\)TranslateGiveUpMs/,'a late translation hides the line instead of freezing the game');assert.doesNotMatch(cs,/4000u:HideWaitMs|,3700,Timeout/);assert.match(cs,/embed answer ms <1:/,'bridge answer time is reported');assert.match(cs,/const uint HideWaitMs=100;/,'hide mode waits at most about 100 ms (2026-11-19 embed wait)');
 });
 
 // Chinese-patched game read in Japanese (original-text import): the patch's own line becomes the translation, ready
