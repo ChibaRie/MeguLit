@@ -11,6 +11,52 @@
   const REDUCE = Q.get('reduce') === '1' || (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
   document.documentElement.dataset.theme = THEME;
   const $ = (s) => document.querySelector(s);
+  /* All installer copy lives here (zh primary, natural English as the second language; ?lang=en). Decorative big caps stay English on purpose. */
+  const LANG = Q.get('lang') === 'en' ? 'en' : 'zh';
+  const I18N = {
+    zh: {
+      title: 'MeguLit 安装', step_welcome: '开始', step_loc: '位置', step_field: '下载', step_unpack: '安装', step_done: '完成',
+      welcomeSub: '先把东西备齐', locSub: '你想装在哪儿', locT: '装在哪儿', locEn: 'Install location', change: '换一个',
+      swDesk: '放一个桌面快捷方式', swMenu: '加到开始菜单', install: '开始安装',
+      locNote: '东西已经在后台下了，你慢慢挑位置。都是各项目官方的原版文件，下完会逐个校验，被改过的不会装。',
+      free: (f, n) => '这块盘还剩 ' + f + '，装完大约占 ' + n, freeBad: (f, n) => '这块盘只剩 ' + f + '，装不下（要 ' + n + '），换一个盘吧',
+      probeT: '先找条最快的路', probeP: 'GitHub 和国内镜像一起测速，挑最快的几条同时下。',
+      downT: (p) => '在下「' + p + '」', downP: (src) => '现在走的是 ' + src + '。底下那条细线，每一格都是一段真实在下的数据。',
+      retryNote: '有一条线卡住了，已经自动换线重试。',
+      verifyT: '核对文件', verifyP: (p) => '在核对「' + p + '」是不是原版，几秒钟的事。',
+      unpackT: '在装了', unpackP: (p, d) => '把「' + p + '」解压到 ' + d + '。',
+      doneT: '装好了', doneEn: 'ALL SET', launch: '打开 MeguLit',
+      probing: '测速中', eta: (s) => s < 60 ? '还要 ' + Math.ceil(s) + ' 秒左右' : '还要 ' + Math.floor(s / 60) + ' 分 ' + Math.round(s % 60) + ' 秒左右', srcMore: (h, n) => h + ' 等 ' + n + ' 条线',
+      packs: { base: '基础组件', reading: '注音词典', voice: '语音引擎' },
+      errDownT: '下载断了', errDownM: '试了好几条线，都连不上。多半是网络断了，或者被代理拦住了。', errDownTip: '先点「重试」，已经下好的部分不会重下。还不行就点「复制日志」发给我们，或者去官网手动下整包。',
+      errInstT: '没装完', errInstM: '有些文件被别的程序占着，覆盖不了。', errInstTip: '先把开着的 MeguLit 关掉，杀毒软件的扫描也停一下，再点「重试」。东西已经下好了，不会重下。',
+      retry: '重试', copylog: '复制日志', copied: '已复制', manual: '手动下载',
+      quitT: '还没下完', quitM: '现在关也行，已经下好的会留着，下次打开接着下。', stay: '继续下', leave: '先关掉',
+      minimize: '最小化', close: '关闭'
+    },
+    en: {
+      title: 'MeguLit setup', step_welcome: 'Start', step_loc: 'Location', step_field: 'Download', step_unpack: 'Install', step_done: 'Done',
+      welcomeSub: 'Getting things ready', locSub: 'Where should it live?', locT: 'Where to?', locEn: '', change: 'Change',
+      swDesk: 'Desktop shortcut', swMenu: 'Start menu entry', install: 'Install',
+      locNote: 'The download already started in the background, so take your time. Every file is the original from its project and gets checked before anything is installed.',
+      free: (f, n) => f + ' free on this drive, needs about ' + n, freeBad: (f, n) => 'Only ' + f + ' free here and it needs ' + n + '. Pick another drive.',
+      probeT: 'Finding the fastest route', probeP: 'Testing GitHub and the mirrors at the same time, then using the quickest few.',
+      downT: (p) => 'Downloading ' + p, downP: (src) => 'Pulling from ' + src + '. Each tick in the thin line below is one real piece of the download.',
+      retryNote: 'One route stalled, so it switched and is trying again.',
+      verifyT: 'Checking the files', verifyP: (p) => 'Making sure ' + p + ' is the original. Takes a few seconds.',
+      unpackT: 'Installing', unpackP: (p, d) => 'Unpacking ' + p + ' into ' + d + '.',
+      doneT: 'All set', doneEn: 'Ready when you are', launch: 'Open MeguLit',
+      probing: 'testing', eta: (s) => s < 60 ? 'about ' + Math.ceil(s) + ' s left' : 'about ' + Math.floor(s / 60) + ' min ' + Math.round(s % 60) + ' s left', srcMore: (h, n) => h + ' and ' + (n - 1) + ' more',
+      packs: { base: 'core files', reading: 'furigana dictionary', voice: 'voice engine' },
+      errDownT: 'The download stopped', errDownM: 'Every route failed to answer. Usually that is the network or a proxy.', errDownTip: 'Hit Retry first, what is already downloaded is kept. If it still fails, copy the log and send it to us, or grab the full package from the site.',
+      errInstT: 'Could not finish installing', errInstM: 'Another program has some of the files open.', errInstTip: 'Close any running MeguLit and pause your antivirus scan, then hit Retry. Nothing gets downloaded twice.',
+      retry: 'Retry', copylog: 'Copy log', copied: 'Copied', manual: 'Download manually',
+      quitT: 'Still downloading', quitM: 'You can close it now. What is downloaded is kept and picks up next time.', stay: 'Keep going', leave: 'Close for now',
+      minimize: 'Minimize', close: 'Close'
+    }
+  };
+  const tr = (k, ...a) => { const v = I18N[LANG][k]; return typeof v === 'function' ? v(...a) : v; };
+  const GBS = (n) => n >= 1073741824 ? (n / 1073741824).toFixed(1) + ' GB' : Math.round(n / 1048576) + ' MB';
   const world = $('#world');
   const T = 56, GAP = 4, ROWS = 8;
   const lerp = (a, b, t) => a + (b - a) * t;
@@ -42,74 +88,89 @@
   /* ---------- layout of the world ---------- */
   const FLOOR = THEME === 'edge', P = 820, FY = 1200;
   const A = { x: 3300, y: -260, z: -1400 }, RF = 2400;                 /* the shard cloud's centre and the one correct camera distance */
-  let N = 0, COLS = 0, tiles = [], cache = null, revealAt = 1e9;
+  let N = 0, COLS = 0, tiles = [], cache = null, revealAt = 1e9; const nudge = { x: 0, y: 0 };   /* after the reveal the camera sways a little: parallax shows how far apart the plates hang */
 
-  function buildStatic() {
-    plane(1700, FY, -1000, 9000, 5200, 90, 'floor');
-    plane(1700, 300, -1000, 3400, 14, 90, 'guide');                       /* the crimson guide beam: where to look next */
-    if (FLOOR) {
-      [[-700, -1900, 360, 1500, 300], [-1200, -700, 280, 1700, 260], [600, -2300, 460, 1400, 380], [1700, -2500, 300, 1900, 300], [1900, -2700, 340, 1500, 340],
-       [4800, -2300, 380, 1700, 380], [5600, -1100, 300, 1300, 300], [4700, -300, 420, 1500, 360], [1500, 800, 400, 1700, 300], [1000, 700, 360, 1500, 320], [3900, -3400, 520, 2100, 420]]
-        .forEach(([x, z, w, hh, d], i) => box(x, FY - hh / 2, z, w, hh, d, i === 3 ? 'red' : ''));
-      box(900, 300 - 60, -760, 60, 120, 60, 'red');
-    } else {
-      for (let i = 0; i < 12; i++) { const x = -800 + i * 600, h = 1100 + rnd() * 1300, d = 260 + rnd() * 260; box(x, FY - h / 2, -1700 - rnd() * 1500, 220 + rnd() * 160, h, d, i === 4 ? 'red' : ''); }
-    }
-    plate(0, -20, -1000, 760, 360, '<img src="logo.png" alt=""><h2>安装 · INSTALL</h2>');
-    plate(1700, -20, -1000, 760, 360, '<h1 style="font-size:96px;letter-spacing:-3px">WHERE</h1><h2>装到哪里 · 选一个位置</h2>');
-    ghost(1330, -380, -1010, 190, 'MEGU'); ghost(2200, 120, -1010, 190, 'LIT');
-  }
-
-  /* Anamorphic glass shards: one per real download segment. Each hangs at its own depth; its position and size were solved
-     backwards so that from ONE camera (FINAL) it projects exactly onto its piece of the logo. From any other angle they are
-     just drifting glass. Finished shards light up and show their piece; when all are lit the camera slowly arcs to FINAL and
-     the logo resolves. No shard ever moves to assemble; only the viewpoint does. Everything is a pure function of (snapshot, t). */
+  /* Magic circle line art (ink lines + one crimson arc). It is a plane in the world, parallel to the facade it is cut into, so it
+     foreshortens with the camera like any wall detail. 'prog' is the arc that follows the real download. */
+  const circleSvg = (prog) => { let t = ''; for (let i = 0; i < 48; i++) { const a = i * Math.PI / 24, r0 = i % 4 ? 90 : 84; t += `<line x1="${(r0 * Math.cos(a)).toFixed(1)}" y1="${(r0 * Math.sin(a)).toFixed(1)}" x2="${(96 * Math.cos(a)).toFixed(1)}" y2="${(96 * Math.sin(a)).toFixed(1)}"/>`; }
+    const tri = (rot) => { const p = []; for (let i = 0; i < 3; i++) { const a = rot + i * 2 * Math.PI / 3; p.push((60 * Math.cos(a)).toFixed(1) + ',' + (60 * Math.sin(a)).toFixed(1)); } return `<polygon points="${p.join(' ')}"/>`; };
+    let runes = ''; for (let i = 0; i < 12; i++) { const a = i * Math.PI / 6 + 0.26, x = 73 * Math.cos(a), y = 73 * Math.sin(a); runes += `<path d="M${(x - 4).toFixed(1)} ${(y - 5).toFixed(1)}l8 5l-8 5M${(x + 4).toFixed(1)} ${(y - 5).toFixed(1)}v10" transform="rotate(${(a * 180 / Math.PI + 90).toFixed(0)} ${x.toFixed(1)} ${y.toFixed(1)})"/>`; }
+    return `<svg viewBox="-100 -100 200 200" xmlns="http://www.w3.org/2000/svg"><g fill="none" stroke="var(--ink)" stroke-width="1.4" opacity=".62"><circle r="97" stroke-width="2.2"/><circle r="82" stroke-dasharray="2 5"/><circle r="66"/>${tri(-Math.PI / 2)}${tri(Math.PI / 2)}<circle r="12"/><path d="M-12 0h24M0 -12v24" stroke-width="1"/>${t}${runes}</g>${prog ? '<circle class="prog" r="75" fill="none" stroke="var(--red)" stroke-width="5" stroke-linecap="butt" transform="rotate(-90)" stroke-dasharray="471" stroke-dashoffset="471"/>' : '<path d="M0 -75A75 75 0 0 1 64.9 -37.5" fill="none" stroke="var(--red)" stroke-width="5"/>'}</svg>`; };
+  function etch(x, y, z, w, h, html, cls) { const e = document.createElement('div'); e.className = 'etch ' + (cls || ''); e.style.cssText = `width:${w}px;height:${h}px;margin:${-h / 2}px 0 0 ${-w / 2}px;transform:translate3d(${x}px,${y}px,${z}px)`; e.innerHTML = html; world.appendChild(e); return e; }
   const FINAL = { cx: A.x, cy: A.y, cz: A.z + RF, rx: 0, ry: 0, rz: 0 };
   const smooth = (x) => x * x * (3 - 2 * x);
-  /* Broken glass: the logo area is fractured (Voronoi cells around seeds of very different spacing) into N irregular shards,
-     a few big, many medium, some splinters. A shard carries only its own piece of the logo (printed on the glass), hangs at its
-     own depth and tilt, and was placed so that from FINAL its piece lands where it belongs in the whole logo. */
-  const LW = 840, LH = Math.round(840 * 169 / 440), LCY = -40;       /* the logo as seen from FINAL: size and vertical offset on screen */
-  const clipHalf = (poly, a, b, c0) => { const out = []; for (let i = 0; i < poly.length; i++) { const p = poly[i], q = poly[(i + 1) % poly.length], fp = a * p[0] + b * p[1] - c0, fq = a * q[0] + b * q[1] - c0; if (fp <= 0) out.push(p); if ((fp <= 0) !== (fq <= 0)) { const t = fp / (fp - fq); out.push([p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t]); } } return out; };
-  function fracture(n, rand) {
-    const seeds = [], radii = []; const W = LW, H = LH;
-    const cls = []; for (let i = 0; i < n; i++) { const u = rand(); cls.push(u < 0.07 ? 58 + rand() * 24 : u < 0.55 ? 28 + rand() * 14 : 11 + rand() * 9); }
-    cls.sort((a, b) => b - a);
-    for (const r0 of cls) { let r = r0, ok = false; for (let k = 0; k < 400 && !ok; k++) { if (k % 60 === 59) r *= 0.88; const p = [rand() * W, rand() * H]; if (seeds.every((q, j) => Math.hypot(p[0] - q[0], p[1] - q[1]) >= (r + radii[j]) * 0.62)) { seeds.push(p); radii.push(r); ok = true; } } if (!ok) { seeds.push([rand() * W, rand() * H]); radii.push(r); } }
-    return seeds.map((s, i) => { let poly = [[0, 0], [W, 0], [W, H], [0, H]]; for (let j = 0; j < seeds.length && poly.length; j++) if (j !== i) { const q = seeds[j]; poly = clipHalf(poly, q[0] - s[0], q[1] - s[1], (q[0] * q[0] + q[1] * q[1] - s[0] * s[0] - s[1] * s[1]) / 2); } return poly; }).filter((p) => p.length >= 3);
+  let progCircle = null, bandEl = null;
+  function buildStatic() {
+    plane(1700, FY, -1000, 12000, 9000, 90, 'floor');
+    plane(1700, 300, -1000, 3400, 14, 90, 'guide');                       /* the crimson guide beam: where to look next */
+    /* skyline behind the shards (depth 5600+), mid-distance slabs left and right, nothing in the middle where the logo forms */
+    const T3 = [[-800, -6200, 520, 2600, 420], [700, -7000, 420, 3200, 380], [1900, -6000, 600, 2300, 500], [3300, -7400, 700, 3400, 520], [4700, -6100, 560, 2500, 460], [5900, -6900, 420, 3000, 400], [7100, -6000, 520, 2400, 440], [8300, -7200, 460, 3100, 420], [-1900, -7000, 500, 2800, 420],
+      [900, -2300, 360, 1700, 320], [300, -1200, 300, 1500, 280], [5800, -1700, 360, 1800, 320], [7200, -900, 320, 1500, 300], [-1200, -2600, 400, 2000, 360], [8200, -2400, 420, 2100, 380]];
+    T3.forEach(([x, z, w, hh, d], i) => box(x, FY - hh / 2, z, w, hh, d, i === 3 ? 'red' : ''));
+    /* two facade slabs; one carries the circle that fills with the real progress, the other a still circle and a halo ring on its roof */
+    box(-200, FY - 1200, -3200, 1500, 2400, 300, ''); box(6600, FY - 1200, -3000, 1500, 2400, 300, '');
+    progCircle = etch(-200, FY - 1300, -3200 + 151, 1180, 1180, circleSvg(true), 'magic');
+    etch(6600, FY - 1300, -3000 + 151, 1180, 1180, circleSvg(false), 'magic');
+    const ring = plane(6600, FY - 2440, -3000, 1100, 1100, 90, 'halo'); ring.innerHTML = '<svg viewBox="-50 -50 100 100"><circle r="46" fill="none" stroke="var(--red)" stroke-width="2.4"/><circle r="40" fill="none" stroke="var(--ink)" stroke-width=".8" stroke-dasharray="2 3" opacity=".6"/></svg>';
+    const ring2 = plane(-200, FY - 2440, -3200, 1100, 1100, 90, 'halo'); ring2.innerHTML = ring.innerHTML;
+    /* a spell-light band running down the seam between two towers, light flowing along it (animated from the clock, not a CSS timer) */
+    bandEl = plane(560, FY - 1100, -2870, 12, 2200, 0, 'band'); bandEl.style.margin = '-1100px 0 0 -6px';
+    /* rune column cut into a skyline tower */
+    etch(3300, FY - 1700, -7400 + 261, 90, 1400, '<svg viewBox="0 0 30 460"><g fill="none" stroke="var(--ink)" stroke-width="1.6" opacity=".55">' + Array.from({ length: 12 }, (_, i) => `<path d="M3 ${i * 38 + 6}l12 -5l12 5l-12 5z"/><path d="M15 ${i * 38 + 16}v18"/>`).join('') + '</g></svg>', 'magic');
+    plate(0, -20, -1000, 760, 360, '<img src="' + (typeof INK !== 'undefined' ? INK : 'logos/logo-A-black.svg') + '" alt=""><h2>' + tr('welcomeSub') + '</h2>');
+    plate(1200, -20, -1000, 760, 360, '<h1 style="font-size:96px;letter-spacing:-3px">WHERE</h1><h2>' + tr('locSub') + '</h2>');
+    ghost(830, -380, -1010, 190, 'MEGU'); ghost(1700, 120, -1010, 190, 'LIT');
   }
+
+  /* Eight big irregular glass plates (cells of 8 hand-placed seeds over the logo), each carrying only its own part of the logo,
+     hanging far apart at different depths and tilts. From FINAL (the one right camera) every part lands where it belongs and
+     the logo reads; from anywhere else it is just a few plates with a line or a patch of colour on them.
+     The real download is folded into the 8 plates: segments are grouped by byte range, one group per plate; a plate is filled
+     with red along its own strokes as its group's real progress rises, and is fully lit when the whole group is done. */
+  const K = 8, LK = ['A', 'B', 'C'].includes(Q.get('logo')) ? Q.get('logo') : 'A', LG = (window.LOGOS || {})[LK] || { w: 3424, h: 1452, seeds: [[430, 330], [800, 1050], [1300, 740], [1760, 1130], [2220, 800], [2680, 1040], [3180, 1060], [3000, 250]] };
+  const SC = 860 / LG.w, LW = LG.w * SC, LH = LG.h * SC, LCY = -30;
+  const INK = 'logos/logo-' + LK + '-' + (THEME === 'night' ? 'white' : 'black') + '.svg', REDF = 'logos/logo-' + LK + '-red.svg';
+  const clipHalf = (poly, a, b, c0) => { const out = []; for (let i = 0; i < poly.length; i++) { const p = poly[i], q = poly[(i + 1) % poly.length], fp = a * p[0] + b * p[1] - c0, fq = a * q[0] + b * q[1] - c0; if (fp <= 0) out.push(p); if ((fp <= 0) !== (fq <= 0)) { const t = fp / (fp - fq); out.push([p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t]); } } return out; };
   const SVGNS = 'http://www.w3.org/2000/svg';
+  let groupOf = null;
   function buildField(n) {
-    N = n; let sd = 5; const rr = () => (sd = (sd * 16807) % 2147483647) / 2147483647, r = () => rr() * 2 - 1;
-    let cells = fracture(n, rr); while (cells.length < n) cells.push(cells[cells.length % cells.length]);
-    cells = cells.slice(0, n); tiles = [];
-    const info = cells.map((p) => { const xs = p.map((q) => q[0]), ys = p.map((q) => q[1]), x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys); return { p, x0, y0, w: x1 - x0, h: y1 - y0, cx: (x0 + x1) / 2, cy: (y0 + y1) / 2 }; });
-    info.sort((a, b) => a.cx - b.cx || a.cy - b.cy);               /* segment i is shard i: the logo fills in from the left as the download goes on */
+    N = n; let sd = 11; const rr = () => (sd = (sd * 16807) % 2147483647) / 2147483647, r = () => rr() * 2 - 1;
+    const seeds = LG.seeds.slice(0, K).map((s) => [s[0] * SC, s[1] * SC]);
+    const SPIKE = [1.9, 1.25, 2.4, 1.5, 2.1, 1.35, 2.6, 1.7]; let info = seeds.map((s, i, arr, idx = i) => {
+      let poly = [[0, 0], [LW, 0], [LW, LH], [0, LH]]; seeds.forEach((q, j) => { if (j !== i) poly = clipHalf(poly, q[0] - s[0], q[1] - s[1], (q[0] * q[0] + q[1] * q[1] - s[0] * s[0] - s[1] * s[1]) / 2); });
+      const gx = poly.reduce((a, p) => a + p[0], 0) / poly.length, gy = poly.reduce((a, p) => a + p[1], 0) / poly.length;
+      poly = poly.map((p) => [gx + (p[0] - gx) * 0.985, gy + (p[1] - gy) * 0.985]);
+      /* blade it: push the farthest corner out into a long tip, and nudge the others so no two shards share an edge */
+      const spike = SPIKE[idx % SPIKE.length]; let fi2 = 0, fd2 = 0; poly.forEach((p, j) => { const dd2 = Math.hypot(p[0] - gx, p[1] - gy); if (dd2 > fd2) { fd2 = dd2; fi2 = j; } });
+      poly = poly.map((p, j) => j === fi2 ? [gx + (p[0] - gx) * spike, gy + (p[1] - gy) * spike] : [p[0] + Math.sin(j * 7 + idx) * 10, p[1] + Math.cos(j * 5 + idx) * 10]);
+      const xs = poly.map((p) => p[0]), ys = poly.map((p) => p[1]), x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+      return { p: poly, x0, y0, w: x1 - x0, h: y1 - y0, cx: (x0 + x1) / 2, cy: (y0 + y1) / 2 };
+    });
+    info.sort((a, b) => a.cx - b.cx); tiles = [];
     const defs = document.createElementNS(SVGNS, 'svg'); defs.setAttribute('width', 0); defs.setAttribute('height', 0); defs.style.position = 'absolute';
-    defs.innerHTML = '<defs><linearGradient id="gBody" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".34"/><stop offset=".5" stop-color="#fff" stop-opacity=".04"/><stop offset="1" stop-color="#fff" stop-opacity=".22"/></linearGradient><linearGradient id="gBody2" x1="1" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".3"/><stop offset=".55" stop-color="#fff" stop-opacity=".02"/><stop offset="1" stop-color="#fff" stop-opacity=".26"/></linearGradient><linearGradient id="gEdge" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".95"/><stop offset=".45" stop-color="#fff" stop-opacity=".25"/><stop offset="1" stop-color="#fff" stop-opacity=".7"/></linearGradient><linearGradient id="gFill" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#ff5a76"/><stop offset="1" stop-color="#c8203c"/></linearGradient></defs>';
+    defs.innerHTML = '<defs><linearGradient id="gBody" x1="0" y1="0" x2="1" y2="1"><stop offset="0" style="stop-color:var(--glass)" stop-opacity=".34"/><stop offset=".5" style="stop-color:var(--glass)" stop-opacity=".05"/><stop offset="1" style="stop-color:var(--glass)" stop-opacity=".26"/></linearGradient><linearGradient id="gEdge" x1="0" y1="0" x2="1" y2="1"><stop offset="0" style="stop-color:var(--edge)" stop-opacity=".9"/><stop offset=".5" style="stop-color:var(--edge)" stop-opacity=".12"/><stop offset="1" style="stop-color:var(--edge)" stop-opacity=".6"/></linearGradient><linearGradient id="gSpec" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".85"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient></defs>';
     world.appendChild(defs);
+    const depths = [420, 950, 1700, 2500, 3400, 4400, 5400, 6400]; for (let i = depths.length - 1; i > 0; i--) { const j = Math.floor(rr() * (i + 1)); [depths[i], depths[j]] = [depths[j], depths[i]]; }
     info.forEach((q, i) => {
-      const d = 1250 + rr() * 2300, k = (d + P) / P, pts = q.p.map((v) => [(v[0] - q.x0).toFixed(1), (v[1] - q.y0).toFixed(1)]), ps = pts.map((v) => v.join(',')).join(' ');
-      const gx = pts.reduce((s, v) => s + +v[0], 0) / pts.length, gy = pts.reduce((s, v) => s + +v[1], 0) / pts.length, inset = pts.map((v) => [(gx + (v[0] - gx) * 0.8).toFixed(1), (gy + (v[1] - gy) * 0.8).toFixed(1)].join(',')).join(' ');
+      const d = depths[i], k = (d + P) / P, pts = q.p.map((v) => [(v[0] - q.x0).toFixed(1), (v[1] - q.y0).toFixed(1)]), ps = pts.map((v) => v.join(',')).join(' ');
+      const gw = q.w, gh = q.h, spec = [[gw * 0.05, gh * 0.18], [gw * 0.52, gh * 0.0], [gw * 0.66, gh * 0.0], [gw * 0.1, gh * 0.34]].map((v) => v.map((n) => n.toFixed(1)).join(',')).join(' ');
       const el = document.createElementNS(SVGNS, 'svg'); el.setAttribute('class', 'shard'); el.setAttribute('width', q.w.toFixed(1)); el.setAttribute('height', q.h.toFixed(1));
       el.style.cssText = `left:${-q.w / 2}px;top:${-q.h / 2}px;width:${q.w}px;height:${q.h}px`;
-      const body = i % 2 ? 'gBody' : 'gBody2';
-      el.innerHTML = `<defs><clipPath id="c${i}"><polygon points="${ps}"/></clipPath></defs>
-        <polygon class="back" points="${ps}" transform="translate(3.5 3.5)" fill="rgba(10,18,36,.30)"/>
-        <polygon points="${ps}" fill="url(#${body})"/>
-        <image class="art" href="logo.png" x="${-q.x0}" y="${-q.y0}" width="${LW}" height="${LH}" clip-path="url(#c${i})" opacity=".26"/>
-        <rect class="fill" x="0" y="0" width="${q.w.toFixed(1)}" height="${q.h.toFixed(1)}" fill="url(#gFill)" clip-path="url(#c${i})" opacity="0" style="transform-origin:0 50%;transform:scaleX(0)"/>
-        <polygon points="${inset}" fill="none" stroke="rgba(255,255,255,.42)" stroke-width="1"/>
-        <polygon class="edge" points="${ps}" fill="none" stroke="url(#gEdge)" stroke-width="1.7" stroke-linejoin="round"/>
-        <polygon class="flash" points="${ps}" fill="#fff" opacity="0"/>`;
+      el.innerHTML = `<defs><clipPath id="c${i}"><polygon points="${ps}"/></clipPath><clipPath id="w${i}"><rect class="wipe" x="0" y="0" width="0" height="${q.h.toFixed(1)}"/></clipPath></defs>
+        <polygon class="back" points="${ps}" transform="translate(8 8)"/>
+        <polygon class="body" points="${ps}" fill="url(#gBody)"/>
+        <image class="art" href="${INK}" x="${-q.x0}" y="${-q.y0}" width="${LW}" height="${LH}" clip-path="url(#c${i})"/>
+        <g clip-path="url(#c${i})"><image class="red" href="${REDF}" x="${-q.x0}" y="${-q.y0}" width="${LW}" height="${LH}" clip-path="url(#w${i})" opacity="0"/></g>
+        <polygon class="spec" points="${spec}" fill="url(#gSpec)" clip-path="url(#c${i})"/>
+        <polygon class="edge" points="${ps}" fill="none" stroke="url(#gEdge)" stroke-width="2.6" stroke-linejoin="miter"/>`;
       world.appendChild(el);
-      tiles.push({ el, art: el.querySelector('.art'), fill: el.querySelector('.fill'), flash: el.querySelector('.flash'), u: q.cx / LW, d, s: k,
+      tiles.push({ el, red: el.querySelector('.red'), wipe: el.querySelector('.wipe'), edge: el.querySelector('.edge'), body: el.querySelector('.body'), bk: el.querySelector('.back'), w: q.w, d, s: k, u: q.cx / LW,
         X: FINAL.cx + (q.cx - LW / 2) * k, Y: FINAL.cy + (q.cy - LH / 2 + LCY) * k, Z: FINAL.cz - d,
-        rx: r() * 48, ry: r() * 48, rz: r() * 40, ph: rr() * 6.28, amp: 14 + rr() * 44, spin: 0.15 + rr() * 0.3, fxk: '' });
+        rx: (r() < 0 ? -1 : 1) * (38 + rr() * 40), ry: (r() < 0 ? -1 : 1) * (38 + rr() * 40), rz: r() * 55, ph: rr() * 6.28, amp: 30 + rr() * 60, spin: 0.12 + rr() * 0.2 });
     });
-    cache = { st: new Int8Array(N).fill(-1), f: new Float32Array(N).fill(-1), fl: new Float32Array(N).fill(-1), w: new Float32Array(N).fill(-1), blur: new Int8Array(N).fill(-1) };
+    groupOf = (i) => Math.min(K - 1, Math.floor(i * K / N));
+    cache = { f: new Float32Array(K).fill(-1), lit: new Int8Array(K).fill(-1), blur: new Int16Array(K).fill(-1), mini: new Int8Array(N).fill(-1) };
     const mini = $('#mini'); mini.innerHTML = ''; for (let i = 0; i < N; i++) mini.appendChild(document.createElement('i'));
-    cache.mini = new Int8Array(N).fill(-1);
   }
 
   /* ---------- camera ---------- */
@@ -119,10 +180,10 @@
   const toSph = (p) => { const dx = p.cx - A.x, dy = A.y - p.cy, dz = p.cz - A.z, R = Math.hypot(dx, dy, dz); return { az: Math.atan2(dx, dz) * 180 / Math.PI, el: Math.asin(dy / R) * 180 / Math.PI, R }; };
   const key = (ks, p) => { for (let i = 1; i < ks.length; i++) if (p <= ks[i][0]) { const [p0, v0] = ks[i - 1], [p1, v1] = ks[i]; return lerp(v0, v1, smooth(clamp((p - p0) / (p1 - p0)))); } return ks[ks.length - 1][1]; };
   /* while downloading the camera wanders around the cloud; near 62 % it passes a viewpoint that is almost, not quite, the right one */
-  const AZ = [[0, -62], [0.3, -34], [0.75, 3.5], [0.88, 24], [1, 46]], EL = [[0, 18], [0.35, 11], [0.75, 6], [0.9, 13], [1, 19]], RR = [[0, 2650], [0.75, 2200], [1, 2750]];
+  const AZ = [[0, -62], [0.3, -34], [0.75, 8], [0.88, 26], [1, 46]], EL = [[0, 18], [0.35, 11], [0.75, 9], [0.9, 14], [1, 19]], RR = [[0, 2900], [0.75, 2350], [1, 3000]];
   const POSE = {
     welcome: () => ({ cx: 0, cy: -20, cz: 0, rx: 0, ry: 0, rz: 0 }),
-    loc: () => ({ cx: 1700, cy: -20, cz: 0, rx: 0, ry: THEME === 'edge' ? -6 : 6, rz: 0 }),
+    loc: () => ({ cx: 1200, cy: -20, cz: 0, rx: 0, ry: THEME === 'edge' ? -6 : 6, rz: 0 }),
     field: (s) => { const p = s && s.total ? clamp(s.got / s.total) : 0; return orbit(key(AZ, p), key(EL, p), key(RR, p)); },
     unpack: () => orbit(30, 52, 3000),
     done: () => ({ ...FINAL })
@@ -137,14 +198,14 @@
   };
   function apply(extra) {
     const c = cam, e = extra || {};
-    const t = last.t || 0, br = REDUCE || moving ? 0 : 1;      /* a little handheld breath while resting */
+    const t = last.t || 0, br = REDUCE || moving || (last.phase === "done") ? 0 : 1;      /* a little handheld breath while resting */
     const cx = c.cx + Math.sin(t * 0.7) * 5 * br, cy = c.cy + Math.cos(t * 0.5) * 4 * br;
     world.style.transform = `rotateZ(${c.rz}deg) rotateX(${-c.rx}deg) rotateY(${c.ry}deg) translate3d(${-cx}px,${-cy}px,${-c.cz}px)`;
     const sk = $('#streaks'); sk.style.opacity = e.streak || 0; $('#flash').style.opacity = e.flash || 0;
   }
   const UI = { welcome: [], loc: ['#ui-loc'], field: ['#hud'], unpack: ['#hud'], done: ['#ui-done'] };
   const ORDER = ['welcome', 'loc', 'field', 'unpack', 'done'];
-  const STEPN = { welcome: '准备 · Prepare', loc: '位置 · Location', field: '下载 · Download', unpack: '安装 · Install', done: '完成 · Done' };
+  const STEPN = new Proxy({}, { get: (_, k) => tr('step_' + k) });
   function setSteps() { const k = ORDER.indexOf(section); document.querySelectorAll('#steps i').forEach((el, i) => el.classList.toggle('on', i < Math.min(4, k + 1) || section === 'done')); $('#stepname').textContent = STEPN[section]; }
 
   function goTo(name, move, fromName) {
@@ -153,7 +214,7 @@
     tl.call(() => { A0 = { ...cam }; section = name; moving = true; setSteps(); if (name !== 'done') revealAt = 1e9; });
     if (outs.length && !outs.every((s) => ins.includes(s))) tl.to(outs.filter((s) => !ins.includes(s)), { opacity: 0, duration: 0.22, ease: 'power1.in', onComplete() { outs.forEach((s) => { if (!ins.includes(s)) $(s).style.visibility = 'hidden'; }); } }, 0);
     if (REDUCE) {
-      tl.call(() => { Object.assign(cam, POSE[name](last)); moving = false; if (name === 'done') revealAt = last.t || 0; apply(); }, null, 0.05);
+      tl.call(() => { Object.assign(cam, POSE[name](last)); moving = false; if (name === 'done') revealAt = (tl.parent && tl.parent !== gsap.globalTimeline) ? tl.startTime() + 0.02 + m.d : (last.t || 0); apply(); }, null, 0.05);
     } else {
       tl.to(o, { p: 1, duration: m.d, ease: m.ease, onUpdate() {
         const B = POSE[name](last), p = o.p, s = Math.sin(Math.PI * Math.min(1, p)), x = m.fx(s, A0, p);
@@ -166,7 +227,7 @@
         }
         apply(x);
       } }, 0.02);
-      tl.call(() => { moving = false; cam.rz = POSE[name](last).rz; if (name === 'done') revealAt = last.t || 0; apply(); });
+      tl.call(() => { moving = false; cam.rz = POSE[name](last).rz; if (name === 'done') revealAt = (tl.parent && tl.parent !== gsap.globalTimeline) ? tl.startTime() + 0.02 + m.d : (last.t || 0); apply(); });
     }
     ins.forEach((s) => { const el = $(s); tl.set(el, { visibility: 'visible' }, REDUCE ? 0.05 : m.d * (name === 'done' ? 0.9 : 0.72)).fromTo(el, { opacity: 0, y: 14 }, { opacity: 1, y: 0, duration: REDUCE ? 0.25 : 0.55, ease: 'power2.out' }, '<'); });
     return tl;
@@ -176,55 +237,54 @@
   function render(s) {
     last = s; if (!N && s.st) buildField(s.st.length);
     const t = s.t || 0;
-    if (!moving && POSE[section]) { Object.assign(cam, POSE[section](s)); apply(); }
+    nudge.x = 0; nudge.y = 0;
+    if (!moving && POSE[section]) { Object.assign(cam, POSE[section](s)); if (s.phase === 'done' && section === 'done' && !REDUCE) { const w = Math.max(0, t - revealAt - 0.6), u = clamp(w / 1.2); nudge.x = 440 * u * Math.sin(w * 1.3); nudge.y = 120 * u * Math.sin(w * 0.9 + 1); cam.cx += nudge.x; cam.cy += nudge.y; } apply(); }
     if (N && s.st) {
       const br = REDUCE ? 0 : 1;
-      /* how close the camera is to the one right place: 0 far, 1 there (shards settle their tilt and the blur melts away) */
-      const dd = Math.hypot(cam.cx - FINAL.cx, cam.cy - FINAL.cy, cam.cz - FINAL.cz), reveal = s.phase === 'done' ? smooth(clamp(1 - dd / (RF * 0.55))) : 0;
-      const post = s.phase === 'done' && reveal > 0.99 ? clamp((t - revealAt - 1.4) / 2.5) * 0.28 : 0;     /* after the reveal they drift a little so you see they are apart */
-      const damp = (1 - 0.94 * reveal) + post, pos = new Array(N), ft = t * br;
-      for (let i = 0; i < N; i++) {
-        const st = s.st[i], f = s.fr[i], tl = tiles[i];
-        const ox = Math.sin(ft * 0.5 + tl.ph) * tl.amp * damp * br, oy = Math.cos(ft * 0.4 + tl.ph) * tl.amp * damp * br, oz = Math.sin(ft * 0.6 + tl.ph * 2) * tl.amp * 1.5 * damp * br;
-        const k = 1 - reveal, rx = (tl.rx + Math.sin(ft * tl.spin + tl.ph) * 10 * br) * k + post * 9 * Math.sin(t + tl.ph), ry = (tl.ry + Math.cos(ft * tl.spin + tl.ph) * 10 * br) * k + post * 9 * Math.cos(t + tl.ph), rz = tl.rz * k;
+      const dd = Math.hypot(cam.cx - nudge.x - FINAL.cx, cam.cy - nudge.y - FINAL.cy, cam.cz - FINAL.cz), reveal = s.phase === 'done' ? smooth(clamp(1 - dd / (RF * 0.55))) : 0;
+      const post = 0;     /* after the reveal they drift so you see they hang far apart */
+      const damp = (1 - reveal) + post, pos = new Array(K), ft = t * br;
+      const gs = new Float32Array(K), gc = new Int16Array(K), gd = new Float32Array(K), gdone = new Int16Array(K);
+      for (let i = 0; i < N; i++) { const g = groupOf(i); gc[g]++; gs[g] += s.st[i] === 2 ? 1 : (s.st[i] === 1 || s.st[i] === 3 ? s.fr[i] : 0); if (s.st[i] === 2) { gdone[g]++; gd[g] = Math.max(gd[g], s.doneAt[i] || 0); } const m = s.st[i] === 2 ? 2 : s.st[i] === 1 ? 1 : s.st[i] === 3 || s.st[i] === 4 ? 3 : 0; if (cache.mini[i] !== m) { cache.mini[i] = m; $('#mini').children[i].className = ['', 'a', 'd', 'r'][m]; } }
+      for (let g = 0; g < K; g++) {
+        const tl = tiles[g], f = gc[g] ? gs[g] / gc[g] : 0, lit = gc[g] && gdone[g] === gc[g] ? 1 : 0;
+        const ox = Math.sin(ft * 0.5 + tl.ph) * tl.amp * damp * br, oy = Math.cos(ft * 0.4 + tl.ph) * tl.amp * damp * br, oz = Math.sin(ft * 0.6 + tl.ph * 2) * tl.amp * 2 * damp * br;
+        const k = 1 - reveal, rx = (tl.rx + Math.sin(ft * tl.spin + tl.ph) * 8 * br) * k + post * 7 * Math.sin(t + tl.ph), ry = (tl.ry + Math.cos(ft * tl.spin + tl.ph) * 8 * br) * k + post * 7 * Math.cos(t + tl.ph), rz = tl.rz * k;
         tl.el.style.transform = `translate3d(${(tl.X + ox).toFixed(1)}px,${(tl.Y + oy).toFixed(1)}px,${(tl.Z + oz).toFixed(1)}px) rotateX(${rx.toFixed(1)}deg) rotateY(${ry.toFixed(1)}deg) rotateZ(${rz.toFixed(1)}deg) scale(${tl.s.toFixed(3)})`;
-        pos[i] = [tl.X + ox, tl.Y + oy, tl.Z + oz];
-        const fl = st === 2 ? clamp(1 - (t - (s.doneAt[i] || 0)) / 0.9) * 0.55 : 0;
-        const w = s.phase === 'unpack' ? clamp(1 - Math.abs(tl.u - s.unpack * 1.25 + 0.12) * 7) : 0;
-        if (cache.st[i] !== st || cache.f[i] !== f) {
-          cache.st[i] = st; cache.f[i] = f;
-          tl.art.setAttribute('opacity', st === 2 ? 1 : st === 1 || st === 3 ? 0.55 : 0.26);
-          tl.fill.style.opacity = st === 1 || st === 3 || st === 4 ? 0.8 : 0;
-          tl.fill.style.transform = `scaleX(${st === 2 ? 0 : f})`;
-          tl.fill.setAttribute('fill', st === 3 || st === 4 ? '#f0a34a' : 'url(#gFill)');
-        }
-        if (cache.fl[i] !== fl) { cache.fl[i] = fl; tl.flash.setAttribute('opacity', fl.toFixed(2)); }
-        if (cache.w[i] !== w) { cache.w[i] = w; if (s.phase === 'unpack' || w === 0) { tl.fill.style.opacity = w > 0 ? 0.75 : (st === 1 || st === 3 || st === 4 ? 0.8 : 0); if (w > 0) tl.fill.style.transform = 'scaleX(1)'; } }
-        const ms = st === 2 ? 2 : st === 1 ? 1 : st === 3 || st === 4 ? 3 : 0;
-        if (cache.mini[i] !== ms) { cache.mini[i] = ms; $('#mini').children[i].className = ['', 'a', 'd', 'r'][ms]; }
+        pos[g] = [tl.X + ox, tl.Y + oy, tl.Z + oz];
+        if (cache.f[g] !== f) { cache.f[g] = f; tl.wipe.setAttribute('width', (f * tl.w * 1.02).toFixed(1)); }
+        /* red = the group's real progress poured into the plate; once the group is done it settles back into the logo's own colours */
+        const wave = s.phase === 'unpack' ? clamp(1 - Math.abs(tl.u - s.unpack * 1.25 + 0.12) * 5) : 0;
+        const settle = lit ? clamp(1 - (t - gd[g] - 0.5) / 1.6) : 1, ro = s.phase === 'unpack' ? wave : (f > 0 ? (lit ? settle : 1) : 0);
+        tl.red.setAttribute('opacity', ro.toFixed(2)); if (lit && cache.lit[g] !== 1) cache.lit[g] = 1;
+        tl.edge.style.opacity = (1 - 0.45 * reveal).toFixed(2); tl.body.style.opacity = (1 - 0.55 * reveal).toFixed(2); tl.bk.style.opacity = (1 - 0.7 * reveal).toFixed(2);
+        if (lit && f >= 1) tl.wipe.setAttribute('width', (tl.w * 1.02).toFixed(1));
       }
-      /* depth of field: focus = the shard being fetched now; a shard's blur changes only when it crosses a depth bucket, so the
-         compositor keeps each blurred texture while the camera moves. Blur is divided by the shard's own scale (it is applied before it). */
-      let fi = N - 1; for (let i = 0; i < N; i++) if (s.st[i] !== 2) { fi = i; break; }
+      /* depth of field: focus = the plate being filled now; blur only changes when a plate crosses a depth bucket (the compositor keeps
+         the blurred texture while the camera moves); the amount is divided by the plate's own scale because the filter runs before it */
+      let fi = K - 1; for (let g = 0; g < K; g++) if (!(gc[g] && gdone[g] === gc[g])) { fi = g; break; }
       const useDof = !REDUCE && s.phase !== 'unpack' && reveal < 0.7;
       const D = (p) => Math.hypot(p[0] - cam.cx, p[1] - cam.cy, p[2] - cam.cz), fd = D(pos[fi]);
-      for (let i = 0; i < N; i++) {
-        let lv = 0; if (useDof) { const rel = Math.abs(D(pos[i]) - fd) / Math.max(300, fd * 0.2); lv = rel < 0.55 ? 0 : rel < 1.1 ? 1 : rel < 1.9 ? 2 : rel < 3 ? 3 : 4; lv = Math.floor(lv * (1 - reveal)); }
-        const glow = (s.st[i] === 1 || s.st[i] === 3) ? 1 : (s.st[i] === 2 ? 2 : 0), key = lv * 4 + glow;
-        if (cache.blur[i] !== key) { cache.blur[i] = key; const sc = tiles[i].s; tiles[i].el.style.filter = (lv ? `blur(${([0, 1.2, 2.6, 4.4, 6.5][lv] / sc).toFixed(2)}px) ` : '') + (glow === 1 ? `drop-shadow(0 0 ${(9 / sc).toFixed(1)}px rgba(255,64,96,.95))` : ''); }
+      for (let g = 0; g < K; g++) {
+        let lv = 0; if (useDof) { const rel = Math.abs(D(pos[g]) - fd) / Math.max(400, fd * 0.25); lv = rel < 0.5 ? 0 : rel < 1 ? 1 : rel < 1.7 ? 2 : rel < 2.6 ? 3 : 4; lv = Math.floor(lv * (1 - reveal)); }
+        const glow = cache.f[g] > 0 && cache.f[g] < 1 ? 1 : 0, key = lv * 2 + glow;
+        if (cache.blur[g] !== key) { cache.blur[g] = key; const sc = tiles[g].s; tiles[g].el.style.filter = (lv ? `blur(${([0, 1.2, 2.6, 4.4, 6.5][lv] / sc).toFixed(2)}px) ` : '') + (glow ? `drop-shadow(0 0 ${(10 / sc).toFixed(1)}px rgba(214,32,63,.7))` : ''); }
       }
     }
+    { const pp = s.phase === 'unpack' || s.phase === 'done' ? 1 : (s.total ? clamp(s.got / s.total) : 0), pr = progCircle && progCircle.querySelector('.prog'); if (pr && cache && cache.pp !== Math.round(pp * 200)) { cache.pp = Math.round(pp * 200); pr.setAttribute('stroke-dashoffset', (471 * (1 - pp)).toFixed(1)); }
+      if (bandEl) bandEl.style.backgroundPosition = '0 ' + ((REDUCE ? 0 : (s.t || 0) * 160) % 120).toFixed(0) + 'px'; }
     const pct = s.total ? Math.floor(100 * s.got / s.total) : 0;
     $('#pct').textContent = pct; $('#got').textContent = MB(s.got || 0); $('#total').textContent = MB(s.total || 0);
-    $('#speed').textContent = s.phase === 'download' || s.phase === 'probe' ? (s.speed > 0 ? (s.speed / 1048576).toFixed(1) + ' MB/s' : '测速中') : '';
-    $('#eta').textContent = s.eta > 0 ? (s.eta < 60 ? `约剩 ${Math.ceil(s.eta)} 秒` : `约剩 ${Math.floor(s.eta / 60)} 分 ${Math.round(s.eta % 60)} 秒`) : '';
-    const W = { probe: ['正在选最快的源', '同时给 GitHub 和国内镜像测速，挑最快的几个一起下'], download: ['正在下载 ' + (s.pack || ''), '来源 <span class="src">' + (s.src || '') + '</span> · 每块碎片是一个真实的下载分段'], unpack: ['正在安装', '解压 ' + (s.pack || '') + ' 到 ' + (s.dir || '')], done: ['装好了', ''] }[s.phase] || ['', ''];
+    $('#speed').textContent = s.phase === 'download' || s.phase === 'probe' ? (s.speed > 0 ? (s.speed / 1048576).toFixed(1) + ' MB/s' : tr('probing')) : '';
+    $('#eta').textContent = s.eta > 0 ? tr("eta", s.eta) : '';
+    const pk = (I18N[LANG].packs[s.pack] || s.pack || ''), srcTxt = s.srcN > 1 ? tr('srcMore', s.src, s.srcN) : (s.src || ''), anyRetry = s.st && Array.prototype.indexOf.call(s.st, 3) >= 0;
+    const W = { probe: [tr('probeT'), tr('probeP')], download: [tr('downT', pk), tr('downP', '<span class="src">' + srcTxt + '</span>') + (anyRetry ? ' ' + tr('retryNote') : '')], verify: [tr('verifyT'), tr('verifyP', pk)], unpack: [tr('unpackT'), tr('unpackP', pk, s.dir || '')], done: [tr('doneT'), ''] }[s.phase] || ['', ''];
     $('#whatT').textContent = W[0]; $('#whatP').innerHTML = W[1];
     if (s.err && !showErr) showError(s.err); else if (!s.err && showErr) hideError();
   }
   let showErr = false;
   function showError(e) {
-    showErr = true; $('#errT').textContent = e.title; $('#errEn').textContent = e.en; $('#errM').textContent = e.msg; $('#errTip').textContent = e.tip;
+    showErr = true; const k = e.kind === 'install' ? 'Inst' : 'Down'; $('#errT').textContent = tr('err' + k + 'T'); $('#errEn').textContent = ''; $('#errM').textContent = tr('err' + k + 'M'); $('#errTip').textContent = tr('err' + k + 'Tip');
     gsap.set('#ui-err', { visibility: 'visible' }); gsap.fromTo('#ui-err', { opacity: 0, y: 16 }, { opacity: 1, y: 0, duration: REDUCE ? 0.2 : 0.45, ease: 'power2.out', overwrite: true });
   }
   function hideError() { showErr = false; gsap.to('#ui-err', { opacity: 0, duration: 0.25, overwrite: true, onComplete() { $('#ui-err').style.visibility = 'hidden'; } }); }
@@ -234,7 +294,7 @@
   function act(type, extra) { const m = Object.assign({ type }, extra || {}); if (window.chrome && chrome.webview) chrome.webview.postMessage(m); if (Scene.onAction) Scene.onAction(m); }
   $('#install').addEventListener('click', () => act('install', { path: $('#path').value, desktop: $('#swDesk').getAttribute('aria-checked') === 'true', menu: $('#swMenu').getAttribute('aria-checked') === 'true' }));
   $('#browse').addEventListener('click', () => act('browse')); $('#retry').addEventListener('click', () => act('retry'));
-  $('#copylog').addEventListener('click', () => act('copylog')); $('#manual').addEventListener('click', () => act('manual')); $('#launch').addEventListener('click', () => act('launch'));
+  $('#copylog').addEventListener('click', () => { act('copylog'); $('#copylog').textContent = tr('copied'); }); $('#manual').addEventListener('click', () => act('manual')); $('#launch').addEventListener('click', () => act('launch'));
   document.querySelectorAll('.sw').forEach((b) => b.addEventListener('click', () => b.setAttribute('aria-checked', b.getAttribute('aria-checked') !== 'true')));
   /* streak lines for whips */
   const sk = $('#streaks'); for (let i = 0; i < 16; i++) { const b = document.createElement('b'); b.style.top = (6 + i * 5.8) + '%'; b.style.opacity = 0.25 + (i % 4) * 0.2; b.style.transform = `scaleX(${0.4 + (i % 5) * 0.15})`; sk.appendChild(b); }
@@ -245,6 +305,15 @@
   $('#stay').addEventListener('click', () => Scene.showQuit(false)); $('#leave').addEventListener('click', () => act('close')); $('#btnMin').addEventListener('click', () => act('minimize'));
   $('#drag').addEventListener('mousedown', (e) => { if (e.button === 0) act('dragstart'); });
   window.addEventListener('keydown', (e) => { if (e.key === 'Escape') { if (quitOpen) Scene.showQuit(false); else $('#btnClose').click(); } });
+  { const t = document.getElementById('topLogo'); if (t) t.src = INK; }
+  { const map = { '#ui-loc .card h2': 'locT', '#browse': 'change', '#install': 'install', '#ui-loc .note': 'locNote', '#retry': 'retry', '#copylog': 'copylog', '#manual': 'manual', '#doneT': 'doneT', '#launch': 'launch', '.card.quit h2': 'quitT', '.card.quit p': 'quitM', '#stay': 'stay', '#leave': 'leave' };
+    for (const [sel, k] of Object.entries(map)) { const el = $(sel); if (el) el.textContent = tr(k); }
+    $('#ui-loc .card .en').textContent = tr('locEn'); $('.card.quit .en').textContent = ''; $('#doneEn').textContent = tr('doneEn');
+    $('#swDesk').lastChild.textContent = tr('swDesk'); $('#swMenu').lastChild.textContent = tr('swMenu');
+    $('#btnMin').setAttribute('aria-label', tr('minimize')); $('#btnClose').setAttribute('aria-label', tr('close')); document.title = tr('title'); document.documentElement.lang = LANG === 'en' ? 'en' : 'zh-CN'; }
+  Scene.setFree = (free, need) => { const el = $('#free'); el.textContent = tr(free >= need * 1.1 ? 'free' : 'freeBad', GBS(free), GBS(need)); el.classList.toggle('bad', free < need * 1.1); };
+  Scene.setFree(182 * 1073741824, 1.4 * 1073741824);
+  Scene.t = tr;
   window.Scene = Scene;
   buildStatic();
   Object.assign(cam, REDUCE ? POSE.welcome() : { cx: -420, cy: -150, cz: 800, rx: 6, ry: -12, rz: 0 }); apply(); setSteps();

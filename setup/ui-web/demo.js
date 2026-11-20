@@ -2,7 +2,7 @@
    setup/ui-web/SEGMENT-FEED.md) plus the user's clicks, on one GSAP master timeline so a recorder can seek frame by frame.
    Open index.html?demo=1 (live preview) or ?demo=1&paused=1 (a recorder drives Demo.seek). Not shipped logic. */
 (function () {
-  const N = 142, SEG = 4 * 1048576, TOTAL = N * SEG, T0 = 2.4, PACKS = [['基础组件', 0], ['注音分词词典', 27], ['语音引擎', 75]];
+  const N = 142, SEG = 4 * 1048576, TOTAL = N * SEG, T0 = 2.4, PACKS = [['base', 0], ['reading', 27], ['voice', 75]];
   const SRC = ['cn-dl.megulit.com', 'dl.megulit.com', 'github.com'];
   let seed = 11; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
   const start = [], end = [], src = [], retry = {}; const free = Array.from({ length: 8 }, (_, i) => T0 + 0.1 * i);
@@ -29,12 +29,12 @@
     let pack = PACKS[0][0]; for (const p of PACKS) if (Math.min(first, N - 1) >= p[1]) pack = p[0];
     const busy = {}; for (let i = 0; i < N; i++) if (st[i] === 1) busy[src[i]] = 1; const nb = Object.keys(busy).length;
     const lead = SRC[+Object.keys(busy)[0] || 0];
-    const s = { t, st, fr, doneAt: da, got: Math.min(TOTAL, got), total: TOTAL, speed, eta: speed > 0 ? (TOTAL - got) / speed : 0, pack, src: nb > 1 ? lead + ' 等 ' + nb + ' 个源' : lead, dir: 'D:/MeguLit/runtime',
+    const s = { t, st, fr, doneAt: da, got: Math.min(TOTAL, got), total: TOTAL, speed, eta: speed > 0 ? (TOTAL - got) / speed : 0, pack, src: lead, srcN: nb, dir: 'D:/MeguLit/runtime',
       phase: t < T0 ? 'probe' : t < TEND + 0.4 ? 'download' : t < DONE ? 'unpack' : 'done', unpack: Math.max(0, Math.min(1, (t - U0) / UD)) };
     if (s.phase === 'unpack' || s.phase === 'done') s.got = TOTAL;
     if (o.fail === 'download') { for (let i = 0; i < N; i++) if (st[i] === 1 || st[i] === 3) st[i] = 4; s.speed = 0; s.eta = 0;
-      s.err = { title: '下载中断了', en: 'Download interrupted', msg: '所有下载源都连不上（cn-dl.megulit.com、dl.megulit.com、github.com 均无响应）', tip: '先点「重试」：会重新测速、换最快的源，已下好的碎片保留。还是不行就复制日志发给我们，或到官网手动下载整包。' }; }
-    if (o.fail === 'install') s.err = { title: '安装没有完成', en: 'Install did not finish', msg: '解压失败：安装位置的 runtime 文件夹里有文件被其他程序占用', tip: '关掉占用的程序、腾出磁盘空间后点「重试」；组件已经下载好，不会重下。' };
+      s.err = { kind: 'download' }; }
+    if (o.fail === 'install') s.err = { kind: 'install' };
     return s;
   }
   const THEME_ROUTE = { edge: ["whip", "orbit", "dive", "pull"], night: ["roll", "whip", "orbit", "pull"] }; const ROUTE = THEME_ROUTE[Scene.THEME]; let tl = null, fixed = null;
@@ -45,7 +45,7 @@
     const BS = String.fromCharCode(92), typed = 'D:' + BS + 'Games' + BS + 'MeguLit'; const path = document.getElementById('path');
     tl.call(() => { path.value = 'D:' + BS + 'MeguLit'; }, null, 0);
     for (let i = 0; i < typed.length; i++) tl.call(() => { path.value = typed.slice(0, i + 1); }, null, 3.3 + i * 0.05);
-    tl.call(() => { document.getElementById('free').textContent = '所在磁盘可用 182 GB · 需要约 1.4 GB'; }, null, 4.2);
+    tl.call(() => { Scene.setFree(182 * 1073741824, 1.4 * 1073741824); }, null, 4.2);
     tl.fromTo('#install', { scale: 1 }, { scale: 0.96, duration: 0.12, yoyo: true, repeat: 1 }, 4.7);
     tl.to({}, { duration: DONE + 7.4 }, 0);
     return tl;
