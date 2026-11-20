@@ -66,12 +66,14 @@ async function launch(db,id,runtime=null,windowsLaunch=false,{retried=false,redi
   let launcherRun=null;/* the DRM launcher this start runs (services/launcher-cleanup.cjs) */try{
   if(!game.executable||!fs.existsSync(game.executable))throw Error('EXECUTABLE_MISSING');
   let original={};try{original=JSON.parse(game.original||'{}')||{};}catch{}const profile=original.library || {};
+  /* E-SteamOwned: a game Steam installed (appmanifest lists its folder) starts through Steam even when it was added by hand or by a folder scan (core/steam-owned.cjs) */
+  const steamAppid=(()=>{try{return require('../core/steam-owned.cjs').launchAppid(game.executable,profile);}catch{return '';}})();if(steamAppid)trace('steam-owned',{appid:steamAppid,source:profile.source||''});
   if(require('./game-language.cjs').originalExecutable(db,id,root).blocked)throw Error('JAPANESE_EXECUTABLE_REQUIRED');
   /* E-DRM (user 2026-11-15, 死に逝く君、館に芽吹く憎悪): a DRM-wrapped program (SoftDenchi's SdWrap, DMM, DLsite) quits on
      its own when started directly. The record is corrected once to the engine program, and a crack / translation launcher
      beside it starts it (core/drm-wrap.cjs). The game's process and window stay the engine program's. */
   let launchVia='';
-  {let plan=null;try{plan=require('../core/drm-wrap.cjs').plan(game.executable,{allowTranslated:require('../core/library.cjs').isTranslated(path.dirname(game.executable))||profile.contentLanguage==='zh',source:profile.source});}catch(error){trace('drm-check-failed',{error:String(error?.message||error).slice(0,160)});}
+  {let plan=null;try{plan=require('../core/drm-wrap.cjs').plan(game.executable,{allowTranslated:require('../core/library.cjs').isTranslated(path.dirname(game.executable))||profile.contentLanguage==='zh',source:steamAppid?'steam':profile.source});}catch(error){trace('drm-check-failed',{error:String(error?.message||error).slice(0,160)});}
    if(plan){drmPlan=plan;trace('drm-wrapped',{kind:plan.kind,wrapped:path.basename(plan.wrapped||''),executable:path.basename(plan.executable||''),launcher:path.basename(plan.launchVia||''),changed:plan.changed});
     if(plan.changed&&plan.executable&&fs.existsSync(plan.executable)){
      const before=String(game.executable),same=before.toLowerCase()===plan.executable.toLowerCase(),record=profile.drm||{};
@@ -133,7 +135,7 @@ async function launch(db,id,runtime=null,windowsLaunch=false,{retried=false,redi
    else child=await startProcess(launchVia,[],path.dirname(launchVia),'GAME_LAUNCH_FAILED');
    trace('launcher-started',{launcher:path.basename(launchVia),pid:child.pid});
    stage='window-wait';state=await waitForVisibleGame(()=>gameProcesses(root,game.executable),{helper:true,helperError:'GAME_LAUNCH_FAILED',exit:()=>child.exit,trace,attempts:360,timeout:90000});
-  }else if(!elevation&&!windowsLaunch&&profile.localeMode==='japanese'&&profile.source!=='steam'&&require('../core/locale-emulator.cjs').x86(game.executable)&&!(require('../core/locale-emulator.cjs').steamApi(game.executable)&&(trace('locale-skipped-steam',{}),true))){
+  }else if(!elevation&&!windowsLaunch&&profile.localeMode==='japanese'&&!steamAppid&&require('../core/locale-emulator.cjs').x86(game.executable)&&!(require('../core/locale-emulator.cjs').steamApi(game.executable)&&(trace('locale-skipped-steam',{}),true))){
    stage='locale-start';const lib=runtime?.library?.()||new(require('../core/library.cjs').Library)(require('../core/layout.cjs'));
    let result=await lib.locale.launch(game.executable,{trace});
    if(result.needLocaleEmulator){trace('locale-emulator-install',{});await lib.locale.ensure();result=await lib.locale.launch(game.executable,{trace});if(result.needLocaleEmulator)throw Error('LOCALE_EMULATOR_REQUIRED');}
@@ -144,7 +146,7 @@ async function launch(db,id,runtime=null,windowsLaunch=false,{retried=false,redi
    stage='window-wait';state=await ready();
   }else{
    stage='process-start';markLaunch(id,'process-start');
-   const steamApp=profile.source==='steam'&&/^\d+$/.test(String(profile.appid||''));
+   const steamApp=!!steamAppid;
    /* 2026-11-13 (user: STEINS;GATE from MeguLit first pops Steam's launcher): an app with several Steam launch options
       (game + Launcher.exe config tool) makes steam://rungameid show a chooser, and Steam then ran Launcher.exe. When the
       install folder holds such a companion launcher, the recorded program is started directly with SteamAppId set, so
@@ -164,18 +166,18 @@ async function launch(db,id,runtime=null,windowsLaunch=false,{retried=false,redi
    /* 2026-11-15 (user: 石头门启动失败, Steam then asked to confirm 'mages_sgate'): a companion start with SteamAppId alone can still
       make steam_api call SteamAPI_RestartAppIfNecessary (exit 53), and Steam restarts it as steam://run/<id>//<args>, which always
       asks the user to confirm the arguments. The shadow folder with steam_appid.txt stops the restart, so companion starts use it too. */
-   let steamDirect=null;if(steamApp&&!textPath&&(companion||require('../core/glyph-dots.cjs').wanted(root))){try{steamDirect=require('../core/text-paths-launch.cjs').steamDirect({exe:game.executable,appid:profile.appid,trace});}catch(error){steamDirect=null;trace('steam-direct-failed',{error:String(error?.message||error).slice(0,160)});}}
+   let steamDirect=null;if(steamApp&&!textPath&&(companion||require('../core/glyph-dots.cjs').wanted(root))){try{steamDirect=require('../core/text-paths-launch.cjs').steamDirect({exe:game.executable,appid:steamAppid,trace});}catch(error){steamDirect=null;trace('steam-direct-failed',{error:String(error?.message||error).slice(0,160)});}}
    const steam=steamApp&&!companion&&!textPath&&!steamDirect;
    const launchExe=steamDirect?steamDirect.exe:game.executable;
    const {startProcess,waitForVisibleGame}=require('./game-readiness.cjs');
-   const directEnv=companion?{...process.env,SteamAppId:String(profile.appid),SteamGameId:String(profile.appid),SteamOverlayGameId:String(profile.appid)}:steamDirect?{...process.env,...steamDirect.env}:null;
+   const directEnv=companion?{...process.env,SteamAppId:String(steamAppid),SteamGameId:String(steamAppid),SteamOverlayGameId:String(steamAppid)}:steamDirect?{...process.env,...steamDirect.env}:null;
    /* Text architecture ①: with 文字显示 = compositor a direct start goes through MeguLitLaunch<bit>.exe, so the glyph dots are in place before the game's first glyph (core/glyph-dots.cjs); Steam keeps the late attach */
    const early=steam||textPath?null:require('../core/glyph-dots.cjs').earlyStart(root,launchExe,companion?companionArgs:[],require('../core/locale-emulator.cjs').x86(game.executable),directEnv||process.env);
    if(early)trace('glyph-dots-early',{launcher:path.basename(early.file),font:early.env.MEGULIT_GLYPH_FONT||''});
    /* ③ dot font at the source (native/fontdot): with the early launcher, MeguLitFontDot<bit>.dll is loaded right after
       MeguLitFont while the game is still suspended (core/text-paths-launch.cjs fontDot: compositor mode, binaries, crash canary) */
    const fontDot=early&&!textPath?require('../core/text-paths-launch.cjs').fontDot(root,game.executable,early,trace):null;
-   const child=textPath?await startProcess(textPath.exe,[...(companionArgs||[]),...textPath.args],textPath.cwd,'GAME_LAUNCH_FAILED',undefined,{...process.env,...textPath.env}):await startProcess(early?early.file:steam?'explorer.exe':launchExe,early?early.args:steam?['steam://rungameid/'+profile.appid]:companion?companionArgs:[],steamDirect?steamDirect.cwd:path.dirname(game.executable),'GAME_LAUNCH_FAILED',undefined,early?early.env:directEnv);
+   const child=textPath?await startProcess(textPath.exe,[...(companionArgs||[]),...textPath.args],textPath.cwd,'GAME_LAUNCH_FAILED',undefined,{...process.env,...textPath.env}):await startProcess(early?early.file:steam?'explorer.exe':launchExe,early?early.args:steam?['steam://rungameid/'+steamAppid]:companion?companionArgs:[],steamDirect?steamDirect.cwd:path.dirname(game.executable),'GAME_LAUNCH_FAILED',undefined,early?early.env:directEnv);
 
    trace('launch-process-started',{pid:child.pid,steam,steamDirect:companion||!!steamDirect||undefined});markLaunch(id,'started');
    stage='window-wait';markLaunch(id,'window-wait');
@@ -197,7 +199,7 @@ async function launch(db,id,runtime=null,windowsLaunch=false,{retried=false,redi
     if(error.message==='GAME_PROCESS_EXITED'&&steamApp&&restart.restarted(child.exit)){
      trace('steam-restart',{code:child.exit.code});stage='steam-restart-wait';
      try{state=await waitForVisibleGame(anyProcess,{helper:true,indirect:true,exit:()=>null,trace,attempts:480,timeout:120000});}
-     catch(waitError){let waiting='';try{waiting=restart.pendingPrompt(await require('../core/library.cjs').findSteam(),profile.appid,startedAt);}catch{}
+     catch(waitError){let waiting='';try{waiting=restart.pendingPrompt(await require('../core/library.cjs').findSteam(),steamAppid,startedAt);}catch{}
       trace('steam-restart-timeout',{waiting});if(waiting==='ShowGameArgs')throw Object.assign(Error('STEAM_CONFIRM_ARGS'),{detail:waiting});if(waiting)throw Object.assign(Error('STEAM_WAITING_USER'),{detail:waiting});throw waitError;}
     }else{
     const LE=require('../core/locale-emulator.cjs');
@@ -228,7 +230,7 @@ async function launch(db,id,runtime=null,windowsLaunch=false,{retried=false,redi
    /* E299: a boxed release whose protection plug-in wants the original DVD quits on start; say so (disc-check.cjs). */
    if(['GAME_PROCESS_EXITED','GAME_WINDOW_NOT_READY'].includes(error.message)&&game.executable&&require('./disc-check.cjs').discProtected(path.dirname(game.executable)))error=Object.assign(Error('GAME_DISC_REQUIRED'),{detail:error.message});
    /* E-DRM: say which program needs which licence check and what was or can be used instead (launch_hint has the words) */
-   if(drmPlan&&['GAME_PROCESS_EXITED','GAME_WINDOW_NOT_READY','GAME_LAUNCH_FAILED'].includes(error.message))error=Object.assign(Error(drmPlan.launchVia?'GAME_DRM_LAUNCHER_FAILED':'GAME_DRM_WRAPPED'),{detail:error.message});
+   if(drmPlan&&['GAME_PROCESS_EXITED','GAME_WINDOW_NOT_READY','GAME_LAUNCH_FAILED'].includes(error.message))error=Object.assign(Error(drmPlan.kind==='steam'?'GAME_STEAM_REQUIRED':drmPlan.launchVia?'GAME_DRM_LAUNCHER_FAILED':'GAME_DRM_WRAPPED'),{detail:error.message});
    trace('launch-failed',{phase:stage,error:error.message,detail:error.detail||error.code});markLaunch(id,'failed',{state:'failed',error:error.message});try{require('../core/japanese-auto.cjs').launchResult(root,id,false);}catch{}throw error;}
 }
 function deleteWord(db,id) {
@@ -652,7 +654,7 @@ async function dispatch(request,runtime=null) {
       case 'launch':return await launch(db,String(request.id),runtime,request.windowsLaunch===true);
       /* E-DRM: the words for a DRM launch failure (which program, which licence check, what to choose instead) */
       case 'launch_hint':{const row=db.prepare('SELECT executable,original FROM games WHERE id=?').get(String(request.id));if(!row?.executable)return {text:''};let lib={};try{lib=JSON.parse(row.original||'{}').library||{};}catch{}
-       const drm=require('../core/drm-wrap.cjs');let plan=null;try{plan=drm.plan(row.executable,{allowTranslated:true,source:lib.source});}catch{}return {text:drm.hint(plan,String(request.locale||'zh'))};}
+       const drm=require('../core/drm-wrap.cjs');let plan=null;try{plan=drm.plan(row.executable,{allowTranslated:true,source:require('../core/steam-owned.cjs').launchAppid(row.executable,lib)?'steam':lib.source});}catch{}return {text:drm.hint(plan,String(request.locale||'zh'))};}
       case 'migration_status':return store.readJSON(path.join(root,'migration','migration-report.json'));
       default:throw Error('UNKNOWN_ACTION');
     }

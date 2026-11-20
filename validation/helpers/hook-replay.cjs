@@ -17,6 +17,7 @@ function replay(file,{name='game.exe'}={}){
   for(const {t,m} of rows){runUntil(t);
    if(m.type==='hookSource')h.sourcePage(m,name);
    else if(m.type==='hookAuxText')h.auxText(m);
+   else if(m.type==='hookPageText')h.auxPage(m);
    else if(m.type==='hookName'){const n=String(m.text||'').trim();if(n)h.speaker={text:n,at:now};}
    else if(m.type==='hookChoiceBoxes')h.choiceBoxes(m);
    else if(m.type==='readerInput'){if(m.complete)h.advance();if(typeof m.skipHeld==='boolean')h.skipHeld(m.skipHeld);}

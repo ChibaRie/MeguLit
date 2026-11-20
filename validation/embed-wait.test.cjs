@@ -25,7 +25,7 @@ test('bridge: hide waits at most 100 ms, no fixed sleep before the answer, gener
  assert.doesNotMatch(b,/Thread\.Sleep\(8\)/);
  assert.match(b,/GlyphLine\(text\);GlyphDrain\(8\);try\{Luna_EmbedCallback\(tp,text,text\);\}/);
  assert.match(b,/MemoryMappedFile\.OpenExisting\("EMBED_SHARED_MEM"\+Pid\);EmbedView=EmbedMem\.CreateViewAccessor\(16,8\);/);
- assert.match(b,/static void OnEmbed\(string text,ThreadParam tp\)\{SyncEmbedGeneration\(\);/);
+ assert.match(b,/static void OnEmbedAnswer\(string text,ThreadParam tp\)\{SyncEmbedGeneration\(\);/);
  assert.match(b,/Heartbeat\(\);SyncEmbedGeneration\(\);Thread\.Sleep\(40\);/);
  for(const k of ['Selected','ReplacementEnabled','TranslateMode','MarksMode','GlyphAll','SkipHeld','EngineDialogHidden','HookTarget.ChineseText','c.hideOnly'])assert.ok(b.includes('static string EmbedStateKey(){')&&b.slice(b.indexOf('static string EmbedStateKey(){')).split('\n')[0].includes(k),k);
  assert.match(b,/static void Diagnostic\(string value\)\{DiagQueue\.Enqueue\(/);});

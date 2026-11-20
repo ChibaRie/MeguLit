@@ -305,7 +305,9 @@ async function segmented(ctx,sources,st){
    if(p.isDup||p.ema==null||now-p.t0<ctx.slowAfterMs||p.end-p.pos<Math.min(256*1024,ctx.segment/8))continue;
    const same=[...active].filter(x=>x!==p&&x.src===p.src&&x.ema!=null&&!x.isDup),avg=same.length?same.reduce((n,x)=>n+x.ema,0)/same.length:0;
    const free=Math.max(0,...live().filter(s=>s!==p.src&&s.active<capOf(s)).map(s=>s.speed));
-   if(p.ema<Math.max(avg,free)*ctx.slowRatio){p.killed='slow';p.ac.abort();}
+   /* with work still waiting, a connection far below the average one gives its slot (and its unwritten bytes) back */
+   const all=queue.length?[...active].filter(x=>x!==p&&x.ema!=null&&!x.isDup):[],mean=all.length?all.reduce((n,x)=>n+x.ema,0)/all.length:0;
+   if(p.ema<Math.max(avg,free,mean)*ctx.slowRatio){p.killed='slow';p.ac.abort();}
   }
  },500);
  const begin=(piece,src)=>{src.active++;piece.src=src;piece.t0=Date.now();piece.got=0;piece.killed='';piece.ac=new AbortController();active.add(piece);const stop=()=>piece.ac.abort();if(ctx.signal)ctx.signal.addEventListener('abort',stop,{once:true});return ()=>{src.active--;active.delete(piece);if(ctx.signal)ctx.signal.removeEventListener('abort',stop);};};

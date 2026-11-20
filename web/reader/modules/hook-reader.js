@@ -21,7 +21,7 @@
  const token=value=>{value=value.replace(/[ \u3000\r\n]/g,'');let h=2166136261;for(let i=0;i<value.length;i++)h=Math.imul(h^value.charCodeAt(i),16777619);return h>>>0;};
  const decide=same=>{if(!pending)return;const p=pending;pending=null;clearTimeout(p.timer);page=same&&p.previous?join(p.page,p.previous,text):[];paint();window.__tomeTextPosition?.refresh?.();};
  const resetPage=()=>{boxCleared=true;if(pending)clearTimeout(pending.timer);pending=null;page=[];early=null;reports.clear();lastPageLine=0;pageEngineAt=0;engine='';};/* 2026-11-20 text-place.js: the game drew this line where a new page starts (not under the page's earlier lines): they go */b.hookPageReset=()=>{if(!page.length)return;page=[];paint();};
- b.hookPage=m=>{if(b.islandPage?.page(m))return;if(!m||typeof m.same!=='boolean')return;
+ b.hookPage=m=>{/* #468 the engine's page text shows the page was turned before the current line */if(m&&m.reset===true){b.hookPageReset();return;}if(b.islandPage?.page(m))return;if(!m||typeof m.same!=='boolean')return;
   if(Number.isSafeInteger(m.line)){if(m.line<=lastPageLine)return;lastPageLine=m.line;}
   pageEngineAt=Date.now();
   if(Number.isSafeInteger(m.token)&&m.token>=0){

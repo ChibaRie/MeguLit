@@ -14,22 +14,25 @@
   const lang = (document.documentElement.lang || 'zh').slice(0, 2);
   const ALL = ({
     zh: { title: '文字来源', hook: '读内存（Hook）', script: '游戏脚本', ocr: '图形识别（兜底）', none: '等待游戏',
-      hookSub: '直接从游戏内存取字，最准确', scriptSub: '从游戏脚本取字', ocrSub: '读内存暂时没取到字，正在用画面识别，生僻字可能认错', noneSub: '连接游戏并推进一句后显示',
+      hookSub: '直接从游戏内存取字，最准确', scriptSub: '从游戏脚本取字', ocrSub: '读内存没取到，改用画面识别，生僻字可能认错', noneSub: '连接游戏并推进一句后显示',
       reasons: { 'no-stream': '原因：还没发现可用的文本流', stalled: '原因：读内存好几秒没有新台词', garbled: '原因：读到的文本像乱码', user: '原因：你选择了只用图形识别', disabled: '', other: '' },
       retry: '重试读内存', retrying: '正在重试…', stream: '文本流', policy: '读内存没取到时，用图形识别兜底',
       policyHint: '关闭后只读内存，不会再出现识别错字；但图片里的字（标题卡等）读不到',
+      st: ['还没连上游戏：先打开游戏，再绑定游戏窗口', '已连上游戏，在游戏里点一下推进一句就会开始读', n => '已连上游戏，读到了 ' + n + ' 个字', '，原文已藏好', '，原文还没藏好'],
       chip: '图形识别中', chipTip: '读内存没取到，当前用图形识别；点击重试读内存' },
     en: { title: 'Text source', hook: 'Memory hook', script: 'Game script', ocr: 'Picture recognition (fallback)', none: 'Waiting for the game',
       hookSub: 'Read straight from the game\'s memory, the most accurate', scriptSub: 'Read from the game script', ocrSub: 'Memory reading got nothing, so the picture is being recognised. Rare characters may be misread', noneSub: 'Shown once the game is connected and a line is advanced',
       reasons: { 'no-stream': 'Why: no usable text stream found yet', stalled: 'Why: no new line from memory for several seconds', garbled: 'Why: the text read looks like garbage', user: 'Why: you chose picture recognition only', disabled: '', other: '' },
       retry: 'Retry memory reading', retrying: 'Retrying…', stream: 'Stream', policy: 'Fall back to picture recognition when memory reading gets nothing',
       policyHint: 'Off: memory only, no misrecognised characters, but text inside pictures (title cards) is not read',
+      st: ['Not connected: open the game and bind its window first', 'Connected. Advance one line in the game to start reading', n => 'Connected, read ' + n + ' characters', ', original hidden', ', original not hidden yet'],
       chip: 'Reading the picture', chipTip: 'Memory reading got nothing; click to retry it' },
     ja: { title: 'テキストの取得元', hook: 'メモリ読み取り（フック）', script: 'ゲームスクリプト', ocr: '画面認識（フォールバック）', none: 'ゲーム待ち',
       hookSub: 'ゲームのメモリから直接取得。最も正確です', scriptSub: 'ゲームのスクリプトから取得', ocrSub: 'メモリから取れなかったため画面認識中。珍しい漢字は誤認識することがあります', noneSub: 'ゲームに接続して一文進めると表示されます',
       reasons: { 'no-stream': '理由：使えるテキストストリームが未検出', stalled: '理由：数秒間メモリから新しい台詞がありません', garbled: '理由：読み取った文字が文字化けしています', user: '理由：画面認識のみを選択しています', disabled: '', other: '' },
       retry: 'メモリ読み取りを再試行', retrying: '再試行中…', stream: 'ストリーム', policy: 'メモリから取れないとき画面認識で補う',
       policyHint: 'オフ：メモリのみ。誤認識は出ませんが、画像内の文字（タイトルカード等）は読めません',
+      st: ['未接続：ゲームを起動してウィンドウを紐付けてください', '接続済み。ゲームで一文進めると読み取りを始めます', n => '接続済み、' + n + ' 文字を読み取りました', '、原文は非表示です', '、原文はまだ非表示になっていません'],
       chip: '画面認識中', chipTip: 'メモリから取れず画面認識中。クリックで再試行' }
   });
   const T = ALL[lang] || ALL.zh;
@@ -46,8 +49,8 @@
   .tome-src{display:grid;gap:8px;margin:0 0 12px;padding:2px 0;font-size:12.5px}
   .tome-src[data-tone=ok]{--src-c:#58b886}.tome-src[data-tone=warn]{--src-c:#e0a24a}.tome-src[data-tone=idle]{--src-c:#7891ad}
   .tome-src-head{display:flex;align-items:center;gap:10px}.tome-src-head>i{flex:none;width:9px;height:9px;border-radius:50%;background:var(--src-c)}
-  .tome-src-head>div{flex:1;min-width:0;display:grid;gap:2px}.tome-src strong{font-size:13.5px;font-weight:650}.tome-src[data-tone=warn] strong{color:var(--src-c)}.tome-src small{opacity:.78;line-height:1.55;font-size:12px}
-  .tome-src button{margin:0;padding:6px 12px;border-radius:8px;font-size:12.5px;cursor:pointer;border:1px solid color-mix(in srgb,var(--src-c,#7891ad) 55%,transparent);background:color-mix(in srgb,var(--src-c,#7891ad) 16%,transparent);color:inherit}
+  .tome-src-head>strong{flex:1;min-width:0}.tome-src-body{display:grid;gap:2px;padding-left:19px;margin-top:-4px}.tome-src strong{font-size:13.5px;font-weight:650}.tome-src[data-tone=warn] strong{color:var(--src-c)}.tome-src small{opacity:.78;line-height:1.55;font-size:12px}
+  .tome-src button{margin:0;padding:4px 12px;border-radius:8px;font-size:12.5px;cursor:pointer;border:1px solid color-mix(in srgb,var(--src-c,#7891ad) 55%,transparent);background:color-mix(in srgb,var(--src-c,#7891ad) 16%,transparent);color:inherit}
   .tome-src button:hover{background:color-mix(in srgb,var(--src-c,#7891ad) 28%,transparent)}.tome-src button[disabled]{opacity:.55;cursor:default}
   .tome-src label.tome-src-switch{display:flex;align-items:flex-start;gap:8px;cursor:pointer;margin:0}.tome-src-switch input{appearance:none;-webkit-appearance:none;flex:none;box-sizing:border-box;width:18px;height:18px;margin:1px 0 0;border-radius:6px;border:1.5px solid color-mix(in srgb,var(--theme-text,#e9eaf0) 38%,transparent);background:color-mix(in srgb,var(--theme-text,#e9eaf0) 6%,transparent);display:grid;place-items:center;cursor:pointer;transition:background .16s ease,border-color .16s ease,transform .12s ease}
   .tome-src-switch input::after{content:"";width:9px;height:5px;margin-top:-2px;border:2px solid #fff;border-top:0;border-right:0;transform:rotate(-45deg) scale(0);transition:transform .16s cubic-bezier(.3,1.5,.5,1)}
@@ -63,7 +66,7 @@
   const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
   const policyRow = () => `<label class="tome-src-switch"><input type="checkbox" data-src-ocr><span>${esc(T.policy)}</span></label><small>${esc(T.policyHint)}</small>`;
   const retryBtn = () => `<button type="button" data-src-retry hidden>${esc(T.retry)}</button>`;
-  const markup = () => `<div class="tome-src-head"><i></i><div><strong data-src-line></strong><small data-src-sub></small><small data-src-reason hidden></small></div>${retryBtn()}</div>${policyRow()}`;
+  const markup = () => `<div class="tome-src-head"><i></i><strong data-src-line></strong>${retryBtn()}</div><div class="tome-src-body"><small data-src-sub></small><small data-src-status></small><small data-src-reason hidden></small></div>${policyRow()}`;
   const setText = (n, v) => { if (n && n.textContent !== v) n.textContent = v; };
   function paint(p) {
     const i = info(), kindName = T[i.kind] || T.none, tone = i.kind === 'ocr' ? 'warn' : i.kind === 'none' ? 'idle' : 'ok';
@@ -71,6 +74,10 @@
     const line = T.title + ' · ' + kindName;
     setText(p.querySelector('[data-src-line]'), line);
     setText(p.querySelector('[data-src-sub]'), (i.kind === 'hook' && i.stream ? T.stream + '：' + i.stream.replace('EmbedEuphoria474_DrawHide_TEST2', 'YU-RIS 0.474') + ' · ' : '') + T[i.kind + 'Sub']);
+    const st = T.st, n = Number(state.hookCaptureCharacters) || 0;
+    let line2 = state.processAttached !== true ? st[0] : !(state.receivedText && n) ? st[1] : st[2](n) + (state.hookVisualVerified ? st[3] : state.hookCheckState === 'visible' ? st[4] : '');
+    if (state.hookProfile === 'off') line2 = '';
+    setText(p.querySelector('[data-src-status]'), line2);
     const why = p.querySelector('[data-src-reason]'), reason = i.kind === 'ocr' ? (T.reasons[i.reason] || '') : '';
     if (why) { setText(why, reason); why.hidden = !reason; }
     const retry = p.querySelector('[data-src-retry]');
@@ -90,7 +97,8 @@
   function repaint() { for (const p of panels) { if (p.isConnected) paint(p); else panels.delete(p); } chip(); }
   function mount() {
     for (const host of document.querySelectorAll('.tome-hooks')) {
-      if (host.querySelector(':scope > .tome-src')) continue;
+      if (host.dataset.srcMounted) continue;
+      host.dataset.srcMounted = '1';
       const p = el('section', 'tome-src', markup()); p.setAttribute('aria-label', T.title);
       host.prepend(p); panels.add(p);
       p.querySelector('[data-src-retry]').onclick = retry;
@@ -99,7 +107,7 @@
     }
   }
   const previous = b.galStatus;
-  b.galStatus = m => { previous(m); if (m && typeof m === 'object') { const keep = {}; for (const k of ['textSource', 'ocrReadLines', 'hookThreads', 'hookProfile', 'processAttached']) if (k in m) keep[k] = m[k]; state = { ...state, ...keep }; if (m.textSource?.kind !== 'ocr' && retryUntil) retryUntil = 0; repaint(); } };
+  b.galStatus = m => { previous(m); if (m && typeof m === 'object') { const keep = {}; for (const k of ['textSource', 'ocrReadLines', 'hookThreads', 'hookProfile', 'processAttached', 'receivedText', 'hookCaptureCharacters', 'hookVisualVerified', 'hookCheckState']) if (k in m) keep[k] = m[k]; state = { ...state, ...keep }; if (m.textSource?.kind !== 'ocr' && retryUntil) retryUntil = 0; repaint(); } };
   new MutationObserver(() => { mount(); chip(); }).observe(document.documentElement, { childList: true, subtree: true });
   mount();
   b.tomeSourceState = () => ({ ...state, info: info() });

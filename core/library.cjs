@@ -131,13 +131,8 @@ function steamGames(steam){
 }
 
 // Steam manifests also identify installations reached through ordinary folder settings.
-const manifestCache=new Map();
-function steamAppidFor(executable){
- const m=/^(.*[\\/]steamapps)[\\/]common[\\/]([^\\/]+)[\\/]/i.exec(String(executable||''));if(!m)return '';
- const dir=m[1],install=m[2].toLowerCase();let map=manifestCache.get(dir.toLowerCase());
- if(!map||!map.has(install)){map=new Map();try{for(const f of fs.readdirSync(dir))if(/^appmanifest_\d+\.acf$/i.test(f)){try{const t=fs.readFileSync(path.join(dir,f),'utf8'),id=/"appid"\s+"(\d+)"/.exec(t)?.[1],inst=/"installdir"\s+"([^"]+)"/.exec(t)?.[1];if(id&&inst)map.set(inst.toLowerCase(),id);}catch{}}}catch{}manifestCache.set(dir.toLowerCase(),map);}
- return map.get(install)||'';
-}
+/* E-SteamOwned: Steam's install manifests are read by core/steam-owned.cjs (one reader for the scan and the launch) */
+function steamAppidFor(executable){const r=require('./steam-owned.cjs').steamOf(executable);return r?.installed?r.appid:'';}
 
 // ── Third-party folders: every sub-folder is one game (or the folder itself, if it is a game) ──────────────────
 function folderGames(folder){
@@ -201,7 +196,7 @@ class Library{
   // Folders in the user's game folders that could not be confirmed as visual novels (unknown engine and no VNDB
   // match) are reported instead of vanishing, so the library can offer to add them by hand.
   this.unconfirmed=[];
-  manifestCache.clear();
+  require('./steam-owned.cjs')._internal.cache.clear();
   const found=[],skipped=[];this.restorable=new Map();if(this.state.steamPath)found.push(...steamGames(this.state.steamPath));for(const f of this.state.folders)found.push(...folderGames(f));
   const known=new Map(this.state.games.map(g=>[String(g.dir||'').toLowerCase(),g]));if(!this.state.notGal)this.state.notGal={};const games=[],scanned=new Set();let i=0;
   try{fs.mkdirSync(this.coverDir,{recursive:true});}catch{}
@@ -281,9 +276,10 @@ class Library{
   const g=this.state.games.find(x=>x.key===key&&!x.missing);if(!g)throw Error('没有找到这个游戏，请重新扫描游戏路径');
   const exe=this.exeOf(key,variant),name=path.basename(exe).replace(/.exe$/i,'');if(!exe||!fs.existsSync(exe))throw Error('游戏程序不在了：'+exe);
   const running=(await this.locale.processes(exe)).length>0;
-  let localeResult={};if(!running&&options.localeJapanese!==false&&recommended(g,exe)){localeResult=await this.locale.launch(exe);if(localeResult.needLocaleEmulator){try{await this.locale.ensure();localeResult=await this.locale.launch(exe);}catch{}if(localeResult.needLocaleEmulator)return localeResult;}}
+  const steamId=require('./steam-owned.cjs').launchAppid(exe,g);
+  let localeResult={};if(!running&&!steamId&&options.localeJapanese!==false&&recommended(g,exe)){localeResult=await this.locale.launch(exe);if(localeResult.needLocaleEmulator){try{await this.locale.ensure();localeResult=await this.locale.launch(exe);}catch{}if(localeResult.needLocaleEmulator)return localeResult;}}
   if(!running&&!localeResult.localeJapanese){const {spawn}=require('node:child_process');
-   if(g.source==='steam'&&/^\d+$/.test(String(g.appid)))spawn('explorer.exe',['steam://rungameid/'+g.appid],{detached:true,stdio:'ignore'}).unref();
+   if(steamId)spawn('explorer.exe',['steam://rungameid/'+steamId],{detached:true,stdio:'ignore'}).unref();
    else{/* E-DRM: a DRM-wrapped program is started through the launcher beside it (core/drm-wrap.cjs) */let start=exe;try{const p=require('./drm-wrap.cjs').plan(exe,{allowTranslated:isTranslated(path.dirname(exe)),source:g.source});if(p?.launchVia)start=p.launchVia;else if(p?.changed&&p.executable)start=p.executable;}catch{}
     spawn(start,[],{cwd:path.dirname(start),detached:true,stdio:'ignore'}).unref();}}
   return {name,mediaId:g.mediaId||null,running,title:g.title,...localeResult};

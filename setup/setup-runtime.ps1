@@ -642,6 +642,11 @@ public class MeguFetch {
           TotalSpeed = Math.Max(0, rec - winDone) / sec; winDone = rec;
           foreach (MeguSource s in Sources) { s.Recent = s.WinBytes; s.WinBytes = 0; }
           foreach (MeguConn c in conns) { c.RecentSpeed = c.WinGot / Math.Max(0.25, (now - (c.Started > win ? c.Started : win)).TotalSeconds); c.WinGot = 0; }
+          /* a source's speed follows its running connections too: one that slowed down mid-segment stops getting new work at once */
+          foreach (MeguSource s in Sources) {
+            double sum = 0; int k = 0; foreach (MeguConn c in conns) if (c.Src == s && !c.IsDup && !c.Killed && (now - c.Started).TotalSeconds >= 1) { sum += c.RecentSpeed; k++; }
+            if (k > 0) s.Speed = s.Speed * 0.5 + (sum / k) * 0.5;
+          }
           win = now;
           /* more connections while that still makes the whole download faster (the window right after a step only settles) */
           int live = 0; foreach (MeguConn c in conns) if (!c.IsDup) live++;
@@ -660,7 +665,10 @@ public class MeguFetch {
           double same = 0; int k = 0; foreach (MeguConn o in conns) if (o != c && o.Src == c.Src && !o.IsDup && !o.Killed) { same += o.RecentSpeed; k++; }
           same = k > 0 ? same / k : 0;
           double free = 0; foreach (MeguSource s in Sources) if (s != c.Src && Usable(s) && s.Active < CapOf(s) && s.Speed > free) free = s.Speed;
-          if (c.RecentSpeed < Math.Max(same, free) * SlowRatio) { SlowKills++; Kill(c, "slow"); }
+          /* with work still waiting, a connection far below the average one gives its slot (and its unwritten bytes) back */
+          double avg = 0; int na = 0; if (pending.Count > 0 || retry.Count > 0) foreach (MeguConn o in conns) if (o != c && !o.IsDup && !o.Killed) { avg += o.RecentSpeed; na++; }
+          avg = na > 0 ? avg / na : 0;
+          if (c.RecentSpeed < Math.Max(Math.Max(same, free), avg) * SlowRatio) { SlowKills++; Kill(c, "slow"); }
         }
       }
     }
