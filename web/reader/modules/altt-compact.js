@@ -22,10 +22,16 @@
  .tome-ac:not(#q1):not(#q2):not(#q3) :is(${T},${C}) label{margin-top:6px!important}
  .tome-ac:not(#q1):not(#q2):not(#q3) :is(${T},${C}) label:has(>input[type=checkbox]){margin-top:4px!important}
  /* 文字: common switches */
- .tome-ac:not(#q1):not(#q2):not(#q3) .tome-text-general>.tomoyo-cn-grid{display:flex!important;flex-wrap:wrap;gap:2px 20px!important}
- .tome-ac:not(#q1):not(#q2):not(#q3) .tome-text-general>.tomoyo-cn-grid>label{margin-top:4px!important}
+ .tome-ac:not(#q1):not(#q2):not(#q3) .tome-text-general .tomoyo-cn-grid{display:flex!important;flex-wrap:wrap;gap:4px 24px!important}
+ .tome-ac:not(#q1):not(#q2):not(#q3) .tome-text-general .tomoyo-cn-grid>label{margin:0!important}
  .tome-ac:not(#q1):not(#q2):not(#q3) .tome-ac-pair{display:grid;grid-template-columns:minmax(0,1fr);column-gap:24px}
  @container (min-width:600px){.tome-ac:not(#q1):not(#q2):not(#q3) .tome-ac-pair{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.tome-ac:not(#q1):not(#q2):not(#q3) .tome-ac-pair.tome-ac-switch-slider{grid-template-columns:max-content minmax(0,1fr)}}
+ .tome-ac:not(#q1):not(#q2):not(#q3) .tome-ac-group{padding:10px 0;border-top:1px solid color-mix(in srgb,var(--theme-text,#eee) 9%,transparent)}
+ .tome-ac:not(#q1):not(#q2):not(#q3) .tome-text-general>.tome-ac-group:first-of-type{border-top:0;padding-top:6px}
+ .tome-ac:not(#q1):not(#q2):not(#q3) .tome-ac-group>:is(label,.tome-ac-pair,.tomoyo-cn-grid){margin-top:0!important}
+ .tome-ac:not(#q1):not(#q2):not(#q3) .tome-ac-group>*+*{margin-top:10px!important}
+ .tome-ac:not(#q1):not(#q2):not(#q3) .tome-ac-group>small{margin-top:8px!important;line-height:1.6!important}
+ .tome-ac:not(#q1):not(#q2):not(#q3) .tome-text-general>.tome-ac-group .tomoyo-cn-grid{gap:6px 22px!important}
  .tome-ac:not(#q1):not(#q2):not(#q3) details>summary{min-height:0!important;padding:7px 12px!important}
  .tome-ac:not(#q1):not(#q2):not(#q3) details{margin-top:8px!important;padding-top:0!important}
  .tome-ac:not(#q1):not(#q2):not(#q3) details[open]>:is(div.tomoyo-cn-grid,.tomoyo-ruby-position){margin-top:0}
@@ -61,6 +67,12 @@
  .tome-ac:not(#q1):not(#q2):not(#q3) [data-menu-category=text] details.tome-ac-pane .tomoyo-cn-grid{display:block!important}
  @container (min-width:600px){.tome-ac:not(#q1):not(#q2):not(#q3) [data-menu-category=text] details[data-text-colours] .tomoyo-cn-grid{display:grid!important;grid-template-columns:minmax(0,1fr) minmax(0,1fr)!important;gap:0 24px!important}.tome-ac:not(#q1):not(#q2):not(#q3) [data-menu-category=text] details[data-text-colours] .tomoyo-cn-grid>label:has(>output){grid-column:1/-1}}
  .tome-ac:not(#q1):not(#q2):not(#q3) [data-menu-category=text] details.tome-ac-pane small{display:block;margin:6px 0 0!important}
+ .tome-ac-bindbar{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:4px 0 2px;margin-bottom:-6px}
+ .tome-ac-bindbar>small{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12.5px!important;color:var(--theme-text,#e8e9ec)!important}
+ .tome-ac-bindbar>small::before{content:'';display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:8px;background:#d9a441;vertical-align:1px}
+ .tome-ac-bindbar[data-bound=true]>small::before{background:#45c47f}
+ .tome-ac-bindbar>button{flex:none;padding:4px 10px!important;border:0!important;background:transparent!important;color:color-mix(in srgb,var(--menu-accent,#e0495a) 55%,#fff)!important;cursor:pointer;font-size:12.5px;border-radius:6px!important}
+ .tome-ac-bindbar>button:hover{background:color-mix(in srgb,var(--menu-accent,#e0495a) 14%,transparent)!important}
  .tome-ac:not(#q1):not(#q2):not(#q3) .tome-ac-off{display:none!important}
  .tome-ac:not(#q1):not(#q2):not(#q3) details.tome-ac-pane{border:0!important;background:transparent!important;margin-top:0!important}
  .tome-ac:not(#q1):not(#q2):not(#q3) details.tome-ac-pane>summary{display:none!important}
@@ -87,7 +99,7 @@
    items.forEach((it,i)=>{for(const n of it.nodes()){n.classList.toggle('tome-ac-off',i!==state.i);if(n.tagName==='DETAILS'&&it.pane){n.classList.add('tome-ac-pane');if(i===state.i){n.open=true;for(const d of n.querySelectorAll('details'))if(!d.dataset.acOpened){d.dataset.acOpened='1';d.open=true;}}}}});}
   paint();return bar;}
  window.__megulitSubTabs={mount:chips};
- const st={text:{i:0},cal:{i:0}};
+ const st={text:{i:0},cal:{i:0}},bst={open:null,last:null,expanded:false};
  function organize(dialog){
   const text=dialog.querySelector('[data-menu-category=text]'),cal=dialog.querySelector('[data-menu-category=calibrate]');if(!text||!cal)return;
   const general=text.querySelector('.tome-text-general');if(!general)return;
@@ -95,6 +107,12 @@
   wrapPair(byName(general,'galAutoScale'),byName(general,'galEmbedTranslation'));
   const tw=byName(general,'galTypewriter'),sp=byName(general,'galTypewriterSpeed');
   if(tw&&sp&&!tw.parentElement.classList.contains('tome-ac-pair')){wrapPair(tw,sp,'tome-ac-switch-slider');}
+ /* top common rows: three loose groups with air and a hairline between them (nodes are moved, never rebuilt) */
+  if(!general.querySelector(':scope>.tome-ac-group')){
+   const grp=(first,nodes)=>{const nn=nodes.filter(Boolean);if(!first||!nn.length)return;const g=mk('div','tome-ac-group');first.before(g);g.append(...nn);};
+   const bold=general.querySelector(':scope>.tomoyo-cn-grid'),pair=tw?.parentElement?.classList.contains('tome-ac-pair')?tw.parentElement:tw,hintA=pair?.nextElementSibling?.tagName==='SMALL'?pair.nextElementSibling:null;
+   const disp=byName(general,'galDisplay'),sw=byName(general,'galAutoScale')?.parentElement,hot=general.querySelector(':scope>small.tomoyo-hotkey-hint');
+   grp(bold,[bold]);grp(pair,[pair,hintA]);grp(disp,[disp,sw&&sw.classList.contains('tome-ac-pair')?sw:byName(general,'galAutoScale'),sw&&sw.classList.contains('tome-ac-pair')?null:byName(general,'galEmbedTranslation'),hot]);}
   const det=n=>text.querySelector(':scope>details[data-text-'+n+']'),jp=det('japanese'),cn=det('chinese'),en=det('megulit-english')||text.querySelector(':scope>details[data-megulit-english]'),ruby=det('ruby'),pal=det('colours'),spc=det('spacing'),gf=det('game-font');
   const groups=[jp,cn,en,ruby,pal,spc,gf].filter(Boolean);
   const calNodes={sync:cal.querySelector(':scope>.tome-game-style-sync'),pos:cal.querySelector(':scope>[data-calibration-position]'),bind:cal.querySelector('[data-calibration-window-bind]'),imp:cal.querySelector('.tome-calibration-imports'),hist:cal.querySelector('.tome-calibration-history')};
@@ -102,11 +120,19 @@
    chips(text,groups[0],'text',groups.map(g=>({pane:true,label:()=>strip(g.querySelector('summary')?.textContent),nodes:()=>[g]})),st.text);
       chips(cal,calNodes.sync||cal.firstElementChild,'cal',[
     {label:()=>I('校准与位置'),nodes:()=>[calNodes.sync,calNodes.pos].filter(Boolean)},
-    {label:()=>I('窗口与导入'),nodes:()=>[calNodes.bind,calNodes.imp,calNodes.hist].filter(Boolean)}],st.cal);
+    {label:()=>I('导入与历史'),nodes:()=>[calNodes.imp,calNodes.hist].filter(Boolean)}],st.cal);
   }
+  if(V==='b'&&calNodes.bind){
+   let bar=cal.querySelector(':scope>.tome-ac-bindbar');
+   if(!bar){bar=mk('div','tome-ac-bindbar',{'data-ac-added':''});const stat=calNodes.bind.querySelector('[data-gal-bound-window]'),btn=mk('button','',{type:'button','data-ac-added':'','aria-expanded':'false'});if(stat)bar.append(stat);bar.append(btn);
+    btn.onclick=()=>{bst.open=!bst.expanded;run();};cal.prepend(bar);}
+   if(bar.nextElementSibling!==calNodes.bind)bar.after(calNodes.bind);
+   const bound=!!window.__tomoyoChinese?.galBoundTitle;if(bst.last!==bound){bst.open=null;bst.last=bound;}
+   bst.expanded=bst.open===null?!bound:bst.open;bar.dataset.bound=String(bound);calNodes.bind.classList.toggle('tome-ac-off',!bst.expanded);
+   const btn=bar.querySelector('button'),t=I(bst.expanded?'收起':'换一个窗口');if(btn.textContent!==t)btn.textContent=t;btn.setAttribute('aria-expanded',String(bst.expanded));}
   for(const s of dialog.querySelectorAll('[data-menu-category=text] small,[data-menu-category=calibrate] small'))if(!s.dataset.acT){s.dataset.acT='1';s.addEventListener('mouseover',()=>{if(!s.title&&s.scrollHeight>s.clientHeight+1)s.title=s.textContent.trim();});s.addEventListener('click',()=>s.classList.toggle('tome-ac-open'));}
  }
- const L={en:{'校准与位置':'Calibrate & position','窗口与导入':'Window & import','更多文字设置':'More text settings','绑定与导入':'Binding & import'},ja:{'校准与位置':'調整と位置','窗口与导入':'ウィンドウと取り込み','更多文字设置':'その他の文字設定','绑定与导入':'バインドと取り込み'}};
+ const L={en:{'校准与位置':'Calibrate & position','导入与历史':'Import & history','换一个窗口':'Change window','收起':'Hide','更多文字设置':'More text settings','绑定与导入':'Binding & import'},ja:{'校准与位置':'調整と位置','导入与历史':'取り込みと履歴','换一个窗口':'ウィンドウを変更','收起':'閉じる','更多文字设置':'その他の文字設定','绑定与导入':'バインドと取り込み'}};
  const I=k=>(L[document.documentElement.lang.slice(0,2)]||{})[k]||k;
  let queued=0;
  const run=()=>{queued=0;const d=document.querySelector('.tomoyo-cn-dialog[data-menu-organized]:not([data-leaving])');if(!d)return;d.classList.add('tome-ac');d.dataset.alttUi=V;try{organize(d);}catch(e){console.error('altt-compact',e);}};
