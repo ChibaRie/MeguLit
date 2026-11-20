@@ -34,9 +34,9 @@ class LocalLlm{
        first, like the runtime packs. 2026-11-19: core/fast-download.cjs measures them all at once and pulls the fast ones
        in parallel Range pieces; a slow or silent connection moves to another source; finished pieces survive a retry.
        SHA-256 must match. */
-    let mirrors=[];try{mirrors=JSON.parse(fs.readFileSync(path.join(this.root,'setup','runtime.json'),'utf8')).mirrors||[];}catch{}
+    /* 2026-11-20: every source for the GitHub URL from setup/runtime.json (core/download-sources.cjs, the list setup uses too) */
     const fast=require('./fast-download.cjs'),china=fast.inChina();
-    const mirrored=mirrors.map(m=>require('./runtime-packs.cjs').mirrorUrl(m,RUNTIME.url)),urls=china?[...mirrored,RUNTIME.url]:[RUNTIME.url,...mirrored];
+    const urls=require('./download-sources.cjs').expand(RUNTIME.url,{china,root:this.root});
     await fast.download({urls,china,dest:zip,size:RUNTIME.size,sha256:RUNTIME.sha256,fetch:this.fetch,signal:controller.signal,onProgress:p=>{job.received=p.received;},log:line=>this.log('runtime '+line)});
     this.log('runtime downloaded');
     fs.rmSync(stage,{recursive:true,force:true});fs.mkdirSync(stage,{recursive:true});await this.extract(zip,stage);

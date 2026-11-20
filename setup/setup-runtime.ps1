@@ -250,22 +250,43 @@ $markers = @{ base = @('runtime\node.exe','runtime\python\python.exe','runtime\p
 # to decide the source order. Mirrors only relay the same GitHub file; SHA-256 still has to match.
 $inChina = ([TimeZoneInfo]::Local.Id -eq 'China Standard Time') -or ((Get-Culture).Name -eq 'zh-CN')
 # 2026-11-19: players in China sat on dl.megulit.com (Cloudflare R2, throttled there after the first MB) at 9 / 178 MB.
-# In China cn-dl (Tencent EdgeOne) now comes first, then the other megulit.com mirror, the GitHub proxies, GitHub last.
-# Elsewhere GitHub stays first. The order is only the tie-break: every source is probed in parallel and ranked by speed.
-# setup\runtime.json keeps its own mirror order (the app's downloader reads it too); the order is decided here.
-function Rank-Sources($urls, [bool]$china) {
+# 2026-11-20: setup\runtime.json "mirrors" is the one source list for both downloaders (core\download-sources.cjs reads
+# the same entries for the app): url template ({url} = the GitHub URL, {tag}/{file} = its release tag and file name),
+# own (only MeguLit's own release files are there), cn / world order (only the tie-break: every source is probed in
+# parallel and ranked by speed), trust (first-party: used alone after a SHA-256 mismatch), max (connections at most,
+# kept low for free public relays), off (listed, not used yet). A plain string is a relay (order 2, not trusted).
+function Mirror-List($mirrors) {
+  $l = @(foreach ($m in @($mirrors)) {
+    if ($m -is [string]) { [pscustomobject]@{ url = $m; cn = 2; world = 2; trust = $false; own = $false; max = 0 } }
+    elseif ($m -and $m.url -and -not $m.off) { $m }
+  })
+  if (-not ($l | Where-Object { $_.url -eq '{url}' })) { $l += [pscustomobject]@{ url = '{url}'; cn = 9; world = 0; trust = $true; own = $false; max = 0 } }
+  $l
+}
+function Mirror-Host($template) { if ($template.StartsWith('{url}')) { 'github.com' } else { ([Uri]($template -replace '\{[a-z]+\}', 'x')).Host } }
+function Rank-Sources($urls, [bool]$china, $mirrors) {
+  $hosts = @{}; foreach ($m in (Mirror-List $mirrors)) { $h = Mirror-Host $m.url; if (-not $hosts.ContainsKey($h)) { $hosts[$h] = $m } }
   $all = @($urls)
   $rows = for ($i = 0; $i -lt $all.Count; $i++) {
-    $h = ([Uri]$all[$i]).Host
-    $r = if (-not $china) { if ($h -eq 'github.com') { 0 } else { 1 } } elseif ($h -like 'cn-*') { 0 } elseif ($h -like '*.megulit.com') { 1 } elseif ($h -eq 'github.com') { 3 } else { 2 }
+    $m = $hosts[([Uri]$all[$i]).Host]
+    $r = if (-not $m) { 5 } elseif ($china) { [double]$m.cn } else { [double]$m.world }
     [pscustomobject]@{ u = $all[$i]; r = $r; i = $i }
   }
-  @($rows | Sort-Object r, i | ForEach-Object { $_.u })
+  @($rows | Sort-Object r, i | ForEach-Object { $_.u } | Select-Object -Unique)
 }
 function Candidates($id) {
-  $direct = @($packs.$id.urls)
-  $mirrored = foreach ($m in @($manifest.mirrors)) { foreach ($u in $direct) { $seg = $u.Split('/'); $m.Replace('{url}', $u).Replace('{tag}', $seg[-2]).Replace('{file}', $seg[-1]) } }
-  Rank-Sources (@($direct) + @($mirrored)) $inChina
+  $list = Mirror-List $manifest.mirrors
+  $urls = foreach ($u in @($packs.$id.urls)) {
+    $own = $u -match '^https://github\.com/ilynthn/MeguLit/releases/download/'; $seg = $u.Split('/')
+    foreach ($m in $list) { if ($own -or -not $m.own) { $m.url.Replace('{url}', $u).Replace('{tag}', $seg[-2]).Replace('{file}', $seg[-1]) } }
+  }
+  Rank-Sources $urls $inChina $manifest.mirrors
+}
+# first-party hosts and per-host connection limits for MeguFetch, from the same list
+function Source-Hints($mirrors) {
+  $trust = @(); $limits = @()
+  foreach ($m in (Mirror-List $mirrors)) { $h = Mirror-Host $m.url; if ($m.trust) { $trust += $h }; if ($m.max -gt 0) { $limits += ($h + '=' + [int]$m.max) } }
+  @{ trust = [string[]]$trust; limits = [string[]]$limits }
 }
 # Multi-source segmented downloader (compiled on first use, runs on background threads; the window only polls it).
 # The old single WebClient stayed on whichever source answered first, even at 20 KB/s, and threw the .part away on retry.
@@ -286,33 +307,59 @@ using System.Security.Cryptography;
 
 public class MeguSource {
   public string Url, Live, Host, Why;
-  public int Order, Active, Strikes;
+  public int Order, Active, Strikes, Max;
   public double ProbeSpeed, Speed;
   public long ProbeBytes, Bytes, Length = -1, WinBytes, Recent;
   public int Range = -1;   /* -1 unknown, 0 no (200 only), 1 yes (206) */
-  public bool Dead;
+  public bool Dead, Trust;
+  public DateTime CoolUntil;   /* cooled down after an error until then */
 }
 
 public class MeguConn {
   public MeguSource Src; public int Seg; public long Len, Got, WinGot;
   public HttpWebRequest Req; public DateTime Started, LastData; public double RecentSpeed;
   public volatile bool Killed; public string KillWhy;
+  /* end game: a duplicate of the same segment from another source; Lost = the twin won, stop writing */
+  public MeguConn Twin; public bool IsDup; public volatile bool Lost; public readonly object WriteLock = new object();
+  /* a segment may be split into parts in the tail: Offset/Len are this part's bytes; Settled = counted once */
+  public long Offset; public bool Settled;
 }
 
 /* Downloads one file from several mirrors at once: parallel speed probe, HTTP Range segments on
    several connections (fast sources take more segments), slow or stalled connections are dropped and
    their segment goes to another source, finished segments are remembered in <part>.json so a retry or
-   a restart only fetches what is missing. The whole file is checked against SHA-256 at the end. */
+   a restart only fetches what is missing. The whole file is checked against SHA-256 at the end.
+   2026-11-20 "super assembly" (same rules as core\fast-download.cjs, after aria2's multi-source HTTP):
+   - connections start at Connections (at least one per usable source) and grow by 2 every other 1.5 s window while the
+     line is not full (the total still rises by ScaleGain, or the speed per connection stays above ScaleKeep of what it
+     was), up to MaxConnections; after a stop it tries again 10 s later
+   - each source holds a share of the connections in proportion to its speed (+1), at most MaxPerSource; slower
+     sources (>= 5 % of the best) are used once the fast ones are full
+   - tail: nothing left to hand out, so a free connection takes the second half of the biggest running part (down to
+     MinSplit); then the end game fetches the rest of the part that would finish last again from another source into
+     memory, the first to finish is written and the other is cancelled; a failed part only hands back what it had not
+     written yet
+   - an error cools a source down (CoolMs, doubling up to CoolMaxMs) while another one carries on; dropped for good
+     only on 401/403/404/410/416, an HTML page, a wrong size, or MaxStrikes errors
+   - after a SHA-256 mismatch with relays involved, the second round uses the first-party sources only (TrustedHosts) */
 public class MeguFetch {
   public string[] Urls; public string Part; public long Size; public string Sha;
-  public int Connections = 8, MaxPerSource = 6, SegmentSize = 4 << 20, ProbeMs = 3000, ProbeCapMs = 4000, StallMs = 15000, SlowGraceMs = 6000;
+  public int Connections = 8, MaxConnections = 16, MaxPerSource = 8, SegmentSize = 4 << 20, ProbeMs = 3000, ProbeCapMs = 4000, StallMs = 15000, SlowGraceMs = 6000;
+  public int CoolMs = 5000, CoolMaxMs = 60000, MaxStrikes = 6, DupMinMs = 1000, MinSplit = 512 << 10;
+  public bool EndGame = true;
   public long ProbeMaxBytes = 16L << 20;
-  public double SlowRatio = 0.3;
+  public double SlowRatio = 0.3, ScaleGain = 1.08, ScaleKeep = 0.8, UseFloor = 0.05, ScaleSec = 1.5;
   public string UserAgent = "MeguLit-setup";
+  /* first-party hosts (setup\runtime.json "trust"); *.megulit.com and github.com always count */
+  public static string[] TrustedHosts = new string[0];
+  /* "host=n": at most n connections to that host (free public relays get few) */
+  public static string[] HostLimits = new string[0];
+  public string[] Trusted;
 
   public volatile string Phase = "idle";
   public string Error = "";
-  public long Resumed, ProbeElapsedMs, Steals, SlowKills, StallKills;
+  public long Resumed, ProbeElapsedMs, Steals, SlowKills, StallKills, Dups, DupWins, Cooldowns;
+  public int Target, MaxTarget;
   public bool Single;
   public double TotalSpeed;
   public List<MeguSource> Sources = new List<MeguSource>();
@@ -320,6 +367,8 @@ public class MeguFetch {
   readonly object gate = new object();
   readonly List<MeguConn> conns = new List<MeguConn>();
   readonly LinkedList<int> pending = new LinkedList<int>();
+  readonly LinkedList<long[]> retry = new LinkedList<long[]>();   /* {segment, offset, length} left by a failed part */
+  int[] parts;
   readonly StringBuilder log = new StringBuilder();
   readonly DateTime t0 = DateTime.UtcNow;
   bool[] done; int segCount; long doneBytes; volatile bool cancel; string failWhy;
@@ -330,7 +379,7 @@ public class MeguFetch {
   void Log(string s) { lock (log) log.AppendFormat("{0,6:0.0}s {1}\r\n", (DateTime.UtcNow - t0).TotalSeconds, s); }
 
   public long Received {
-    get { lock (gate) { long n = doneBytes; foreach (MeguConn c in conns) n += Interlocked.Read(ref c.Got); return Math.Min(n, Size); } }
+    get { lock (gate) { long n = doneBytes; foreach (MeguConn c in conns) if (!c.IsDup && !c.Lost) n += Interlocked.Read(ref c.Got); return Math.Min(n, Size); } }
   }
   public string SourceLabel() {
     lock (gate) {
@@ -366,7 +415,7 @@ public class MeguFetch {
       if (ServicePointManager.DefaultConnectionLimit < 64) ServicePointManager.DefaultConnectionLimit = 64;
       segCount = (int)((Size + SegmentSize - 1) / SegmentSize);
       for (int i = 0; i < Urls.Length; i++) {
-        MeguSource s = new MeguSource(); s.Url = Urls[i]; s.Live = Urls[i]; s.Host = new Uri(Urls[i]).Authority; s.Order = i; Sources.Add(s);
+        MeguSource s = new MeguSource(); s.Url = Urls[i]; s.Live = Urls[i]; s.Host = new Uri(Urls[i]).Authority; s.Order = i; s.Trust = IsTrusted(s.Url); s.Max = LimitOf(s.Url); Sources.Add(s);
       }
       for (int round = 0; round < 2; round++) {
         LoadState();
@@ -386,15 +435,31 @@ public class MeguFetch {
         Log("sha256 mismatch " + hash + (round == 0 ? ", downloading again from scratch" : ""));
         TryDelete(StatePath); TryDelete(Part);
         if (round == 1) { Fail("文件校验失败，可能下载不完整"); return; }
+        /* a relay may have served a different file: with a first-party source still there, the relays sit out */
+        bool relays = false, firsts = false;
+        foreach (MeguSource s in Sources) { if (!s.Trust && s.Bytes > 0) relays = true; if (s.Trust && !s.Dead) firsts = true; }
+        if (relays && firsts) foreach (MeguSource s in Sources) if (!s.Trust && !s.Dead) { s.Dead = true; s.Why = "not first-party, after a hash mismatch"; Log(s.Host + " dropped: " + s.Why); }
+        foreach (MeguSource s in Sources) { s.CoolUntil = DateTime.MinValue; s.Bytes = 0; }
       }
     } catch (Exception e) { if (cancel) Phase = "cancelled"; else Fail(e.Message); }
     finally { if (held != null) held.Dispose(); }
   }
   void Fail(string why) { Error = why; Log("failed: " + why); Phase = "failed"; }
+  static int LimitOf(string url) {
+    Uri u = new Uri(url);
+    if (HostLimits != null) foreach (string l in HostLimits) { int k = l == null ? -1 : l.LastIndexOf('='); int n; if (k > 0 && (string.Equals(l.Substring(0, k), u.Host, StringComparison.OrdinalIgnoreCase) || string.Equals(l.Substring(0, k), u.Authority, StringComparison.OrdinalIgnoreCase)) && int.TryParse(l.Substring(k + 1), out n)) return n; }
+    return 0;
+  }
+  bool IsTrusted(string url) {
+    string h = new Uri(url).Host.ToLowerInvariant();
+    if (h == "github.com" || h.EndsWith(".githubusercontent.com") || h == "megulit.com" || h.EndsWith(".megulit.com")) return true;
+    foreach (string[] list in new string[][] { TrustedHosts, Trusted }) if (list != null) foreach (string t in list) if (t != null && (string.Equals(t, h, StringComparison.OrdinalIgnoreCase) || string.Equals(t, url, StringComparison.OrdinalIgnoreCase))) return true;
+    return false;
+  }
 
   /* ---------- resume state ---------- */
   void LoadState() {
-    done = new bool[segCount]; doneBytes = 0; Resumed = 0; Single = false; failWhy = null;
+    done = new bool[segCount]; parts = new int[segCount]; retry.Clear(); doneBytes = 0; Resumed = 0; Single = false; failWhy = null;
     try {
       if (File.Exists(StatePath) && File.Exists(Part) && new FileInfo(Part).Length == Size) {
         string j = File.ReadAllText(StatePath);
@@ -449,6 +514,7 @@ public class MeguFetch {
             s.Live = res.ResponseUri.AbsoluteUri;
             if ((int)res.StatusCode == 206) { s.Range = 1; s.Length = TotalFromContentRange(res.Headers["Content-Range"]); }
             else { s.Range = 0; s.Length = res.ContentLength; }
+            if ((res.ContentType ?? "").StartsWith("text/html", StringComparison.OrdinalIgnoreCase)) { s.Dead = true; s.Why = "HTML page"; return; }
             Stream st = res.GetResponseStream(); byte[] buf = new byte[65536];
             while ((DateTime.UtcNow - start).TotalMilliseconds < ProbeMs && Interlocked.Read(ref s.ProbeBytes) < ProbeMaxBytes) {
               int n = st.Read(buf, 0, buf.Length); if (n <= 0) break; Interlocked.Add(ref s.ProbeBytes, n);
@@ -481,30 +547,55 @@ public class MeguFetch {
 
   /* ---------- segmented download ---------- */
   bool HasRangeSource() { lock (gate) { foreach (MeguSource s in Sources) if (!s.Dead && s.Range != 0) return true; return false; } }
-  double BestSpeed() { double b = 0; foreach (MeguSource s in Sources) if (!s.Dead && s.Range != 0 && s.Speed > b) b = s.Speed; return b; }
-  /* Fast sources take more connections; a source far slower than the best one is left alone. Caller holds gate. */
-  MeguSource Pick() {
-    double best = BestSpeed(); MeguSource pick = null; double score = -1;
-    foreach (MeguSource s in Sources) {
-      if (s.Dead || s.Range == 0 || s.Active >= MaxPerSource) continue;
-      if (s.Speed < best * SlowRatio) continue;
-      double sc = s.Speed / (1 + 0.6 * s.Active);
-      if (sc > score || (sc == score && pick != null && s.Order < pick.Order)) { score = sc; pick = s; }
+  bool Cooling(MeguSource s) { return s.CoolUntil > DateTime.UtcNow; }
+  bool Usable(MeguSource s) { return !s.Dead && s.Range != 0 && !Cooling(s); }
+  double BestSpeed() { double b = 0; foreach (MeguSource s in Sources) if (Usable(s) && s.Speed > b) b = s.Speed; return b; }
+  /* A source's share of the connections follows its speed; one back from a cool-down gets one until it delivers. Caller holds gate. */
+  int CapOf(MeguSource s) {
+    if (s.Strikes > 0) return 1;
+    double sum = 0; foreach (MeguSource x in Sources) if (Usable(x)) sum += Math.Max(1.0, x.Speed);
+    if (sum <= 0) return 1;
+    return Math.Max(1, Math.Min(s.Max > 0 ? Math.Min(s.Max, MaxPerSource) : MaxPerSource, (int)Math.Ceiling(Target * Math.Max(1.0, s.Speed) / sum) + 1));
+  }
+  /* Fast sources first; slower ones (>= UseFloor of the best) only once the fast ones are full. Caller holds gate. */
+  MeguSource Pick(MeguSource not) {
+    double best = BestSpeed();
+    for (int pass = 0; pass < 2; pass++) {
+      MeguSource pick = null; double score = -1;
+      foreach (MeguSource s in Sources) {
+        if (s == not || !Usable(s) || s.Active >= CapOf(s)) continue;
+        if (s.Speed < best * (pass == 0 ? SlowRatio : UseFloor)) continue;
+        double sc = s.Speed / (1 + 0.6 * s.Active);
+        if (sc > score || (sc == score && pick != null && s.Order < pick.Order)) { score = sc; pick = s; }
+      }
+      if (pick != null) return pick;
     }
-    return pick;
+    return null;
   }
   bool OthersAlive(MeguSource me) { foreach (MeguSource s in Sources) if (s != me && !s.Dead && s.Range != 0) return true; return false; }
+  bool OthersUsable(MeguSource me) { foreach (MeguSource s in Sources) if (s != me && Usable(s)) return true; return false; }
   int Busy() { int n = 0; foreach (MeguSource s in Sources) n += s.Active; return n; }
   void Kill(MeguConn c, string why) {
     if (c.Killed) return; c.KillWhy = why; c.Killed = true;
     HttpWebRequest r = c.Req; if (r != null) { try { r.Abort(); } catch { } }
   }
+  /* An error: cool the source down while another one can carry on (alone it is asked again after a second); dropped after MaxStrikes. Caller holds gate. */
+  void Strike(MeguSource s, string why) {
+    s.Strikes++; s.Speed *= 0.5;
+    bool others = OthersAlive(s);
+    if (s.Strikes >= (others ? MaxStrikes : MaxStrikes * 2)) { s.Dead = true; s.Why = "too many errors (" + why + ")"; Log(s.Host + " dropped: " + s.Why); return; }
+    int ms = OthersUsable(s) ? Math.Min(CoolMaxMs, CoolMs << Math.Min(10, s.Strikes - 1)) : Math.Min(1000, CoolMs);
+    s.CoolUntil = DateTime.UtcNow.AddMilliseconds(ms); Cooldowns++;
+    Log(string.Format("{0} cools down {1:0.0} s ({2})", s.Host, ms / 1000.0, why));
+  }
 
   void Segmented() {
-    int workers = Math.Min(Connections, Math.Max(1, pending.Count));
+    int usable = 0; lock (gate) foreach (MeguSource s in Sources) if (!s.Dead && s.Range != 0) usable++;
+    Target = Math.Max(1, Math.Min(Math.Max(Connections, usable), MaxConnections)); MaxTarget = Target;
+    int workers = Math.Max(Target, MaxConnections);
     List<Thread> ts = new List<Thread>();
-    for (int i = 0; i < workers; i++) { Thread t = new Thread(Worker); t.IsBackground = true; ts.Add(t); t.Start(); }
-    DateTime win = DateTime.UtcNow; long winDone = doneBytes;
+    for (int i = 0; i < workers; i++) { Thread t = new Thread(Worker); t.IsBackground = true; ts.Add(t); t.Start(i); }
+    DateTime win = DateTime.UtcNow, growAt = DateTime.MinValue; long winDone = doneBytes; double lastScale = -1, lastPer = -1; bool skip = false;
     while (true) {
       bool alive = false; foreach (Thread t in ts) if (t.IsAlive) alive = true;
       if (!alive) break;
@@ -512,105 +603,215 @@ public class MeguFetch {
       lock (gate) {
         DateTime now = DateTime.UtcNow;
         double sec = (now - win).TotalSeconds;
-        if (sec >= 2) {
-          long rec = doneBytes; foreach (MeguConn c in conns) rec += c.Got;
+        if (sec >= ScaleSec) {
+          long rec = doneBytes; foreach (MeguConn c in conns) if (!c.IsDup) rec += c.Got;
           TotalSpeed = Math.Max(0, rec - winDone) / sec; winDone = rec;
           foreach (MeguSource s in Sources) { s.Recent = s.WinBytes; s.WinBytes = 0; }
           foreach (MeguConn c in conns) { c.RecentSpeed = c.WinGot / Math.Max(0.25, (now - (c.Started > win ? c.Started : win)).TotalSeconds); c.WinGot = 0; }
           win = now;
+          /* more connections while that still makes the whole download faster (the window right after a step only settles) */
+          int live = 0; foreach (MeguConn c in conns) if (!c.IsDup) live++;
+          double per = TotalSpeed / Math.Max(1, live);
+          if (skip) skip = false;
+          else if (now >= growAt && Target < MaxConnections && (pending.Count > 0 || retry.Count > 0 || Splittable())) {
+            if (lastScale < 0 || TotalSpeed >= lastScale * ScaleGain || per >= lastPer * ScaleKeep) { lastScale = TotalSpeed; lastPer = per; Target = Math.Min(MaxConnections, Target + 2); MaxTarget = Math.Max(MaxTarget, Target); skip = true; Log(string.Format("connections {0} ({1:0.00} MB/s)", Target, TotalSpeed / 1048576)); Monitor.PulseAll(gate); }
+            else { growAt = now.AddSeconds(10); lastScale = -1; Log(string.Format("connections stay {0} ({1:0.00} MB/s)", Target, TotalSpeed / 1048576)); }
+          }
         }
-        /* Average per-connection speed over the last window, finished segments included. */
-        int n = conns.Count; double avg = n > 0 ? TotalSpeed / n : 0;
         foreach (MeguConn c in conns) {
           if (c.Killed) continue;
           if ((now - c.LastData).TotalMilliseconds > StallMs) { StallKills++; Kill(c, "stall"); continue; }
-          if (n >= 2 && (now - c.Started).TotalMilliseconds > SlowGraceMs && c.RecentSpeed < avg * SlowRatio && c.Len - c.Got > 256 * 1024) { SlowKills++; Kill(c, "slow"); }
+          if (c.IsDup || HasTwin(c) || (now - c.Started).TotalMilliseconds <= SlowGraceMs || c.Len - c.Got <= 256 * 1024) continue;
+          /* slow = far below the other connections to the same source, or far below a faster source that has room */
+          double same = 0; int k = 0; foreach (MeguConn o in conns) if (o != c && o.Src == c.Src && !o.IsDup && !o.Killed) { same += o.RecentSpeed; k++; }
+          same = k > 0 ? same / k : 0;
+          double free = 0; foreach (MeguSource s in Sources) if (s != c.Src && Usable(s) && s.Active < CapOf(s) && s.Speed > free) free = s.Speed;
+          if (c.RecentSpeed < Math.Max(same, free) * SlowRatio) { SlowKills++; Kill(c, "slow"); }
         }
       }
     }
     lock (gate) { if (!cancel && doneBytes < Size && failWhy == null && HasRangeSource()) failWhy = "所有下载源都失败了"; }
   }
 
-  void Worker() {
+  /* An exception on a worker thread would end the whole setup process: it fails the download instead. */
+  void Worker(object idObj) {
+    try { WorkerLoop((int)idObj); }
+    catch (Exception e) { lock (gate) { if (failWhy == null && !cancel) failWhy = "下载线程出错：" + e.Message; Log("worker crashed: " + e); Monitor.PulseAll(gate); } }
+  }
+  void WorkerLoop(int id) {
     while (true) {
-      MeguConn c;
+      MeguConn c = null;
       lock (gate) {
         while (true) {
           if (cancel || failWhy != null || doneBytes >= Size) { Monitor.PulseAll(gate); return; }
-          MeguSource s = Pick();
-          if (pending.Count > 0 && s != null) {
-            int seg = pending.First.Value; pending.RemoveFirst();
-            c = new MeguConn(); c.Src = s; c.Seg = seg; c.Len = SegLen(seg); c.Started = c.LastData = DateTime.UtcNow;
+          if (id >= Target) { if (Busy() == 0 && pending.Count == 0) return; Monitor.Wait(gate, 300); continue; }
+          MeguSource s = Pick(null);
+          if (retry.Count > 0 && s != null) {
+            /* the rest of a part whose connection failed */
+            long[] r = retry.First.Value; retry.RemoveFirst();
+            c = new MeguConn(); c.Src = s; c.Seg = (int)r[0]; c.Offset = r[1]; c.Len = r[2]; c.Started = c.LastData = DateTime.UtcNow;
             s.Active++; conns.Add(c); break;
           }
-          if (pending.Count == 0 && s != null) Steal(s);
-          if (Busy() == 0 && pending.Count > 0 && s == null) { if (!HasRangeSource()) return; failWhy = "所有下载源都失败了"; Monitor.PulseAll(gate); return; }
-          if (Busy() == 0 && pending.Count == 0 && doneBytes < Size) return;
+          if (pending.Count > 0 && s != null) {
+            int seg = pending.First.Value; pending.RemoveFirst();
+            c = new MeguConn(); c.Src = s; c.Seg = seg; c.Offset = (long)seg * SegmentSize; c.Len = SegLen(seg); c.Started = c.LastData = DateTime.UtcNow;
+            parts[seg] = 1;
+            s.Active++; conns.Add(c); break;
+          }
+          /* tail: split the biggest running part in two, then race the slowest remainder from another source */
+          if (pending.Count == 0 && retry.Count == 0 && s != null) {
+            c = Split(s); if (c != null) break;
+            if (EndGame) { c = Dup(); if (c != null) break; }
+          }
+          if (Busy() == 0 && (pending.Count > 0 || retry.Count > 0) && s == null) {
+            /* every source cooling down: wait; every source gone: give up */
+            if (!HasRangeSource()) return;
+            bool cool = false; foreach (MeguSource x in Sources) if (!x.Dead && x.Range != 0 && Cooling(x)) cool = true;
+            if (!cool) { failWhy = "所有下载源都失败了"; Monitor.PulseAll(gate); return; }
+          }
+          if (Busy() == 0 && pending.Count == 0 && retry.Count == 0 && doneBytes < Size) return;
           Monitor.Wait(gate, 300);
         }
       }
       Fetch(c);
     }
   }
-  /* Tail: nothing left to hand out, so a free connection takes over a segment that a slow one would finish much later. */
-  void Steal(MeguSource s) {
-    MeguConn worst = null; double worstEta = 0;
+  /* Tail (aria2 style): the running part with the most bytes left gives its second half to a free connection. Caller holds gate. */
+  MeguConn Split(MeguSource s) {
+    MeguConn big = null; long left = 0;
     foreach (MeguConn c in conns) {
-      if (c.Killed || (DateTime.UtcNow - c.Started).TotalMilliseconds < 2000) continue;
-      double eta = (c.Len - c.Got) / Math.Max(1.0, c.RecentSpeed);
+      if (c.Killed || c.IsDup || HasTwin(c) || c.Lost || c.Seg < 0) continue;
+      long l = c.Len - Interlocked.Read(ref c.Got); if (l > left) { left = l; big = c; }
+    }
+    if (big == null || left < 2L * MinSplit) return null;
+    MeguConn d;
+    lock (big.WriteLock) {
+      long got = Interlocked.Read(ref big.Got), rest = big.Len - got; if (rest < 2L * MinSplit) return null;
+      long keep = got + ((rest / 2 + 65535) / 65536) * 65536;
+      d = new MeguConn(); d.Src = s; d.Seg = big.Seg; d.Offset = big.Offset + keep; d.Len = big.Len - keep;
+      big.Len = keep;
+    }
+    d.Started = d.LastData = DateTime.UtcNow; parts[d.Seg]++; s.Active++; conns.Add(d); Steals++;
+    return d;
+  }
+  /* End game: the remainder of the part that would finish last is fetched again from another source. Caller holds gate. */
+  MeguConn Dup() {
+    MeguConn worst = null; double worstEta = 0; DateTime now = DateTime.UtcNow;
+    foreach (MeguConn c in conns) {
+      if (c.Killed || c.IsDup || HasTwin(c) || c.Lost || c.Seg < 0 || (now - c.Started).TotalMilliseconds < DupMinMs) continue;
+      double sp = c.RecentSpeed > 0 ? c.RecentSpeed : c.Got / Math.Max(0.05, (now - c.Started).TotalSeconds);
+      double eta = (c.Len - c.Got) / Math.Max(1.0, sp);
       if (eta > worstEta) { worstEta = eta; worst = c; }
     }
-    if (worst == null) return;
-    double mine = worst.Len / Math.Max(1.0, s.Speed) + 1.0;
-    if (worstEta > mine * 1.5) { Steals++; Kill(worst, "steal"); }
+    if (worst == null || worstEta * 1000 < DupMinMs) return null;
+    MeguSource s = Pick(worst.Src) ?? Pick(null);
+    if (s == null) return null;
+    MeguConn d = new MeguConn();
+    lock (worst.WriteLock) { long got = Interlocked.Read(ref worst.Got); d.Offset = worst.Offset + got; d.Len = worst.Len - got; }
+    if (d.Len <= 0 || d.Len / Math.Max(1.0, s.Speed) + 0.3 > worstEta) return null;
+    d.Src = s; d.Seg = worst.Seg; d.IsDup = true; d.Twin = worst; worst.Twin = d;
+    d.Started = d.LastData = now; s.Active++; conns.Add(d); Dups++;
+    Log(string.Format("end game: seg {0} rest also from {1} (eta {2:0.0} s on {3})", d.Seg, s.Host, worstEta, worst.Src.Host));
+    return d;
+  }
+  bool Splittable() { foreach (MeguConn c in conns) if (!c.Killed && !c.IsDup && !c.Lost && c.Seg >= 0 && c.Len - c.Got >= 2L * MinSplit) return true; return false; }
+  bool HasTwin(MeguConn c) { return c.Twin != null && conns.Contains(c.Twin); }
+  /* A part is finished (written by its own connection or by the end-game copy); a segment is done when all its parts are. Caller holds gate. */
+  void PartDone(MeguConn part) {
+    if (part.Settled) return; part.Settled = true;
+    int k = part.Seg; doneBytes += part.Len;
+    if (--parts[k] == 0 && !done[k]) { done[k] = true; SaveState(); }
+  }
+  /* A part failed and no copy of it is still running: what it wrote counts, the rest goes back as a part of its own. Caller holds gate. */
+  void PartFailed(MeguConn part) {
+    if (part.Settled) return; part.Settled = true;
+    int k = part.Seg; long got = Math.Min(Interlocked.Read(ref part.Got), part.Len); doneBytes += got;
+    if (got < part.Len) retry.AddFirst(new long[] { k, part.Offset + got, part.Len - got });
+    else if (--parts[k] == 0 && !done[k]) { done[k] = true; SaveState(); }
   }
 
   void Fetch(MeguConn c) {
-    MeguSource s = c.Src; long start = (long)c.Seg * SegmentSize; string err = null; int code = 0; bool wrongSize = false, noRange = false, timedOut = false;
+    MeguSource s = c.Src; long start = c.Offset, reqLen = c.Len; string err = null; int code = 0; bool wrongSize = false, noRange = false, timedOut = false, won = false;
     string used = s.Live;
     try {
-      HttpWebRequest req = Make(used); req.AddRange(start, start + c.Len - 1);
+      HttpWebRequest req = Make(used); req.AddRange(start, start + reqLen - 1);
       lock (gate) { if (c.Killed) throw new WebException("killed"); c.Req = req; }
       using (HttpWebResponse res = (HttpWebResponse)req.GetResponse()) {
         if ((int)res.StatusCode != 206) { noRange = true; throw new WebException("no range (HTTP " + (int)res.StatusCode + ")"); }
+        if ((res.ContentType ?? "").StartsWith("text/html", StringComparison.OrdinalIgnoreCase)) { wrongSize = true; throw new WebException("HTML page instead of the file"); }
         string cr = res.Headers["Content-Range"] ?? "";
         Match m = Regex.Match(cr, @"bytes\s+(\d+)-(\d+)/(\d+)");
-        if (!m.Success || long.Parse(m.Groups[1].Value) != start || long.Parse(m.Groups[2].Value) != start + c.Len - 1 || long.Parse(m.Groups[3].Value) != Size) { wrongSize = true; throw new WebException("bad Content-Range " + cr); }
+        if (!m.Success || long.Parse(m.Groups[1].Value) != start || long.Parse(m.Groups[2].Value) != start + reqLen - 1 || long.Parse(m.Groups[3].Value) != Size) { wrongSize = true; throw new WebException("bad Content-Range " + cr); }
         s.Live = res.ResponseUri.AbsoluteUri;
-        using (Stream st = res.GetResponseStream())
-        using (FileStream f = new FileStream(Part, FileMode.Open, FileAccess.Write, FileShare.ReadWrite, 1 << 16)) {
-          f.Seek(start, SeekOrigin.Begin); byte[] buf = new byte[65536];
-          while (true) {
-            int n = st.Read(buf, 0, (int)Math.Min(buf.Length, c.Len - c.Got)); if (n <= 0) break;
-            f.Write(buf, 0, n);
-            lock (gate) { c.Got += n; c.WinGot += n; s.WinBytes += n; s.Bytes += n; c.LastData = DateTime.UtcNow; }
-            if (c.Got >= c.Len) break;
+        byte[] buf = new byte[65536];
+        using (Stream st = res.GetResponseStream()) {
+          if (c.IsDup) {
+            /* end-game copy: kept in memory, written only if it wins */
+            byte[] all = new byte[c.Len];
+            while (c.Got < c.Len) {
+              int n = st.Read(all, (int)c.Got, (int)Math.Min(65536, c.Len - c.Got)); if (n <= 0) break;
+              lock (gate) { c.Got += n; c.WinGot += n; s.WinBytes += n; s.Bytes += n; c.LastData = DateTime.UtcNow; }
+              if (c.Killed) break;
+            }
+            if (c.Got != c.Len) throw new WebException(c.Killed ? c.KillWhy : "short read");
+            MeguConn o = c.Twin;
+            lock (gate) { won = o != null && !o.Settled && !c.Killed; if (won) lock (o.WriteLock) { o.Lost = true; } }
+            if (won) {
+              lock (gate) Kill(o, "lost");
+              using (FileStream f = new FileStream(Part, FileMode.Open, FileAccess.Write, FileShare.ReadWrite, 1 << 16)) { f.Seek(start, SeekOrigin.Begin); f.Write(all, 0, all.Length); f.Flush(true); }
+            }
+          } else {
+            using (FileStream f = new FileStream(Part, FileMode.Open, FileAccess.Write, FileShare.ReadWrite, 1 << 16)) {
+              f.Seek(start, SeekOrigin.Begin);
+              while (true) {
+                long room = c.Len - c.Got; if (room <= 0) break;
+                int n = st.Read(buf, 0, (int)Math.Min(buf.Length, room)); if (n <= 0) break;
+                /* a split may have shortened this part while the read was running */
+                lock (c.WriteLock) { if (c.Lost) break; n = (int)Math.Min(n, c.Len - c.Got); if (n <= 0) break; f.Write(buf, 0, n); }
+                lock (gate) { c.Got += n; c.WinGot += n; s.WinBytes += n; s.Bytes += n; c.LastData = DateTime.UtcNow; }
+                if (c.Got >= c.Len) break;
+              }
+              f.Flush(true);
+            }
+            if (c.Got != c.Len && !c.Lost) throw new WebException("short read");
           }
-          f.Flush(true);
         }
-        if (c.Got != c.Len) throw new WebException("short read");
+        /* the rest of a shortened part is not wanted */
+        if (c.Len < reqLen) { try { req.Abort(); } catch { } }
       }
     } catch (WebException e) { err = e.Message; code = StatusOf(e); timedOut = e.Status == WebExceptionStatus.Timeout; }
     catch (Exception e) { err = e.Message; }
     lock (gate) {
       s.Active--; conns.Remove(c);
+      MeguConn twin = c.Twin; bool twinRuns = twin != null && conns.Contains(twin) && !twin.Killed;
       double sec = Math.Max(0.05, (DateTime.UtcNow - c.Started).TotalSeconds);
-      if (err == null) {
-        done[c.Seg] = true; doneBytes += c.Len; SaveState();
+      if (c.Lost) {
+        /* the end-game copy won and wrote the rest of this part */
+      } else if (err == null && !c.IsDup) {
+        PartDone(c);
+        if (twinRuns) Kill(twin, "lost race");
         s.Speed = s.Speed <= 0 ? c.Len / sec : s.Speed * 0.6 + (c.Len / sec) * 0.4; s.Range = 1;
+        if (s.Strikes > 0) s.Strikes--;
+      } else if (err == null && won) {
+        PartDone(twin); DupWins++; Log("seg " + c.Seg + " rest won by " + s.Host);
+        s.Speed = s.Speed <= 0 ? c.Len / sec : s.Speed * 0.6 + (c.Len / sec) * 0.4;
+        if (s.Strikes > 0) s.Strikes--;
+      } else if (err == null) {
+        /* end-game copy finished second: nothing to do */
       } else {
-        pending.AddFirst(c.Seg);
+        /* a copy that failed hands its part back only when the part's own connection is gone too (or it had stopped that one) */
+        if (c.IsDup) { if (twin != null && (won || !twinRuns)) PartFailed(twin); }
+        else if (!twinRuns) PartFailed(c);
+        /* else: the end-game copy still runs and settles this part */
         if (c.Killed) {
-          if (c.KillWhy == "slow" || c.KillWhy == "steal") s.Speed = Math.Min(s.Speed, Math.Max(c.RecentSpeed, c.Got / sec));
-          if (c.KillWhy == "stall") { s.Speed *= 0.2; s.Strikes++; }
-          if (c.KillWhy != "cancel") Log("seg " + c.Seg + " " + c.KillWhy + " on " + s.Host + string.Format(" ({0:0.00} MB/s)", c.RecentSpeed / 1048576));
-        } else if (timedOut) { StallKills++; s.Speed *= 0.2; s.Strikes++; Log("seg " + c.Seg + " stall on " + s.Host + " (no data for " + StallMs / 1000 + " s)"); }
+          if (c.KillWhy == "slow") s.Speed = Math.Min(s.Speed, Math.Max(c.RecentSpeed, c.Got / sec));
+          if (c.KillWhy == "stall") { s.Speed *= 0.4; Strike(s, "stall"); }
+          if (c.KillWhy != "cancel" && c.KillWhy != "lost race" && c.KillWhy != "lost") Log("seg " + c.Seg + " " + c.KillWhy + " on " + s.Host + string.Format(" ({0:0.00} MB/s)", c.RecentSpeed / 1048576));
+        } else if (timedOut) { StallKills++; s.Speed *= 0.4; Log("seg " + c.Seg + " stall on " + s.Host + " (no data for " + StallMs / 1000 + " s)"); Strike(s, "stall"); }
         else if (noRange) { s.Range = 0; Log(s.Host + ": no Range support"); }
-        else if (wrongSize || code == 404 || code == 403 || code == 410 || code == 416) { s.Dead = true; s.Why = code > 0 ? "HTTP " + code : err; Log(s.Host + " dropped: " + s.Why); }
+        else if (wrongSize || code == 401 || code == 404 || code == 403 || code == 410 || code == 416) { s.Dead = true; s.Why = code > 0 ? "HTTP " + code : err; Log(s.Host + " dropped: " + s.Why); }
         else if (used != s.Url) { s.Live = s.Url; Log(s.Host + ": redirect target failed, back to " + s.Url); }
-        else { s.Strikes++; s.Speed *= 0.5; Log("seg " + c.Seg + " error on " + s.Host + ": " + err); }
-        /* The last working source is given more chances: a short network drop should not end the download. */
-        if (!s.Dead && (s.Strikes >= 8 || (s.Strikes >= 3 && OthersAlive(s)))) { s.Dead = true; s.Why = "too many errors"; Log(s.Host + " dropped: " + s.Why); }
+        else { Log("seg " + c.Seg + " error on " + s.Host + ": " + err); Strike(s, code > 0 ? "HTTP " + code : err); }
       }
       Monitor.PulseAll(gate);
     }
@@ -673,7 +874,10 @@ public class MeguFetch {
   }
 }
 '@
-function Ensure-Engine { if (-not ('MeguFetch' -as [type])) { Add-Type -TypeDefinition $fetchSource } }
+function Ensure-Engine {
+  if (-not ('MeguFetch' -as [type])) { Add-Type -TypeDefinition $fetchSource }
+  $h = Source-Hints $manifest.mirrors; [MeguFetch]::TrustedHosts = $h.trust; [MeguFetch]::HostLimits = $h.limits
+}
 
 # Resolve the chosen folder; copy MeguLit there when it is not this folder. Returns $false (and says why) when it cannot.
 $script:moved = $false

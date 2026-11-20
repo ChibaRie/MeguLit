@@ -17,7 +17,8 @@ const HOSTS=new Set(['github.com','objects.githubusercontent.com','release-asset
 /* E??? (user report 2026-11-13: "更新显示下载失败"): the site's own R2 mirror (dl.megulit.com, what the
    download buttons on megulit.com use) is tried as well. It serves GitHub's own package by file name, supports Range
    requests and is reachable in mainland China when GitHub and the gh proxies are not; the sha256 digest still decides. */
-const MIRRORS=['https://gh-proxy.com/{url}','https://ghproxy.net/{url}','https://ghfast.top/{url}'];
+/* 2026-11-20: the GitHub relays come from setup/runtime.json (core/download-sources.cjs), the list setup uses too */
+const MIRRORS=(()=>{try{const r=require('../core/download-sources.cjs').relays().map(m=>m.url);if(r.length)return r;}catch{}return ['https://gh-proxy.com/{url}','https://ghproxy.net/{url}','https://ghfast.top/{url}'];})();
 const DL_MIRRORS=['https://dl.megulit.com/','https://cn-dl.megulit.com/'];
 const MIRROR_HOSTS=new Set([...MIRRORS.map(m=>new URL(m.replace('{url}','')).hostname),...DL_MIRRORS.map(u=>new URL(u).hostname)]);
 const inChina=()=>{try{const o=Intl.DateTimeFormat().resolvedOptions();return o.timeZone==='Asia/Shanghai'||o.timeZone==='Asia/Urumqi'||/^zh-CN/i.test(o.locale||'');}catch{return false;}};
