@@ -22,8 +22,8 @@
  .tome-ac:not(#q1):not(#q2):not(#q3) :is(${T},${C}) label{margin-top:6px!important}
  .tome-ac:not(#q1):not(#q2):not(#q3) :is(${T},${C}) label:has(>input[type=checkbox]){margin-top:4px!important}
  /* long hints: one line, full text on hover (title) or tap */
- .tome-ac:not(#q1):not(#q2):not(#q3) :is(${T},${C}) :is(small.tomoyo-hotkey-hint,small.tome-pad-note,small.tome-manual-region-hint,small.tome-island-layout-hint,.tome-text-general>small,details>small){display:block;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;cursor:help;margin:2px 0 0!important;line-height:1.5!important}
- .tome-ac:not(#q1):not(#q2):not(#q3) small.tome-ac-open{white-space:normal!important;overflow:visible!important}
+ .tome-ac:not(#q1):not(#q2):not(#q3) :is(${T},${C}) :is(small.tomoyo-hotkey-hint,small.tome-pad-note,small.tome-manual-region-hint,small.tome-island-layout-hint,.tome-text-general>small,details>small){display:-webkit-box!important;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;cursor:help;margin:2px 0 0!important;line-height:1.5!important}
+ .tome-ac:not(#q1):not(#q2):not(#q3) small.tome-ac-open{-webkit-line-clamp:unset!important;display:block!important;overflow:visible!important}
  /* 文字: common switches */
  .tome-ac:not(#q1):not(#q2):not(#q3) .tome-text-general>.tomoyo-cn-grid{display:flex!important;flex-wrap:wrap;gap:2px 20px!important}
  .tome-ac:not(#q1):not(#q2):not(#q3) .tome-text-general>.tomoyo-cn-grid>label{margin-top:4px!important}
@@ -107,7 +107,7 @@
    adv.querySelector('summary').textContent=I('绑定与导入');for(const n of [calNodes.bind,calNodes.imp])if(n&&n.parentElement!==adv)adv.append(n);
    if(calNodes.hist&&calNodes.hist.previousElementSibling!==adv)adv.after(calNodes.hist);
   }
-  for(const s of dialog.querySelectorAll('[data-menu-category=text] small,[data-menu-category=calibrate] small'))if(!s.dataset.acT){s.dataset.acT='1';s.addEventListener('mouseover',()=>{if(!s.title&&s.scrollWidth>s.clientWidth+1)s.title=s.textContent.trim();});s.addEventListener('click',()=>s.classList.toggle('tome-ac-open'));}
+  for(const s of dialog.querySelectorAll('[data-menu-category=text] small,[data-menu-category=calibrate] small'))if(!s.dataset.acT){s.dataset.acT='1';s.addEventListener('mouseover',()=>{if(!s.title&&s.scrollHeight>s.clientHeight+1)s.title=s.textContent.trim();});s.addEventListener('click',()=>s.classList.toggle('tome-ac-open'));}
  }
  const L={en:{'校准与位置':'Calibrate & position','窗口与导入':'Window & import','更多文字设置':'More text settings','绑定与导入':'Binding & import'},ja:{'校准与位置':'調整と位置','窗口与导入':'ウィンドウと取り込み','更多文字设置':'その他の文字設定','绑定与导入':'バインドと取り込み'}};
  const I=k=>(L[document.documentElement.lang.slice(0,2)]||{})[k]||k;
