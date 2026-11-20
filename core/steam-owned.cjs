@@ -26,4 +26,8 @@ function launchAppid(exe,profile={}){
  if(profile.source==='steam'&&/^\d+$/.test(String(profile.appid||'')))return String(profile.appid);
  const s=steamOf(exe);return s?.installed?s.appid:'';
 }
-module.exports={steamOf,launchAppid,_internal:{cache}};
+/* A Steam game's own start window (launcher / config tool beside the program on record) that Steam may run first. */
+function launcherExes(exe){const dir=path.dirname(path.resolve(String(exe||'')));let names=[];try{names=fs.readdirSync(dir);}catch{}
+ return names.filter(n=>/\.exe$/i.test(n)&&/^(launcher|config|setting|startup|start)/i.test(n)&&n.toLowerCase()!==path.basename(String(exe)).toLowerCase()).map(n=>path.join(dir,n));}
+async function launchersRunning(exe,list){const out=[];for(const f of launcherExes(exe)){try{if((await list(f)).length)out.push(f);}catch{}}return out;}
+module.exports={steamOf,launchAppid,launcherExes,launchersRunning,_internal:{cache}};
