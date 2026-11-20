@@ -37,3 +37,16 @@ test('hookOverlap tolerates OCR glyph errors and ignores unrelated text',()=>{
  assert.ok(HookNative.hookOverlap('昭和五十八年、初夏',recent,now)<0.5);
  assert.equal(HookNative.hookOverlap('その瞬間が最咼潮だった。',[{key:'その瞬間が最高潮だった。',at:now-700000}],now),0,'older than ten minutes');
 });
+
+test('a game read by OCR at runtime is a probe problem even when the static probe said ok',()=>{
+ const fs=require('node:fs'),os=require('node:os'),probe=require('../services/adapter-probe.cjs');
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),'m468-'));
+ try{
+  fs.mkdirSync(path.join(root,'data','adapter-probe'),{recursive:true});
+  fs.writeFileSync(probe.fileOf(root),JSON.stringify({version:1,results:{g1:{step:'ok',title:'ひぐらし'},g2:{step:'ok',title:'other'}}}));
+  assert.deepEqual(probe.problems(root),[]);
+  assert.equal(probe.markRuntime(root,'g1','ocr-fallback','reader lines came from OCR'),true);
+  assert.equal(probe.markRuntime(root,'g1','ocr-fallback'),false,'once');
+  assert.deepEqual(probe.problems(root).map(p=>[p.id,p.step]),[['g1','ocr-fallback']]);
+ }finally{fs.rmSync(root,{recursive:true,force:true});}
+});
