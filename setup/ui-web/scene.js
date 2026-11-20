@@ -7,7 +7,10 @@
    camera travel, only a short fade. GSAP drives every move so a recorder can seek frame by frame. */
 (function () {
   const Q = new URLSearchParams(location.search);
-  const THEME = Q.get('theme') === 'night' ? 'night' : 'edge';
+  /* Look: white by default (not the system setting); the choice made with the sun/moon switch is remembered. ?theme= wins (captures). */
+  const STORE = 'megulit.setup.theme'; let saved = null; try { saved = localStorage.getItem(STORE); } catch (e) { /* private window: just no memory */ }
+  const startDark = Q.get('theme') ? Q.get('theme') === 'night' : saved === 'dark'; window.__themeDark = startDark;
+  let THEME = startDark ? 'night' : 'edge';
   const REDUCE = Q.get('reduce') === '1' || (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
   document.documentElement.dataset.theme = THEME;
   const $ = (s) => document.querySelector(s);
@@ -33,7 +36,7 @@
       errInstT: '没装完', errInstM: '有些文件被别的程序占着，覆盖不了。', errInstTip: '先把开着的 MeguLit 关掉，杀毒软件的扫描也停一下，再点「重试」。东西已经下好了，不会重下。',
       retry: '重试', copylog: '复制日志', copied: '已复制', manual: '手动下载',
       quitT: '还没下完', quitM: '现在关也行，已经下好的会留着，下次打开接着下。', stay: '继续下', leave: '先关掉',
-      minimize: '最小化', close: '关闭'
+      minimize: '最小化', close: '关闭', toDark: '切换到深色', toLight: '切换到浅色'
     },
     en: {
       title: 'MeguLit setup', step_welcome: 'Start', step_loc: 'Location', step_field: 'Download', step_unpack: 'Install', step_done: 'Done',
@@ -54,7 +57,7 @@
       errInstT: 'Could not finish installing', errInstM: 'Another program has some of the files open.', errInstTip: 'Close any running MeguLit and pause your antivirus scan, then hit Retry. Nothing gets downloaded twice.',
       retry: 'Retry', copylog: 'Copy log', copied: 'Copied', manual: 'Download manually',
       quitT: 'Still downloading', quitM: 'You can close it now. What is downloaded is kept and picks up next time.', stay: 'Keep going', leave: 'Close for now',
-      minimize: 'Minimize', close: 'Close'
+      minimize: 'Minimize', close: 'Close', toDark: 'Switch to dark', toLight: 'Switch to light'
     }
   };
   window.SceneCopy = {};
@@ -90,7 +93,7 @@
   const rnd = (() => { let s = 7; return () => (s = (s * 16807) % 2147483647) / 2147483647; })();
 
   /* ---------- layout of the world ---------- */
-  const FLOOR = THEME === 'edge', P = 820, FY = 1200;
+  const P = 820, FY = 1200;
   const A = { x: 3300, y: -260, z: -1400 }, RF = 2400;                 /* the shard cloud's centre and the one correct camera distance */
   let N = 0, COLS = 0, tiles = [], cache = null, revealAt = 1e9; const nudge = { x: 0, y: 0 };   /* after the reveal the camera sways a little: parallax shows how far apart the plates hang */
 
@@ -190,7 +193,7 @@
   const AZ = [[0, -62], [0.3, -34], [0.75, 8], [0.88, 26], [1, 46]], EL = [[0, 18], [0.35, 11], [0.75, 9], [0.9, 14], [1, 19]], RR = [[0, 2900], [0.75, 2350], [1, 3000]];
   const POSE = {
     welcome: () => ({ cx: 0, cy: -20, cz: 0, rx: 0, ry: 0, rz: 0 }),
-    loc: () => ({ cx: 1200, cy: -20, cz: 0, rx: 0, ry: THEME === 'edge' ? -6 : 6, rz: 0 }),
+    loc: () => ({ cx: 1200, cy: -20, cz: 0, rx: 0, ry: -6, rz: 0 }),
     field: (s) => { const p = s && s.total ? clamp(s.got / s.total) : 0; return orbit(key(AZ, p), key(EL, p), key(RR, p)); },
     unpack: () => orbit(30, 52, 3000),
     done: () => ({ ...FINAL })
@@ -337,6 +340,17 @@
   Scene.setDrives = (list) => { drives = list; paintLoc(); };
   Scene.setFree(182 * 1073741824, 1.4 * 1073741824);
   Scene.t = tr; Scene.setOverride = (p) => { override = p; };
+  /* day / night: one number (0..1) drives the WebGL colours; the DOM flips at the half way point and eases its colours with a short CSS transition */
+  let themeMix = startDark ? 1 : 0, themeTween = null; const htmlEl = document.documentElement;
+  function paintTheme(m) { themeMix = m; const dark = m > 0.5, th = dark ? 'night' : 'edge'; if (THEME !== th) { THEME = th; htmlEl.dataset.theme = th; const t = $('#topLogo'); if (t) t.src = 'logos/logo-' + LK + '-' + (dark ? 'white' : 'black') + '.svg'; syncThemeBtn(); }
+    if (window.GL && GL.setMix) GL.setMix(m); }
+  function syncThemeBtn() { const b = $('#btnTheme'); if (!b) return; const dark = THEME === 'night'; b.setAttribute('aria-pressed', dark); const lab = dark ? tr('toLight') : tr('toDark'); b.setAttribute('aria-label', lab); b.title = lab; b.innerHTML = dark ? '<svg width="14" height="14" viewBox="0 0 14 14"><circle cx="7" cy="7" r="2.8" fill="currentColor"/><g stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M7 1v1.6M7 11.4V13M1 7h1.6M11.4 7H13M2.8 2.8l1.1 1.1M10.1 10.1l1.1 1.1M2.8 11.2l1.1-1.1M10.1 3.9l1.1-1.1"/></g></svg>' : '<svg width="14" height="14" viewBox="0 0 14 14"><path d="M11.6 8.6A5.2 5.2 0 0 1 5.4 2.4a5.2 5.2 0 1 0 6.2 6.2z" fill="currentColor"/></svg>'; }
+  Scene.setTheme = (dark, instant) => { try { localStorage.setItem(STORE, dark ? 'dark' : 'light'); } catch (e) { /* no memory */ } act('theme', { dark }); const to = dark ? 1 : 0;
+    if (themeTween) themeTween.kill(); if (instant || REDUCE) { paintTheme(to); return; }
+    htmlEl.classList.add('tchange'); const o = { m: themeMix }; themeTween = gsap.to(o, { m: to, duration: 0.85, ease: 'power2.inOut', onUpdate() { paintTheme(o.m); }, onComplete() { setTimeout(() => htmlEl.classList.remove('tchange'), 500); } }); };
+  Scene.setThemeMix = paintTheme; Scene.isDark = () => THEME === 'night';
+  { const b = $('#btnTheme'); if (b) b.addEventListener('click', () => Scene.setTheme(THEME !== 'night')); }
+  htmlEl.dataset.theme = THEME; syncThemeBtn(); paintTheme(themeMix);
   window.Scene = Scene;
   buildStatic();
   Object.assign(cam, REDUCE ? POSE.welcome() : { cx: -420, cy: -150, cz: 800, rx: 6, ry: -12, rz: 0 }); apply(); setSteps();
