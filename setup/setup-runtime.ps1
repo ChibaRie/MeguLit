@@ -1139,7 +1139,7 @@ function Install-Pack([string]$id, [string]$part) {
   } catch { Fail 'install' ('安装失败：' + $_.Exception.Message); return $false }
 }
 
-. (Join-Path $sourceRoot 'setup/setup-ui.ps1')
+$uiLayer = Join-Path $sourceRoot 'setup/setup-ui.ps1'; $themeName = 'classic'; if (Test-Path $uiLayer) { . $uiLayer }
 $button.add_Click({
   if ($script:mode -eq 'failed') {
     $script:mode = ''; $status.ForeColor = $C.muted; $button.Text = '取消 Cancel'; Style-Button $button $false; $button.FlatAppearance.BorderColor = $C.red
