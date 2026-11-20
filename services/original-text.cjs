@@ -107,7 +107,9 @@ function align(runtime,original){
  let kept=0,equal=0;const n=Math.min(runtime.lines.length,original.lines.length);
  // Lines the patch left in Japanese must equal the original at the same index; this measures the layout empirically.
  for(let i=0;i<n;i++){const t=runtime.lines[i];if(!t.trim()||!japaneseLine(t))continue;kept++;if(norm(t)===norm(original.lines[i]))equal++;}
- const rate=kept?equal/kept:null,reliable=sameStructure&&(rate===null||rate>=.98);
+ /* Kana lines under 0.01 % of a translated script are translator notes quoting the original (CLANNAD's 「原文：「ネコ」（猫）」,
+    5 of 102k lines), not lines the patch kept: too few to measure the layout, so the pairing sample (pairCheck) decides */
+ const rate=kept?equal/kept:null,reliable=sameStructure&&(rate===null||rate>=.98||kept<n*.0001);
  return {sameStructure,keptJapanese:kept,keptEqual:equal,keptRate:rate,reliable};
 }
 // BGI builds that differ by a few lines per scene (E3xx 穢翼のユースティア) are lined up scene by scene (bgi.alignLines).
