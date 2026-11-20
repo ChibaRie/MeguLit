@@ -57,9 +57,9 @@ class GalNative {
     this.process.on('exit', () => this.notify({ bound: false, message: '窗口绑定组件已退出，注音和翻译仍可使用' }));
   }
   read() { try { return cleanGal(JSON.parse(fs.readFileSync(path.join(this.folder, 'gal-preferences.json'), 'utf8'))); } catch { return cleanGal(); } }
-  hookPrefs(){return {hookAutoStart:this.preferences.hookAutoStart,hookHide:this.preferences.hookHide,hookFast:this.preferences.hookFast};}
+  hookPrefs(){return {hookAutoStart:this.preferences.hookAutoStart,hookHide:this.preferences.hookHide,hookFast:this.preferences.hookFast,ocrReadLines:this.preferences.ocrReadLines!==false};}
   // The UI's copy of these can be stale, so the backend value always wins unless own=true.
-  setHookPrefs(v){const next={...this.preferences};for(const k of ['hookAutoStart','hookHide','hookFast'])if(typeof v?.[k]==='boolean')next[k]=v[k];if(next.hookAutoStart&&!this.preferences.hookAutoStart&&typeof v?.hookHide!=='boolean')next.hookHide=true;const hideChanged=next.hookHide!==this.preferences.hookHide,autoOn=next.hookAutoStart&&!this.preferences.hookAutoStart;this.save(next,true,true);this.notify(this.hookPrefs());if(hideChanged||autoOn)this.controller.apply(true);}
+  setHookPrefs(v){const next={...this.preferences};for(const k of ['hookAutoStart','hookHide','hookFast','ocrReadLines'])if(typeof v?.[k]==='boolean')next[k]=v[k];if(next.hookAutoStart&&!this.preferences.hookAutoStart&&typeof v?.hookHide!=='boolean')next.hookHide=true;const hideChanged=next.hookHide!==this.preferences.hookHide,autoOn=next.hookAutoStart&&!this.preferences.hookAutoStart;this.save(next,true,true);this.notify(this.hookPrefs());if(hideChanged||autoOn)this.controller.apply(true);}
   /* E337 (user 2026-11-10, 女装山脈: a stream decoded as garbage was picked, "文本流捕捉错了要加个手动刷新重新选取"): pick the
      stream whose sample reads as Japanese best, skipping the current one (and ones already skipped for this game run).
      onlyIfBad: called by 校准当前句; switches only when the current sample looks garbled. */
