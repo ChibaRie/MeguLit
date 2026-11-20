@@ -78,3 +78,15 @@ test('an ADV stream (no page ever sent again) gets no page reports',()=>{
  for(const t of ['「おはよう」','今日はいい天気だ。','「そうだね」']){now+=1500;h.emitSource(t,'live');}
  assert.equal(out.filter(m=>m.type==='hookPage').length,0);
 });
+
+test('translation rows follow the Japanese rows: breaks after the punctuation nearest to each row end, never inside a word',()=>{
+ const s=read('web/reader/modules/text-place.js');const a=s.indexOf('  const CN_PUNCT');const b=s.indexOf('  b.textPlaceCnSplit');
+ const {cnSplit,jpWeight}=new Function(s.slice(a,b)+';return {cnSplit,jpWeight};')();
+ const rows=['流行を創り出していた高層建造物はその役目を諦めたように','倒壊し、黒い火災は仲間を求めて勢いを広げ続け、','混乱した人たちは集団心理から恐怖を扇動され、','そしてそれら全てがあらゆる命を奪っていった。'];
+ const w=rows.map(r=>[...r].reduce((x,c)=>x+jpWeight(c),0)),tot=w.reduce((x,y)=>x+y);let acc=0;const sh=w.slice(0,-1).map(v=>(acc+=v)/tot);
+ const t='曾经引领潮流的高层建筑仿佛放弃了自身使命般倒塌，黑色的火灾不断蔓延势力、仿佛在寻找同伴，陷入混乱的人们在群体心理的煽动下心生恐惧，而这一切夺走了无数生命。';
+ const cut=(t,br)=>{const o=[];let p=0;for(const i of [...br,t.length]){o.push(t.slice(p,i));p=i;}return o;};
+ assert.deepEqual(cut(t,cnSplit(t,sh)),['曾经引领潮流的高层建筑仿佛放弃了自身使命般倒塌，','黑色的火灾不断蔓延势力、仿佛在寻找同伴，','陷入混乱的人们在群体心理的煽动下心生恐惧，','而这一切夺走了无数生命。']);
+ const u='这场天灾在一夜之间将东京代表性繁华街区之一的涩谷变得一文不值。';
+ assert.deepEqual(cut(u,cnSplit(u,[.72])),['这场天灾在一夜之间将东京代表性繁华街区之一的','涩谷变得一文不值。']);
+});
