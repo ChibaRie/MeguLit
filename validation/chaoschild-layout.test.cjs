@@ -1,4 +1,4 @@
-/* CHAOS;CHILD acceptance (2026-11-20): two-row box lines stay above the game's button strip; a centred line re-measures its middle while typing */
+/* CHAOS;CHILD acceptance (2026-11-20): two-row box lines stay above the game's button strip; a centred line re-measures its middle while typing; a cleared page hides the placed line */
 const test = require('node:test'), assert = require('node:assert'), fs = require('fs'), path = require('path');
 const src = fs.readFileSync(path.join(__dirname, '../web/reader/modules/text-place.js'), 'utf8');
 test('box line: Japanese rows close up, translation <=15% smaller, then the block moves up, under client bottom minus two glyph rows', () => {
@@ -8,3 +8,8 @@ test('box line: Japanese rows close up, translation <=15% smaller, then the bloc
   assert.match(src, /!anchor\.center && tr && tr\.height/);
 });
 test('centred line keeps only its top while typing', () => { assert.match(src, /anchor\.center && Number\.isFinite\(center\) && anchorLine === lineKey[^\n]*a = \[center, anchor\[1\]\]/); });
+test('page redrawn as plain text on clear hides the placed line', () => {
+  assert.match(src, /vis\.length > cur\.length && vis\.endsWith\(cur\)\) \{ document\.body\.classList\.add\('megulit-place-gone'\)/);
+  assert.match(src, /body\.megulit-place-gone \.sentence-window\.tomoyo-hook-reader \*\{opacity:0!important;visibility:hidden!important\}/);
+});
+test('the whole page arriving unplaced (earlier lines + the placed one) also hides it', () => { assert.match(src, /nt\.length > cur\.length && nt\.endsWith\(cur\)/); });
