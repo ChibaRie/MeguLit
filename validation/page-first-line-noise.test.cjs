@@ -25,7 +25,7 @@ test('bridge: on a proven stream a line of dialogue length with kana is hidden w
 test('reader: a page the layer does not hide keeps the reader\'s Japanese out, and that ends with the page', () => {
   const js = read('web/reader/modules/text-place.js');
   assert.ok(js.includes("function briefSync(lineBrief) { const brief = lineBrief === true || pageOwn; if (document.body.classList.contains('megulit-game-line-brief') !== brief) document.body.classList.toggle('megulit-game-line-brief', brief); }"), 'one switch for the line model and the page model');
-  assert.ok(js.includes('pageOwn = own === true && anchorMode === true; briefSync(false); return; }')&&js.includes('if (pageOwn) { pageOwn = false; briefSync(false); }'), 'set in the not-hidden branch, cleared as soon as the page is live again');
+  assert.ok(js.includes('pageOwn = own === true && anchorMode === true; briefSync(false); if (own && sentence) underGameLine(win, sentence); return; }')&&js.includes('if (pageOwn) { pageOwn = false; briefSync(false); }'), 'set in the not-hidden branch, cleared as soon as the page is live again');
   assert.ok(js.includes("const own = on && page.awake;"), 'only an awake page: a layer that never woke (E610) does not hide the reader');
   assert.ok(js.includes("'body.megulit-place-game-drawn.megulit-game-line-brief .sentence-window.tomoyo-hook-reader .sentence-text:not(.megulit-old-line){visibility:hidden!important}',"), 'needs no megulit-placed');
   assert.ok(js.includes("'body.megulit-place-game-drawn .sentence-window.tomoyo-hook-reader .tomoyo-cn-row{visibility:visible!important}',"), 'the translation stays');
