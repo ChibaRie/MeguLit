@@ -65,13 +65,13 @@ for(const cb of p.querySelectorAll('[data-hook-pref]')){const v=cb.dataset.hookP
     // Chosen automatically: embed when the game's stream can be embedded, otherwise read + OCR cover.
     text(p.querySelector('[data-hook-mode]'),state.hookProfile==='off'?'Hook 已停止':state.hookProfile==='euphoria474'?'自动：YU-RIS 0.474 绘制隐藏原文':state.hookProfile==='embed'?'自动：LunaHook 内嵌，在引擎内隐藏原文':state.hookAutoOcr?'自动：只读取台词 + OCR 遮盖原文（当前已发现的文本流没有提供内嵌）':state.hookHide?'自动：只读取台词，等待可内嵌的文本流':'自动：只读取台词（未开启隐藏原文）');
   const proof=p.querySelector('[data-hook-proof]');proof.dataset.state=state.hookCheckState||'waiting';
-  text(p.querySelector('[data-hook-message]'),state.hookEmbedUnsupported?feedbackCopy()[0]:state.hookCheckMessage||'选择下方 Hook 启动方式，再在游戏里推进一句');
+  text(p.querySelector('[data-hook-message]'),state.hookEmbedUnsupported?feedbackCopy()[0]:state.hookCheckMessage||'在游戏里点一下推进一句，MeguLit 就会开始读');
   {const row=p.querySelector('[data-hook-feedback-row]'),show=state.hookEmbedUnsupported===true&&state.hookProfile!=='off';if(row.hidden===show)row.hidden=!show;
    text(row.querySelector('button'),feedbackCopy()[1]);}
   text(p.querySelector('[data-hook-connection]'),state.hookProfile==='off'?'已停止':state.processAttached?'游戏已连接':'等待游戏连接');
   text(p.querySelector('[data-hook-capture]'),state.receivedText&&state.hookCaptureCharacters?'已捕捉 '+state.hookCaptureCharacters+' 字':'等待新台词');
   text(p.querySelector('[data-hook-hide]'),state.hookVisualVerified?'隐藏检查通过':state.hookCheckState==='visible'?'原文仍可见':state.hookProfile==='read'?'仅读取':'画面待确认');
-  text(p.querySelector('[data-hook-time]'),state.hookCheckedAt?'上次通过 '+new Date(state.hookCheckedAt).toLocaleTimeString()+' · 扫描区内未识别到日文':'检查游戏自身画面，翻译覆盖层不计入检查');
+  text(p.querySelector('[data-hook-time]'),state.hookCheckedAt?'上次通过 '+new Date(state.hookCheckedAt).toLocaleTimeString()+' · 扫描区内未识别到日文':'只检查游戏自己的画面，MeguLit 的译文不算在内');
   p.querySelector('[data-hook-force]').hidden=!(state.hookCheckState==='unverified'&&!state.hookBaselineVerified&&['euphoria474','embed'].includes(state.hookProfile));
   const threads=state.hookThreads||[],key=JSON.stringify(threads);if(p.dataset.threadKey!==key){p.dataset.threadKey=key;const list=p.querySelector('[data-hook-streams]');
    list.replaceChildren();if(!threads.length){const e=document.createElement('small');e.textContent='还没有发现文本流，在游戏里推进一句';list.append(e)};for(const t of threads.slice(0,
