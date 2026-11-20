@@ -18,7 +18,7 @@ function unityPack(root){const dir=path.join(root,'runtime','unity-text');try{re
 async function prepare({root,exe,profile={},enabled=false,shadowRoot=null,trace=()=>{}}){
  if(!enabled||!exe)return null;
  const canary=new Canary(root,exe);const off=canary.settle();if(Object.keys(off||{}).length)trace('text-paths-canary',{off:Object.keys(off)});
- const steam=profile.source==='steam'&&/^\d+$/.test(String(profile.appid||''))?String(profile.appid):null;
+ const steam=require('./steam-owned.cjs').launchAppid(exe,profile)||null; /* E-SteamOwned */
  const steamEnv=steam?{SteamAppId:steam,SteamGameId:steam,SteamOverlayGameId:steam}:{};
  if(W.chromiumShell(exe)&&canary.allowed('web')){
   const port=await W.freePort();const session=new W.WebTextPath({port,canary});
