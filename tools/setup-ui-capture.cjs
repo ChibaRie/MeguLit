@@ -11,18 +11,18 @@ const get = (u) => new Promise((res, rej) => http.get(u, (r) => { let d = ''; r.
 (async () => {
   const dir = fs.mkdtempSync(path.join(process.env.WORK || 'H:/MeguLit-Work/setup-ui-redesign', 'chrome-'));
   const port = 9444 + Math.floor(Math.random() * 400);
-  const ch = spawn(CHROME, ['--headless=new', '--remote-debugging-port=' + port, '--user-data-dir=' + dir, '--allow-file-access-from-files', '--hide-scrollbars', '--mute-audio', `--window-size=${W},${H}`, 'about:blank'], { stdio: 'ignore' });
+  const ch = spawn(CHROME, ['--headless=new', '--remote-debugging-port=' + port, '--user-data-dir=' + dir, '--allow-file-access-from-files', '--hide-scrollbars', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--enable-webgl', '--mute-audio', `--window-size=${W},${H}`, 'about:blank'], { stdio: 'ignore' });
   let list; for (let i = 0; i < 60; i++) { try { list = JSON.parse(await get(`http://127.0.0.1:${port}/json/list`)); if (list.find((x) => x.type === 'page')) break; } catch {} await new Promise((r) => setTimeout(r, 200)); }
   const ws = new WebSocket(list.find((x) => x.type === 'page').webSocketDebuggerUrl); await new Promise((r) => ws.onopen = r);
   let id = 0; const pend = new Map(); ws.onmessage = (m) => { const d = JSON.parse(m.data); if (d.method === 'Runtime.exceptionThrown') console.error('PAGE ERROR', JSON.stringify(d.params.exceptionDetails).slice(0, 1400)); if (d.id && pend.has(d.id)) { pend.get(d.id)(d); pend.delete(d.id); } };
   const cdp = (method, params = {}) => new Promise((res) => { const i = ++id; pend.set(i, res); ws.send(JSON.stringify({ id: i, method, params })); });
   const ev = async (expr) => { const r = await cdp('Runtime.evaluate', { expression: expr, awaitPromise: true, returnByValue: true }); if (r.result && r.result.exceptionDetails) console.error(JSON.stringify(r.result.exceptionDetails).slice(0, 1400)); return r.result && r.result.result && r.result.result.value; };
   await cdp('Emulation.setDeviceMetricsOverride', { width: W, height: H, deviceScaleFactor: +process.env.DPR || 1, mobile: false });
-  await cdp('Page.enable'); await cdp('Runtime.enable'); await cdp('Page.navigate', { url: `${PAGE}?theme=${theme}&demo=1&paused=1&desk=1${process.env.LANGQ ? "&lang=" + process.env.LANGQ : ""}${process.env.LOGO ? "&logo=" + process.env.LOGO : ""}${process.env.REDUCE ? '&reduce=1' : ''}` });
-  await new Promise((r) => setTimeout(r, 1500)); await ev('document.fonts.ready.then(()=>1)');
+  await cdp('Page.enable'); await cdp('Runtime.enable'); await cdp('Page.navigate', { url: `${PAGE}?theme=${theme}&demo=1&paused=1&desk=1${process.env.LANGQ ? "&lang=" + process.env.LANGQ : ""}${process.env.MODE ? "&mode=" + process.env.MODE : ""}${process.env.LOGO ? "&logo=" + process.env.LOGO : ""}${process.env.REDUCE ? '&reduce=1' : ''}` });
+  await new Promise((r) => setTimeout(r, 3500)); await ev('document.fonts.ready.then(()=>1)');
   const shot = async (file, t, opt) => { await ev(`Demo.seek(${t},${opt ? JSON.stringify(opt) : 'null'})`); const r = await cdp('Page.captureScreenshot', { format: file.endsWith('.jpg') ? 'jpeg' : 'png', quality: 92 }); fs.writeFileSync(file, Buffer.from(r.result.data, 'base64')); };
   const T = await ev('({tend:Demo.TEND,u0:Demo.U0,done:Demo.DONE,dur:Demo.DURATION,t0:Demo.T0})');
-  if (mode === 'one') { fs.mkdirSync(path.dirname(b), { recursive: true }); await shot(b, +a, c ? { fail: c } : null); if (process.env.EXPR) console.log(await ev(process.env.EXPR)); }
+  if (mode === 'one') { fs.mkdirSync(path.dirname(b), { recursive: true }); await shot(b, +a, c ? (c.startsWith('{') ? JSON.parse(c) : { fail: c }) : null); if (process.env.EXPR) console.log(await ev(process.env.EXPR)); }
   if (mode === 'shots') {
     fs.mkdirSync(a, { recursive: true });
     const S = { welcome: [1.9], 'move-whip': [T.t0 + 0.5], location: [4.4], 'move-orbit': [5.9], downloading: [(T.t0 + T.tend) / 2 + 0.6], retry: [null], unpacking: [T.u0 + 1.3], done: [T.dur - 0.3], 'failed-download': [8.0, { fail: 'download' }], 'failed-install': [T.u0 + 1.3, { fail: 'install' }], 'quit-confirm': [7.0, { quit: true }] };

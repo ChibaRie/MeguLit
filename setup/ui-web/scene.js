@@ -18,6 +18,7 @@
       title: 'MeguLit 安装', step_welcome: '开始', step_loc: '位置', step_field: '下载', step_unpack: '安装', step_done: '完成',
       welcomeSub: '先把东西备齐', locSub: '你想装在哪儿', locT: '装在哪儿', locEn: 'Install location', change: '换一个',
       swDesk: '放一个桌面快捷方式', swMenu: '加到开始菜单', install: '开始安装',
+      lblPath: '装到这个文件夹', defaultHint: '默认位置，不用改也能直接装。', lblSugg: '或者放到', chip: (p, f) => p + '  ·  剩 ' + f, readonly: (p) => '这个位置写不进去，像 Program Files 这样的文件夹要管理员权限。换个位置吧，比如 ' + p + '。', spaceHint: (p, f) => '这块盘装不下。' + p + ' 还有 ' + f + '，装那儿？',
       locNote: '东西已经在后台下了，你慢慢挑位置。都是各项目官方的原版文件，下完会逐个校验，被改过的不会装。',
       free: (f, n) => '这块盘还剩 ' + f + '，装完大约占 ' + n, freeBad: (f, n) => '这块盘只剩 ' + f + '，装不下（要 ' + n + '），换一个盘吧',
       probeT: '先找条最快的路', probeP: 'GitHub 和国内镜像一起测速，挑最快的几条同时下。',
@@ -38,6 +39,7 @@
       title: 'MeguLit setup', step_welcome: 'Start', step_loc: 'Location', step_field: 'Download', step_unpack: 'Install', step_done: 'Done',
       welcomeSub: 'Getting things ready', locSub: 'Where should it live?', locT: 'Where to?', locEn: '', change: 'Change',
       swDesk: 'Desktop shortcut', swMenu: 'Start menu entry', install: 'Install',
+      lblPath: 'Install into this folder', defaultHint: 'Default spot, fine to leave as is.', lblSugg: 'Or put it in', chip: (p, f) => p + '  ·  ' + f + ' free', readonly: (p) => "Can't write to this folder. Places like Program Files need admin rights. Try " + p + ' instead.', spaceHint: (p, f) => "This drive can't fit it. " + p + ' has ' + f + ' free, put it there?',
       locNote: 'The download already started in the background, so take your time. Every file is the original from its project and gets checked before anything is installed.',
       free: (f, n) => f + ' free on this drive, needs about ' + n, freeBad: (f, n) => 'Only ' + f + ' free here and it needs ' + n + '. Pick another drive.',
       probeT: 'Finding the fastest route', probeP: 'Testing GitHub and the mirrors at the same time, then using the quickest few.',
@@ -55,8 +57,10 @@
       minimize: 'Minimize', close: 'Close'
     }
   };
+  window.SceneCopy = {};
   const tr = (k, ...a) => { const v = I18N[LANG][k]; return typeof v === 'function' ? v(...a) : v; };
-  const GBS = (n) => n >= 1073741824 ? (n / 1073741824).toFixed(1) + ' GB' : Math.round(n / 1048576) + ' MB';
+  window.SceneCopy = { welcomeSub: I18N[LANG].welcomeSub, locSub: I18N[LANG].locSub };
+  const GBS = (n) => n >= 1073741824 ? (n / 1073741824).toFixed(n >= 107374182400 ? 0 : 1) + ' GB' : Math.round(n / 1048576) + ' MB';
   const world = $('#world');
   const T = 56, GAP = 4, ROWS = 8;
   const lerp = (a, b, t) => a + (b - a) * t;
@@ -129,10 +133,10 @@
      with red along its own strokes as its group's real progress rises, and is fully lit when the whole group is done. */
   const K = 8, LK = ['A', 'B', 'C'].includes(Q.get('logo')) ? Q.get('logo') : 'A', LG = (window.LOGOS || {})[LK] || { w: 3424, h: 1452, seeds: [[430, 330], [800, 1050], [1300, 740], [1760, 1130], [2220, 800], [2680, 1040], [3180, 1060], [3000, 250]] };
   const SC = 860 / LG.w, LW = LG.w * SC, LH = LG.h * SC, LCY = -30;
-  const INK = 'logos/logo-' + LK + '-' + (THEME === 'night' ? 'white' : 'black') + '.svg', REDF = 'logos/logo-' + LK + '-red.svg';
+  const ETCH = 'logos/logo-etch.svg', INK = 'logos/logo-' + LK + '-' + (THEME === 'night' ? 'white' : 'black') + '.svg', REDF = 'logos/logo-' + LK + '-red.svg';
   const clipHalf = (poly, a, b, c0) => { const out = []; for (let i = 0; i < poly.length; i++) { const p = poly[i], q = poly[(i + 1) % poly.length], fp = a * p[0] + b * p[1] - c0, fq = a * q[0] + b * q[1] - c0; if (fp <= 0) out.push(p); if ((fp <= 0) !== (fq <= 0)) { const t = fp / (fp - fq); out.push([p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t]); } } return out; };
   const SVGNS = 'http://www.w3.org/2000/svg';
-  let groupOf = null;
+  let groupOf = null, lastFrames = [], lastReveal = 0;
   function buildField(n) {
     N = n; let sd = 11; const rr = () => (sd = (sd * 16807) % 2147483647) / 2147483647, r = () => rr() * 2 - 1;
     const seeds = LG.seeds.slice(0, K).map((s) => [s[0] * SC, s[1] * SC]);
@@ -146,9 +150,9 @@
       const xs = poly.map((p) => p[0]), ys = poly.map((p) => p[1]), x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
       return { p: poly, x0, y0, w: x1 - x0, h: y1 - y0, cx: (x0 + x1) / 2, cy: (y0 + y1) / 2 };
     });
-    info.sort((a, b) => a.cx - b.cx); tiles = [];
+    info.sort((a, b) => a.cx - b.cx); tiles = []; window.SceneCells = { cells: info, LW, LH };
     const defs = document.createElementNS(SVGNS, 'svg'); defs.setAttribute('width', 0); defs.setAttribute('height', 0); defs.style.position = 'absolute';
-    defs.innerHTML = '<defs><linearGradient id="gBody" x1="0" y1="0" x2="1" y2="1"><stop offset="0" style="stop-color:var(--glass)" stop-opacity=".46"/><stop offset=".5" style="stop-color:var(--glass)" stop-opacity=".08"/><stop offset="1" style="stop-color:var(--glass)" stop-opacity=".34"/></linearGradient><linearGradient id="gEdge" x1="0" y1="0" x2="1" y2="1"><stop offset="0" style="stop-color:var(--edge)" stop-opacity=".9"/><stop offset=".5" style="stop-color:var(--edge)" stop-opacity=".12"/><stop offset="1" style="stop-color:var(--edge)" stop-opacity=".6"/></linearGradient><linearGradient id="gSpec" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".85"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient><filter id="etchBevel" x="-4%" y="-4%" width="108%" height="108%" color-interpolation-filters="sRGB"><feGaussianBlur in="SourceAlpha" stdDeviation="1.7" result="b"/><feSpecularLighting in="b" surfaceScale="4" specularConstant="1.1" specularExponent="24" lighting-color="#ffffff" result="sp"><feDistantLight azimuth="225" elevation="38"/></feSpecularLighting><feComposite in="sp" in2="SourceAlpha" operator="in" result="spi"/><feMerge><feMergeNode in="SourceGraphic"/><feMergeNode in="spi"/></feMerge></filter><filter id="etchHalo" x="-10%" y="-10%" width="120%" height="120%" color-interpolation-filters="sRGB"><feGaussianBlur stdDeviation="6"/><feColorMatrix type="matrix" values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 .75 0"/></filter><filter id="etchShade" x="-6%" y="-6%" width="112%" height="112%" color-interpolation-filters="sRGB"><feGaussianBlur stdDeviation="1.6"/><feColorMatrix type="matrix" values="0 0 0 0 .04  0 0 0 0 .08  0 0 0 0 .16  0 0 0 .55 0"/></filter></defs>';world.appendChild(defs);
+    defs.innerHTML = '<defs><linearGradient id="gBody" x1="0" y1="0" x2="1" y2="1"><stop offset="0" style="stop-color:var(--glass)" stop-opacity=".46"/><stop offset=".5" style="stop-color:var(--glass)" stop-opacity=".08"/><stop offset="1" style="stop-color:var(--glass)" stop-opacity=".34"/></linearGradient><linearGradient id="gEdge" x1="0" y1="0" x2="1" y2="1"><stop offset="0" style="stop-color:var(--edge)" stop-opacity=".9"/><stop offset=".5" style="stop-color:var(--edge)" stop-opacity=".12"/><stop offset="1" style="stop-color:var(--edge)" stop-opacity=".6"/></linearGradient><linearGradient id="gSpec" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".85"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient><filter id="etchGrain" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB"><feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="2" seed="4" result="n"/><feColorMatrix in="n" type="matrix" values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 2.2 -0.85" result="g"/><feComposite in="g" in2="SourceAlpha" operator="in"/></filter><filter id="etchBevel" x="-4%" y="-4%" width="108%" height="108%" color-interpolation-filters="sRGB"><feGaussianBlur in="SourceAlpha" stdDeviation="1.7" result="b"/><feSpecularLighting in="b" surfaceScale="5" specularConstant="1.4" specularExponent="20" lighting-color="#ffffff" result="sp"><feDistantLight azimuth="225" elevation="38"/></feSpecularLighting><feComposite in="sp" in2="SourceAlpha" operator="in" result="spi"/><feMerge><feMergeNode in="SourceGraphic"/><feMergeNode in="spi"/></feMerge></filter><filter id="etchHalo" x="-10%" y="-10%" width="120%" height="120%" color-interpolation-filters="sRGB"><feGaussianBlur stdDeviation="6"/><feColorMatrix type="matrix" values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 .75 0"/></filter><filter id="etchShade" x="-6%" y="-6%" width="112%" height="112%" color-interpolation-filters="sRGB"><feGaussianBlur stdDeviation="1.6"/><feColorMatrix type="matrix" values="0 0 0 0 .04  0 0 0 0 .08  0 0 0 0 .16  0 0 0 .55 0"/></filter></defs>';world.appendChild(defs);
     const depths = [420, 950, 1700, 2500, 3400, 4400, 5400, 6400]; for (let i = depths.length - 1; i > 0; i--) { const j = Math.floor(rr() * (i + 1)); [depths[i], depths[j]] = [depths[j], depths[i]]; }
     info.forEach((q, i) => {
       const d = depths[i], k = (d + P) / P, pts = q.p.map((v) => [(v[0] - q.x0).toFixed(1), (v[1] - q.y0).toFixed(1)]), ps = pts.map((v) => v.join(',')).join(' ');
@@ -158,9 +162,10 @@
       el.innerHTML = `<defs><clipPath id="c${i}"><polygon points="${ps}"/></clipPath><clipPath id="w${i}"><rect class="wipe" x="0" y="0" width="0" height="${q.h.toFixed(1)}"/></clipPath></defs>
         <polygon class="back" points="${ps}" transform="translate(8 8)"/>
         <polygon class="body" points="${ps}" fill="url(#gBody)"/>
-        <g clip-path="url(#c${i})"><image href="${INK}" x="${-q.x0}" y="${-q.y0}" width="${LW}" height="${LH}" filter="url(#etchHalo)" opacity=".85"/></g>
-        <g clip-path="url(#c${i})"><image href="${INK}" x="${-q.x0}" y="${-q.y0}" width="${LW}" height="${LH}" transform="translate(2.6 3.8)" filter="url(#etchShade)"/></g>
-        <g clip-path="url(#c${i})"><image class="art" href="${INK}" x="${-q.x0}" y="${-q.y0}" width="${LW}" height="${LH}" filter="url(#etchBevel)" opacity=".9"/></g>
+        <g clip-path="url(#c${i})"><image href="${ETCH}" x="${-q.x0}" y="${-q.y0}" width="${LW}" height="${LH}" filter="url(#etchHalo)" opacity=".5"/></g>
+        <g clip-path="url(#c${i})"><image href="${ETCH}" x="${-q.x0}" y="${-q.y0}" width="${LW}" height="${LH}" transform="translate(3 4.5)" filter="url(#etchShade)"/></g>
+        <g clip-path="url(#c${i})"><image class="art" href="${ETCH}" x="${-q.x0}" y="${-q.y0}" width="${LW}" height="${LH}" filter="url(#etchBevel)" opacity=".5"/></g>
+        <g clip-path="url(#c${i})"><image href="${ETCH}" x="${-q.x0}" y="${-q.y0}" width="${LW}" height="${LH}" filter="url(#etchGrain)" opacity=".6"/></g>
         <g clip-path="url(#c${i})"><image class="red" href="${REDF}" x="${-q.x0}" y="${-q.y0}" width="${LW}" height="${LH}" clip-path="url(#w${i})" opacity="0"/></g>
         <polygon points="${ps}" fill="none" stroke="rgba(255,255,255,.5)" stroke-width="1" vector-effect="non-scaling-stroke" transform="translate(${gcx} ${gcy}) scale(.94) translate(${-gcx} ${-gcy})"/>
         <polygon class="spec" points="${spec}" fill="url(#gSpec)" clip-path="url(#c${i})"/>
@@ -198,11 +203,13 @@
     push:  { d: 1.6, ease: 'power3.inOut', fx: (s) => ({ cz: 220 * s }) },
     pull:  { d: 4.4, ease: 'power2.inOut', sph: true, fx: () => ({}) }
   };
+  let GLraf = false, override = null;
   function apply(extra) {
     const c = cam, e = extra || {};
     const t = last.t || 0, br = REDUCE || moving || (last.phase === "done") ? 0 : 1;      /* a little handheld breath while resting */
     const cx = c.cx + Math.sin(t * 0.7) * 5 * br, cy = c.cy + Math.cos(t * 0.5) * 4 * br;
     world.style.transform = `rotateZ(${c.rz}deg) rotateX(${-c.rx}deg) rotateY(${c.ry}deg) translate3d(${-cx}px,${-cy}px,${-c.cz}px)`;
+    if (window.GL) { GL.setCamera(c, cx - c.cx, cy - c.cy); if (!GLraf) { GLraf = true; requestAnimationFrame(() => { GLraf = false; GL.draw(); }); } }
     const sk = $('#streaks'); sk.style.opacity = e.streak || 0; $('#flash').style.opacity = e.flash || 0;
   }
   const UI = { welcome: [], loc: ['#ui-loc'], field: ['#hud'], unpack: ['#hud'], done: ['#ui-done'] };
@@ -240,20 +247,20 @@
     last = s; if (!N && s.st) buildField(s.st.length);
     const t = s.t || 0;
     nudge.x = 0; nudge.y = 0;
-    if (!moving && POSE[section]) { Object.assign(cam, POSE[section](s)); if (s.phase === 'done' && section === 'done' && !REDUCE) { const w = Math.max(0, t - revealAt - 0.6), u = clamp(w / 1.2); nudge.x = 440 * u * Math.sin(w * 1.3); nudge.y = 120 * u * Math.sin(w * 0.9 + 1); cam.cx += nudge.x; cam.cy += nudge.y; } apply(); }
+    if (override) { Object.assign(cam, override); apply(); } else if (!moving && POSE[section]) { Object.assign(cam, POSE[section](s)); if (s.phase === 'done' && section === 'done' && !REDUCE) { const w = Math.max(0, t - revealAt - 0.6), u = clamp(w / 1.2); nudge.x = 440 * u * Math.sin(w * 1.3); nudge.y = 120 * u * Math.sin(w * 0.9 + 1); cam.cx += nudge.x; cam.cy += nudge.y; } apply(); }
     if (N && s.st) {
       const br = REDUCE ? 0 : 1;
       const dd = Math.hypot(cam.cx - nudge.x - FINAL.cx, cam.cy - nudge.y - FINAL.cy, cam.cz - FINAL.cz), reveal = s.phase === 'done' ? smooth(clamp(1 - dd / (RF * 0.55))) : 0;
       const post = 0;     /* after the reveal they drift so you see they hang far apart */
       const damp = (1 - reveal) + post, pos = new Array(K), ft = t * br;
-      const gs = new Float32Array(K), gc = new Int16Array(K), gd = new Float32Array(K), gdone = new Int16Array(K);
+      lastReveal = reveal; const gs = new Float32Array(K), gc = new Int16Array(K), gd = new Float32Array(K), gdone = new Int16Array(K);
       for (let i = 0; i < N; i++) { const g = groupOf(i); gc[g]++; gs[g] += s.st[i] === 2 ? 1 : (s.st[i] === 1 || s.st[i] === 3 ? s.fr[i] : 0); if (s.st[i] === 2) { gdone[g]++; gd[g] = Math.max(gd[g], s.doneAt[i] || 0); } const m = s.st[i] === 2 ? 2 : s.st[i] === 1 ? 1 : s.st[i] === 3 || s.st[i] === 4 ? 3 : 0; if (cache.mini[i] !== m) { cache.mini[i] = m; $('#mini').children[i].className = ['', 'a', 'd', 'r'][m]; } }
       for (let g = 0; g < K; g++) {
         const tl = tiles[g], f = gc[g] ? gs[g] / gc[g] : 0, lit = gc[g] && gdone[g] === gc[g] ? 1 : 0;
         const ox = Math.sin(ft * 0.5 + tl.ph) * tl.amp * damp * br, oy = Math.cos(ft * 0.4 + tl.ph) * tl.amp * damp * br, oz = Math.sin(ft * 0.6 + tl.ph * 2) * tl.amp * 2 * damp * br;
         const k = 1 - reveal, rx = (tl.rx + Math.sin(ft * tl.spin + tl.ph) * 8 * br) * k + post * 7 * Math.sin(t + tl.ph), ry = (tl.ry + Math.cos(ft * tl.spin + tl.ph) * 8 * br) * k + post * 7 * Math.cos(t + tl.ph), rz = tl.rz * k;
         tl.el.style.transform = `translate3d(${(tl.X + ox).toFixed(1)}px,${(tl.Y + oy).toFixed(1)}px,${(tl.Z + oz).toFixed(1)}px) rotateX(${rx.toFixed(1)}deg) rotateY(${ry.toFixed(1)}deg) rotateZ(${rz.toFixed(1)}deg) scale(${tl.s.toFixed(3)})`;
-        pos[g] = [tl.X + ox, tl.Y + oy, tl.Z + oz];
+        pos[g] = [tl.X + ox, tl.Y + oy, tl.Z + oz]; lastFrames[g] = { x: tl.X + ox, y: tl.Y + oy, z: tl.Z + oz, rx, ry, rz, s: tl.s, f, lit };
         if (cache.f[g] !== f) { cache.f[g] = f; tl.wipe.setAttribute('width', (f * tl.w * 1.02).toFixed(1)); }
         /* red = the group's real progress poured into the plate; once the group is done it settles back into the logo's own colours */
         const wave = s.phase === 'unpack' ? clamp(1 - Math.abs(tl.u - s.unpack * 1.25 + 0.12) * 5) : 0;
@@ -275,6 +282,7 @@
     }
     { const pp = s.phase === 'unpack' || s.phase === 'done' ? 1 : (s.total ? clamp(s.got / s.total) : 0), pr = progCircle && progCircle.querySelector('.prog'); if (pr && cache && cache.pp !== Math.round(pp * 200)) { cache.pp = Math.round(pp * 200); pr.setAttribute('stroke-dashoffset', (471 * (1 - pp)).toFixed(1)); }
       if (bandEl) bandEl.style.backgroundPosition = '0 ' + ((REDUCE ? 0 : (s.t || 0) * 160) % 120).toFixed(0) + 'px'; }
+    if (window.GL && GL.ok) { GL.update(lastFrames, { s, t, reveal: lastReveal, prog: s.phase === 'unpack' || s.phase === 'done' ? 1 : (s.total ? clamp(s.got / s.total) : 0) }); GL.draw(); }
     const pct = s.total ? Math.floor(100 * s.got / s.total) : 0;
     $('#pct').textContent = pct; $('#got').textContent = MB(s.got || 0); $('#total').textContent = MB(s.total || 0);
     $('#speed').textContent = s.phase === 'download' || s.phase === 'probe' ? (s.speed > 0 ? (s.speed / 1048576).toFixed(1) + ' MB/s' : tr('probing')) : '';
@@ -310,12 +318,25 @@
   { const t = document.getElementById('topLogo'); if (t) t.src = INK; }
   { const map = { '#ui-loc .card h2': 'locT', '#browse': 'change', '#install': 'install', '#ui-loc .note': 'locNote', '#retry': 'retry', '#copylog': 'copylog', '#manual': 'manual', '#doneT': 'doneT', '#launch': 'launch', '.card.quit h2': 'quitT', '.card.quit p': 'quitM', '#stay': 'stay', '#leave': 'leave' };
     for (const [sel, k] of Object.entries(map)) { const el = $(sel); if (el) el.textContent = tr(k); }
-    $('#ui-loc .card .en').textContent = tr('locEn'); $('.card.quit .en').textContent = ''; $('#doneEn').textContent = tr('doneEn');
+    $('#ui-loc .card .en').textContent = tr('locEn'); $('#lblPath').textContent = tr('lblPath'); $('#lblSugg').textContent = tr('lblSugg'); $('.card.quit .en').textContent = ''; $('#doneEn').textContent = tr('doneEn');
     $('#swDesk').lastChild.textContent = tr('swDesk'); $('#swMenu').lastChild.textContent = tr('swMenu');
     $('#btnMin').setAttribute('aria-label', tr('minimize')); $('#btnClose').setAttribute('aria-label', tr('close')); document.title = tr('title'); document.documentElement.lang = LANG === 'en' ? 'en' : 'zh-CN'; }
-  Scene.setFree = (free, need) => { const el = $('#free'); el.textContent = tr(free >= need * 1.1 ? 'free' : 'freeBad', GBS(free), GBS(need)); el.classList.toggle('bad', free < need * 1.1); };
+  let drives = [], need = 1.4 * 1073741824, freeNow = 182 * 1073741824, pathState = 'ok';
+  const pathEl = $('#path');
+  function paintLoc() {
+    const bad = pathState !== 'ok' || freeNow < need * 1.1; $('#pathfull').textContent = pathEl.value;
+    $('.meter').classList.toggle('bad', bad); $('#meterUsed').style.transform = 'scaleX(' + Math.min(1, need / Math.max(1, freeNow)).toFixed(3) + ')';
+    const fr = $('#free'); fr.classList.toggle('bad', bad);
+    const alt = drives.filter((d) => d.free >= need * 1.1 && d.path.toLowerCase() !== pathEl.value.toLowerCase())[0];
+    fr.textContent = pathState === 'readonly' && alt ? tr('readonly', alt.path) : pathState === 'readonly' ? tr('readonly', '') : freeNow < need * 1.1 ? (alt ? tr('spaceHint', alt.path, GBS(alt.free)) : tr('freeBad', GBS(freeNow), GBS(need))) : tr('free', GBS(freeNow), GBS(need)) + '  ·  ' + tr('defaultHint');
+    const sg = $('#sugg'); sg.innerHTML = ''; drives.forEach((d) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = tr('chip', d.path, GBS(d.free)); if (d.path.toLowerCase() === pathEl.value.toLowerCase()) b.className = 'pick'; b.addEventListener('click', () => { pathEl.value = d.path; freeNow = d.free; pathState = 'ok'; paintLoc(); act('checkpath', { path: d.path }); }); sg.appendChild(b); });
+    $('#install').disabled = false;
+  }
+  pathEl.addEventListener('input', () => { $('#pathfull').textContent = pathEl.value; act('checkpath', { path: pathEl.value }); });
+  Scene.setFree = (free, needB, state) => { freeNow = free; need = needB; if (state) pathState = state; paintLoc(); };
+  Scene.setDrives = (list) => { drives = list; paintLoc(); };
   Scene.setFree(182 * 1073741824, 1.4 * 1073741824);
-  Scene.t = tr;
+  Scene.t = tr; Scene.setOverride = (p) => { override = p; };
   window.Scene = Scene;
   buildStatic();
   Object.assign(cam, REDUCE ? POSE.welcome() : { cx: -420, cy: -150, cz: 800, rx: 6, ry: -12, rz: 0 }); apply(); setSteps();

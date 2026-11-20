@@ -6,7 +6,7 @@
 <title>MeguLit 安装</title>
 <style>
 /* MeguLit installer, one-take 3D scene. Themes: edge (light, Mirror's-Edge-like blocks + crimson guide) | night (dark). */
-:root{--red:#c8203c;--red-hot:#ec3a58;--amber:#d6203f;--glass:#9fb0c8;--edge:#111317;--ok:#1f9d63;
+:root{--red:#c8203c;--red-hot:#ec3a58;--amber:#d6203f;--glass:#7f93b3;--edge:#111317;--ok:#1f9d63;
   --bg1:#eceff3;--bg2:#fbfcfd;--ink:#14161a;--mute:#6d7480;--block:#ffffff;--block-side:#d6dbe3;--block-top:#f4f5f8;--tile:#dfe3e9;--tile-edge:#c4cad4;--panel:#ffffffee;--line:#d3d8e0;
   --font:"Segoe UI","Microsoft YaHei UI","Noto Sans SC",system-ui,sans-serif}
 :root[data-theme=night]{--glass:#ffffff;--edge:#ffffff;--bg1:#0d0f13;--bg2:#1b1e26;--ink:#eceef2;--mute:#8d95a3;--block:#1d2028;--block-side:#14161c;--block-top:#272b35;--tile:#1c2029;--tile-edge:#2e3440;--panel:#14161cee;--line:#2e3440;--red:#d12a48}
@@ -111,6 +111,30 @@ html,body{width:100%;height:100%;overflow:hidden;font-family:var(--font);color:v
 .etch svg{width:100%;height:100%;display:block;overflow:visible}
 .halo{background:none!important}.halo svg{width:100%;height:100%;overflow:visible}
 .band{background:repeating-linear-gradient(0deg,var(--red) 0 46px,transparent 46px 120px);opacity:.9;box-shadow:0 0 24px rgba(214,32,63,.45)}
+/* glass control panel: frosted, chamfered, light on its edges; the words sit in it like etching */
+.card.glassy{width:460px;top:78px;padding:26px 30px 22px;border:0;border-radius:0;background:linear-gradient(140deg,rgba(255,255,255,.34),rgba(255,255,255,.1) 55%,rgba(255,255,255,.2));-webkit-backdrop-filter:blur(20px) saturate(1.35);backdrop-filter:blur(20px) saturate(1.35);
+  clip-path:polygon(0 0,calc(100% - 30px) 0,100% 30px,100% 100%,30px 100%,0 calc(100% - 30px));box-shadow:inset 0 0 0 1px rgba(255,255,255,.55),inset 0 1px 0 rgba(255,255,255,.85),inset 0 0 50px rgba(255,255,255,.12)}
+:root[data-theme=night] .card.glassy{background:linear-gradient(140deg,rgba(255,255,255,.13),rgba(255,255,255,.03) 55%,rgba(255,255,255,.08));box-shadow:inset 0 0 0 1px rgba(255,255,255,.28),inset 0 1px 0 rgba(255,255,255,.5),inset 0 0 50px rgba(160,190,255,.07)}
+.glassy h2{text-shadow:0 1px 0 rgba(255,255,255,.7),0 -1px 0 rgba(0,0,0,.12)}
+:root[data-theme=night] .glassy h2{color:#eef3ff;text-shadow:0 0 18px rgba(170,200,255,.45),0 1px 0 rgba(0,0,0,.5)}
+.glassy .lbl{font-size:12px;letter-spacing:1px;color:var(--mute);margin-top:18px}.glassy .lbl.sm{margin-top:14px}
+.glassy .field{background:rgba(255,255,255,.28);box-shadow:inset 0 0 0 1px rgba(255,255,255,.5),inset 0 2px 6px rgba(0,0,0,.08)}
+:root[data-theme=night] .glassy .field{background:rgba(255,255,255,.07);box-shadow:inset 0 0 0 1px rgba(255,255,255,.22),inset 0 2px 8px rgba(0,0,0,.35)}
+.glassy .field:focus{box-shadow:inset 0 0 0 1.5px var(--red),inset 0 2px 6px rgba(0,0,0,.08)}
+.glassy .btn{box-shadow:inset 0 0 0 1px rgba(255,255,255,.55);background:rgba(255,255,255,.14)}
+:root[data-theme=night] .glassy .btn{box-shadow:inset 0 0 0 1px rgba(255,255,255,.3)}
+.glassy .row{margin-top:8px}
+.pathfull{font-size:12.5px;line-height:1.5;color:var(--ink);opacity:.82;margin-top:8px;word-break:break-all;min-height:19px}
+.meter{height:5px;margin-top:10px;background:rgba(127,135,150,.25);overflow:hidden}.meter i{display:block;height:100%;width:0;background:var(--ink);opacity:.7;transform-origin:0 50%}
+.meter.bad i{background:var(--red);opacity:1}
+.glassy .free{margin-top:7px}.glassy .free.bad{color:var(--red)}
+.sugg{display:flex;gap:8px;flex-wrap:wrap;margin-top:7px}
+.sugg button{border:0;font:inherit;font-size:12.5px;padding:7px 12px;color:var(--ink);background:rgba(255,255,255,.2);box-shadow:inset 0 0 0 1px rgba(255,255,255,.5);cursor:pointer}
+:root[data-theme=night] .sugg button{box-shadow:inset 0 0 0 1px rgba(255,255,255,.26);background:rgba(255,255,255,.06)}
+.sugg button:hover,.sugg button.pick{background:var(--red);color:#fff;box-shadow:none}
+.sugg button:focus-visible{outline:3px solid var(--red-hot);outline-offset:2px}
+.glassy .sw{margin-top:12px}.glassy .go{margin-top:18px;height:48px;clip-path:polygon(0 0,calc(100% - 16px) 0,100% 16px,100% 100%,16px 100%,0 calc(100% - 16px))}
+.glassy .note{margin-top:10px}
 </style>
 </head>
 <body>
@@ -122,13 +146,16 @@ html,body{width:100%;height:100%;overflow:hidden;font-family:var(--font);color:v
 <div class="layer" id="ui-top" style="opacity:1;visibility:visible"><div class="top"><img id="topLogo" src="logos/logo-A-black.svg" alt="MeguLit"><div class="steps" id="steps"><i></i><i></i><i></i><i></i><span id="stepname"></span></div></div></div>
 <div class="scrimb layer" id="scrimb" style="opacity:1;visibility:visible;pointer-events:none"></div>
 <div class="layer" id="hud"><div class="pct"><span id="pct">0</span><small>%</small></div><div class="stat"><span><b id="got">0 MB</b> / <span id="total">0 MB</span></span><span id="speed">测速中</span><span id="eta"></span></div><div class="what"><h3 id="whatT"></h3><p id="whatP"></p></div></div>
-<div class="layer" id="ui-loc"><div class="card"><h2>装到哪里</h2><div class="en">Install location</div>
-  <div class="row"><input class="field" id="path" value="D:\MeguLit" spellcheck="false" aria-label="安装位置 Install location"><button class="btn" id="browse">更改 Browse</button></div>
-  <div class="free" id="free">所在磁盘可用 182 GB · 需要约 1.4 GB</div>
-  <button class="sw" id="swDesk" role="switch" aria-checked="true"><i></i>桌面快捷方式 Desktop shortcut</button>
-  <button class="sw" id="swMenu" role="switch" aria-checked="true"><i></i>开始菜单 Start menu</button>
-  <button class="go" id="install">开始安装 Install</button>
-  <div class="note">运行组件正在后台下载，这会儿选好位置就行；全部来自各项目官方原版文件，逐个校验 SHA-256。</div></div></div>
+<div class="layer" id="ui-loc"><div class="card glassy"><h2></h2><div class="en"></div>
+  <div class="lbl" id="lblPath"></div>
+  <div class="row"><input class="field" id="path" value="D:\MeguLit" spellcheck="false" aria-label="install location"><button class="btn" id="browse"></button></div>
+  <div class="pathfull" id="pathfull" aria-live="polite"></div>
+  <div class="meter"><i id="meterUsed"></i></div><div class="free" id="free" role="status"></div>
+  <div class="lbl sm" id="lblSugg"></div><div class="sugg" id="sugg"></div>
+  <button class="sw" id="swDesk" role="switch" aria-checked="true"><i></i><span></span></button>
+  <button class="sw" id="swMenu" role="switch" aria-checked="true"><i></i><span></span></button>
+  <button class="go" id="install"></button>
+  <div class="note"></div></div></div>
 <div class="layer" id="ui-err"><div class="card err"><h2 id="errT">下载中断了</h2><div class="en" id="errEn">Download interrupted</div><p id="errM"></p><p class="tip" id="errTip"></p>
   <div class="acts"><button class="go" id="retry">重试 Retry</button><button class="btn" id="copylog">复制日志 Copy log</button><button class="btn" id="manual">手动下载</button></div></div></div>
 <div class="layer" id="ui-done"><div class="big"><span id="doneT"></span><small id="doneEn">All set</small></div><div class="launch"><button class="go" id="launch">启动 MeguLit Launch</button></div></div>
@@ -138,8 +165,10 @@ html,body{width:100%;height:100%;overflow:hidden;font-family:var(--font);color:v
 <div class="layer" id="ui-quit"><div class="scrim"></div><div class="card quit"><h2>还在下载</h2><div class="en">Download in progress</div><p>现在关掉也没关系：已经下好的碎片会保留，下次打开接着下。</p><div class="acts"><button class="go" id="stay">继续下载 Keep going</button><button class="btn" id="leave">关闭 Close</button></div></div></div>
 </div>
 <script src="logos/logos.js"></script>
+<script src="vendor/three.js"></script>
 <script src="vendor/gsap.min.js"></script>
 <script src="scene.js"></script>
+<script src="glass.js"></script>
 <script>if(new URLSearchParams(location.search).get("demo")==="1"){var s=document.createElement("script");s.src="demo.js";document.body.appendChild(s)}</script>
 </body>
 </html>

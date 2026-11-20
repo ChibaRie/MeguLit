@@ -29,10 +29,15 @@ for (const [k, v] of Object.entries(V)) {
   fs.writeFileSync(path.join(svgDir, `logo-${k}-black.svg`), recolor(v.light));
   fs.writeFileSync(path.join(svgDir, `logo-${k}-white.svg`), recolor(v.dark));
   fs.writeFileSync(path.join(svgDir, `logo-${k}-red.svg`), redLayer);
+  /* the etch mask: every inked shape white, the cream letters left clear, so the lettering reads as clear glass inside a frosted mass */
+  /* the full silhouette (letters included): the shape of the glass in the shattered-glass logo */
+  fs.writeFileSync(path.join(svgDir, 'logo-sil.svg'), src.replace(/fill="(#[0-9A-Fa-f]{6})"/g, 'fill="#ffffff"'));
+  fs.writeFileSync(path.join(svgDir, 'logo-etch.svg'), src.replace(/fill="(#[0-9A-Fa-f]{6})"/g, (m, c) => (c.toUpperCase() === '#F1E0D2' ? 'fill="none"' : 'fill="#ffffff"')));
 }
 /* 8 hand-placed seeds in logo units (viewBox 3424 x 1452): hat, M, e, g, u, L, it, flare. The installer cuts the logo into the 8 cells. */
 const SEEDS = [[430, 330], [800, 1050], [1300, 740], [1760, 1130], [2220, 800], [2680, 1040], [3180, 1060], [3000, 250]];
 const LG = { w: VB[2], h: VB[3], seeds: SEEDS };
+fs.copyFileSync(path.join(root, 'web/assets/megulit-logo.svg'), path.join(svgDir, 'logo-orig.svg'));
 fs.writeFileSync(path.join(svgDir, 'logos.js'), 'window.LOGOS=' + JSON.stringify({ A: LG, B: LG, C: LG }) + ';');
 /* ---- sheet ---- */
 const clipHalf = (poly, a, b, c) => { const out = []; for (let i = 0; i < poly.length; i++) { const p = poly[i], q = poly[(i + 1) % poly.length], fp = a * p[0] + b * p[1] - c, fq = a * q[0] + b * q[1] - c; if (fp <= 0) out.push(p); if ((fp <= 0) !== (fq <= 0)) { const t = fp / (fp - fq); out.push([p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t]); } } return out; };
