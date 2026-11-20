@@ -65,6 +65,7 @@
     retext(adv.querySelector('summary'), T.advanced); retext(q('[data-hook-check]'), T.check); retext(q('[data-hook-restart]'), T.restart); retext(q('[data-hook-stop]'), T.stop); retext(adv.querySelector('h5'), T.streams);
     /* 1. the source card sits above the hiding card, with no title of its own: its first line is the title */
     const srcCard = el('div', 'tome-mask-card tome-mask-src'); srcCard.append(src); card.before(srcCard);
+
     /* 2. two everyday switches, then the fold */
     const toggles = el('div', 'tome-emb-rows'); toggles.append(hideLabel, autoLabel);
     const fix = el('div', 'tome-trouble-body'); fix.append(proof, reselect.parentElement, adv); adv.open = false;
