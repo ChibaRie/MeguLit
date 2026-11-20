@@ -86,3 +86,15 @@ test('Alt+T menu has the same reset entry, wording and safeguards as the setting
  assert.match(read('web/reader/module-list.js'),/"settings-reset"/);
  assert.match(read('services/reader.cjs'),/case 'settingsReset':case 'settingsResetUndo':\{try\{const lib=require\('\.\/settings-reset\.cjs'\)/);
 });
+
+test('a reader that is open while settings are reset does not write the old styles back on its next save',t=>{
+ const root=tmp();t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+ const A='a'.repeat(64),B='b'.repeat(64),file=cfg(root,'game-style-profiles.json');
+ put(file,{version:3,entries:{[A]:{name:'Game A',prefs:{textColor:'#ff0000'},savedAt:1,textSavedAt:1},[B]:{name:'Game B',prefs:{textColor:'#00ff00'},savedAt:1,textSavedAt:1}}});
+ const {GameStyleSync}=require('../core/game-style-sync.cjs'),{Runtime}=require('../services/runtime.cjs');
+ const sync=new GameStyleSync({native:root,config:path.join(root,'data','config')},()=>{},()=>({on(){},stdin:{write(){}},kill(){}}));sync.profileKey=A;sync.status=()=>{};
+ const runtime=new Runtime(root,()=>{});runtime.reader={gal:{styleSync:sync,preferences:{},preview(){},setGameAudio(){}},prefs:()=>({})};
+ reset.reset(root);for(const scope of ['text','panels'])runtime.settingsSaved({scope});/* what both reset entry points do */
+ assert.equal(sync.saveProfile({shadow:'none'},'text'),true);
+ const e=get(file).entries;assert.deepEqual(e[A].prefs,{shadow:'none'});assert.deepEqual(e[B].prefs,{});
+});
