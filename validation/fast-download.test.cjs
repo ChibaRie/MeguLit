@@ -179,7 +179,8 @@ test('fast-download: an HTML page instead of the file drops that source at once'
 });
 
 test('fast-download: a relay serving a bad file in a mixed download: next round uses the first-party sources only',async t=>{
- const data=crypto.randomBytes(3*MB),bad=Buffer.from(data);bad[2*MB+77]^=0xff;const dir=tmp(t);
+ /* every byte from the relay is wrong (it is the fastest source, so it always serves part of the file) */
+ const data=crypto.randomBytes(3*MB),bad=crypto.randomBytes(3*MB);const dir=tmp(t);
  const relay=await source(bad,{rate:2*MB}),own=await source(data,{rate:1*MB}),relay2=await source(data,{rate:1*MB});
  t.after(()=>[relay,own,relay2].forEach(s=>s.close()));
  const logs=[];const r=await fd.download({...quick,trusted:[own.url],urls:[relay.url,own.url,relay2.url],dest:path.join(dir,'f.bin'),size:data.length,sha256:sha(data),log:l=>logs.push(l)});

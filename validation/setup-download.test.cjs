@@ -87,7 +87,8 @@ test('parallel probe, several fast sources at once, mid-way slowdown replaced, 4
   assert.ok(j.maxSources>=3,'several sources downloading at once: '+j.maxSources);
   assert.ok(fast.maxActive>=3,'fast source gets several connections: '+fast.maxActive);
   assert.ok(src(fast.host).bytes>src(medium.host).bytes,'fast source carried more than medium');
-  assert.ok(j.slowKills+j.steals>=1,'slow connection was dropped');
+  /* the slowed source's running segments are dropped as slow (or, in the tail, overtaken by an end-game copy) */
+  assert.ok(j.slowKills+j.dupWins>=1,'slow connection was dropped or overtaken: kills '+j.slowKills+', end-game wins '+j.dupWins);
   const lateSlow=segReqs(slowmid).filter(r=>r.t>slowmid.firstSeg+1500+5000);
   assert.equal(lateSlow.length,0,'slowed source not given new segments');
   assert.ok(j.labels.some(l=>/ 等 \d+ 个源$/.test(l)),'label shows several sources: '+j.labels);
