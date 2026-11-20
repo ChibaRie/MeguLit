@@ -94,7 +94,7 @@
 
   /* ---------- layout of the world ---------- */
   const P = 820, FY = 1200;
-  const A = { x: 3300, y: -260, z: -1400 }, RF = 2400;                 /* the shard cloud's centre and the one correct camera distance */
+  const A = { x: 3300, y: -260, z: -5200 }, RF = 2400;                 /* the shard cloud's centre and the one correct camera distance */
   let N = 0, COLS = 0, tiles = [], cache = null, revealAt = 1e9; const nudge = { x: 0, y: 0 };   /* after the reveal the camera sways a little: parallax shows how far apart the plates hang */
 
   /* Magic circle line art (ink lines + one crimson arc). It is a plane in the world, parallel to the facade it is cut into, so it
@@ -180,8 +180,8 @@
   /* while downloading the camera wanders around the cloud; near 62 % it passes a viewpoint that is almost, not quite, the right one */
   const AZ = [[0, -62], [0.3, -34], [0.75, 8], [0.88, 26], [1, 46]], EL = [[0, 18], [0.35, 11], [0.75, 9], [0.9, 14], [1, 19]], RR = [[0, 2900], [0.75, 2350], [1, 3000]];
   const POSE = {
-    welcome: () => ({ cx: 3000, cy: 560, cz: 1500, rx: 6, ry: -52, rz: 0 }),
-    loc: () => ({ cx: 4300, cy: 520, cz: 2300, rx: 2, ry: -16, rz: 0 }),
+    welcome: () => ({ cx: 3300, cy: 700, cz: 2300, rx: 4, ry: 0, rz: 0 }),
+    loc: () => ({ cx: 3900, cy: 560, cz: 1500, rx: 3, ry: -14, rz: 0 }),
     field: (s) => { const p = s && s.total ? clamp(s.got / s.total) : 0; return orbit(key(AZ, p), key(EL, p), key(RR, p)); },
     unpack: () => orbit(30, 52, 3000),
     done: () => ({ ...FINAL })
@@ -341,7 +341,7 @@
   htmlEl.dataset.theme = THEME; syncThemeBtn(); paintTheme(themeMix);
   window.Scene = Scene;
   buildStatic();
-  Object.assign(cam, REDUCE ? POSE.welcome() : { cx: 4400, cy: 400, cz: 4200, rx: 4, ry: -14, rz: 0 }); apply(); setSteps();
+  Object.assign(cam, REDUCE ? POSE.welcome() : { cx: 3300, cy: 800, cz: 4300, rx: 6, ry: 0, rz: 0 }); apply(); setSteps();
   /* welcome plate is visible at once; the opening push-in settles on it (demo/host starts it) */
   Scene.intro = () => { const o = { p: 0 }, A = { ...cam }; return gsap.to(o, { p: 1, duration: 2.4, ease: 'power3.out', onUpdate() { const B = POSE.welcome(); for (const k in B) cam[k] = lerp(A[k], B[k], o.p); apply(); } }); };
 })();

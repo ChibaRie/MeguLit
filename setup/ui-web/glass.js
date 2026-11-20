@@ -52,9 +52,10 @@
   const eMat = new THREE.LineBasicMaterial({ color: 0xaab3c2, transparent: true, opacity: 0.9 });
   const wMat = new THREE.LineBasicMaterial({ color: 0x2a3140, transparent: true, opacity: 0.85 });
   const redMat = new THREE.MeshBasicMaterial({ color: 0xd6203f });
-  const ledMat = new THREE.MeshStandardMaterial({ color: 0xe9eef6, roughness: 0.6, emissive: 0x000000 }); const led = [], trees = [], arrows = [];
+  const ledMats = [0, 1, 2].map(() => new THREE.MeshStandardMaterial({ color: 0xe9eef6, roughness: 0.6, emissive: 0x000000 })), ledBands = [[], [], []], glows = [], ledMat = ledMats[0], led = [], trees = [], arrows = [];
+  const wndMat = new THREE.MeshStandardMaterial({ color: 0xaab8cf, roughness: 0.4, metalness: 0.1, emissive: 0x000000 });
   const roadMat = new THREE.MeshStandardMaterial({ color: 0xdbe1ea, roughness: 1 }), markMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85 });
-  themed.push((m) => { ledMat.color.copy(col(0xe9eef6, 0x1d222c, m)); ledMat.emissive.copy(col(0x000000, 0xcfdcff, m)); ledMat.emissiveIntensity = 0.9 * m; bMat.color.copy(col(0xeef3fa, 0x13171e, m)); sMat.color.copy(col(0xc3cddd, 0x1a1f28, m)); sMat.emissive.copy(col(0x000000, 0x93a4c0, m)); sMat.emissiveIntensity = 0.22 * m; eMat.color.copy(col(0x9aa8bd, 0x3b4456, m)); wMat.color.copy(col(0x2a3140, 0x8fa2c6, m)); roadMat.color.copy(col(0xd3dae5, 0x101319, m)); markMat.opacity = 0.85 - 0.45 * m; });
+  themed.push((m) => { ledMats.forEach((lm, k) => { lm.color.copy(col(0xe4eaf4, 0x1b2029, m)); lm.emissive.copy(col(0x000000, 0x8ea2c8, m)); lm.emissiveIntensity = [0.16, 0.3, 0.2][k] * m; }); wndMat.color.copy(col(0xa9b8d0, 0x222a38, m)); wndMat.emissive.copy(col(0x000000, 0x7d92bb, m)); wndMat.emissiveIntensity = 0.12 * m; bMat.color.copy(col(0xeef3fa, 0x13171e, m)); sMat.color.copy(col(0xc3cddd, 0x1a1f28, m)); sMat.emissive.copy(col(0x000000, 0x93a4c0, m)); sMat.emissiveIntensity = 0.22 * m; eMat.color.copy(col(0x6f7e96, 0x4a5568, m)); wMat.color.copy(col(0x2a3140, 0x8fa2c6, m)); roadMat.color.copy(col(0xd3dae5, 0x101319, m)); markMat.opacity = 0.85 - 0.45 * m; });
   let sd2 = 77; const r2 = () => (sd2 = (sd2 * 16807) % 2147483647) / 2147483647;
   const bodies = [], signs = [], panels = [], boxesS = [], tanks = [], edgePts = [];
   const pushBox = (arr, x, y, z, w, h, d, ry) => arr.push([x, y, z, w, h, d, ry]);
@@ -63,7 +64,9 @@
   /* Eight building types with a real massing: a body, setbacks, a roof plant layer, floor bands and a window grid cut as fine lines, awnings over the
      shop floor, upright signboards in aligned columns of three fixed sizes, flat blank ad panels, AC units in tidy columns, roof ad frames, outside stairs.
      Along the street they alternate with a rhythm (tall, wide, low, corner), near ones carry the detail, far ones are plain masses that the haze eats. */
-  const FL = 130, fins = [], bands = [], cyls = [], awn = [];
+  const FL = 130, fins = [], bands = [], cyls = [], awn = [], wins = [], shopf = [];
+  /* window panes: rows and columns on a fixed module, a shop front on the ground floor */
+  function windows(face, side, z0, z1, y0, h, dense) { const w = z1 - z0, cols = Math.max(2, Math.floor((w - 50) / 86)), cw = (w - 40) / cols; for (let y = y0 + FL * 1.7; y < y0 + h - 110; y += FL) for (let k = 0; k < cols; k++) pushBox(wins, face - side * 2, y + 26, z0 + 20 + (k + 0.5) * cw, 6, 70, cw * 0.62); pushBox(shopf, face - side * 3, y0 + 90, (z0 + z1) / 2, 7, 150, w * 0.9); }
   const SIGN = [[54, 300], [66, 480], [80, 720]];
   function facade(face, side, z0, z1, y0, h, detail) {
     const w = z1 - z0, zc = (z0 + z1) / 2; if (!detail) return;
@@ -77,17 +80,21 @@
   function stairs(face, side, zc, y0, h) { const fx = face - side * 4; let y = y0 + 40; let k = 0; while (y < y0 + h - 80) { const za = zc - 90 + (k % 2) * 180, zb = zc + 90 - (k % 2) * 180; edgePts.push(fx, y, za, fx, y + FL, zb); pushBox(bodies, face - side * 30, y + FL, zb, 60, 10, 70); y += FL; k++; } }
   const TYPES = ['pencil', 'mall', 'terrace', 'screen', 'old', 'fins', 'bands', 'corner', 'tower', 'tower', 'tower'];
   const crossAt = [[-2900, -2400], [1000, 1500], [-800, -200]];
+  /* the street: a narrow canyon in front of the glass, opening out behind it so the walls frame the logo and never stand behind it */
+  const innerAt = (zz) => zz > -3300 ? 1650 : zz > -4000 ? 1650 + (-3300 - zz) / 700 * 800 : Math.max(2450, 0.66 * (-1980 - zz));
   for (const side of [-1, 1]) {
-    let z = 2300, idx = 0; const INNER = 2450;
+    let z = 2300, idx = 0;
     while (z > -9500) {
       const near = z > -4600; let type = TYPES[Math.floor(r2() * TYPES.length)]; const tall = idx % 3 === 0; if (idx === 0 || (z < -200 && z > -1300) || (z < 1500 && z > 400 && idx % 2 === 1)) type = 'tower';
       let w, dep, h; switch (type) { case 'pencil': w = 250 + r2() * 90; dep = 560; h = 2500 + r2() * 1100; break; case 'mall': w = 640 + r2() * 160; dep = 820; h = 1250 + r2() * 500; break; case 'terrace': w = 440 + r2() * 120; dep = 760; h = 1900 + r2() * 900; break; case 'screen': w = 460 + r2() * 100; dep = 700; h = 1700 + r2() * 700; break; case 'tower': w = 430 + r2() * 110; dep = 760; h = 2000 + r2() * 900; break; case 'old': w = 300 + r2() * 100; dep = 620; h = 720 + r2() * 300; break; case 'fins': w = 380 + r2() * 120; dep = 700; h = 1500 + r2() * 800; break; case 'bands': w = 420 + r2() * 160; dep = 740; h = 1400 + r2() * 700; break; default: w = 460; dep = 820; h = 1600 + r2() * 600; }
       if (tall && type !== 'old') h *= 1.18;
       z -= w; let cornerLeft = false; for (const [lo, hi] of crossAt) { if (z + w > lo && z < hi) { z = lo; cornerLeft = true; break; } } if (cornerLeft) continue;
-      const z1 = z + w, zc = z + w / 2, y0 = FLOORY, face = X0 + side * INNER, cx = face + side * dep / 2;
+      const z1 = z + w, zc = z + w / 2, y0 = FLOORY, INNER = innerAt(zc), face = X0 + side * INNER, cx = face + side * dep / 2;
       /* main body (+ setbacks for the stepped type) */
       if (type === 'terrace') { const h1 = h * 0.52; pushBox(bodies, cx, y0 + h1 / 2, zc, dep, h1, w); edgeOf(cx, y0 + h1 / 2, zc, dep, h1, w); const h2 = h * 0.26, d2 = dep * 0.82, c2 = face + side * (60 + d2 / 2); pushBox(bodies, c2, y0 + h1 + h2 / 2, zc, d2, h2, w * 0.86); edgeOf(c2, y0 + h1 + h2 / 2, zc, d2, h2, w * 0.86); const h3 = h * 0.22, d3 = dep * 0.6, c3 = face + side * (140 + d3 / 2); pushBox(bodies, c3, y0 + h1 + h2 + h3 / 2, zc, d3, h3, w * 0.66); edgeOf(c3, y0 + h1 + h2 + h3 / 2, zc, d3, h3, w * 0.66); }
       else { pushBox(bodies, cx, y0 + h / 2, zc, dep, h, w); edgeOf(cx, y0 + h / 2, zc, dep, h, w); }
+      if (z1 > -4600 && type !== 'tower') windows(face, side, z, z1, y0, h);
+      if (z1 > -4600 && type === 'tower') windows(face, side, z, z1, y0, h * 0.97, true);
       if (type === 'mall') { pushBox(bodies, face + side * (dep / 2 - 30), y0 + FL * 1.1, zc, dep + 60, FL * 2.2, w + 20); }                 /* wider podium */
       if (type === 'corner') { const r = 190; cyls.push([face + side * r, y0 + h / 2, z1 - r + 6, r, h]); cyls.push([face + side * r, y0 + h / 2, z + r - 6, r, h]); }          /* rounded street corners */
       const top = y0 + h; pushBox(bodies, cx + side * dep * 0.1, top + 60, zc, dep * 0.55, 120, w * 0.6);                                        /* roof plant */
@@ -99,9 +106,9 @@
         else if (type === 'screen') { pushBox(panels, face - side * 14, y0 + h * 0.52, zc, 22, h * 0.58, w * 0.82); signColumn(face, side, z + 36, y0, h, 0, 8); signColumn(face, side, z1 - 36, y0, h, 0, 8); }
         else if (type === 'tower') {
           /* the sign tower: the facade is a wall of billboards in a few fixed sizes, three layers of upright signs, a crown on the roof, hanging banners, one LED screen */
-          const cols = 3, cw = (w - 40) / cols; for (let yy = y0 + 250; yy < top - 300; yy += 200) for (let cc = 0; cc < cols; cc++) { if (r2() < 0.12) continue; const pw = cw * (r2() < 0.35 ? 0.62 : r2() < 0.6 ? 0.92 : 1.0), ph = r2() < 0.4 ? 120 : 168, zz = z + 20 + cc * cw + cw / 2; pbe(panels, face - side * (14 + r2() * 34), yy + ph / 2, zz, 22, ph, pw); }
-          for (const [zz, layer] of [[z + 24, 0], [z1 - 24, 1], [zc, 2]]) { const [sw, sh] = SIGN[2]; let yy = y0 + 220; while (yy + sh < top - 120) { pbe(signs, face - side * (62 + layer * 34), yy + sh / 2, zz, 74, sh * (layer === 2 ? 0.7 : 1), sw); yy += sh * (layer === 2 ? 0.7 : 1) + 18 + layer * 30; } }
-          pushBox(led, face - side * 58, y0 + h * 0.42, zc, 18, 420, w * 0.62); roofFrame(cx, side, top + 120, zc, w * 1.04); pbe(panels, cx, top + 470, zc, 22, 340, w * 1.1); pbe(signs, cx, top + 640, zc, 40, 120, w * 0.5);
+          const cols = 3, cw = (w - 40) / cols; let row = 0; for (let yy = y0 + 250; yy < top - 300; yy += 200, row++) for (let cc = 0; cc < cols; cc++) { if ((row * 3 + cc) % 5 === 0) continue; const zz = z + 20 + cc * cw + cw / 2; pbe(panels, face - side * 24, yy + 84, zz, 22, 168, cw * 0.92); }
+          for (const [zz, layer] of [[z + 24, 0], [z1 - 24, 1], [zc, 2]]) { const [sw, sh] = SIGN[2]; let yy = y0 + 240; while (yy + sh < top - 140) { pbe(signs, face - side * (62 + layer * 34), yy + sh / 2, zz, 74, sh, sw); yy += sh + 26; } }
+          for (let k = 0; k < 3; k++) pushBox(ledBands[k], face - side * 58, y0 + h * 0.42 - 140 + k * 140, zc, 18, 134, w * 0.62); glows.push([face - side * 520, FLOORY + 5, zc, w * 1.4]); roofFrame(cx, side, top + 120, zc, w * 1.04); pbe(panels, cx, top + 470, zc, 22, 340, w * 1.1); pbe(signs, cx, top + 640, zc, 40, 120, w * 0.5);
           for (const zz of [z + w * 0.3, z + w * 0.72]) pbe(panels, face - side * 70, top - 520, zz, 20, 1000, 100);
         }
         else if (type === 'old') { stairs(face, side, zc, y0, h); signColumn(face, side, z + 40, y0, h, 0, 2); roofFrame(cx, side, top + 120, zc, w * 0.9); }
@@ -110,11 +117,12 @@
         else if (type === 'terrace') { signColumn(face, side, z + 40, y0, h * 0.52, 1, 3); acColumn(face, side, zc, y0, h * 0.5); }
         else { signColumn(face, side, z + 36, y0, h, 1, 6); pushBox(panels, face - side * 14, y0 + h * 0.5, zc, 22, h * 0.4, w * 0.6); }
       }
-      if (near) { const sx = face - side * 130; for (let k = 0; k < 7; k++) pushBox(boxesS, sx + side * 0, y0 + 56, z + 20 + k * (w - 40) / 7, 52, 112, 60); pushBox(boxesS, face - side * 190, y0 + 46, zc, 14, 92, 60); if (r2() < 0.6) trees.push([face - side * 260, y0 + 300, z + w * 0.3, 150]); }
+      if (near) { const sx = face - side * 130; for (let k = 0; k < 7; k++) pushBox(boxesS, sx + side * 0, y0 + 56, z + 20 + k * (w - 40) / 7, 52, 112, 60); pushBox(boxesS, face - side * 190, y0 + 46, zc, 14, 92, 60); }
       z -= 8 + r2() * 14; idx++;
     } }
   const inst = (list, mat0, geo, shadow) => { const m = new THREE.InstancedMesh(geo, mat0, list.length), o = new THREE.Object3D(); list.forEach((b, i) => { o.position.set(b[0], b[1], b[2]); o.rotation.set(0, b[6] || 0, 0); o.scale.set(b[3], b[4], b[5]); o.updateMatrix(); m.setMatrixAt(i, o.matrix); }); m.castShadow = shadow; m.receiveShadow = true; m.frustumCulled = false; scene.add(m); return m; };
-  const unit = new THREE.BoxGeometry(1, 1, 1); inst(bodies, bMat, unit, true); inst(signs, sMat, unit, true); inst(panels, sMat, unit, false); inst(boxesS, sMat, unit, false); inst(bands, bMat, unit, true); inst(fins, bMat, unit, false); inst(awn, sMat, unit, true); inst(led, ledMat, unit, false);
+  const unit = new THREE.BoxGeometry(1, 1, 1); inst(bodies, bMat, unit, true); inst(signs, sMat, unit, true); inst(panels, sMat, unit, false); inst(boxesS, sMat, unit, false); inst(bands, bMat, unit, true); inst(fins, bMat, unit, false); inst(awn, sMat, unit, true); ledBands.forEach((l, k) => inst(l, ledMats[k], unit, false)); inst(wins, wndMat, unit, false); inst(shopf, wndMat, unit, false);
+  { const gc = document.createElement('canvas'); gc.width = gc.height = 128; const g = gc.getContext('2d'), gr = g.createRadialGradient(64, 64, 4, 64, 64, 62); gr.addColorStop(0, 'rgba(190,210,255,.55)'); gr.addColorStop(1, 'rgba(190,210,255,0)'); g.fillStyle = gr; g.fillRect(0, 0, 128, 128); const gt = new THREE.CanvasTexture(gc), gmat = new THREE.MeshBasicMaterial({ map: gt, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0 }); themed.push((m) => { gmat.opacity = 0.5 * m; }); glows.forEach((q) => { const p = new THREE.Mesh(new THREE.PlaneGeometry(q[3] * 1.4, q[3] * 3.2), gmat); p.rotation.x = -Math.PI / 2; p.position.set(q[0], q[1], q[2]); scene.add(p); }); }
   { const ig = new THREE.IcosahedronGeometry(0.5, 1), m = new THREE.InstancedMesh(ig, sMat, trees.length), o = new THREE.Object3D(); trees.forEach((t, i) => { o.position.set(t[0], t[1], t[2]); o.scale.set(t[3], t[3] * 0.9, t[3]); o.updateMatrix(); m.setMatrixAt(i, o.matrix); }); m.castShadow = true; m.frustumCulled = false; scene.add(m); }
   { const cg = new THREE.CylinderGeometry(0.5, 0.5, 1, 28), m = new THREE.InstancedMesh(cg, bMat, cyls.length), o = new THREE.Object3D(); cyls.forEach((q, i) => { o.position.set(q[0], q[1], q[2]); o.scale.set(q[3] * 2, q[4], q[3] * 2); o.updateMatrix(); m.setMatrixAt(i, o.matrix); }); m.castShadow = true; m.frustumCulled = false; scene.add(m); }
   { const cg = new THREE.CylinderGeometry(0.5, 0.5, 1, 14), m = new THREE.InstancedMesh(cg, bMat, tanks.length), o = new THREE.Object3D(); tanks.forEach((t, i) => { o.position.set(t[0], t[1], t[2]); o.scale.set(t[3] * 2, t[4], t[3] * 2); o.updateMatrix(); m.setMatrixAt(i, o.matrix); }); m.castShadow = true; m.frustumCulled = false; scene.add(m); }
@@ -142,10 +150,10 @@
     trainG = new THREE.Group(); for (let k = 0; k < 4; k++) { const car = new THREE.Mesh(unit, sMat); car.scale.set(980, 200, 150); car.position.set(k * 1020, 0, 0); car.castShadow = true; trainG.add(car); const win = new THREE.Mesh(unit, wMat); win.scale.set(900, 34, 154); win.position.set(k * 1020, 30, 0); trainG.add(win); }
     trainG.position.set(X0, deckY + 100, zc); scene.add(trainG); }
   /* poles and wires along the street, a few across it */
-  { const wp = [], poles = []; for (const side of [-1, 1]) for (let z = 1900; z > -9000; z -= 700) { pushBox(poles, X0 + side * 2380, FLOORY + 450, z, 24, 900, 24); }
+  { const wp = [], poles = []; for (const side of [-1, 1]) for (let z = 1900; z > -9000; z -= 700) { pushBox(poles, X0 + side * (innerAt(z) - 90), FLOORY + 450, z, 24, 900, 24); }
     const cat = (a, b, sag) => { let prev = a; for (let i = 1; i <= 10; i++) { const t = i / 10, p = [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t - sag * 4 * t * (1 - t), a[2] + (b[2] - a[2]) * t]; wp.push(...prev, ...p); prev = p; } };
-    for (const side of [-1, 1]) for (let z = 1900; z - 700 > -9000; z -= 700) for (const hh of [830, 760, 690]) cat([X0 + side * 2380, FLOORY + hh, z], [X0 + side * 2380, FLOORY + hh, z - 700], 40);
-    for (let z = 1900; z > -9000; z -= 1400) for (const hh of [800, 700]) cat([X0 - 2380, FLOORY + hh, z], [X0 + 2380, FLOORY + hh, z], 220);
+    for (const side of [-1, 1]) for (let z = 1900; z - 700 > -9000; z -= 700) for (const hh of [830, 760, 690]) cat([X0 + side * (innerAt(z) - 90), FLOORY + hh, z], [X0 + side * (innerAt(z - 700) - 90), FLOORY + hh, z - 700], 40);
+    for (let z = 1900; z > -9000; z -= 1400) for (const hh of [800, 700]) cat([X0 - (innerAt(z) - 90), FLOORY + hh, z], [X0 + (innerAt(z) - 90), FLOORY + hh, z], 220);
     inst(poles, bMat, unit, false); const wg = new THREE.BufferGeometry(); wg.setAttribute('position', new THREE.Float32BufferAttribute(wp, 3)); const wl = new THREE.LineSegments(wg, wMat); wl.frustumCulled = false; scene.add(wl); }
   /* far skyline so the street does not end in nothing */
   const _noop = 0;
@@ -250,7 +258,7 @@
     });
     byArea = frags.map((_, i) => i).sort((a, b) => frags[b].area - frags[a].area); fragBuilt = true;
   }
-  const FINAL = { cx: 3300, cy: -260, cz: 1000 }, LCYg = -30;
+  const FINAL = { cx: 3300, cy: -260, cz: -2800 }, LCYg = -30;
   /* ---------- merged mode: one cracked pane (radial + ring cracks), every plate is thick clear glass with the logo as a clear relief inside ---------- */
   const clipHalf = (poly, a, b, c0) => { const out = []; for (let i = 0; i < poly.length; i++) { const p = poly[i], q = poly[(i + 1) % poly.length], fp = a * p[0] + b * p[1] - c0, fq = a * q[0] + b * q[1] - c0; if (fp <= 0) out.push(p); if ((fp <= 0) !== (fq <= 0)) { const t = fp / (fp - fq); out.push([p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t]); } } return out; };
   const edgeMats = []; let gplates = [], merged = false, reliefTex = null, maskTex = null; const MX = 36, MY = 32;
@@ -317,7 +325,7 @@
       camera.position.set(c.cx + (bx || 0), -(c.cy + (by || 0)), c.cz); camera.rotation.set(-c.rx * D2R, -c.ry * D2R, c.rz * D2R, 'YXZ'); camera.translateZ(P); camera.updateMatrixWorld(true);
     },
     update(frames, m) {
-      if (trainG) trainG.position.x = X0 - 7600 + ((m.t || 0) * 640) % 15200;
+      if (trainG) trainG.position.x = X0 - 3200 + ((m.t || 0) * 430) % 6400;
       if (MODE === 'M') { if (!merged) buildMerged(); if (!merged) return; const s = m.s, N = s.st.length, cores = gplates.filter((p) => p.core), K = cores.length, br = REDUCE ? 0 : 1, ft = m.t * br, damp = 1 - m.reveal, kk = 1 - m.reveal, prog = m.prog || 0;
         gplates.forEach((p) => { let f = 0, lit = 0, fl = 0;
           if (p.core) { const a = Math.floor(p.order * N / K), b = Math.max(a + 1, Math.floor((p.order + 1) * N / K)); let sum = 0, dn = 0, mx = 0; for (let i = a; i < b; i++) { const st = s.st[i]; if (st === 2) { sum += 1; dn++; mx = Math.max(mx, s.doneAt[i] || 0); } else if (st === 1 || st === 3) sum += s.fr[i]; } f = sum / (b - a); lit = dn === b - a ? 1 : 0; fl = lit ? Math.max(0, 1 - (m.t - mx) / 0.9) : 0; }
