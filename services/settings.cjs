@@ -27,7 +27,7 @@ class Settings{
     const preset=scope==='text'?require('../core/text-defaults.cjs').read(this.folder):{};
     // Preset sizes are current-format values: keep the legacy "older than layout 22" size floor away from them.
     const session=readJSON(this.file('gal-preferences.json')),modern=Object.hasOwn(preset,'japaneseSize')||Object.hasOwn(preset,'translationSize');
-    const global=gameStyle.clean({...session,...preset,...(modern?{layoutVersion:22}:{})});
+    const global=gameStyle.clean({...(Object.keys(session||{}).length?gameStyle.clean(session):{}),...preset,...(modern?{layoutVersion:22}:{})});/* the session file alone takes the one-time spacing move (core/game-style.js), never the preset typed here */
     const entry=profile?readJSON(this.file('game-style-profiles.json')).entries?.[profile]:null;
     return entry?gameStyle.clean({...global,...entry.prefs}):global;
   }
@@ -70,6 +70,7 @@ class Settings{
   }
   const written=Object.keys(values||{});if(scope==='text'&&written.some(k=>['japaneseSize','translationSize','englishSize'].includes(k))){next.sizeSource='user';written.push('sizeSource');}
   if(gameScopes.has(scope)){
+    /* a gap or ruby height typed here never takes the one-time spacing move */if(written.some(k=>k==='gap'||k==='rubyOffsetY'))next.spacingDefaults=1;
     const cleaned=gameStyle.clean(next);
     if(profile){
       if(!/^[a-f0-9]{64}$/.test(profile))throw Error('SETTINGS_PROFILE_INVALID');

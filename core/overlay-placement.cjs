@@ -64,6 +64,7 @@ class OverlayPlacement {
          still hidden on screen: it stays placed. */
       if (m.hidden !== true && m.engine !== 'gpu' && this.current && !this.current.fallback && this.current.id === id && this.current.text === flat.join('')) return; /* GPU hiding is decided per frame: there, not hidden is the game showing it */
       if (m.hidden !== true) { this.why('shown:' + id, 'not placed: line ' + (Number(m.line) || 0) + ' is drawn by the game itself (hidden=0)'); if (this.current?.id === id) this.clear(); const vis = flat.join(''); if (vis && vis !== this.visibleKey) { this.visibleKey = vis; this.send({ type: 'textPlace', visible: true, text: vis, ...(this.hiding === true ? { hiding: true } : {}) }); } return; }
+      if (m.engine === 'gpu') this.gpuHiding = Date.now();
       this.visibleKey = ''; this.why('placed:' + id + ':' + rects.length, 'placed: line ' + (Number(m.line) || 0) + ', ' + rects.length + ' characters, first box ' + (rects[0] ? [].concat(rects[0]).map(v => Math.round(Number(v) || 0)).join(',') : '-') + ' in client ' + this.client.join('x'));
       this.emitLine({ id, engine: m.engine, text: flat.join(''), rects, client: this.client.slice(), ...(m.color ? { color: m.color } : {}), ...(typeof m.read === 'boolean' ? { read: m.read } : {}) });
     }
@@ -88,6 +89,9 @@ class OverlayPlacement {
        any line has come back as hidden by the game, so nothing proves the game's line is gone. A guessed place (anchor
        estimate, locator) would put MeguLit's Japanese next to the game's own: the line goes out as `visible` instead
        (the reader keeps the translation and never draws its Japanese over the game's). Every engine. */
+    /* 2026-11-20 (user, CHAOS;CHILD: 「对话框的字咋没了」): the GPU layer hides this game's lines (it placed one as hidden), so a line the
+       glyph path never saw hidden is still not the game's own drawing: the reader draws its Japanese where the last line was */
+    if (!this.hideSeen && this.gpuHiding && Date.now() - this.gpuHiding < 30 * 60 * 1000) { this.why('gfall:' + id, 'fallback: glyph line ' + (Number(table.seq) || 0) + ' unplaced while the GPU layer hides the game lines'); return this.emitLine({ id, engine: 'glyph', text: table.text, fallback: true, client: this.client.slice() }); }
     if (!this.hideSeen) this.why('gshown:' + id, 'not placed: glyph line ' + (Number(table.seq) || 0) + ' has no hidden glyph yet (the game draws it itself)');
     if (!this.hideSeen) { const vis = chars.filter(c => !/\s/.test(c)).join(''); if (this.current?.id === id) this.clear(); if (vis && vis !== this.visibleKey) { this.visibleKey = vis; this.send({ type: 'textPlace', visible: true, text: vis, ...(this.hiding === true ? { hiding: true } : {}) }); } return; }
     const typed = this.typed(table, chars.length, recorded), drawn = new Set(chars.map((c, i) => i).filter(i => i < typed));
