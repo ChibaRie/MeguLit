@@ -50,3 +50,24 @@ test('a game read by OCR at runtime is a probe problem even when the static prob
   assert.deepEqual(probe.problems(root).map(p=>[p.id,p.step]),[['g1','ocr-fallback']]);
  }finally{fs.rmSync(root,{recursive:true,force:true});}
 });
+
+test('a bridge that keeps failing on the same game process is given up on with a clear state; a new process starts over',()=>{
+ /* live5.raw.jsonl (rig, 2026-11-20): after the first bridge was killed every new one ended with 「LunaHook 未连接当前游戏」, exit 1, for 20 minutes */
+ const {EventEmitter}=require('node:events'),fs=require('node:fs'),os=require('node:os');
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'m468b-'));for(const n of ['HookBridge.exe'])fs.writeFileSync(path.join(dir,n),'');const hook=path.join(dir,'hook');fs.mkdirSync(hook);for(const n of ['LunaHost64.dll','LunaHook32.dll','LunaHook64.dll'])fs.writeFileSync(path.join(hook,n),'');
+ let now=1e6,spawns=0;const events=[];
+ const fake=()=>{spawns++;const c=new EventEmitter();const {PassThrough}=require('node:stream');c.stdout=new PassThrough();c.stderr=new PassThrough();c.stdin=new PassThrough();c.kill=()=>{};c.pid=1;setImmediate(()=>c.emit('exit',1));return c;};
+ const h=new HookNative({native:dir,hook,logs:dir},m=>events.push(m),fake,()=>now);clearInterval(h.timer);h.trace=()=>{};
+ const prefs={hookAutoStart:true,bindEnabled:true,hookProfile:'embed',maskMode:'hook'};
+ const run=async(pid,rounds)=>{for(let i=0;i<rounds;i++){h.configure(prefs,{gameProcessId:pid,gameHwnd:'123',processName:'Game',gameStarted:'63930742521'+pid,bound:true});await new Promise(r=>setImmediate(r));await new Promise(r=>setImmediate(r));now+=60000;h.tick();}};
+ return (async()=>{
+  try{
+   h.spawn=fake;/* process.kill(pid,0) is only checked for the real spawn */
+   await run(process.pid,20);
+   assert.equal(spawns,6,'six tries, then no more');
+   assert.ok(events.some(e=>e.hookGaveUp===true&&/已停止重连/.test(e.hookMessage||'')),'clear state');
+   await run(process.ppid||process.pid+1,2);
+   assert.ok(spawns>6,'a new game process is tried again');
+  }finally{fs.rmSync(dir,{recursive:true,force:true});}
+ })();
+});

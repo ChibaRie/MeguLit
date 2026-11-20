@@ -83,7 +83,7 @@ test('a game started before MeguLit: one bind for Alt+M, 点选 and the list; th
 
 test('reconnecting to a game an earlier MeguLit injected: HookBridge connects first and injects only when needed, our DLLs redial their pipes',()=>{
  const hb=read('native/HookBridge.cs');
- const start=hb.indexOf('Luna_Start(connected'),connect=hb.indexOf('Luna_ConnectProcess(Pid)',start),check=hb.indexOf('if(Luna_CheckIfNeedInject(Pid))',start);
+ const start=hb.indexOf('Luna_Start(connected'),connect=hb.indexOf('Luna_ConnectProcess(Pid)',start),check=hb.indexOf('Reattach=!Luna_CheckIfNeedInject(Pid)',start);
  assert.ok(start>0&&connect>start&&check>connect,'ConnectProcess, then inject only if Luna_CheckIfNeedInject');
  assert.match(hb,/Luna_DetachProcess\(Pid\)/,'a clean exit detaches, so the next start injects a fresh hook');
  const font=read('native/fontprobe/FontProbe.cpp');assert.match(font,/if \(pipe == INVALID_HANDLE_VALUE\) \{ pipe = CreateFileW\(name[^\n]*continue; fresh = true; \}/,'FontProbe redials and replays to a new HookBridge');
