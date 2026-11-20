@@ -453,7 +453,10 @@
       /* 2026-11-20 (user, CHAOS;CHILD: 「排版要贴近游戏」 — narration centred mid-screen, a dialogue box left-aligned): the game's rows
          decide where the reader breaks the line and whether the block is centred; size and wrap width stay the user's.
          A sentence whose first part the game drew earlier (core/page-text.cjs `continues`) keeps the place that part had. */
-      const rows = gameRows(boxes, size, map), lead = idx.findIndex(k => k != null); b.textPlaceRows = { text: readerText, rows: rows.rows.map(r => [Math.round(r.l), Math.round(r.r), Math.round(r.t), r.first]), center: rows.center, boxes: boxes.map(r => r && r.map(Math.round)), idx };
+      const rows = gameRows(boxes, size, map), lead = idx.findIndex(k => k != null);
+      /* 2026-11-20 (user: a centred line started at the left as 「流」 while the game typed it): with under half of the line's boxes known
+         the centring cannot be measured yet; a page that was centred stays centred on the same middle until it can */
+      if (!Number.isFinite(rows.center) && anchor && anchor.center && boxes.filter(Boolean).length < shown.length * .5) rows.center = anchor[0]; b.textPlaceRows = { text: readerText, rows: rows.rows.map(r => [Math.round(r.l), Math.round(r.r), Math.round(r.t), r.first]), center: rows.center, boxes: boxes.map(r => r && r.map(Math.round)), idx };
       if (!(anchor && lead >= 3 && Number(b.hookSourceContinues) > 0)) anchorFrom(boxes.filter(Boolean), size, map, String(line.text || ''), rows.center);
       /* the page's earlier lines stay above only when the game drew this line under them; a line that starts at or above
          where the last one ended is a new page (a title card, a cleared box), whatever the text stream said */
