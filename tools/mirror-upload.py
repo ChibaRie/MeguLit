@@ -65,7 +65,8 @@ def local_zip(pack, folder):
             except Exception as e:  # next source
                 print('  failed', src, e)
         else:
-            sys.exit('could not get ' + name)
+            print('  SKIPPED: could not get ' + name + ' from any source')
+            return None, tag, name
     return path, tag, name
 
 
@@ -81,13 +82,20 @@ def verify(url, path, size):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--namespace', required=True, help='ModelScope / Hugging Face account (or organization) name')
+    ap.add_argument('--namespace', help='ModelScope / Hugging Face account (or organization) name')
+    ap.add_argument('--prepare', action='store_true', help='only download and check the zips (no account needed)')
     ap.add_argument('--only', choices=['modelscope', 'hf'])
     ap.add_argument('--dir', default=os.path.join('H:\\', 'MeguLit-Work', 'runtime-packs'))
     a = ap.parse_args()
     os.makedirs(a.dir, exist_ok=True)
     manifest = json.load(open(os.path.join(ROOT, 'setup', 'runtime.json'), encoding='utf-8-sig'))
     packs = [(k, p) for k, p in manifest['packs'].items() if p['urls'][0].startswith(OWN)]
+    if a.prepare:
+        for key, pack in packs:
+            print(key, local_zip(pack, a.dir)[0] or 'missing')
+        return
+    if not a.namespace:
+        sys.exit('--namespace is required')
     repo = a.namespace + '/' + REPO
     targets = [t for t in ('modelscope', 'hf') if a.only in (None, t)]
 
@@ -111,6 +119,8 @@ def main():
     for key, pack in packs:
         print(key)
         path, tag, name = local_zip(pack, a.dir)
+        if not path:
+            continue
         rel = tag + '/' + name
         if ms:
             ms.upload_file(path_or_fileobj=path, path_in_repo=rel, repo_id=repo, commit_message='runtime ' + rel)
