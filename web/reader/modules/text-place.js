@@ -244,11 +244,34 @@
   /* layer 4 page model: the whole page on the game's own places. The reader's line is the page line with its text; the
      page's other lines are drawn from the copy kept when they were the reader's line (ruby, word tokens), or as plain
      tokens when the reader never showed them. No page on screen: nothing is drawn. */
+  /* issue 468 (寒蝉鸣泣之时解, full-page NVL: the game's text fills the window and MeguLit could not hide it; the translation sat in
+     the reader's own box over the game's lines, and moving that box to the bottom only met other lines). While the game draws a page
+     itself and the reader's sentence is on it with places, the translation goes right under that sentence's last row, from its first
+     character: a page fills from the top, so the space under the newest sentence is the one place no game text is yet. Japanese is
+     the game's own (not drawn again), no plate, the user's translation size; a sentence at the very bottom makes it smaller once
+     (at most 15 %), then it runs on below the game window (the layer spans the work area). */
+  function underGameLine(win, sentence) {
+    const text = readerLine(), row = win?.querySelector('.tomoyo-cn-row'); if (!text || !row || !page) return;
+    let cur = null; for (let i = page.lines.length - 1; i >= 0; i--) if (page.lines[i].text.includes(text) && page.lines[i].rects.length) { cur = page.lines[i]; break; }
+    if (!cur) return;
+    const map = mapper(page.client), at = [...cur.text.slice(0, cur.text.indexOf(text))].length, rs = cur.rects.slice(at, at + [...text].length).filter(Boolean).map(map); if (!rs.length) return;
+    const all = page.lines.flatMap(l => l.rects).map(map), x0 = Math.min(...rs.map(r => r[0])), y1 = Math.max(...rs.map(r => r[1] + r[3])), h = median(rs.map(r => r[3])) || 24;
+    const right = Math.max(...all.map(r => r[0] + r[2]), ...rs.map(r => r[0] + r[2]));
+    document.body.classList.add('megulit-anchored'); win.classList.add('megulit-anchor-window');
+    for (const p of ['margin-left', 'margin-right']) row.style.removeProperty(p);
+    set(row, 'max-width', Math.ceil(Math.max(right - x0, h * 12)) + 'px'); set(row, 'text-align', 'left');
+    for (const o of [row, ...row.querySelectorAll('*')]) o.style.removeProperty('font-size');
+    set(win, 'right', 'auto'); set(win, 'bottom', 'auto'); set(win, 'margin', '0');
+    const place = () => { const wr = win.getBoundingClientRect(), rr = row.getBoundingClientRect(); set(win, 'left', (wr.left + x0 - rr.left) + 'px'); set(win, 'top', (wr.top + y1 + h * .25 - rr.top) + 'px'); };
+    place(); place();
+    const info = b.galLayoutInfo?.(), dpr = devicePixelRatio || 1, limit = (Number.isFinite(info?.workBottom) && info.workBottom > 0 ? info.workBottom / dpr : innerHeight) - 8, rb = row.getBoundingClientRect();
+    if (rb.height > 0 && rb.bottom > limit) { const fs0 = parseFloat(getComputedStyle(row).fontSize) || 16, fs = Math.max(Math.ceil(fs0 * .85), Math.floor(fs0 * (limit - rb.top) / rb.height)); for (const o of [row, ...row.querySelectorAll('*')]) set(o, 'font-size', fs + 'px'); place(); }
+  }
   function applyPage() {
     const body = document.body, win = target(), sentence = win?.querySelector('.sentence-text:not(.megulit-old-line)');
     /* E610 (DDLC Plus live: the layer never armed for a Unity write-back stream, said awake=0, and the reader was hidden for good) only an armed layer's "no page" hides the reader */const asleep = on && page.armed === true && page.awake === false, live = on && page.awake && page.armed && page.lines.length > 0;
     if (body.classList.contains('megulit-place-asleep') !== asleep) { body.classList.toggle('megulit-place-asleep', asleep); window.__tomoyoHitRegionsRefresh?.(true); }
-    if (!live || !sentence) { document.getElementById('megulit-page-ahead')?.replaceChildren(); dropOld(null); clones.clear(); const p = page; page = null; release(); page = p; body.classList.remove('megulit-placed'); /* a page the layer does not hide (not armed, or no line has places yet): the game's own text is on screen, the reader's Japanese is never drawn at its own place over it; the translation stays */ const own = on && page.awake; if (body.classList.contains('megulit-place-game-drawn') !== own) { body.classList.toggle('megulit-place-game-drawn', own); window.__tomoyoHitRegionsRefresh?.(true); } /* only where the reader's line follows the game's place (anchor mode): in its own box elsewhere it stays, Japanese on top */ pageOwn = own === true && anchorMode === true; briefSync(false); return; }
+    if (!live || !sentence) { document.getElementById('megulit-page-ahead')?.replaceChildren(); dropOld(null); clones.clear(); const p = page; page = null; release(); page = p; body.classList.remove('megulit-placed'); /* a page the layer does not hide (not armed, or no line has places yet): the game's own text is on screen, the reader's Japanese is never drawn at its own place over it; the translation stays */ const own = on && page.awake; if (body.classList.contains('megulit-place-game-drawn') !== own) { body.classList.toggle('megulit-place-game-drawn', own); window.__tomoyoHitRegionsRefresh?.(true); } /* only where the reader's line follows the game's place (anchor mode): in its own box elsewhere it stays, Japanese on top */ pageOwn = own === true && anchorMode === true; briefSync(false); if (own && sentence) underGameLine(win, sentence); return; }
     if (pageOwn) { pageOwn = false; briefSync(false); }
     const map = mapper(page.client), readerText = readerLine(), geom = [];
     let cur = null; if (readerText) for (let i = page.lines.length - 1; i >= 0; i--) if (page.lines[i].text.includes(readerText)) { cur = page.lines[i]; break; }
@@ -280,7 +303,13 @@
            so a longer translation was cut off at that edge until the Japanese caught up (2026-11-15, the last flicker) */
         const pageRight = Math.max(...page.lines.flatMap(l => l.rects).map(map).map(r => r[0] + r[2]));
         set(row, 'width', Math.max(pageRight - x0, x1 - x0, Math.min(innerWidth - x0 - 8, size * 34)) + 'px');
-        set(row, 'font-size', (only ? size : Math.max(12, Math.round(size * .6))) + 'px');
+        /* issue 468 (寒蝉, full-page NVL): the page's translation was always 60 % of the Japanese, whatever the user set. It is the user's
+           translation size, as on a single placed line; under a sentence at the bottom of the page it is made smaller once (at most 15 %)
+           and otherwise runs on below the game (the layer spans the work area), never over the page's other lines */
+        const userCn = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--tomoyo-gal-cn-size')), base = only ? size : (Number.isFinite(userCn) && userCn >= 10 ? userCn : Math.max(12, Math.round(size * .6)));
+        set(row, 'font-size', base + 'px');
+        if (!only) { const info = b.galLayoutInfo?.(), dpr = devicePixelRatio || 1, limit = (Number.isFinite(info?.workBottom) && info.workBottom > 0 ? info.workBottom / dpr : innerHeight) - 8, rb = row.getBoundingClientRect();
+          if (rb.height > 0 && rb.bottom > limit) set(row, 'font-size', Math.max(Math.ceil(base * .85), Math.floor(base * (limit - rb.top) / rb.height)) + 'px'); }
       }
       const copy = sentence.cloneNode(true); copy.__megulitText = readerText; copy.__megulitAt = at; clones.set(cur.id, copy);
     }
