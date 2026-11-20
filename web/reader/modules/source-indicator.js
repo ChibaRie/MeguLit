@@ -50,7 +50,12 @@
   .tome-src-head>div{flex:1;min-width:0;display:grid;gap:2px}.tome-src strong{font-size:13.5px;font-weight:650}.tome-src small{opacity:.78;line-height:1.55;font-size:12px}
   .tome-src button{margin:0;padding:6px 12px;border-radius:8px;font-size:12.5px;cursor:pointer;border:1px solid color-mix(in srgb,var(--src-c,#7891ad) 55%,transparent);background:color-mix(in srgb,var(--src-c,#7891ad) 16%,transparent);color:inherit}
   .tome-src button:hover{background:color-mix(in srgb,var(--src-c,#7891ad) 28%,transparent)}.tome-src button[disabled]{opacity:.55;cursor:default}
-  .tome-src label.tome-src-switch{display:flex;align-items:flex-start;gap:8px;cursor:pointer;margin:0}.tome-src-switch input{margin-top:3px}
+  .tome-src label.tome-src-switch{display:flex;align-items:flex-start;gap:8px;cursor:pointer;margin:0}.tome-src-switch input{appearance:none;-webkit-appearance:none;flex:none;box-sizing:border-box;width:18px;height:18px;margin:1px 0 0;border-radius:6px;border:1.5px solid color-mix(in srgb,var(--theme-text,#e9eaf0) 38%,transparent);background:color-mix(in srgb,var(--theme-text,#e9eaf0) 6%,transparent);display:grid;place-items:center;cursor:pointer;transition:background .16s ease,border-color .16s ease,transform .12s ease}
+  .tome-src-switch input::after{content:"";width:9px;height:5px;margin-top:-2px;border:2px solid #fff;border-top:0;border-right:0;transform:rotate(-45deg) scale(0);transition:transform .16s cubic-bezier(.3,1.5,.5,1)}
+  .tome-src-switch input:hover{border-color:var(--src-c,#7891ad)}.tome-src-switch input:active{transform:scale(.92)}
+  .tome-src-switch input:checked{background:var(--theme-primary,#ad1539);border-color:var(--theme-primary,#ad1539)}.tome-src-switch input:checked::after{transform:rotate(-45deg) scale(1)}
+  .tome-src-switch input:focus-visible{outline:2px solid var(--src-c,#7891ad);outline-offset:2px}
+  @media (prefers-reduced-motion:reduce){.tome-src-switch input,.tome-src-switch input::after{transition:none}}
   .tome-src-seg{display:grid;grid-template-columns:1fr 1fr;gap:3px;padding:3px;border-radius:10px;background:color-mix(in srgb,var(--theme-text,#e9eaf0) 8%,transparent)}
   .tome-src-seg button{border:0;background:transparent;padding:7px 10px;border-radius:8px}.tome-src-seg button[aria-checked=true]{background:color-mix(in srgb,var(--theme-primary,#ad1539) 70%,#000);color:#fff}
   .tome-src-pill{display:flex;align-items:center;gap:8px;font-weight:600}.tome-src details summary{cursor:pointer;opacity:.85}.tome-src details[open] summary{margin-bottom:6px}
