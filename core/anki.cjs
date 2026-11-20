@@ -99,7 +99,12 @@ class Anki{
   // The game's own voice for the line when it was recorded, otherwise the synthesized sentence.
   if(extra.sentenceAudio&&available.includes('SentenceAudio')){const name=(extra.gameAudio?'tomoyo_g_':'tomoyo_s_')+createHash('sha256').update(extra.sentenceAudio.data).digest('hex').slice(0,16)+(extra.sentenceAudio.ext||'.wav');await this.call(c,'storeMediaFile',{filename:name,data:extra.sentenceAudio.data});values.SentenceAudio=audioField(name,owned);}
   if(audio){const filename='tomoyo_'+id+'_'+createHash('sha256').update(audio.data).digest('hex').slice(0,12)+'.wav';await this.call(c,'storeMediaFile',{filename,data:audio.data});values.Audio=audioField(filename,owned);}
-  if(found.length){if(!audio)delete values.Audio;if(!extra.sentenceAudio)delete values.SentenceAudio;if(!extra.screenshot)delete values.Screenshot;if(!extra.translation){delete values.SentenceTranslation;delete values.TranslationSource;}if(!extra.gameTitle)delete values.Game;await this.call(c,'updateNoteFields',{note:{id:found[0],fields:values}});return {id:found[0],updated:true,screenshotAttached:!!extra.screenshot&&available.includes('Screenshot')};}
+  if(found.length){if(!audio)delete values.Audio;
+   /* The sentence's voice, picture, translation and game belong to that sentence: they are kept only while the card keeps it.
+      Mining the same word from another line used to show the new sentence with the old line's voice and screenshot. */
+   let same=true;try{const [info]=await this.call(c,'notesInfo',{notes:[found[0]]});const old=info?.fields?.Sentence?.value;if(typeof old==='string')same=old.trim()===values.Sentence.trim();}catch{}
+   if(same){if(!extra.sentenceAudio)delete values.SentenceAudio;if(!extra.screenshot)delete values.Screenshot;if(!extra.translation){delete values.SentenceTranslation;delete values.TranslationSource;}if(!extra.gameTitle)delete values.Game;}
+   else for(const k of ['SentenceAudio','Screenshot','SentenceTranslation','TranslationSource','Game'])if(available.includes(k)&&!(k in values))values[k]='';await this.call(c,'updateNoteFields',{note:{id:found[0],fields:values}});return {id:found[0],updated:true,screenshotAttached:!!extra.screenshot&&available.includes('Screenshot')};}
   const note=await this.call(c,'addNote',{note:{deckName:c.ankiDeck,modelName:c.ankiModel,fields:values,options:{allowDuplicate:false},tags:['tomoyo_megumin',tag]}});if(!note)throw Error('Anki 未创建笔记');return {id:note,updated:false,screenshotAttached:!!extra.screenshot&&available.includes('Screenshot')};
  }
 }
