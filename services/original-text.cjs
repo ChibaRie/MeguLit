@@ -68,9 +68,9 @@ function ainOf(dir,base){const files=fs.readdirSync(dir).filter(f=>/\.ain$/i.tes
 const bgi=require('./original-engines/bgi.cjs');
 const ADAPTERS={
  system4:{marker:base=>base+'.ain',locate:(dir,base)=>{const file=ainOf(dir,base);return file?{engine:'system4',target:file}:null;},read:target=>readAin(target),fingerprint:target=>sha256(target)},
- bgi:{folder:true,marker:()=>'data01000.arc',locate:dir=>{try{const arcs=fs.readdirSync(dir).filter(f=>/^data0\d{4}\.arc$/i.test(f));if(!arcs.length)return null;const head=Buffer.alloc(12),fd=fs.openSync(path.join(dir,arcs[0]),'r');try{fs.readSync(fd,head,0,12,0);}finally{fs.closeSync(fd);}return ['BURIKO ARC20','PackFile    '].includes(head.toString('latin1'))?{engine:'bgi',target:dir}:null;}catch{return null;}},
+ bgi:{folder:true,marker:()=>'data01000.arc',locate:dir=>{try{const arcs=bgi.arcFiles(dir);if(!arcs.length)return null;const head=Buffer.alloc(12),fd=fs.openSync(arcs[0],'r');try{fs.readSync(fd,head,0,12,0);}finally{fs.closeSync(fd);}return ['BURIKO ARC20','PackFile    '].includes(head.toString('latin1'))?{engine:'bgi',target:dir}:null;}catch{return null;}},
   read:dir=>{const scenes=bgi.scan(dir),lines=scenes.flatMap(x=>x.lines),ruby=scenes.some(x=>x.ruby?.some(Boolean))?scenes.flatMap(x=>x.ruby||x.lines.map(()=>null)):undefined;return {engine:'bgi',version:0,codepage:'shift_jis',lines,ruby,sizes:scenes.map(x=>x.lines.length),structure:{messages:lines.length,functions:scenes.length,functionHash:crypto.createHash('sha256').update(scenes.map(x=>x.name+':'+x.lines.length).join('\n')).digest('hex').slice(0,16)}};},
-  fingerprint:dir=>crypto.createHash('sha256').update('bgi-code-order\n'+fs.readdirSync(dir).filter(f=>/^data0\d{4}\.arc$/i.test(f)).sort().map(f=>{const st=fs.statSync(path.join(dir,f));return f+'|'+st.size+'|'+st.mtimeMs;}).join('\n')).digest('hex')}};
+  fingerprint:dir=>crypto.createHash('sha256').update('bgi-code-order\n'+bgi.arcFiles(dir).map(p=>{const st=fs.statSync(p);return path.basename(p)+'|'+st.size+'|'+st.mtimeMs;}).join('\n')).digest('hex')}};
 // E280: engines read as scene files (KiriKiri, Artemis, Ren'Py); their script is the game folder like BGI's.
 const scenes=require('./original-engines/scenes.cjs'),fillLines=require('./original-engines/fill.cjs');
 for(const id of Object.keys(scenes.ENGINES))ADAPTERS[id]={folder:true,scene:true,locate:dir=>scenes.readable(id,dir)?{engine:id,target:dir}:null,
@@ -156,10 +156,12 @@ function importInto(root,id,state,dir,exeBase,auto){
    (穢翼のユースティア 汉化版: data01000.arc is Chinese, backup/备份/data01000.arc is the 2011 Japanese release). Folders up to
    three levels down that hold a file named like one of the running script's sources are read with the same reader; the
    one with most Japanese lines, at least half its prose, is the original. → folder or null */
-function sourceNames(engine,dir){if(engine==='bgi')return fs.readdirSync(dir).filter(f=>/^data0\d{4}\.arc$/i.test(f));const e=scenes.ENGINES[engine];if(!e?.sources)return [];return e.sources(dir).filter(f=>path.dirname(path.resolve(f)).toLowerCase()===path.resolve(dir).toLowerCase()).map(f=>path.basename(f));}
+function sourceNames(engine,dir){if(engine==='bgi')return bgi.arcFiles(dir).map(f=>path.basename(f));const e=scenes.ENGINES[engine];if(!e?.sources)return [];return e.sources(dir).filter(f=>path.dirname(path.resolve(f)).toLowerCase()===path.resolve(dir).toLowerCase()).map(f=>path.basename(f));}
 function backupOriginal(dir,engine,base){if(engine!=='bgi'&&!ADAPTERS[engine]?.scene)return null;
  const names=new Set(sourceNames(engine,dir).map(n=>n.toLowerCase()));if(!names.size)return null;
- let best=null,seen=0;const visit=(d,level)=>{let list;try{list=fs.readdirSync(d,{withFileTypes:true});}catch{return;}
+ /* the running archives' own folder (Archive) is not a backup of them */
+ const own=engine==='bgi'?path.resolve(path.dirname(bgi.arcFiles(dir)[0]||dir)).toLowerCase():'';
+ let best=null,seen=0;const visit=(d,level)=>{let list;try{list=fs.readdirSync(d,{withFileTypes:true});}catch{return;}if(level>0&&path.resolve(d).toLowerCase()===own)return;
   if(level>0&&list.some(e=>e.isFile()&&names.has(e.name.toLowerCase())))try{const loc=ADAPTERS[engine].locate(d,base);if(loc&&loc.engine===engine){const r=readScript(loc),prose_=r.lines.filter(prose),ja=prose_.filter(japaneseLine).length;if(ja>=prose_.length*.5&&ja>=50&&(!best||ja>best.ja))best={dir:d,ja};}}catch{}
   if(level<3)for(const e of list)if(e.isDirectory()&&!/^\.megulit/i.test(e.name)&&++seen<400)visit(path.join(d,e.name),level+1);};
  visit(dir,0);return best?best.dir:null;}
@@ -220,8 +222,8 @@ function buildPatch(runningState,source){
  }else if(engine==='bgi'){
   const base=bgi.scan(runningDir),names=new Set(base.map(x=>x.name.toLowerCase())),overlay=new Map();
   for(const [key,f] of found.files){if(!names.has(key))continue;let data;try{data=f.read();}catch{continue;}if(bgi.isScript(data))overlay.set(key,data);}
-  for(const dir of found.dirs){if(sameDir(dir,runningDir))continue;let arcs=[];try{arcs=fs.readdirSync(dir).filter(f=>/^data0\d{4}\.arc$/i.test(f));}catch{}
-   for(const name of arcs){let entries;try{entries=bgi.readArc(path.join(dir,name));}catch{continue;}for(const e of entries||[]){const key=e.name.toLowerCase();if(names.has(key)&&!overlay.has(key)&&bgi.isScript(e.data))overlay.set(key,Buffer.from(e.data));}}}
+  for(const dir of found.dirs){if(sameDir(dir,runningDir))continue;const arcs=bgi.arcFiles(dir);
+   for(const file of arcs){let entries;try{entries=bgi.readArc(file);}catch{continue;}for(const e of entries||[]){const key=e.name.toLowerCase();if(names.has(key)&&!overlay.has(key)&&bgi.isScript(e.data))overlay.set(key,Buffer.from(e.data));}}}
   if(!overlay.size)throw Error('PATCH_SCRIPT_NOT_FOUND');
   // Scene by scene: a patched scene is used only when it has the same operands as the running one, checked on the
   // identifiers both keep (bgm004, daynt0001, voice names). Patches ported from another edition differ in a few scenes;
@@ -611,7 +613,7 @@ function localRoots(){const roots=[];for(const letter of 'CDEFGHIJKLMNOPQRSTUVWX
 async function discover(root,db,id,options={}){
  const row=gameRow(db,id),state=scanRunning(root,id,row.executable);if(!state.runtime)throw Error(state.error||'NO_SUPPORTED_SCRIPT');
  if(!ADAPTERS[state.runtime.engine||'system4'].marker)return {notFound:true,search:{found:0,complete:true,searched:0,checked:[]}}; // scene engines have no single file to look for
- const engine=state.runtime.engine||'system4',runningDir=runningDirOf(state.runtime),base=ADAPTERS[engine].marker(path.parse(state.runtime.file).name).replace(/\.[^.]+$/,''),exclude=runningDir.toLowerCase(),runtime=readIndex(state.runtime.index);
+ const engine=state.runtime.engine||'system4',runningDir=runningDirOf(state.runtime),base=ADAPTERS[engine].marker(path.parse(state.runtime.file).name).replace(/\.[^.]+$/,''),exclude=path.resolve(engine==='bgi'&&bgi.arcFiles(runningDir).length?path.dirname(bgi.arcFiles(runningDir)[0]):runningDir).toLowerCase(),runtime=readIndex(state.runtime.index);
  writeState(root,id,{status:'scanning',error:''});
  const search=await findCandidates(base,exclude,{ext:path.extname(ADAPTERS[engine].marker(path.parse(state.runtime.file).name)),roots:options.roots||[runningDir,...localRoots()],deadline:Date.now()+(options.timeout||30000)}),checked=[];
  for(const file of search.found){try{const loc=locate(path.dirname(file),path.parse(state.runtime.file).name);if(!loc||loc.engine!==engine){checked.push({file,result:'other-engine'});continue;}const ain=realign(loc,readScript(loc),runtime,runningDir),japanese=ain.lines.filter(t=>prose(t)&&japaneseLine(t)).length;if(japanese<ain.lines.filter(prose).length*.5){checked.push({file,result:'not-japanese'});continue;}const a=align(runtime,ain);checked.push({file,result:a.reliable?'match':'different-version'});if(a.reliable)return {...importOriginal(root,db,id,path.dirname(file)),search:{...search,found:search.found.length,checked}};}catch(error){checked.push({file,result:String(error.message||error)});}}
