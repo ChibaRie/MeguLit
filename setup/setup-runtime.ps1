@@ -40,6 +40,12 @@ function Note($kind, $data) {
 if ($testLog) { [Windows.Forms.Application]::add_ThreadException({ param($s, $e) Note 'error' @{ text = $e.Exception.ToString() } }) }
 function Say([string]$text) { Note 'message' @{ text = $text }; if (-not $testLog) { [void][Windows.Forms.MessageBox]::Show($form, $text, 'MeguLit') } }
 
+# UI hooks: no-ops here, setupsetup-ui.ps1 (MEGULIT_SETUP_THEME) answers them. The logic never reads anything back from the UI layer.
+function UI-Progress($p) {}
+function UI-Fail([string]$kind, [string]$message) {}
+function UI-Done {}
+function UI-Preview([string]$state) {}
+
 # WebView2 Runtime is the one thing MeguLit cannot ship itself (Windows 11 has it; some Windows 10 PCs do not).
 function Has-WebView2 {
   $id = '{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}'
@@ -936,11 +942,13 @@ function Next-Download {
   }
   if ($script:dlPos -ge $script:dl.Count) {
     Set-Bar 1000; $status.Text = ('运行组件都下载好了（{0}）' -f (MB (Total-Bytes))) + $script:installLine; Note 'all-downloaded' @{}
+    UI-Progress @{ phase = 'waiting'; count = $script:dl.Count; total = (Total-Bytes); totalGot = (Total-Bytes) }
     Show-State; Pump; return
   }
   $id = $script:dl[$script:dlPos]; $script:fetchId = $id
   $script:mode = ''; $status.ForeColor = $C.muted; $button.Text = '取消 Cancel'; Style-Button $button $false; $button.FlatAppearance.BorderColor = $C.red
   $status.Text = ('[{0}/{1}] {2}：正在同时测速所有下载源（GitHub / 国内镜像），挑最快的几个一起下载…' -f ($script:dlPos+1), $script:dl.Count, $names[$id]); Show-State
+  UI-Progress @{ phase = 'probe'; idx = $script:dlPos; count = $script:dl.Count; name = $names[$id]; got = 0; size = [long]$packs.$id.size; total = (Total-Bytes); totalGot = (Got-Bytes) }
   try { Ensure-Engine } catch { Fail 'download' ('下载组件加载失败：' + $_.Exception.Message); return }
   $f = New-Object MeguFetch
   $f.Urls = [string[]]@(Candidates $id); $f.Part = Part $id; $f.Size = [long]$packs.$id.size; $f.Sha = [string]$packs.$id.sha256
@@ -953,6 +961,7 @@ function Fail([string]$kind, [string]$message) {
   $title.Text = if ($kind -eq 'install') { '安装没完成' } else { '下载中断了' }
   $hint = if ($kind -eq 'install') { '磁盘空间不足或文件被占用时会这样，点「重试」再来一次 / Retry' } else { '检查网络后点「重试」，已下载的部分会接着用 / Check your connection and retry' }
   $status.Text = $message + "`n" + $hint; $button.Text = '重试 Retry'; Style-Button $button $true
+  UI-Fail $kind $message
   Note 'failed' @{ kind = $kind; message = $message }
 }
 $poll.add_Tick({
@@ -965,9 +974,10 @@ $poll.add_Tick({
       $src = $f.SourceLabel(); $from = if ($src) { '  ·  来源 ' + $src } else { '' }
       $resumed = if ($f.Resumed -gt 0) { '（接着上次）' } else { '' }
       $status.Text = $head + ('正在下载{0}{1}  {2:N0} / {3:N0} MB{4}{5}' -f $names[$id], $resumed, ($f.Received/1MB), ($f.Size/1MB), $speed, $from) + $script:installLine
+      UI-Progress @{ phase = 'download'; idx = $script:dlPos; count = $script:dl.Count; name = $names[$id]; got = $f.Received; size = $f.Size; speed = $f.TotalSpeed; src = $src; resumed = ($f.Resumed -gt 0); total = (Total-Bytes); totalGot = $got }
       if ($env:MEGULIT_SETUP_CLOSE_AT -and $got -ge [long]$env:MEGULIT_SETUP_CLOSE_AT) { Note 'close' @{ got = $got }; $form.Close() }
     }
-    'verify' { $status.Text = $head + ('正在校验{0}… / Verifying' -f $names[$id]) + $script:installLine }
+    'verify' { $status.Text = $head + ('正在校验{0}… / Verifying' -f $names[$id]) + $script:installLine; UI-Progress @{ phase = 'verify'; idx = $script:dlPos; count = $script:dl.Count; name = $names[$id]; got = $f.Size; size = $f.Size; total = (Total-Bytes); totalGot = (Got-Bytes) } }
     'done' {
       $poll.Stop(); $script:fetch = $null; Save-FetchLog $f $id
       try { [IO.File]::WriteAllText($f.Part + '.ok', ([string]$packs.$id.sha256).ToUpperInvariant()) } catch {}
@@ -1095,7 +1105,7 @@ function Pump {
     }
   } finally { $script:busy = $false; $script:installLine = '' }
   if (Downloads-Done) {
-    if (@(Missing $Root).Count -eq 0) { $script:done = $true; Note 'installed' @{ root = $Root }; $form.Close() }
+    if (@(Missing $Root).Count -eq 0) { $script:done = $true; Note 'installed' @{ root = $Root }; if (-not $testLog) { UI-Done }; $form.Close() }
     else { Fail 'install' ('安装后仍缺少：' + ((Missing $Root | ForEach-Object { $names[$_] }) -join '、')) }
   } else { Show-State }
 }
@@ -1105,6 +1115,7 @@ function Install-Pack([string]$id, [string]$part) {
     $script:attempt++; $unpack = Join-Path $Root ('runtime-' + $id + '-' + $script:attempt + '.unpack')
     $script:installLine = "`n" + ('正在解压{0}到 {1}… / Unpacking' -f $names[$id], $runtimeDir); Show-State
     if (-not $script:fetch) { $status.Text = $script:installLine.Trim(); Set-Busy }
+    UI-Progress @{ phase = 'unpack'; count = $script:dl.Count; name = $names[$id]; dir = $runtimeDir; total = (Total-Bytes); totalGot = (Total-Bytes) }
     Note 'unpack-start' @{ id = $id }
     if (Test-Path $unpack) { With-Retry { Remove-Item $unpack -Recurse -Force -ErrorAction Stop } }
     New-Item -ItemType Directory $unpack | Out-Null
@@ -1128,6 +1139,7 @@ function Install-Pack([string]$id, [string]$part) {
   } catch { Fail 'install' ('安装失败：' + $_.Exception.Message); return $false }
 }
 
+. (Join-Path $sourceRoot 'setup/setup-ui.ps1')
 $button.add_Click({
   if ($script:mode -eq 'failed') {
     $script:mode = ''; $status.ForeColor = $C.muted; $button.Text = '取消 Cancel'; Style-Button $button $false; $button.FlatAppearance.BorderColor = $C.red
@@ -1143,11 +1155,18 @@ if ($env:MEGULIT_SETUP_AUTOSTART -eq 'downloaded') {
   $auto = New-Object Windows.Forms.Timer; $auto.Interval = 200
   $auto.add_Tick({ if ((Downloads-Done) -and $script:mode -ne 'failed') { $auto.Stop(); Confirm-Install } }); $auto.Start()
 }
-# MEGULIT_SETUP_PREVIEW=<png>: render the window to an image and exit (used to check the layout); no download starts.
+# MEGULIT_SETUP_PREVIEW=<png prefix>: render the window to <prefix>-<state>.png for each state in MEGULIT_SETUP_PREVIEW_STATE
+# (comma list; default downloading) with fake data and exit. No download starts. Used to review the layouts.
 if ($env:MEGULIT_SETUP_PREVIEW) {
   $form.add_Shown({ if ($script:fetch) { $poll.Stop(); $script:fetch.Cancel(); $script:fetch = $null }
-    if ($env:MEGULIT_SETUP_PREVIEW_STATE -eq 'failed') { Fail 'download' '下载失败：无法连接到服务器' } else { $title.Text = '正在下载运行组件…'; $status.Text = '[1/3] 正在下载基础组件  47 / 107 MB  ·  6.8 MB/s  ·  来源 cn-dl.megulit.com 等 3 个源'; Set-Bar 140 }
-    $form.Refresh(); $bmp = New-Object Drawing.Bitmap $form.Width, $form.Height; $form.DrawToBitmap($bmp, (New-Object Drawing.Rectangle 0,0,$form.Width,$form.Height)); $bmp.Save($env:MEGULIT_SETUP_PREVIEW); $script:done = $false; $form.Close() })
+    Note 'preview' @{ s = $env:MEGULIT_SETUP_PREVIEW_STATE }; $states = if ($env:MEGULIT_SETUP_PREVIEW_STATE) { $env:MEGULIT_SETUP_PREVIEW_STATE.Split(',') } else { @('downloading') }
+    foreach ($st in $states) { try {
+      if ($themeName -in 'line','steps','hero') { UI-Preview $st }
+      elseif ($st -like 'failed*') { Fail 'download' '下载失败：无法连接到服务器' }
+      else { $title.Text = '正在下载运行组件…'; $status.Text = '[1/3] 正在下载基础组件  47 / 107 MB  ·  6.8 MB/s  ·  来源 cn-dl.megulit.com 等 3 个源'; Set-Bar 140 }
+      Note 'shot' @{ st = $st }; $form.Refresh(); $bmp = New-Object Drawing.Bitmap $form.Width, $form.Height; $form.DrawToBitmap($bmp, (New-Object Drawing.Rectangle 0,0,$form.Width,$form.Height)); $bmp.Save($env:MEGULIT_SETUP_PREVIEW + '-' + $st + '.png'); $bmp.Dispose()
+    } catch { Note 'error' @{ text = $_.ToString() + ' @ ' + $_.InvocationInfo.PositionMessage } } }
+    $script:done = $false; $form.Close() })
 }
 [void]$form.ShowDialog()
 if ($script:fetch) { $script:fetch.Cancel(); [void]$script:fetch.Wait(3000) }
