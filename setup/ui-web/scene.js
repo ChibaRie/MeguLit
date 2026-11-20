@@ -114,19 +114,7 @@
     const T3 = [[-800, -6200, 520, 2600, 420], [700, -7000, 420, 3200, 380], [1900, -6000, 600, 2300, 500], [3300, -7400, 700, 3400, 520], [4700, -6100, 560, 2500, 460], [5900, -6900, 420, 3000, 400], [7100, -6000, 520, 2400, 440], [8300, -7200, 460, 3100, 420], [-1900, -7000, 500, 2800, 420],
       [900, -2300, 360, 1700, 320], [300, -1200, 300, 1500, 280], [5800, -1700, 360, 1800, 320], [7200, -900, 320, 1500, 300], [-1200, -2600, 400, 2000, 360], [8200, -2400, 420, 2100, 380]];
     T3.forEach(([x, z, w, hh, d], i) => box(x, FY - hh / 2, z, w, hh, d, i === 3 ? 'red' : ''));
-    /* two facade slabs; one carries the circle that fills with the real progress, the other a still circle and a halo ring on its roof */
-    box(-200, FY - 1200, -3200, 1500, 2400, 300, ''); box(6600, FY - 1200, -3000, 1500, 2400, 300, '');
-    progCircle = etch(-200, FY - 1300, -3200 + 151, 1180, 1180, circleSvg(true), 'magic');
-    etch(6600, FY - 1300, -3000 + 151, 1180, 1180, circleSvg(false), 'magic');
-    const ring = plane(6600, FY - 2440, -3000, 1100, 1100, 90, 'halo'); ring.innerHTML = '<svg viewBox="-50 -50 100 100"><circle r="46" fill="none" stroke="var(--red)" stroke-width="2.4"/><circle r="40" fill="none" stroke="var(--ink)" stroke-width=".8" stroke-dasharray="2 3" opacity=".6"/></svg>';
-    const ring2 = plane(-200, FY - 2440, -3200, 1100, 1100, 90, 'halo'); ring2.innerHTML = ring.innerHTML;
-    /* a spell-light band running down the seam between two towers, light flowing along it (animated from the clock, not a CSS timer) */
-    bandEl = plane(560, FY - 1100, -2870, 12, 2200, 0, 'band'); bandEl.style.margin = '-1100px 0 0 -6px';
-    /* rune column cut into a skyline tower */
-    etch(3300, FY - 1700, -7400 + 261, 90, 1400, '<svg viewBox="0 0 30 460"><g fill="none" stroke="var(--ink)" stroke-width="1.6" opacity=".55">' + Array.from({ length: 12 }, (_, i) => `<path d="M3 ${i * 38 + 6}l12 -5l12 5l-12 5z"/><path d="M15 ${i * 38 + 16}v18"/>`).join('') + '</g></svg>', 'magic');
     plate(0, -20, -1000, 760, 360, '<img src="' + (typeof INK !== 'undefined' ? INK : 'logos/logo-A-black.svg') + '" alt=""><h2>' + tr('welcomeSub') + '</h2>');
-    plate(1200, -20, -1000, 760, 360, '<h1 style="font-size:96px;letter-spacing:-3px">WHERE</h1><h2>' + tr('locSub') + '</h2>');
-    ghost(830, -380, -1010, 190, 'MEGU'); ghost(1700, 120, -1010, 190, 'LIT');
   }
 
   /* Eight big irregular glass plates (cells of 8 hand-placed seeds over the logo), each carrying only its own part of the logo,
@@ -134,7 +122,7 @@
      the logo reads; from anywhere else it is just a few plates with a line or a patch of colour on them.
      The real download is folded into the 8 plates: segments are grouped by byte range, one group per plate; a plate is filled
      with red along its own strokes as its group's real progress rises, and is fully lit when the whole group is done. */
-  const K = 8, LK = ['A', 'B', 'C'].includes(Q.get('logo')) ? Q.get('logo') : 'A', LG = (window.LOGOS || {})[LK] || { w: 3424, h: 1452, seeds: [[430, 330], [800, 1050], [1300, 740], [1760, 1130], [2220, 800], [2680, 1040], [3180, 1060], [3000, 250]] };
+  const K = 8, LK = ['A', 'B', 'C'].includes(Q.get('logo')) ? Q.get('logo') : 'C', LG = (window.LOGOS || {})[LK] || { w: 3424, h: 1452, seeds: [[430, 330], [800, 1050], [1300, 740], [1760, 1130], [2220, 800], [2680, 1040], [3180, 1060], [3000, 250]] };
   const SC = 860 / LG.w, LW = LG.w * SC, LH = LG.h * SC, LCY = -30;
   const ETCH = 'logos/logo-etch.svg', INK = 'logos/logo-' + LK + '-' + (THEME === 'night' ? 'white' : 'black') + '.svg', REDF = 'logos/logo-' + LK + '-red.svg';
   const clipHalf = (poly, a, b, c0) => { const out = []; for (let i = 0; i < poly.length; i++) { const p = poly[i], q = poly[(i + 1) % poly.length], fp = a * p[0] + b * p[1] - c0, fq = a * q[0] + b * q[1] - c0; if (fp <= 0) out.push(p); if ((fp <= 0) !== (fq <= 0)) { const t = fp / (fp - fq); out.push([p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t]); } } return out; };
@@ -192,7 +180,7 @@
   /* while downloading the camera wanders around the cloud; near 62 % it passes a viewpoint that is almost, not quite, the right one */
   const AZ = [[0, -62], [0.3, -34], [0.75, 8], [0.88, 26], [1, 46]], EL = [[0, 18], [0.35, 11], [0.75, 9], [0.9, 14], [1, 19]], RR = [[0, 2900], [0.75, 2350], [1, 3000]];
   const POSE = {
-    welcome: () => ({ cx: 0, cy: -20, cz: 0, rx: 0, ry: 0, rz: 0 }),
+    welcome: () => ({ cx: -800, cy: -20, cz: 0, rx: 0, ry: 0, rz: 0 }),
     loc: () => ({ cx: 1200, cy: -20, cz: 0, rx: 0, ry: -6, rz: 0 }),
     field: (s) => { const p = s && s.total ? clamp(s.got / s.total) : 0; return orbit(key(AZ, p), key(EL, p), key(RR, p)); },
     unpack: () => orbit(30, 52, 3000),
@@ -327,7 +315,7 @@
   let drives = [], need = 1.4 * 1073741824, freeNow = 182 * 1073741824, pathState = 'ok';
   const pathEl = $('#path');
   function paintLoc() {
-    const bad = pathState !== 'ok' || freeNow < need * 1.1; $('#pathfull').textContent = pathEl.value;
+    const bad = pathState !== 'ok' || freeNow < need * 1.1; $('#pathfull').textContent = pathEl.value; $('#pathfull').classList.toggle('long', pathEl.value.length > 30);
     $('.meter').classList.toggle('bad', bad); $('#meterUsed').style.transform = 'scaleX(' + Math.min(1, need / Math.max(1, freeNow)).toFixed(3) + ')';
     const fr = $('#free'); fr.classList.toggle('bad', bad);
     const alt = drives.filter((d) => d.free >= need * 1.1 && d.path.toLowerCase() !== pathEl.value.toLowerCase())[0];

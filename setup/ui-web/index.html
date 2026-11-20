@@ -124,7 +124,7 @@ html,body{width:100%;height:100%;overflow:hidden;font-family:var(--font);color:v
 .glassy .btn{box-shadow:inset 0 0 0 1px rgba(255,255,255,.55);background:rgba(255,255,255,.14)}
 :root[data-theme=night] .glassy .btn{box-shadow:inset 0 0 0 1px rgba(255,255,255,.3)}
 .glassy .row{margin-top:8px}
-.pathfull{font-size:12.5px;line-height:1.5;color:var(--ink);opacity:.82;margin-top:8px;word-break:break-all;min-height:19px}
+.pathfull{display:none;font-size:12.5px;line-height:1.5;color:var(--ink);opacity:.82;margin-top:8px;word-break:break-all;min-height:19px}
 .meter{height:5px;margin-top:10px;background:rgba(127,135,150,.25);overflow:hidden}.meter i{display:block;height:100%;width:0;background:var(--ink);opacity:.7;transform-origin:0 50%}
 .meter.bad i{background:var(--red);opacity:1}
 .glassy .free{margin-top:7px}.glassy .free.bad{color:var(--red)}
@@ -137,6 +137,7 @@ html,body{width:100%;height:100%;overflow:hidden;font-family:var(--font);color:v
 .glassy .note{margin-top:10px}
 .tchange,.tchange *{transition:color .55s,background-color .55s,border-color .55s,box-shadow .55s,text-shadow .55s,fill .55s!important}
 #chrome .tab #btnTheme{opacity:.95}
+.pathfull.long{display:block}
 </style>
 </head>
 <body>
@@ -145,7 +146,7 @@ html,body{width:100%;height:100%;overflow:hidden;font-family:var(--font);color:v
 <div id="win"><div id="app">
 <div id="view"><div id="world"></div></div>
 <div id="fx"><div id="vig"></div><div id="streaks"></div><div id="flash"></div></div>
-<div class="layer" id="ui-top" style="opacity:1;visibility:visible"><div class="top"><img id="topLogo" src="logos/logo-A-black.svg" alt="MeguLit"><div class="steps" id="steps"><i></i><i></i><i></i><i></i><span id="stepname"></span></div></div></div>
+<div class="layer" id="ui-top" style="opacity:1;visibility:visible"><div class="top"><img id="topLogo" src="logos/logo-C-black.svg" alt="MeguLit"><div class="steps" id="steps"><i></i><i></i><i></i><i></i><span id="stepname"></span></div></div></div>
 <div class="scrimb layer" id="scrimb" style="opacity:1;visibility:visible;pointer-events:none"></div>
 <div class="layer" id="hud"><div class="pct"><span id="pct">0</span><small>%</small></div><div class="stat"><span><b id="got">0 MB</b> / <span id="total">0 MB</span></span><span id="speed">测速中</span><span id="eta"></span></div><div class="what"><h3 id="whatT"></h3><p id="whatP"></p></div></div>
 <div class="layer" id="ui-loc"><div class="card glassy"><h2></h2><div class="en"></div>

@@ -31,7 +31,7 @@
   themed.push((m) => { hemi.color.copy(col(0xffffff, 0x8fa0c4, m)); hemi.groundColor.copy(col(0x4a6598, 0x14171f, m)); hemi.intensity = 0.8 + (0.9 - 0.8) * m; sun.color.copy(col(0xffffff, 0xcfe0ff, m)); sun.intensity = 2.1 + (1.1 - 2.1) * m; });
   const makeEnv = (N) => { const es = new THREE.Scene(); es.background = new THREE.Color(N ? 0x05060a : 0x7d92b4);
     const box = (w, h, x, y, z, k) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ color: new THREE.Color(1, 1, 1).multiplyScalar(k), side: THREE.DoubleSide })); m.position.set(x, y, z); m.lookAt(0, 0, 0); es.add(m); };
-    box(60, 14, -40, 40, 30, N ? 9 : 5); box(10, 60, 45, 10, -30, N ? 3.5 : 3); box(80, 8, 0, -40, 20, N ? 5 : 2.5); box(30, 30, 0, 60, -50, N ? 8 : 3); for (let i = 0; i < 7; i++) box(5 + (i % 3) * 3, 90, -70 + i * 24, 20 - (i % 4) * 14, (i % 2 ? 40 : -40), N ? 8 : 4); for (let i = 0; i < 4; i++) box(100, 5, 0, -30 + i * 30, -45 + i * 20, N ? 7 : 3.5);
+    box(60, 14, -95, 40, 30, N ? 9 : 5); box(10, 60, 80, 10, -30, N ? 3.5 : 3); box(30, 30, 0, 60, -50, N ? 8 : 3); for (let i = 0; i < 7; i++) if (i !== 2 && i !== 3) box(5 + (i % 3) * 3, 90, -70 + i * 24, 20 - (i % 4) * 14, (i % 2 ? 40 : -40), N ? 8 : 4); for (let i = 0; i < 4; i++) box(100, 5, 0, -30 + i * 30, -45 + i * 20, N ? 7 : 3.5);
     const pm = new THREE.PMREMGenerator(renderer); const t = pm.fromScene(es, 0.02).texture; pm.dispose(); return t; };
   const envDay = makeEnv(false), envNight = makeEnv(true); scene.environment = NIGHT ? envNight : envDay;
 
@@ -39,17 +39,6 @@
   const tex = (cv) => { const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8; return t; };
   const cnv = (w, h) => { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; };
   const LINE = '255,255,255';
-  function drawCircle(cv, prog) {
-    const g = cv.getContext('2d'), S = cv.width, r = S / 200; g.clearRect(0, 0, S, S); g.save(); g.translate(S / 2, S / 2); g.scale(r, r);
-    if (prog === undefined) {
-      g.strokeStyle = `rgba(${LINE},.7)`; g.lineWidth = 1.5; const ring = (rad, w, dash) => { g.lineWidth = w; g.setLineDash(dash || []); g.beginPath(); g.arc(0, 0, rad, 0, 7); g.stroke(); };
-      ring(97, 2.4); ring(82, 1.4, [2, 5]); ring(66, 1.4); ring(12, 1.4); g.setLineDash([]); g.lineWidth = 1.2;
-      for (let i = 0; i < 48; i++) { const a = i * Math.PI / 24, r0 = i % 4 ? 90 : 84; g.beginPath(); g.moveTo(r0 * Math.cos(a), r0 * Math.sin(a)); g.lineTo(96 * Math.cos(a), 96 * Math.sin(a)); g.stroke(); }
-      for (const rot of [-Math.PI / 2, Math.PI / 2]) { g.beginPath(); for (let i = 0; i < 3; i++) { const a = rot + i * 2 * Math.PI / 3; i ? g.lineTo(60 * Math.cos(a), 60 * Math.sin(a)) : g.moveTo(60 * Math.cos(a), 60 * Math.sin(a)); } g.closePath(); g.stroke(); }
-      for (let i = 0; i < 12; i++) { const a = i * Math.PI / 6 + 0.26, x = 73 * Math.cos(a), y = 73 * Math.sin(a); g.save(); g.translate(x, y); g.rotate(a + Math.PI / 2); g.beginPath(); g.moveTo(-4, -5); g.lineTo(4, 0); g.lineTo(-4, 5); g.moveTo(4, -5); g.lineTo(4, 5); g.stroke(); g.restore(); }
-    } else { g.strokeStyle = 'rgba(255,255,255,1)'; g.lineWidth = 5; g.shadowColor = 'rgba(255,255,255,.9)'; g.shadowBlur = 14; g.beginPath(); g.arc(0, 0, 75, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.max(0.0001, prog)); g.stroke(); }
-    g.restore();
-  }
   const mat = (map, extra) => new THREE.MeshBasicMaterial(Object.assign({ map, transparent: true, depthWrite: false }, extra || {}));
   const lineMats = []; const lineMat = (map, extra) => { const m = mat(map, extra); lineMats.push(m); return m; };
 
@@ -62,31 +51,20 @@
     [900, -2300, 360, 1700, 320], [300, -1200, 300, 1500, 280], [5800, -1700, 360, 1800, 320], [7200, -900, 320, 1500, 300], [-1200, -2600, 400, 2000, 360], [8200, -2400, 420, 2100, 380], [-200, -3200, 1500, 2400, 300], [6600, -3000, 1500, 2400, 300]].forEach((b) => addBox(...b));
   { const gc = cnv(256, 256), g = gc.getContext('2d'); g.fillStyle = 'rgba(0,0,0,0)'; g.fillRect(0, 0, 256, 256); g.strokeStyle = 'rgba(255,255,255,.6)'; g.lineWidth = 2; g.strokeRect(1, 1, 255, 255);
     const t = new THREE.CanvasTexture(gc); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(100, 75);
-    const flMat = new THREE.MeshBasicMaterial({ map: t, transparent: true, depthWrite: false }); themed.push((m) => flMat.color.copy(col(0x8d9bb2, 0x586478, m))); const fl = new THREE.Mesh(new THREE.PlaneGeometry(12000, 9000), flMat); fl.rotation.x = -Math.PI / 2; fl.position.set(1700, -FY, -1000); scene.add(fl);
+    const flMat = new THREE.MeshBasicMaterial({ map: t, transparent: true, depthWrite: false }); themed.push((m) => flMat.color.copy(col(0x8d9bb2, 0x586478, m))); const fl = new THREE.Mesh(new THREE.PlaneGeometry(12000, 9000), flMat); fl.visible = false;   /* the grid made moire through the relief */ fl.rotation.x = -Math.PI / 2; fl.position.set(1700, -FY, -1000); scene.add(fl);
     let gMat; const ground = new THREE.Mesh(new THREE.PlaneGeometry(12000, 9000), gMat = new THREE.MeshStandardMaterial({ color: 0xe6ecf5, roughness: 1 })); themed.push((m) => gMat.color.copy(col(0xe4eaf3, 0x0f1217, m))); ground.receiveShadow = true; ground.rotation.x = -Math.PI / 2; ground.position.set(1700, -FY - 2, -1000); scene.add(ground); }
   /* guide beam + etched circles + halo rings + a band of travelling light */
   let beamMat; const beam = new THREE.Mesh(new THREE.PlaneGeometry(3400, 14), beamMat = new THREE.MeshBasicMaterial({ color: 0x20242c, transparent: true, opacity: 0.8 })); themed.push((m) => { beamMat.color.copy(col(0x20242c, 0xe8f0ff, m)); beamMat.opacity = 0.8 + 0.1 * m; }); beam.rotation.x = -Math.PI / 2; beam.position.set(1700, -300, -1000); scene.add(beam);
-  const circleBase = cnv(1024, 1024); drawCircle(circleBase);
-  const progCv = cnv(512, 512), progTex = tex(progCv); drawCircle(progCv, 0);
   const place = (m, x, y, z) => { m.position.set(x, y, z); scene.add(m); return m; };
-  const ct = tex(circleBase);
-  place(new THREE.Mesh(new THREE.PlaneGeometry(1180, 1180), lineMat(ct)), -200, -(FY - 1300), -3200 + 151); const progMat = mat(progTex, { blending: THREE.AdditiveBlending }); place(new THREE.Mesh(new THREE.PlaneGeometry(1180, 1180), progMat), -200, -(FY - 1300), -3200 + 153);
-  place(new THREE.Mesh(new THREE.PlaneGeometry(1180, 1180), lineMat(ct)), 6600, -(FY - 1300), -3000 + 151);
-  const ringMat = new THREE.MeshBasicMaterial({ color: 0x20242c }); themed.push((m) => ringMat.color.copy(col(0x20242c, 0xeaf2ff, m)));
-  for (const [x, z] of [[6600, -3000], [-200, -3200]]) { const r = new THREE.Mesh(new THREE.TorusGeometry(550, 4.5, 8, 140), ringMat); r.rotation.x = Math.PI / 2; place(r, x, -(FY - 2450), z); }
-  const bandCv = cnv(16, 128), bg2 = bandCv.getContext('2d'); bg2.fillStyle = '#fff'; bg2.fillRect(0, 0, 16, 46); const bandTex = tex(bandCv); bandTex.wrapT = THREE.RepeatWrapping; bandTex.repeat.set(1, 2200 / 120);
-  const bandMat = mat(bandTex, { blending: THREE.NormalBlending, color: 0x20242c });
-  const band = place(new THREE.Mesh(new THREE.PlaneGeometry(12, 2200), bandMat), 560, -(FY - 1100), -2870 + 0);
-  { const rc = cnv(64, 920), g = rc.getContext('2d'); g.strokeStyle = `rgba(${LINE},.6)`; g.lineWidth = 3; for (let i = 0; i < 12; i++) { const y = i * 76 + 10; g.beginPath(); g.moveTo(6, y + 10); g.lineTo(30, y); g.lineTo(54, y + 10); g.lineTo(30, y + 20); g.closePath(); g.moveTo(30, y + 30); g.lineTo(30, y + 66); g.stroke(); } place(new THREE.Mesh(new THREE.PlaneGeometry(90, 1400), lineMat(tex(rc))), 3300, -(FY - 1700), -7400 + 261); }
   /* welcome + location plates, text and logo drawn onto planes */
   const logoImg = new Image(); const plates = [];
   function plate(x, y, z, title, sub, withLogo) { const cv = cnv(1520, 720), t = tex(cv); const m = place(new THREE.Mesh(new THREE.PlaneGeometry(760, 360), mat(t, { depthWrite: true })), x, y, z); plates.push({ cv, t, title, sub, withLogo }); redrawPlate(plates[plates.length - 1]); return m; }
   function redrawPlate(p) { const NIGHT = isDark(), g = p.cv.getContext('2d'); g.fillStyle = NIGHT ? '#1b1f28' : '#ffffff'; g.fillRect(0, 0, 1520, 720); g.fillStyle = NIGHT ? '#3b4456' : '#aab3c2'; g.fillRect(0, 0, 14, 720);
     if (p.withLogo && logoImg.complete && logoImg.naturalWidth) g.drawImage(logoImg, 100, 90, 1000, 424); else if (p.title) { g.fillStyle = NIGHT ? '#f3f5f9' : '#14161a'; g.font = '800 190px "Segoe UI",sans-serif'; g.fillText(p.title, 100, 300); }
     g.fillStyle = NIGHT ? '#8d95a3' : '#6d7480'; g.font = '500 52px "Segoe UI","Microsoft YaHei UI",sans-serif'; g.fillText(p.sub || '', 104, 640); p.t.needsUpdate = true; }
-  logoImg.onload = () => plates.forEach(redrawPlate); logoImg.src = 'logos/logo-A-' + (NIGHT ? 'white' : 'black') + '.svg'; let plateDark = NIGHT;
+  logoImg.onload = () => plates.forEach(redrawPlate); logoImg.src = 'logos/logo-C-' + (NIGHT ? 'white' : 'black') + '.svg'; let plateDark = NIGHT;
   const copy = window.SceneCopy || { welcomeSub: '先把东西备齐', locSub: '你想装在哪儿' };
-  plate(0, 20, -1000, '', copy.welcomeSub, true); plate(1200, 20, -1000, 'WHERE', copy.locSub, false);
+  plate(-800, 20, -1000, '', copy.welcomeSub, true);
 
   /* ---- the glass plates ---- */
   const etchImg = new Image(), etchTexs = []; let shards = [], LWg = 840, LHg = 356, built = false, cells = null;
@@ -145,7 +123,7 @@
     return loops; }
   function buildFragments() {
     if (!silImg.complete || !silImg.naturalWidth) return; const MW = FMW, MH = FMH, cv = cnv(MW, MH), g = cv.getContext('2d'); g.drawImage(silImg, 0, 0, MW, MH); const d = g.getImageData(0, 0, MW, MH).data;
-    const mask = new Uint8Array(MW * MH); for (let i = 0; i < MW * MH; i++) { const x = i % MW, y = (i / MW) | 0, lum = 0.2126 * d[i * 4] + 0.7152 * d[i * 4 + 1] + 0.0722 * d[i * 4 + 2], hat = x < MW * 0.55 && y < MH * 0.56; mask[i] = d[i * 4 + 3] > 110 && (lum >= 66 || hat) ? 1 : 0; }   /* keep the lettering, the flare, the ring and the hat; drop the dark shadow mass under the letters */
+    const mask = new Uint8Array(MW * MH); for (let i = 0; i < MW * MH; i++) { const x = i % MW, y = (i / MW) | 0, lum = 0.2126 * d[i * 4] + 0.7152 * d[i * 4 + 1] + 0.0722 * d[i * 4 + 2], hat = x < MW * 0.5 && y < MH * 0.38; mask[i] = d[i * 4 + 3] > 110 && (lum >= 66 || hat) ? 1 : 0; }   /* keep the lettering, the flare, the ring and the hat; drop the dark shadow mass under the letters */
     let sd = 31; const rr = () => (sd = (sd * 16807) % 2147483647) / 2147483647, seeds = [], radii = [], cls = [];
     for (let i = 0; i < 128; i++) { const u = rr(); cls.push(u < 0.1 ? 62 + rr() * 30 : u < 0.42 ? 30 + rr() * 16 : 11 + rr() * 9); } cls.sort((a, b) => b - a);
     for (const r0 of cls) { let r = r0, ok = false; for (let k = 0; k < 600 && !ok; k++) { if (k % 80 === 79) r *= 0.88; const x = rr() * MW, y = rr() * MH; if (!mask[(y | 0) * MW + (x | 0)]) continue; if (seeds.every((q, j) => Math.hypot(x - q[0], y - q[1]) >= (r + radii[j]) * 0.5)) { seeds.push([x, y]); radii.push(r); ok = true; } } }
@@ -187,12 +165,12 @@
     const oc = cnv(MW, MH), og = oc.getContext('2d'); og.drawImage(silImg, 0, 0, MW, MH); const od = og.getImageData(0, 0, MW, MH).data;
     const mk = cnv(RW * S2, RH * S2), mg = mk.getContext('2d'); mg.fillStyle = '#000'; mg.fillRect(0, 0, mk.width, mk.height);
     const lc = cnv(MW, MH), lg = lc.getContext('2d'), li = lg.createImageData(MW, MH);
-    for (let i = 0; i < MW * MH; i++) { const x = i % MW, y = (i / MW) | 0, lum = 0.2126 * od[i * 4] + 0.7152 * od[i * 4 + 1] + 0.0722 * od[i * 4 + 2], hat = x < MW * 0.55 && y < MH * 0.56, on = od[i * 4 + 3] > 110 && (lum >= 66 || hat); li.data[i * 4] = li.data[i * 4 + 1] = li.data[i * 4 + 2] = 255; li.data[i * 4 + 3] = on ? 255 : 0; }
+    for (let i = 0; i < MW * MH; i++) { const x = i % MW, y = (i / MW) | 0, lum = 0.2126 * od[i * 4] + 0.7152 * od[i * 4 + 1] + 0.0722 * od[i * 4 + 2], hat = x < MW * 0.5 && y < MH * 0.38, on = od[i * 4 + 3] > 110 && (lum >= 66 || hat); li.data[i * 4] = li.data[i * 4 + 1] = li.data[i * 4 + 2] = 255; li.data[i * 4 + 3] = on ? 255 : 0; }
     lg.putImageData(li, 0, 0); mg.drawImage(lc, MX * S2, MY * S2, MW * S2, MH * S2);
     /* height = softened mask, normals by Sobel: the relief is a smooth bevel, so light runs continuously along each stroke */
     const hc = cnv(mk.width, mk.height), hg = hc.getContext('2d'); hg.filter = 'blur(7px)'; hg.drawImage(mk, 0, 0); hg.filter = 'blur(2.4px)'; hg.globalAlpha = 0.45; hg.drawImage(mk, 0, 0); hg.globalAlpha = 1; const hd = hg.getImageData(0, 0, hc.width, hc.height), W = hc.width, H = hc.height, nc = cnv(W, H), ng = nc.getContext('2d'), ni = ng.createImageData(W, H), hh = (x, y) => hd.data[(Math.max(0, Math.min(H - 1, y)) * W + Math.max(0, Math.min(W - 1, x))) * 4] / 255;
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const dx = (hh(x + 1, y - 1) + 2 * hh(x + 1, y) + hh(x + 1, y + 1)) - (hh(x - 1, y - 1) + 2 * hh(x - 1, y) + hh(x - 1, y + 1)), dy = (hh(x - 1, y + 1) + 2 * hh(x, y + 1) + hh(x + 1, y + 1)) - (hh(x - 1, y - 1) + 2 * hh(x, y - 1) + hh(x + 1, y - 1)); let nx = -dx * 5.2, ny = dy * 5.2, nz = 1; const L = Math.hypot(nx, ny, nz); const o = (y * W + x) * 4; ni.data[o] = (nx / L * 0.5 + 0.5) * 255; ni.data[o + 1] = (ny / L * 0.5 + 0.5) * 255; ni.data[o + 2] = (nz / L * 0.5 + 0.5) * 255; ni.data[o + 3] = 255; }
-    ng.putImageData(ni, 0, 0); reliefTex = new THREE.CanvasTexture(nc); reliefTex.anisotropy = 8; maskTex = new THREE.CanvasTexture(mk); maskTex.colorSpace = THREE.SRGBColorSpace;
+    ng.putImageData(ni, 0, 0); const sc2 = cnv(W, H), sg2 = sc2.getContext('2d'); sg2.filter = 'blur(1.6px)'; sg2.drawImage(nc, 0, 0); reliefTex = new THREE.CanvasTexture(sc2); reliefTex.anisotropy = 8; maskTex = new THREE.CanvasTexture(mk); maskTex.colorSpace = THREE.SRGBColorSpace;
     /* crack pattern: rays and rings around an impact point, boundaries wobbled so no crack is a straight ruler line */
     let sd = 47; const rr = () => (sd = (sd * 16807) % 2147483647) / 2147483647, C0 = [MW * 0.47, MH * 0.5], rad = [0, 55, 140, 260, 420, 640, 1000], cnt = [5, 8, 10, 11, 9, 8];
     const wob = (k, th) => 1 + 0.11 * Math.sin(3 * th + k * 1.7) + 0.06 * Math.sin(7 * th + k * 2.9) + 0.04 * Math.sin(13 * th + k);
@@ -243,7 +221,7 @@
           const inten = lit ? 1 : f > 0 ? 0.3 + 0.7 * f : 0.16; p.mat.normalScale.set(1.5 * inten, 1.5 * inten); p.ghost.visible = !lit && f <= 0;
           p.glowMat.uniforms.prog.value = f; p.glowMat.uniforms.lit.value = p.core ? lit : 0; p.glowMat.uniforms.time.value = m.t; p.glowMat.uniforms.uGain.value = p.core ? (m.reveal > 0.5 ? 0.55 : 1) : 0;
           p.edgeMat.opacity = lit ? (m.reveal > 0.5 ? 0.22 : 0.5) : f > 0 ? 0.18 + 0.4 * f : 0.05; });
-        if (m.prog !== undefined && GL._pp !== Math.round(m.prog * 100)) { GL._pp = Math.round(m.prog * 100); drawCircle(progCv, m.prog); progTex.needsUpdate = true; } bandTex.offset.y = REDUCE ? 0 : -((m.t || 0) * 1.3); return; }
+         return; }
       if (MODE === 'A') { if (!fragBuilt) buildFragments(); if (!fragBuilt) return; const s = m.s, N = s.st.length, K = frags.length, br = REDUCE ? 0 : 1, ft = m.t * br, damp = 1 - m.reveal, kk = 1 - m.reveal;
         frags.forEach((f, i) => { const seg = Math.min(N - 1, Math.floor(i * N / K)), st = s.st[seg], fr = st === 2 ? 1 : (st === 1 || st === 3 ? s.fr[seg] : 0), lit = st === 2 ? 1 : 0;
           const ox = Math.sin(ft * 0.5 + f.ph) * f.amp * damp * br, oy = Math.cos(ft * 0.4 + f.ph) * f.amp * damp * br, oz = Math.sin(ft * 0.6 + f.ph * 2) * f.amp * 2 * damp * br;
@@ -251,13 +229,11 @@
           const on = fr > 0 || lit; f.glass.visible = on; f.ghost.visible = !on;
           const fl = lit ? Math.max(0, 1 - (m.t - (s.doneAt[seg] || 0)) / 0.9) : 0;
           f.edgeMat.opacity = lit ? (m.reveal > 0.5 ? 0.42 : 0.95) : fr > 0 ? 0.3 + 0.6 * fr : 0.08; f.glowMat.opacity = lit ? 0.06 + 0.5 * fl : fr * 0.05; });
-        if (m.prog !== undefined && GL._pp !== Math.round(m.prog * 100)) { GL._pp = Math.round(m.prog * 100); drawCircle(progCv, m.prog); progTex.needsUpdate = true; } bandTex.offset.y = REDUCE ? 0 : -((m.t || 0) * 1.3); return; }
+         return; }
       if (!built) buildShards(); if (!built) return;
       frames.forEach((f, i) => { const s = shards[i]; if (!s || !f) return; s.g.position.set(f.x, -f.y, f.z); s.g.rotation.set(-f.rx * D2R, f.ry * D2R, -f.rz * D2R, 'ZYX'); s.g.scale.setScalar(f.s);
         s.glow.uniforms.prog.value = f.f; s.glow.uniforms.lit.value = f.lit; s.glow.uniforms.time.value = m.t; s.line.opacity = Math.min(1, f.f * 0.5 + f.lit * 0.5) * (m.reveal > 0.5 ? 0.35 : 1);
         s.glass.material.thickness = 22; });
-      progTex.needsUpdate = false;
-      if (m.prog !== undefined && GL._pp !== Math.round(m.prog * 100)) { GL._pp = Math.round(m.prog * 100); drawCircle(progCv, m.prog); progTex.needsUpdate = true; }
       bandTex.offset.y = REDUCE ? 0 : -((m.t || 0) * 1.3);
     },
     pose(i) { if (MODE === 'M') { const p = gplates[byArea[i]]; return p ? { x: p.g3.position.x, y: -p.g3.position.y, z: p.g3.position.z, s: p.k * FU, w: p.w, h: p.h } : null; } if (MODE === 'A') { const f = frags[byArea[i]]; return f ? { x: f.g3.position.x, y: -f.g3.position.y, z: f.g3.position.z, s: f.k * FU, w: f.w, h: f.h } : null; } const s = shards[i]; return s ? { x: s.g.position.x, y: -s.g.position.y, z: s.g.position.z, s: s.g.scale.x, w: cells[i].w, h: cells[i].h } : null; },
@@ -266,11 +242,11 @@
   };
   function applyTheme(m) { night = m; const d = m > 0.5;
     themed.forEach((f) => f(m)); scene.environment = d ? envNight : envDay;
-    lineMats.forEach((x) => x.color.copy(col(0x1c212b, 0xeaf2ff, m))); progMat.blending = d ? THREE.AdditiveBlending : THREE.NormalBlending; progMat.color.copy(col(0x2a3550, 0xffffff, m)); progMat.needsUpdate = true;
-    bandMat.blending = d ? THREE.AdditiveBlending : THREE.NormalBlending; bandMat.color.copy(col(0x20242c, 0xdbe8ff, m)); bandMat.needsUpdate = true;
+    lineMats.forEach((x) => x.color.copy(col(0x1c212b, 0xeaf2ff, m)));
     edgeMats.forEach((x) => { x.blending = d ? THREE.AdditiveBlending : THREE.NormalBlending; x.color.copy(col(0x24324f, 0xe9f2ff, m)); x.needsUpdate = true; });
     gplates.forEach((p) => { p.mat.envMapIntensity = 1.7 + (1.5 - 1.7) * m; p.ghost.material.opacity = 0.12 + (0.035 - 0.12) * m; });
-    if (plateDark !== d) { plateDark = d; logoImg.src = 'logos/logo-A-' + (d ? 'white' : 'black') + '.svg'; plates.forEach(redrawPlate); } }
+    if (plateDark !== d) { plateDark = d; logoImg.src = 'logos/logo-C-' + (d ? 'white' : 'black') + '.svg'; plates.forEach(redrawPlate); } }
   GL.setMix = (m) => { applyTheme(m); GL.draw(); }; applyTheme(night);
+  GL.dbg = { get plates() { return gplates; } };
   window.GL = GL;
 })();
