@@ -79,12 +79,12 @@ public static partial class HookBridge {
  static string TranslateFont(){string fonts=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows),"Fonts");return File.Exists(Path.Combine(fonts,"msyh.ttc"))?"Microsoft YaHei":File.Exists(Path.Combine(fonts,"simhei.ttf"))?"SimHei":"";}
  /* 2026-11-19: the longest a game thread waits for a hide answer (was 1000 ms; the answer comes in a few ms, and a line
     that is not answered in time is drawn unchanged, as before) */
- const uint HideWaitMs=100;
- static void ApplySettings(){Luna_SettingsEx(Pid,TranslateMode?4000u:HideWaitMs,TranslateMode?(byte)134:(byte)0,TranslateMode,TranslateMode?TranslateFont():"",0,false,false,false,1,false,UnityFontDir);Diagnostic("settings clearText=False; guarded callbacks; mode="+(TranslateMode?"translate":"hide"));}
+ const uint HideWaitMs=100;/* 2026-11-20 (アマカノ2 "卡卡的，口型对不上"): the game thread waits for the bridge on every new line, so a long wait freezes the game while its voice plays on. Translate mode waited up to 4 s for a translation; now it gets the same short budget: a translation not back in time hides the line and MeguLit draws it (the reader shows the translation), the game never stalls. */const uint TranslateWaitMs=150,TranslateGiveUpMs=110;
+ static void ApplySettings(){Luna_SettingsEx(Pid,TranslateMode?TranslateWaitMs:HideWaitMs,TranslateMode?(byte)134:(byte)0,TranslateMode,TranslateMode?TranslateFont():"",0,false,false,false,1,false,UnityFontDir);Diagnostic("settings clearText=False; guarded callbacks; mode="+(TranslateMode?"translate":"hide"));}
 // Translation written back into the game (user, 2026-11-09): instead of blanking a dialogue
 // line for MeguLit to draw over, the bridge asks MeguLit for the line's translation and hands that to LunaHook, so the
-// game draws Chinese in its own text box and font. LunaHook keeps the game waiting up to the embed wait (4 s here);
-// a translation that is not back by then lets the original line through unchanged, so the game never stalls or blanks.
+// game draws Chinese in its own text box and font. LunaHook keeps the game waiting up to TranslateWaitMs (150 ms, was 4 s);
+// a translation that is not back by then hides the line (MeguLit draws it with its translation), so the game never stalls.
 sealed class PendingEmbed {public ThreadParam tp;public string text;public string hidden;public string code;public Timer timer;}
 static volatile bool TranslateMode;static long EmbedSerial;static readonly Dictionary<long,PendingEmbed> PendingEmbeds=new Dictionary<long,PendingEmbed>();
 static void FinishEmbed(long id,string trans,bool hide=false){PendingEmbed p;lock(Gate){if(!PendingEmbeds.TryGetValue(id,out p))return;PendingEmbeds.Remove(id);}
@@ -228,7 +228,12 @@ static volatile bool SkipHeld;static int BurstRun;const int BurstSkipLines=8;sta
  static System.IO.MemoryMappedFiles.MemoryMappedFile EmbedMem;static System.IO.MemoryMappedFiles.MemoryMappedViewAccessor EmbedView;static long EmbedGen;static string EmbedState="";static bool EmbedGenNoted;static readonly object EmbedGenGate=new object();
  static string EmbedStateKey(){lock(Gate){Candidate c=null;if(Selected!="")Candidates.TryGetValue(Selected,out c);return Selected+"|"+Enabled+"|"+Connected+"|"+ReplacementEnabled+"|"+TranslateMode+"|"+MarksMode+"|"+MarksPaused+"|"+GlyphAll+"|"+SkipHeld+"|"+EngineDialogHidden+"|"+HookTarget.ChineseText+"|"+(c==null?"-":c.embed+"|"+c.hideOnly+"|"+c.glyphHide+"|"+c.gdiProbe);}}
  static void SyncEmbedGeneration(){if(!Connected)return;string key;try{key=EmbedStateKey();}catch{return;}lock(EmbedGenGate){if(key==EmbedState)return;try{if(EmbedView==null){EmbedMem=System.IO.MemoryMappedFiles.MemoryMappedFile.OpenExisting("EMBED_SHARED_MEM"+Pid);EmbedView=EmbedMem.CreateViewAccessor(16,8);}EmbedView.Write(0,++EmbedGen);EmbedState=key;}catch(Exception e){EmbedView=null;if(!EmbedGenNoted){EmbedGenNoted=true;Diagnostic("embed generation unavailable "+e.Message);}}}}
- static void OnEmbed(string text,ThreadParam tp){SyncEmbedGeneration();if(tp.Key()==Selected&&DialogueLike(text))HookTarget.ConfirmJapanese(text);
+ /* 2026-11-20 how long the bridge takes to answer a line the game thread waits for (OnEmbed), reported every 30 s with the slowest line: the game-side histogram ("MeguLit embed waits") says the game waited, this one says whether the bridge was the slow part */
+ static readonly long[] EmbedAnswerBuckets=new long[6];static long EmbedAnswerWorstTicks;static DateTime EmbedAnswerReported=DateTime.UtcNow;static readonly object EmbedAnswerGate=new object();
+ internal static int EmbedAnswerBucket(double ms){return ms<1?0:ms<5?1:ms<20?2:ms<50?3:ms<100?4:5;}
+ static void EmbedAnswerNote(long ticks){double ms=ticks*1000.0/System.Diagnostics.Stopwatch.Frequency;string line=null;lock(EmbedAnswerGate){EmbedAnswerBuckets[EmbedAnswerBucket(ms)]++;if(ticks>EmbedAnswerWorstTicks)EmbedAnswerWorstTicks=ticks;if((DateTime.UtcNow-EmbedAnswerReported).TotalSeconds>=30){EmbedAnswerReported=DateTime.UtcNow;line="embed answer ms <1:"+EmbedAnswerBuckets[0]+" <5:"+EmbedAnswerBuckets[1]+" <20:"+EmbedAnswerBuckets[2]+" <50:"+EmbedAnswerBuckets[3]+" <100:"+EmbedAnswerBuckets[4]+" >=100:"+EmbedAnswerBuckets[5]+" worst="+(EmbedAnswerWorstTicks*1000.0/System.Diagnostics.Stopwatch.Frequency).ToString("0.0");Array.Clear(EmbedAnswerBuckets,0,6);EmbedAnswerWorstTicks=0;}}if(line!=null)Diagnostic(line);}
+ static void OnEmbed(string text,ThreadParam tp){long t0=System.Diagnostics.Stopwatch.GetTimestamp();try{OnEmbedAnswer(text,tp);}finally{EmbedAnswerNote(System.Diagnostics.Stopwatch.GetTimestamp()-t0);}}
+ static void OnEmbedAnswer(string text,ThreadParam tp){SyncEmbedGeneration();if(tp.Key()==Selected&&DialogueLike(text))HookTarget.ConfirmJapanese(text);
   if(GlyphAll&&Selected!=""&&tp.Key()==Selected&&GlyphAllOk(text)){GlyphLine(text);GlyphDrain(8);try{Luna_EmbedCallback(tp,text,text);}catch(Exception e){Diagnostic("glyph dots embed passthrough failed "+e.Message);return;}lock(Gate){ReceivedText=true;ReplacementCallback=true;}RememberStream();/* the next launch pre-selects this stream before the first line, so caching engines never rasterise a real dialogue glyph */return;}
   lock(Gate){
    Candidate candidate;
@@ -262,7 +267,7 @@ static volatile bool SkipHeld;static int BurstRun;const int BurstSkipLines=8;sta
    if(replacement.Length>0&&EmbedTextPolicy.Unreadable(text)&&SelectedReadableRun<2){replacement="";Diagnostic(candidate.name+" unreadable line goes back unchanged chars="+text.Length);}
    if(TranslateMode&&!printer&&!veil&&replacement.Length>0&&replacement!=text){
     long id=++EmbedSerial;var pending=new PendingEmbed{tp=tp,text=text,hidden=replacement,code=candidate.code};PendingEmbeds[id]=pending;
-    pending.timer=new Timer(_=>FinishEmbed(id,null),null,3700,Timeout.Infinite);
+    pending.timer=new Timer(_=>FinishEmbed(id,null,true),null,(int)TranslateGiveUpMs,Timeout.Infinite);
     Emit(new{type="embedRequest",id=id,text=text});return;
    }
    replacement=SafeReply(candidate.code,text,replacement,candidate.name);
