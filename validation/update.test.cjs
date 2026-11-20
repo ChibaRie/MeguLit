@@ -58,8 +58,11 @@ test('v1.1.8: the same version with a different package online is a hotfix',asyn
 test('update: relays are tried when GitHub fails, and only with a digest',()=>{
  const rel={url:'https://github.com/ilynthn/MeguLit/releases/download/v9.9.9/a.zip',digest:'a'.repeat(64)};
  const fresh=rel.url+'?v='+'a'.repeat(12);
- assert.deepEqual(u.sources(rel,false),[rel.url,'https://gh-proxy.com/'+fresh,'https://ghproxy.net/'+fresh,'https://ghfast.top/'+fresh],'relays get the digest so a cached old package is not served');
- assert.equal(u.sources(rel,true)[3],rel.url,'China tries relays first');
+ /* 2026-11-20: the relays are the ones in setup/runtime.json (core/download-sources.cjs) */
+ const relays=require('../core/download-sources.cjs').relays().map(m=>m.url.replace('{url}',fresh));
+ assert.ok(relays.length>=3&&relays.some(r=>r.startsWith('https://gh-proxy.com/')),'relays listed');
+ assert.deepEqual(u.sources(rel,false),[rel.url,...relays],'relays get the digest so a cached old package is not served');
+ assert.equal(u.sources(rel,true).at(-1),rel.url,'China tries relays first');
  assert.deepEqual(u.sources({...rel,digest:''},true),[rel.url],'no digest, no relay');
 });
 /* User report (2026-11-13: "更新显示下载失败"): the site's own R2 mirror is one of the sources, first in
