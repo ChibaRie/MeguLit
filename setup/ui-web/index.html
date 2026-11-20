@@ -139,6 +139,7 @@ html,body{width:100%;height:100%;overflow:hidden;font-family:var(--font);color:v
 #chrome .tab #btnTheme{opacity:.95}
 .pathfull.long{display:block}
 .welcome{position:absolute;left:56px;bottom:92px}.welcome i{display:block;width:64px;height:5px;background:var(--red);margin-bottom:16px}.welcome p{font-size:34px;font-weight:700;letter-spacing:-.5px;color:var(--ink);text-shadow:0 1px 0 rgba(255,255,255,.6)}
+#trialTag{font-size:11px;letter-spacing:.5px;color:var(--mute);padding:3px 9px;box-shadow:inset 0 0 0 1px var(--line);margin-left:16px;white-space:nowrap}
 </style>
 </head>
 <body>
@@ -174,6 +175,6 @@ html,body{width:100%;height:100%;overflow:hidden;font-family:var(--font);color:v
 <script src="vendor/gsap.min.js"></script>
 <script src="scene.js"></script>
 <script src="glass.js"></script>
-<script>if(new URLSearchParams(location.search).get("demo")==="1"){var s=document.createElement("script");s.src="demo.js";document.body.appendChild(s)}</script>
+<script>(function(){var q=new URLSearchParams(location.search);var f=q.get("host")==="1"?"host.js":q.get("demo")==="1"?"demo.js":null;if(f){var s=document.createElement("script");s.src=f;document.body.appendChild(s)}if(q.get("host")==="1"){document.documentElement.classList.add("deskmode")}})()</script>
 </body>
 </html>

@@ -21,7 +21,7 @@
       title: 'MeguLit 安装', step_welcome: '开始', step_loc: '位置', step_field: '下载', step_unpack: '安装', step_done: '完成',
       welcomeSub: '先把东西备齐', locSub: '你想装在哪儿', locT: '装在哪儿', locEn: 'Install location', change: '换一个',
       swDesk: '放一个桌面快捷方式', swMenu: '加到开始菜单', install: '开始安装',
-      lblPath: '装到这个文件夹', defaultHint: '默认位置，不用改也能直接装。', lblSugg: '或者放到', chip: (p, f) => p + '  ·  剩 ' + f, readonly: (p) => '这个位置写不进去，像 Program Files 这样的文件夹要管理员权限。换个位置吧，比如 ' + p + '。', spaceHint: (p, f) => '这块盘装不下。' + p + ' 还有 ' + f + '，装那儿？',
+      protectedMsg: '这是你正在用的正式安装位置，试用版不会动它。换一个位置吧。', lblPath: '装到这个文件夹', defaultHint: '默认位置，不用改也能直接装。', lblSugg: '或者放到', chip: (p, f) => p + '  ·  剩 ' + f, readonly: (p) => '这个位置写不进去，像 Program Files 这样的文件夹要管理员权限。换个位置吧，比如 ' + p + '。', spaceHint: (p, f) => '这块盘装不下。' + p + ' 还有 ' + f + '，装那儿？',
       locNote: '东西已经在后台下了，你慢慢挑位置。都是各项目官方的原版文件，下完会逐个校验，被改过的不会装。',
       free: (f, n) => '这块盘还剩 ' + f + '，装完大约占 ' + n, freeBad: (f, n) => '这块盘只剩 ' + f + '，装不下（要 ' + n + '），换一个盘吧',
       probeT: '先找条最快的路', probeP: 'GitHub 和国内镜像一起测速，挑最快的几条同时下。',
@@ -42,7 +42,7 @@
       title: 'MeguLit setup', step_welcome: 'Start', step_loc: 'Location', step_field: 'Download', step_unpack: 'Install', step_done: 'Done',
       welcomeSub: 'Getting things ready', locSub: 'Where should it live?', locT: 'Where to?', locEn: '', change: 'Change',
       swDesk: 'Desktop shortcut', swMenu: 'Start menu entry', install: 'Install',
-      lblPath: 'Install into this folder', defaultHint: 'Default spot, fine to leave as is.', lblSugg: 'Or put it in', chip: (p, f) => p + '  ·  ' + f + ' free', readonly: (p) => "Can't write to this folder. Places like Program Files need admin rights. Try " + p + ' instead.', spaceHint: (p, f) => "This drive can't fit it. " + p + ' has ' + f + ' free, put it there?',
+      protectedMsg: 'This is your real MeguLit install. The trial leaves it alone, pick another folder.', lblPath: 'Install into this folder', defaultHint: 'Default spot, fine to leave as is.', lblSugg: 'Or put it in', chip: (p, f) => p + '  ·  ' + f + ' free', readonly: (p) => "Can't write to this folder. Places like Program Files need admin rights. Try " + p + ' instead.', spaceHint: (p, f) => "This drive can't fit it. " + p + ' has ' + f + ' free, put it there?',
       locNote: 'The download already started in the background, so take your time. Every file is the original from its project and gets checked before anything is installed.',
       free: (f, n) => f + ' free on this drive, needs about ' + n, freeBad: (f, n) => 'Only ' + f + ' free here and it needs ' + n + '. Pick another drive.',
       probeT: 'Finding the fastest route', probeP: 'Testing GitHub and the mirrors at the same time, then using the quickest few.',
@@ -317,13 +317,13 @@
   let drives = [], need = 1.4 * 1073741824, freeNow = 182 * 1073741824, pathState = 'ok';
   const pathEl = $('#path');
   function paintLoc() {
-    const bad = pathState !== 'ok' || freeNow < need * 1.1; $('#pathfull').textContent = pathEl.value; $('#pathfull').classList.toggle('long', pathEl.value.length > 30);
+    const bad = pathState !== 'ok' || freeNow < need * 1.1; $('#install').disabled = pathState === 'protected'; $('#pathfull').textContent = pathEl.value; $('#pathfull').classList.toggle('long', pathEl.value.length > 30);
     $('.meter').classList.toggle('bad', bad); $('#meterUsed').style.transform = 'scaleX(' + Math.min(1, need / Math.max(1, freeNow)).toFixed(3) + ')';
     const fr = $('#free'); fr.classList.toggle('bad', bad);
     const alt = drives.filter((d) => d.free >= need * 1.1 && d.path.toLowerCase() !== pathEl.value.toLowerCase())[0];
-    fr.textContent = pathState === 'readonly' && alt ? tr('readonly', alt.path) : pathState === 'readonly' ? tr('readonly', '') : freeNow < need * 1.1 ? (alt ? tr('spaceHint', alt.path, GBS(alt.free)) : tr('freeBad', GBS(freeNow), GBS(need))) : tr('free', GBS(freeNow), GBS(need)) + '  ·  ' + tr('defaultHint');
+    fr.textContent = pathState === 'protected' ? tr('protectedMsg') : pathState === 'readonly' && alt ? tr('readonly', alt.path) : pathState === 'readonly' ? tr('readonly', '') : freeNow < need * 1.1 ? (alt ? tr('spaceHint', alt.path, GBS(alt.free)) : tr('freeBad', GBS(freeNow), GBS(need))) : tr('free', GBS(freeNow), GBS(need)) + '  ·  ' + tr('defaultHint');
     const sg = $('#sugg'); sg.innerHTML = ''; drives.forEach((d) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = tr('chip', d.path, GBS(d.free)); if (d.path.toLowerCase() === pathEl.value.toLowerCase()) b.className = 'pick'; b.addEventListener('click', () => { pathEl.value = d.path; freeNow = d.free; pathState = 'ok'; paintLoc(); act('checkpath', { path: d.path }); }); sg.appendChild(b); });
-    $('#install').disabled = false;
+    
   }
   pathEl.addEventListener('input', () => { $('#pathfull').textContent = pathEl.value; act('checkpath', { path: pathEl.value }); });
   Scene.setFree = (free, needB, state) => { freeNow = free; need = needB; if (state) pathState = state; paintLoc(); };
