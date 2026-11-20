@@ -9,7 +9,8 @@ param(
   [Parameter(Mandatory=$true)][string]$State,       # state json written here
   [Parameter(Mandatory=$true)][string]$Cmd,         # command json read from here (confirm / cancel)
   [string]$Proxy = '',                              # http://127.0.0.1:port1,port2,... throttle proxy bases, '' = direct
-  [string]$ManifestPath = ''
+  [string]$ManifestPath = '',
+  [switch]$WaitConfirm                              # trial default: start downloading only after Install was pressed
 )
 $ErrorActionPreference = 'Stop'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
@@ -38,7 +39,7 @@ $fetchSource = $fetchSource.Replace('  public string StatePath {', $snap + '  pu
 if (-not ('MeguFetch' -as [type])) { Add-Type -TypeDefinition $fetchSource }
 $h = Source-Hints $manifest.mirrors; [MeguFetch]::TrustedHosts = $h.trust; [MeguFetch]::HostLimits = $h.limits
 
-$ids = @('base','reading','voice') | Where-Object { $packs.$_ }
+$ids = @('app','base','reading','voice') | Where-Object { $packs.$_ }
 $segSize = 4MB
 $segCounts = @{}; $N = 0; foreach ($id in $ids) { $segCounts[$id] = [int][math]::Ceiling([long]$packs.$id.size / $segSize); $N += $segCounts[$id] }
 $total = 0L; foreach ($id in $ids) { $total += [long]$packs.$id.size }
@@ -70,6 +71,7 @@ function Source-Name($f) {
 $confirmed = $false; $installTarget = $Target; $desktop = $true; $menu = $true; $offset = 0; $got0 = 0L
 try {
   Write-State 'probe' @{ got = 0; speed = 0; pack = $ids[0]; src = ''; srcN = 0 }
+  if ($WaitConfirm) { while (-not $confirmed) { $c = Read-Cmd; if ($c) { if ($c.confirm) { $confirmed = $true; $installTarget = $c.target; $desktop = [bool]$c.desktop; $menu = [bool]$c.menu } if ($c.cancel) { Write-State 'cancelled' @{}; exit 0 } } Write-State 'idle' @{ got = 0; speed = 0; pack = $ids[0]; src = ''; srcN = 0 }; Start-Sleep -Milliseconds 150 } }
   foreach ($id in $ids) {
     $len = $segCounts[$id]
     if (Ok-Part $id) { for ($i = 0; $i -lt $len; $i++) { $st[$offset + $i] = 2; $fr[$offset + $i] = 1 }; $got0 += [long]$packs.$id.size; $offset += $len; continue }
@@ -91,19 +93,27 @@ try {
   for ($i = 0; $i -lt $N; $i++) { $st[$i] = 2; $fr[$i] = 1 }
   while (-not $confirmed) { $c = Read-Cmd; if ($c) { if ($c.confirm) { $confirmed = $true; $installTarget = $c.target; $desktop = [bool]$c.desktop; $menu = [bool]$c.menu } if ($c.cancel) { Write-State 'cancelled' @{}; exit 0 } } Write-State 'downloaded' @{ got = $total; speed = 0; pack = $ids[-1]; src = ''; srcN = 0; confirmed = $false }; Start-Sleep -Milliseconds 200 }
   # unpack: tar reads the staged pack in place and writes into the chosen folder, exactly like the real setup
-  New-Item -ItemType Directory -Force $installTarget | Out-Null; $runtimeDir = Join-Path $installTarget 'runtime'; New-Item -ItemType Directory -Force $runtimeDir | Out-Null
+  New-Item -ItemType Directory -Force $installTarget | Out-Null; Set-Content -Encoding ASCII (Join-Path $installTarget '.megulit-trial') 'trial install; safe to delete'; $runtimeDir = Join-Path $installTarget 'runtime'; New-Item -ItemType Directory -Force $runtimeDir | Out-Null
   $k = 0; foreach ($id in $ids) {
     Write-State 'unpack' @{ got = $total; speed = 0; pack = $id; unpack = ($k / $ids.Count); dir = $runtimeDir }
     $unpack = Join-Path $installTarget ('runtime-' + $id + '-1.unpack'); if (Test-Path $unpack) { Remove-Item $unpack -Recurse -Force }; New-Item -ItemType Directory $unpack | Out-Null
     $tar = Start-Process -FilePath "$env:SystemRoot\System32\tar.exe" -ArgumentList @('-xf', ('"' + (Part $id) + '"'), '-C', ('"' + $unpack + '"')) -WindowStyle Hidden -PassThru; $null = $tar.Handle
     while (-not $tar.HasExited) { Write-State 'unpack' @{ got = $total; speed = 0; pack = $id; unpack = (($k + 0.5) / $ids.Count); dir = $runtimeDir }; Start-Sleep -Milliseconds 200 }
-    $tar.WaitForExit(); if ($tar.ExitCode -ne 0 -or -not (Test-Path (Join-Path $unpack 'runtime'))) { throw 'install:unpack failed' }
+    $tar.WaitForExit()
+    if ($id -eq 'app') {
+      # the published release zip: MeguLit\ folder with MeguLit.exe, core, web ... (no runtime, that comes from the three packs)
+      $inner = Join-Path $unpack 'MeguLit'; if ($tar.ExitCode -ne 0 -or -not (Test-Path (Join-Path $inner 'MeguLit.exe'))) { throw 'install:app unpack failed' }
+      & "$env:SystemRoot\System32\robocopy.exe" $inner $installTarget /E /R:2 /W:1 /NP /NFL /NDL /NJH /NJS | Out-Null; if ($LASTEXITCODE -ge 8) { throw 'install:app copy failed' }
+      Remove-Item $unpack -Recurse -Force -ErrorAction SilentlyContinue; $k++; continue
+    }
+    if ($tar.ExitCode -ne 0 -or -not (Test-Path (Join-Path $unpack 'runtime'))) { throw 'install:unpack failed' }
     Get-ChildItem (Join-Path $unpack 'runtime') | ForEach-Object { $dest = Join-Path $runtimeDir $_.Name; if (Test-Path $dest) { Remove-Item $dest -Recurse -Force }; Move-Item $_.FullName $dest }
     Remove-Item $unpack -Recurse -Force -ErrorAction SilentlyContinue; $k++
   }
   # trial shortcuts live next to the trial folder, clearly marked, never on the real Desktop / Start menu
   if ($desktop -or $menu) { try { $sc = Join-Path (Split-Path $installTarget) '_trial-shortcuts'; New-Item -ItemType Directory -Force $sc | Out-Null; $w = New-Object -ComObject WScript.Shell; foreach ($nm in @($(if ($desktop) { 'Desktop' }), $(if ($menu) { 'StartMenu' })) | Where-Object { $_ }) { $l = $w.CreateShortcut((Join-Path $sc ("MeguLit (trial) - $nm.lnk"))); $l.TargetPath = $installTarget; $l.Description = 'MeguLit setup trial: nothing here is a real install'; $l.Save() } } catch { } }
   Get-ChildItem $stage -Filter 'runtime-*.setup.part*' -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
+  Remove-Item $stage -Recurse -Force -ErrorAction SilentlyContinue; Set-Content -Encoding ASCII (Join-Path $installTarget '.megulit-trial') 'trial install; safe to delete'
   Write-State 'done' @{ got = $total; speed = 0; pack = $ids[-1]; unpack = 1; dir = $runtimeDir }
 } catch {
   $m = $_.Exception.Message; $kind = if ($m -like 'install:*') { 'install' } else { 'download' }

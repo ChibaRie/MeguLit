@@ -6,6 +6,14 @@
   const tag = document.createElement('div'); tag.id = 'trialTag'; tag.textContent = '试用版 · 装到测试目录，不碰正式安装'; document.querySelector('#ui-top .top').appendChild(tag);
   let info = null, state = null, N = 0, st = null, fr = null, doneAt = null, section = 'welcome', started = false, installed = false, lastPhase = '', checkTimer = null, firstState = false;
   const pathEl = document.getElementById('path');
+  window.__waitConfirm = true;   /* the trial starts the download when Install is pressed, so the whole run can be watched */
+  { const n = document.querySelector('#ui-loc .note'); if (n) n.textContent = Scene.tr('locNoteWait'); }
+  const native = document.documentElement.classList.contains('native') && window.chrome && chrome.webview;
+  const post = (type) => { try { chrome.webview.postMessage({ type }); } catch (e) { /* no host */ } };
+  if (native) {
+    const dr = document.getElementById('drag'); if (dr) dr.addEventListener('mousedown', (e) => { if (e.button === 0) post('drag'); });
+    window.__askClose = () => document.getElementById('btnClose').click();
+  }
   const clock = () => performance.now() / 1000;
   async function check(p) { const c = await api('checkpath', { path: p }); Scene.setFree(c.free || 0, c.need || (info && info.need) || 0, c.state === 'protected' ? 'protected' : c.state === 'readonly' ? 'readonly' : 'ok'); return c; }
   Scene.onAction = async (m) => {
@@ -13,7 +21,7 @@
     else if (m.type === 'browse') { const r = await api('browse'); if (r.path) { pathEl.value = r.path; check(r.path); } }
     else if (m.type === 'install') { const c = await api('install', { path: pathEl.value, desktop: m.desktop, menu: m.menu }); if (c.state && c.state !== 'ok') { Scene.setFree(c.free || 0, c.need || 0, c.state === 'protected' ? 'protected' : 'readonly'); return; } installed = true; goTo('field', 'under'); }
     else if (m.type === 'retry') { api('retry'); }
-    else if (m.type === 'copylog') api('copylog'); else if (m.type === 'manual') api('manual'); else if (m.type === 'launch') api('launch'); else if (m.type === 'minimize') api('minimize'); else if (m.type === 'close') { api('close'); setTimeout(() => window.close(), 400); }
+    else if (m.type === 'copylog') api('copylog'); else if (m.type === 'manual') api('manual'); else if (m.type === 'launch') api('launch'); else if (m.type === 'minimize') { if (!native) api('minimize'); } else if (m.type === 'close') { api('close'); if (!native) setTimeout(() => window.close(), 400); }
   };
   function goTo(name, move) { if (section === name) return; Scene.goTo(name, move, section); section = name; }
   /* the engine's JSON becomes a scene snapshot */

@@ -22,6 +22,7 @@
       welcomeSub: '开场前，先备料', locSub: '给它找个窝', locT: '给它找个窝', locEn: 'Install location', change: '换个地方',
       swDesk: '放一个桌面快捷方式', swMenu: '加到开始菜单', install: '就这儿，开搬',
       protectedMsg: '这是你正在用的正式安装位置，试用版不会动它。换一个位置吧。', lblPath: '装到这个文件夹', defaultHint: '默认位置，不用改也能直接装。', lblSugg: '或者放到', chip: (p, f) => p + '  ·  剩 ' + f, readonly: (p) => '这个位置写不进去，像 Program Files 这样的文件夹要管理员权限。换个位置吧，比如 ' + p + '。', spaceHint: (p, f) => '这块盘装不下。' + p + ' 还有 ' + f + '，装那儿？',
+      locNoteWait: '点「就这儿，开搬」才开始下载。都是各项目官方的原版文件，下完会逐个校验，被改过的不会装。',
       locNote: '东西已经在后台下了，你慢慢挑位置。都是各项目官方的原版文件，下完会逐个校验，被改过的不会装。',
       free: (f, n) => '这块盘还剩 ' + f + '，装完大约占 ' + n, freeBad: (f, n) => '这块盘只剩 ' + f + '，装不下（要 ' + n + '），换一个盘吧',
       probeT: '挑条近道', probeP: 'GitHub 和国内镜像一起测速，挑最快的几条同时下。',
@@ -31,7 +32,7 @@
       unpackT: '拆箱上架', unpackP: (p, d) => '把「' + p + '」解压到 ' + d + '。',
       doneT: '到货了', doneEn: 'NOW SHOWING', launch: '开读',
       probing: '测速中', eta: (s) => s < 60 ? '还要 ' + Math.ceil(s) + ' 秒左右' : '还要 ' + Math.floor(s / 60) + ' 分 ' + Math.round(s % 60) + ' 秒左右', srcMore: (h, n) => h + ' 等 ' + n + ' 条线',
-      packs: { base: '基础组件', reading: '注音词典', voice: '语音引擎' },
+      packs: { app: '程序本体', base: '基础组件', reading: '注音词典', voice: '语音引擎' },
       errDownT: '这趟没送到', errDownM: '试了好几条线，都连不上。多半是网络断了，或者被代理拦住了。', errDownTip: '先点「重试」，已经下好的部分不会重下。还不行就点「复制日志」发给我们，或者去官网手动下整包。',
       errInstT: '差一步，有东西占着', errInstM: '有些文件被别的程序占着，覆盖不了。', errInstTip: '先把开着的 MeguLit 关掉，杀毒软件的扫描也停一下，再点「重试」。东西已经下好了，不会重下。',
       retry: '重试', copylog: '复制日志', copied: '已复制', manual: '手动下载',
@@ -43,6 +44,7 @@
       welcomeSub: 'Getting things ready', locSub: 'Where should it live?', locT: 'Where to?', locEn: '', change: 'Change',
       swDesk: 'Desktop shortcut', swMenu: 'Start menu entry', install: 'Install',
       protectedMsg: 'This is your real MeguLit install. The trial leaves it alone, pick another folder.', lblPath: 'Install into this folder', defaultHint: 'Default spot, fine to leave as is.', lblSugg: 'Or put it in', chip: (p, f) => p + '  ·  ' + f + ' free', readonly: (p) => "Can't write to this folder. Places like Program Files need admin rights. Try " + p + ' instead.', spaceHint: (p, f) => "This drive can't fit it. " + p + ' has ' + f + ' free, put it there?',
+      locNoteWait: 'Nothing is downloaded until you press the install button. Every file is the original from its project and gets checked before anything is installed.',
       locNote: 'The download already started in the background, so take your time. Every file is the original from its project and gets checked before anything is installed.',
       free: (f, n) => f + ' free on this drive, needs about ' + n, freeBad: (f, n) => 'Only ' + f + ' free here and it needs ' + n + '. Pick another drive.',
       probeT: 'Finding the fastest route', probeP: 'Testing GitHub and the mirrors at the same time, then using the quickest few.',
@@ -52,7 +54,7 @@
       unpackT: 'Installing', unpackP: (p, d) => 'Unpacking ' + p + ' into ' + d + '.',
       doneT: 'All set', doneEn: 'Ready when you are', launch: 'Open MeguLit',
       probing: 'testing', eta: (s) => s < 60 ? 'about ' + Math.ceil(s) + ' s left' : 'about ' + Math.floor(s / 60) + ' min ' + Math.round(s % 60) + ' s left', srcMore: (h, n) => h + ' and ' + (n - 1) + ' more',
-      packs: { base: 'core files', reading: 'furigana dictionary', voice: 'voice engine' },
+      packs: { app: 'the app', base: 'core files', reading: 'furigana dictionary', voice: 'voice engine' },
       errDownT: 'The download stopped', errDownM: 'Every route failed to answer. Usually that is the network or a proxy.', errDownTip: 'Hit Retry first, what is already downloaded is kept. If it still fails, copy the log and send it to us, or grab the full package from the site.',
       errInstT: 'Could not finish installing', errInstM: 'Another program has some of the files open.', errInstTip: 'Close any running MeguLit and pause your antivirus scan, then hit Retry. Nothing gets downloaded twice.',
       retry: 'Retry', copylog: 'Copy log', copied: 'Copied', manual: 'Download manually',
@@ -310,7 +312,7 @@
   window.addEventListener('keydown', (e) => { if (e.key === 'Escape') { if (quitOpen) Scene.showQuit(false); else $('#btnClose').click(); } });
   { const t = document.getElementById('topLogo'); if (t) t.src = INK; }
   { const map = { '#ui-loc .card h2': 'locT', '#browse': 'change', '#install': 'install', '#ui-loc .note': 'locNote', '#retry': 'retry', '#copylog': 'copylog', '#manual': 'manual', '#doneT': 'doneT', '#launch': 'launch', '.card.quit h2': 'quitT', '.card.quit p': 'quitM', '#stay': 'stay', '#leave': 'leave' };
-    for (const [sel, k] of Object.entries(map)) { const el = $(sel); if (el) el.textContent = tr(k); }
+    for (const [sel, k] of Object.entries(map)) { const el = $(sel); if (el) el.textContent = tr(k === 'locNote' && window.__waitConfirm ? 'locNoteWait' : k); }
     $('#ui-loc .card .en').textContent = tr('locEn'); $('#lblPath').textContent = tr('lblPath'); $('#lblSugg').textContent = tr('lblSugg'); $('.card.quit .en').textContent = ''; $('#doneEn').textContent = tr('doneEn'); const ws = $('#welcomeSub'); if (ws) ws.textContent = tr('welcomeSub');
     $('#swDesk').lastChild.textContent = tr('swDesk'); $('#swMenu').lastChild.textContent = tr('swMenu');
     $('#btnMin').setAttribute('aria-label', tr('minimize')); $('#btnClose').setAttribute('aria-label', tr('close')); document.title = tr('title'); document.documentElement.lang = LANG === 'en' ? 'en' : 'zh-CN'; }
@@ -338,7 +340,7 @@
   Scene.setTheme = (dark, instant) => { try { localStorage.setItem(STORE, dark ? 'dark' : 'light'); } catch (e) { /* no memory */ } act('theme', { dark }); const to = dark ? 1 : 0;
     if (themeTween) themeTween.kill(); if (instant || REDUCE) { paintTheme(to); return; }
     htmlEl.classList.add('tchange'); const o = { m: themeMix }; themeTween = gsap.to(o, { m: to, duration: 0.85, ease: 'power2.inOut', onUpdate() { paintTheme(o.m); }, onComplete() { setTimeout(() => htmlEl.classList.remove('tchange'), 500); } }); };
-  Scene.setThemeMix = paintTheme; Scene.isDark = () => THEME === 'night';
+  Scene.tr = tr; Scene.setThemeMix = paintTheme; Scene.isDark = () => THEME === 'night';
   { const b = $('#btnTheme'); if (b) b.addEventListener('click', () => Scene.setTheme(THEME !== 'night')); }
   htmlEl.dataset.theme = THEME; syncThemeBtn(); paintTheme(themeMix);
   window.Scene = Scene;

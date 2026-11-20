@@ -3,17 +3,29 @@
    - serves setup/ui-web and a tiny JSON API; runs setup/try/try-engine.ps1 (the real MeguFetch engine) and shows its state
    - TRIAL SAFETY: installs only into <home>/try-install/MeguLit by default; refuses any folder that is, or lies inside, a real MeguLit install
      (E:\MeguLit, or any folder with MeguLit.exe); no registry, no uninstall entry, no Start menu entry; shortcuts only go to <home>/try-install/_trial-shortcuts
-   - speed: by default the real sources are reached through a local throttle (14 MB/s over three listeners) so the ~590 MB download lasts about 40 s;
+   - speed: by default the real sources are reached through a local throttle (about 15 MB/s over three listeners) so the ~590 MB download lasts about 40 s;
      --rate <MB/s> changes it, --full removes it.  Reset: setup/try/reset-trial.cmd (or --reset) wipes the trial folder and the resume cache. */
 const http = require('http'), https = require('https'), fs = require('fs'), path = require('path'), cp = require('child_process'), os = require('os');
 const arg = (k, d) => { const i = process.argv.indexOf('--' + k); return i < 0 ? d : (process.argv[i + 1] && !process.argv[i + 1].startsWith('--') ? process.argv[i + 1] : true); };
 const REPO = path.resolve(__dirname, '../..'), UI = path.join(REPO, 'setup/ui-web');
 const HOME = path.resolve(arg('home', fs.existsSync('H:/MeguLit-Work/setup-ui-redesign') ? 'H:/MeguLit-Work/setup-ui-redesign' : path.join(REPO, '..'))), TRIAL = path.join(HOME, 'try-install'), DEFAULT_TARGET = path.join(TRIAL, 'MeguLit'), STATE_DIR = path.join(TRIAL, '_state');
-const FULL = !!arg('full', false), RATE = (+arg('rate', 14)) * 1048576, FIXTURE = arg('fixture', '') === true ? '' : arg('fixture', '');
-const MANIFEST = FIXTURE ? path.join(FIXTURE, 'runtime.fixture.json') : path.join(REPO, 'setup/runtime.json');
+const FULL = !!arg('full', false), FIXTURE = arg('fixture', '') === true ? '' : arg('fixture', '');
 const STATE = path.join(STATE_DIR, 'state.json'), CMD = path.join(STATE_DIR, 'cmd.json');
-const manifest = JSON.parse(fs.readFileSync(MANIFEST, 'utf8').replace(/^\uFEFF/, ''));
-const packIds = ['base', 'reading', 'voice'].filter((k) => manifest.packs[k]);
+let MANIFEST = FIXTURE ? path.join(FIXTURE, 'runtime.fixture.json') : path.join(REPO, 'setup/runtime.json');
+fs.mkdirSync(STATE_DIR, { recursive: true });
+let manifest = JSON.parse(fs.readFileSync(MANIFEST, 'utf8').replace(/^﻿/, ''));
+/* real mode: add the PUBLISHED app zip (latest GitHub release, the same asset the updater ships) as a fourth pack, so the trial folder gets a MeguLit.exe that can start */
+if (!FIXTURE) {
+  let rel = null; try { rel = JSON.parse(cp.execFileSync('curl.exe', ['-s', '--max-time', '10', '-H', 'User-Agent: megulit-setup-trial', 'https://api.github.com/repos/ilynthn/MeguLit/releases/latest'], { encoding: 'utf8' })); } catch (e) { /* offline: fall back */ }
+  const a = rel && rel.assets && rel.assets.find((x) => /win-x64\.zip$/.test(x.name));
+  const app = a ? { size: a.size, sha256: String(a.digest || '').replace(/^sha256:/, '').toUpperCase(), urls: [a.browser_download_url], tag: rel.tag_name }
+    : { size: 30925549, sha256: '74DF832B19128135CA6BC3734787F2430EE7179A7FF79FCA6D645DE826F2740D', urls: ['https://github.com/ilynthn/MeguLit/releases/download/v1.4.19/MeguLit-v1.4.19-win-x64.zip'], tag: 'v1.4.19' };
+  app.unpacked = Math.round(app.size * 1.62);
+  if (!app.sha256) throw new Error('release asset has no digest, cannot verify the app zip');
+  const merged = Object.assign({}, manifest, { packs: Object.assign({ app }, manifest.packs) }); MANIFEST = path.join(STATE_DIR, 'runtime.trial.json'); fs.writeFileSync(MANIFEST, JSON.stringify(merged, null, 1)); manifest = merged; console.log('published app', app.tag, app.size, 'bytes');
+}
+const packIds = ['app', 'base', 'reading', 'voice'].filter((k) => manifest.packs[k]);
+const TOTAL = packIds.reduce((a, k) => a + manifest.packs[k].size, 0), RATE = (+arg('rate', 0) || TOTAL / 40 / 1048576) * 1048576;   /* default: the whole download lasts about 40 s */
 const NEED = packIds.reduce((a, k) => a + manifest.packs[k].unpacked, 0) + packIds.reduce((a, k) => a + manifest.packs[k].size, 0);
 function reset() { for (const p of [path.join(TRIAL, 'MeguLit'), path.join(TRIAL, '_state'), path.join(TRIAL, '_trial-shortcuts')]) { try { fs.rmSync(p, { recursive: true, force: true }); } catch (e) { console.error('could not remove', p, e.message); } } console.log('trial folder and resume cache cleared'); }
 if (process.argv.includes('--reset')) { reset(); process.exit(0); }
@@ -24,7 +36,8 @@ const REAL = [process.env.MEGULIT_REAL_INSTALL || 'E:\\MeguLit'].map((p) => path
 function guard(p) {
   const t = path.resolve(p).toLowerCase(); if (!path.isAbsolute(p)) return 'bad';
   for (const r of REAL) if (t === r || t.startsWith(r + path.sep)) return 'protected';
-  try { if (fs.existsSync(path.join(p, 'MeguLit.exe'))) return 'protected'; } catch (e) { /* ignore */ }
+  if (t === path.resolve(DEFAULT_TARGET).toLowerCase()) return 'ok';   /* the trial's own folder may be reinstalled over, also after an interrupted run */
+  try { if (fs.existsSync(path.join(p, 'MeguLit.exe')) && !fs.existsSync(path.join(p, '.megulit-trial'))) return 'protected'; } catch (e) { /* ignore */ }
   return 'ok';
 }
 function writable(p) { try { fs.mkdirSync(p, { recursive: true }); const f = path.join(p, '.w-' + process.pid); fs.writeFileSync(f, 'x'); fs.rmSync(f); return true; } catch (e) { return false; } }
@@ -34,6 +47,7 @@ function drives() { const out = []; for (const L of 'DEFGHIJKLMNOPQRSTUVWXYZ') {
 /* ---- throttle: three local listeners, each rate/3, forwarding Range requests to the real sources (or to fixture files) ---- */
 const listeners = []; const bucketRate = FULL ? 0 : RATE / 3;
 function forward(req, res, port) {
+  if (fs.existsSync(path.join(STATE_DIR, 'break.flag'))) { res.writeHead(503); return res.end(); }   /* test hook: simulate a dead network */
   const q = new URL(req.url, 'http://x'); const raw = q.searchParams.get('u') || ''; const url = Buffer.from(raw.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8');
   if (FIXTURE) { const bn = path.basename(new URL(url).pathname); var fixtureFile = path.join(FIXTURE, bn); }
   const range = req.headers.range;
@@ -67,6 +81,7 @@ let engine = null, proxyPorts = [], lastTarget = DEFAULT_TARGET;
 function spawnEngine() {
   if (engine && !engine.killed) return;
   const args = ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', path.join(__dirname, 'try-engine.ps1'), '-Root', REPO, '-Target', DEFAULT_TARGET, '-State', STATE, '-Cmd', CMD, '-ManifestPath', MANIFEST];
+  if (!arg('prefetch', false)) args.push('-WaitConfirm');
   if (!FULL || FIXTURE) args.push('-Proxy', proxyPorts.map((p) => 'http://127.0.0.1:' + p).join(','));
   try { fs.rmSync(STATE, { force: true }); } catch (e) { /* ignore */ }
   engine = cp.spawn('powershell.exe', args, { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] }); engine.stderr.on('data', (d) => process.stderr.write('[engine] ' + d)); engine.stdout.on('data', (d) => process.stdout.write('[engine] ' + d));
@@ -77,7 +92,7 @@ const send = (obj) => fs.writeFileSync(CMD, JSON.stringify(obj));
 const readState = () => { try { return JSON.parse(fs.readFileSync(STATE, 'utf8')); } catch (e) { return null; } };
 
 /* ---- HTTP ---- */
-let browser = null, lastBeat = Date.now(), beaten = false;
+let lastConfirm = null, launched = null, browser = null, lastBeat = Date.now(), beaten = false;
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.json': 'application/json', '.css': 'text/css' };
 function json(res, o, code) { res.writeHead(code || 200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(o)); }
 function body(req) { return new Promise((ok) => { let d = ''; req.on('data', (c) => d += c); req.on('end', () => { try { ok(JSON.parse(d || '{}')); } catch (e) { ok({}); } }); }); }
@@ -90,12 +105,17 @@ const server = http.createServer(async (req, res) => {
     const m = await body(req);
     switch (m.type) {
       case 'checkpath': return json(res, check(m.path || DEFAULT_TARGET));
-      case 'install': { const c = check(m.path); if (c.state !== 'ok') return json(res, c); lastTarget = m.path; send({ confirm: true, target: m.path, desktop: m.desktop, menu: m.menu }); return json(res, c); }
-      case 'retry': stopEngine(); spawnEngine(); return json(res, { ok: true });
+      case 'install': { const c = check(m.path); if (c.state !== 'ok') return json(res, c); lastTarget = m.path; lastConfirm = { confirm: true, target: m.path, desktop: m.desktop, menu: m.menu }; send(lastConfirm); return json(res, c); }
+      case 'retry': stopEngine(); spawnEngine(); if (lastConfirm) setTimeout(() => send(lastConfirm), 800); return json(res, { ok: true });
       case 'browse': { const ps = "Add-Type -AssemblyName System.Windows.Forms; $d = New-Object Windows.Forms.FolderBrowserDialog; $d.Description = 'Choose the trial install folder'; if ($d.ShowDialog() -eq 'OK') { $d.SelectedPath }"; return cp.execFile('powershell.exe', ['-NoProfile', '-STA', '-Command', ps], (e, out) => json(res, { path: (out || '').trim() })); }
       case 'copylog': { let t = 'MeguLit setup trial\r\n'; try { t += fs.readFileSync(path.join(STATE_DIR, 'setup-download.log'), 'utf8').slice(-12000); } catch (e) { t += '(no log yet)'; } const s = readState(); if (s && s.message) t = s.message + '\r\n' + t; const clip = cp.spawn('clip.exe'); clip.stdin.end(Buffer.from('\ufeff' + t, 'utf16le')); return json(res, { ok: true }); }
       case 'manual': cp.exec('start "" https://megulit.com'); return json(res, { ok: true });
-      case 'launch': cp.exec(`explorer "${lastTarget}"`); return json(res, { ok: true });
+      case 'launch': {
+        /* start the installed copy from the TRIAL folder, side by side, never the real install */
+        const exe = path.join(lastTarget, 'MeguLit.exe'); const g = guard(lastTarget);
+        if (!fs.existsSync(exe) || !fs.existsSync(path.join(lastTarget, '.megulit-trial')) || path.resolve(lastTarget).toLowerCase().startsWith('e:\megulit')) { cp.exec(`explorer "${lastTarget}"`); return json(res, { ok: false, opened: 'folder' }); }
+        try { launched = cp.spawn(exe, [], { cwd: lastTarget, detached: true, stdio: 'ignore', env: Object.assign({}, process.env, { MEGULIT_SIDE_BY_SIDE: '1' }) }); launched.unref(); fs.writeFileSync(path.join(STATE_DIR, 'launched.json'), JSON.stringify({ pid: launched.pid, exe, time: new Date().toISOString() })); return json(res, { ok: true, pid: launched.pid }); } catch (e) { return json(res, { ok: false, error: String(e) }); }
+      }
       case 'minimize': cp.execFile('powershell.exe', ['-NoProfile', '-Command', "Add-Type -Name W -Namespace T -MemberDefinition '[DllImport(\"user32.dll\")] public static extern bool ShowWindow(IntPtr h, int c);[DllImport(\"user32.dll\")] public static extern IntPtr FindWindow(string c, string t);'; $h = [T.W]::FindWindow($null, 'MeguLit installer (trial)'); if ($h -ne [IntPtr]::Zero) { [void][T.W]::ShowWindow($h, 6) }"], () => {}); return json(res, { ok: true });
       case 'close': json(res, { ok: true }); return setTimeout(shutdown, 150);
       default: return json(res, { ok: true });
@@ -116,8 +136,15 @@ setInterval(() => { if (beaten && Date.now() - lastBeat > 20000) shutdown(); }, 
   fs.writeFileSync(path.join(STATE_DIR, 'server.json'), JSON.stringify({ port, url, pid: process.pid }));
   console.log('MeguLit setup trial on', url, FULL ? '(full speed)' : `(throttled to ${(RATE / 1048576).toFixed(0)} MB/s)`, '\ninstall folder (trial):', DEFAULT_TARGET);
   if (!arg('no-browser', false)) {
-    const cands = ['C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe', 'C:/Program Files/Microsoft/Edge/Application/msedge.exe', 'C:/Program Files/Google/Chrome/Application/chrome.exe'].filter(fs.existsSync);
-    if (cands.length) browser = cp.spawn(cands[0], ['--app=' + url, '--window-size=1064,730', '--user-data-dir=' + path.join(STATE_DIR, 'browser'), '--no-first-run', '--disable-features=Translate'], { stdio: 'ignore' }), browser.on('exit', () => setTimeout(shutdown, 1500));
-    else console.log('no Edge/Chrome found: open', url, 'in a browser');
+    /* real frameless window: a WinForms form with a WebView2 control (no system title bar); falls back to an Edge/Chrome app window only with --appwindow */
+    const dll = arg('hostdll', path.join(HOME, 'try-host')), nativeUrl = url + '&native=1';
+    if (!arg('appwindow', false) && fs.existsSync(path.join(dll, 'Microsoft.Web.WebView2.Core.dll'))) {
+      const hargs = ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-STA', '-File', path.join(__dirname, 'try-host.ps1'), '-Url', nativeUrl, '-DllDir', dll, '-UserData', path.join(STATE_DIR, 'webview2'), '-Icon', path.join(REPO, 'setup/logo.png'), '-Log', path.join(STATE_DIR, 'host.log')];
+      browser = cp.spawn('powershell.exe', hargs, { windowsHide: true, stdio: 'ignore' }); browser.on('exit', () => setTimeout(shutdown, 300)); fs.writeFileSync(path.join(STATE_DIR, 'host.pid'), String(browser.pid));
+    } else {
+      const cands = ['C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe', 'C:/Program Files/Microsoft/Edge/Application/msedge.exe', 'C:/Program Files/Google/Chrome/Application/chrome.exe'].filter(fs.existsSync);
+      if (cands.length) { browser = cp.spawn(cands[0], ['--app=' + url, '--window-size=1064,730', '--user-data-dir=' + path.join(STATE_DIR, 'browser'), '--no-first-run'], { stdio: 'ignore' }); browser.on('exit', () => setTimeout(shutdown, 300)); }
+      else console.log('no frameless host and no Edge/Chrome found: open', url, 'in a browser');
+    }
   }
 })();
