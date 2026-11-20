@@ -123,7 +123,7 @@
   function release(fallback = false) {
     if (!page) document.body.classList.remove('megulit-placed');
     document.body.classList.remove('megulit-anchored');
-    for (const br of document.querySelectorAll('br.megulit-row-br')) br.remove();
+    for (const br of document.querySelectorAll('br.megulit-row-br,br.megulit-cn-br')) br.remove();
     for (const w of document.querySelectorAll('.megulit-anchor-center,.megulit-page-fresh')) w.classList.remove('megulit-anchor-center', 'megulit-page-fresh');
     for (const w of document.querySelectorAll('.megulit-anchor-window')) { w.classList.remove('megulit-anchor-window'); const cr = w.querySelector('.tomoyo-cn-row'); if (cr) for (const p of ['max-width', 'margin-left', 'margin-right']) cr.style.removeProperty(p); for (const p of ['left', 'top', 'right', 'bottom', 'margin']) w.style.removeProperty(p); }
     document.body.classList.toggle('megulit-place-fallback', fallback === true);
@@ -379,6 +379,42 @@
     return { rows, rowOf, center };
   }
   /* a line break before each reader character the game put at the start of a new row */
+  /* 2026-11-20 (user, CHAOS;CHILD: 「排版同步一下啊 对应一下每一行的日文」): the translation gets as many rows as the game gave the
+     Japanese, each the part that matches one Japanese row: breaks after the translation's punctuation nearest to where each
+     Japanese row ends (by share of the sentence), else at that share. One-row lines and unfinished translations are left alone. */
+  const CN_PUNCT = /[，、。；：！？…—,.;:!?」』）)]/;
+  /* breaks for `shares` (where each Japanese row ends, as a share of the sentence): the set of break points after the
+     translation's punctuation that lies nearest to the shares overall (least squares); a share no punctuation is left for
+     breaks at its own place */
+  function cnSplit(text, shares) {
+    const n = text.length, k = shares.length; if (!n || !k) return [];
+    const cand = []; for (let i = 1; i < n; i++) if (CN_PUNCT.test(text[i - 1]) && !CN_PUNCT.test(text[i])) cand.push(i);
+    /* not enough punctuation: a break goes where a Chinese clause can start (before 在/将/变…, after 的/了…), never inside a word; none near: no break */
+    if (cand.length < k) { const soft = i => CN_PUNCT.test(text[i - 1]) || /[在将把被让使变是有和与而但却又也就都才从向对]/.test(text[i]) || /[的了着过地]/.test(text[i - 1]); const out = []; let last = 0;
+      for (const sh of shares) { const p = sh * n; let best = -1, c = Infinity; for (let i = last + 1; i < n; i++) if (soft(i) && !CN_PUNCT.test(text[i]) && Math.abs(i - p) < c) { c = Math.abs(i - p); best = i; } if (best > last && c <= n * .2) { out.push(best); last = best; } } return out; }
+    const m = cand.length, cost = (j, i) => (cand[i] / n - shares[j]) ** 2, INF = 1e9;
+    const D = Array.from({ length: k }, () => new Array(m).fill(INF)), P = Array.from({ length: k }, () => new Array(m).fill(-1));
+    for (let i = 0; i < m; i++) D[0][i] = cost(0, i);
+    for (let j = 1; j < k; j++) for (let i = j; i < m; i++) for (let h = j - 1; h < i; h++) { const v = D[j - 1][h] + cost(j, i); if (v < D[j][i]) { D[j][i] = v; P[j][i] = h; } }
+    let end = -1, best = INF; for (let i = k - 1; i < m; i++) if (D[k - 1][i] < best) { best = D[k - 1][i]; end = i; }
+    const out = []; for (let j = k - 1, i = end; j >= 0 && i >= 0; i = P[j][i], j--) out.unshift(cand[i]);
+    return out;
+  }
+  /* a Japanese row's weight in translation length: kana carry about half a Chinese character, kanji and the rest one */
+  const jpWeight = c => /[\u3040-\u30ff]/.test(c) ? .55 : 1;
+  b.textPlaceCnSplit = cnSplit;
+  function cnRows(win, shown, rows) {
+    const out = win.querySelector('.tomoyo-cn-output'); if (!out) return;
+    const counts = []; let cur = 0;
+    shown.forEach((t, j) => { const r = rows.rowOf[j]; if (r >= 0) cur = r; counts[cur] = (counts[cur] || 0) + jpWeight(t.textContent); });
+    const filled = counts.filter(Boolean), total = filled.reduce((a, c) => a + c, 0);
+    const chars = [...out.querySelectorAll('.tome-translation-char')], text = chars.map(c => c.textContent).join('');
+    const ready = out.dataset.state === 'ready' && chars.length >= filled.length * 2 && text.length === chars.length;
+    const shares = []; let acc = 0; for (let i = 0; i < filled.length - 1; i++) { acc += filled[i]; shares.push(acc / total); }
+    const want = new Set(ready && filled.length >= 2 ? cnSplit(text, shares).map(i => chars[i]) : []);
+    for (const br of out.querySelectorAll('br.megulit-cn-br')) if (!want.has(br.nextSibling)) br.remove();
+    for (const at of want) if (!(at.previousSibling && at.previousSibling.nodeName === 'BR')) { const br = document.createElement('br'); br.className = 'megulit-cn-br'; at.parentNode.insertBefore(br, at); }
+  }
   function rowBreaks(win, shown, rows) {
     const want = new Set(); let prev = -1;
     shown.forEach((t, j) => { const r = rows.rowOf[j]; if (r < 0) return; if (prev >= 0 && r > prev) { const base = t.closest('.megulit-ruby-base'); const at = base && base.querySelector('.char-token') === t ? base : t; if (!base || at === base) want.add(at); } prev = r; });
@@ -454,6 +490,7 @@
       release(true);
       win.classList.toggle('megulit-page-fresh', rowsFresh); if (rowsFresh) b.hookPageReset?.();
       rowBreaks(win, shown, rows);
+      cnRows(win, shown, rows);
       pin(win, sentence);
       return;
     }
