@@ -1,14 +1,14 @@
-/* Trial host adapter: connects the scene to the real downloader (setup/try/try-server.cjs). Loaded with ?host=1.
+/* Trial host adapter: connects the scene to the real downloader (tools/setup-trial/try-server.cjs). Loaded with ?host=1.
    Everything the scene shows comes from the engine's state: segment states and fractions, bytes, speed, source, phase.
    The camera moves are triggered by real events (user presses Install, the engine starts unpacking, the engine is done). */
 (function () {
   const api = (type, extra) => fetch('/api/act', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Object.assign({ type }, extra || {})) }).then((r) => r.json()).catch(() => ({}));
-  const tag = document.createElement('div'); tag.id = 'trialTag'; tag.textContent = '试用版 · 装到测试目录，不碰正式安装'; document.querySelector('#ui-top .top').appendChild(tag);
+  if (window.__waitConfirm) { const tag = document.createElement('div'); tag.id = 'trialTag'; tag.textContent = '试用版 · 装到测试目录，不碰正式安装'; document.querySelector('#ui-top .top').appendChild(tag); }
   const held = { speed: 0, t: -9, src: '', srcN: 0, ts: -9 };
   let info = null, state = null, N = 0, st = null, fr = null, doneAt = null, section = 'welcome', started = false, installed = false, lastPhase = '', checkTimer = null, firstState = false;
   const pathEl = document.getElementById('path');
   window.__waitConfirm = true;   /* the trial starts the download when Install is pressed, so the whole run can be watched */
-  { const n = document.querySelector('#ui-loc .note'); if (n) n.textContent = Scene.tr('locNoteWait'); }
+  { const n = document.querySelector('#ui-loc .note'); if (n && window.__waitConfirm) n.textContent = Scene.tr('locNoteWait'); }
   const native = document.documentElement.classList.contains('native') && window.chrome && chrome.webview;
   const post = (type) => { try { chrome.webview.postMessage({ type }); } catch (e) { /* no host */ } };
   if (native) {
@@ -27,7 +27,7 @@
   function goTo(name, move) { if (section === name) return; Scene.goTo(name, move, section); section = name; }
   /* the engine's JSON becomes a scene snapshot */
   function snapshot() {
-    const s = state; if (!s || !s.n) return null; if (!st || st.length !== s.n) { N = s.n; st = new Int8Array(N); fr = new Float32Array(N); doneAt = new Float32Array(N); }
+    let s = state; if (!s || !s.n) return null; if (!st || st.length !== s.n) { N = s.n; st = new Int8Array(N); fr = new Float32Array(N); doneAt = new Float32Array(N); }
     const t = clock(); for (let i = 0; i < N; i++) { const v = +s.st[i] || 0; if (v === 2 && st[i] !== 2) doneAt[i] = t; st[i] = v; fr[i] = (s.fr[i] || 0) / 100; }
     /* the engine reports 0 / no source for a moment while it re-ranks sources: hold the last real values for 2.5 s so the text does not flicker */
     const tn = clock(); if (s.speed > 0) { held.speed = s.speed; held.t = tn; } if (s.src) { held.src = s.src; held.srcN = s.srcN; held.ts = tn; }

@@ -2,6 +2,7 @@
 <html data-btn="A" lang="zh-CN">
 <head>
 <meta charset="utf-8">
+<script src="skin.js"></script>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>MeguLit 安装</title>
 <style>
@@ -191,6 +192,6 @@ html[data-btn=C] .go{padding:0 0 0 26px;justify-content:space-between;gap:0}html
 <script src="vendor/gsap.min.js"></script>
 <script src="scene.js"></script>
 <script src="glass.js"></script>
-<script>(function(){var q=new URLSearchParams(location.search);var f=q.get("host")==="1"?"host.js":q.get("demo")==="1"?"demo.js":null;if(f){var s=document.createElement("script");s.src=f;document.body.appendChild(s)}if(q.get("host")==="1"){window.__waitConfirm=true;document.documentElement.classList.add(q.get("native")==="1"?"native":"deskmode")}})()</script>
+<script>(function(){var q=new URLSearchParams(location.search);var h=q.get("host");var f=(h==="1"||h==="2")?"host.js":q.get("demo")==="1"?"demo.js":null;if(f){var s=document.createElement("script");s.src=f;document.body.appendChild(s)}if(h==="1"||h==="2"){if(h==="1")window.__waitConfirm=true;document.documentElement.classList.add((q.get("native")==="1"||h==="2")?"native":"deskmode")}})()</script>
 </body>
 </html>

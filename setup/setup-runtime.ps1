@@ -401,6 +401,13 @@ public class MeguFetch {
   bool[] done; int segCount; long doneBytes; volatile bool cancel; string failWhy;
   Thread main;
 
+  // read-only view for the interface layer: which segments are finished / running and how far the running ones are (changes no download behaviour)
+  public void Snap(byte[] st, float[] fr) {
+    lock (gate) { if (done == null) return;
+      for (int i = 0; i < segCount && i < st.Length; i++) { st[i] = done[i] ? (byte)2 : (byte)0; fr[i] = done[i] ? 1f : 0f; }
+      foreach (MeguConn c in conns) { if (c.IsDup || c.Lost || c.Len <= 0) continue; int i = c.Seg; if (i < 0 || i >= st.Length || done[i]) continue; st[i] = 1; fr[i] = Math.Min(1f, fr[i] + (float)c.Got / (float)SegmentSize); }
+    }
+  }
   public string StatePath { get { return Part + ".json"; } }
   public string LogText() { lock (log) return log.ToString(); }
   void Log(string s) { lock (log) log.AppendFormat("{0,6:0.0}s {1}\r\n", (DateTime.UtcNow - t0).TotalSeconds, s); }
@@ -1105,7 +1112,7 @@ function Pump {
     }
   } finally { $script:busy = $false; $script:installLine = '' }
   if (Downloads-Done) {
-    if (@(Missing $Root).Count -eq 0) { $script:done = $true; Note 'installed' @{ root = $Root }; if (-not $testLog) { UI-Done }; $form.Close() }
+    if (@(Missing $Root).Count -eq 0) { $script:done = $true; Note 'installed' @{ root = $Root }; UI-Done; $form.Close() }
     else { Fail 'install' ('安装后仍缺少：' + ((Missing $Root | ForEach-Object { $names[$_] }) -join '、')) }
   } else { Show-State }
 }
@@ -1140,6 +1147,8 @@ function Install-Pack([string]$id, [string]$part) {
 }
 
 $uiLayer = Join-Path $sourceRoot 'setup/setup-ui.ps1'; $themeName = 'classic'; if (Test-Path $uiLayer) { . $uiLayer }
+# New interface as a skin on top of this window (falls back to this window when anything is wrong; see setup-web.ps1)
+$webLayer = Join-Path $sourceRoot 'setup/setup-web.ps1'; if (Test-Path $webLayer) { try { . $webLayer } catch { try { Add-Content -Encoding UTF8 (Join-Path $env:LOCALAPPDATA 'MeguLit\setup-ui.log') ((Get-Date -Format 's') + ' web layer failed to load: ' + $_) } catch {} } }
 $button.add_Click({
   if ($script:mode -eq 'failed') {
     $script:mode = ''; $status.ForeColor = $C.muted; $button.Text = '取消 Cancel'; Style-Button $button $false; $button.FlatAppearance.BorderColor = $C.red
@@ -1168,7 +1177,8 @@ if ($env:MEGULIT_SETUP_PREVIEW) {
     } catch { Note 'error' @{ text = $_.ToString() + ' @ ' + $_.InvocationInfo.PositionMessage } } }
     $script:done = $false; $form.Close() })
 }
-[void]$form.ShowDialog()
+# With the web skin the setup window is only the invisible control surface: a modal loop would disable the skin's window (no mouse, no keys), so run a plain message loop instead.
+if ($script:webActive) { [Windows.Forms.Application]::Run($form) } else { [void]$form.ShowDialog() }
 if ($script:fetch) { $script:fetch.Cancel(); [void]$script:fetch.Wait(3000) }
 # Staged packs stay for resuming until the install is through; only per-attempt leftovers are swept.
 Get-ChildItem $Root -Filter 'runtime-*.part' -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '^runtime-[a-z]+-\d+\.part$' } | Remove-Item -Force -ErrorAction SilentlyContinue

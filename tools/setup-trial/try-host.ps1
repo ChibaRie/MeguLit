@@ -14,7 +14,7 @@ param(
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Windows.Forms, System.Drawing
 Add-Type -Path (Join-Path $DllDir 'Microsoft.Web.WebView2.Core.dll'); Add-Type -Path (Join-Path $DllDir 'Microsoft.Web.WebView2.WinForms.dll')
-$env:PATH = $DllDir + ';' + $env:PATH
+$env:PATH = (Join-Path $DllDir 'x64') + ';' + $DllDir + ';' + $env:PATH
 Add-Type -TypeDefinition @'
 using System; using System.Runtime.InteropServices; using System.Windows.Forms;
 public class TrialWin : Form {

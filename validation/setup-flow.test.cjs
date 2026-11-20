@@ -42,6 +42,7 @@ function server(rate,{slow}={}){
 function fakeRoot(dir,src,{installed=[]}={}){
  fs.mkdirSync(path.join(dir,'setup'),{recursive:true});
  fs.copyFileSync(script,path.join(dir,'setup','setup-runtime.ps1'));
+ if(process.env.MEGULIT_SETUP_WEB==='1'){/* web skin under test: the skin files go next to the script, like in the release package */for(const f of ['setup-web.ps1'])fs.copyFileSync(path.join(repo,'setup',f),path.join(dir,'setup',f));for(const d of ['ui-web','webview2'])fs.cpSync(path.join(repo,'setup',d),path.join(dir,'setup',d),{recursive:true});}
  const logo=path.join(repo,'setup','logo.png');if(fs.existsSync(logo))fs.copyFileSync(logo,path.join(dir,'setup','logo.png'));
  fs.writeFileSync(path.join(dir,'MeguLit.exe'),'not a real exe');
  const p={};for(const [id,body] of Object.entries(packs()))p[id]={size:body.length,unpacked:body.length*2,sha256:crypto.createHash('sha256').update(body).digest('hex').toUpperCase(),urls:[src.base+'runtime-'+id+'.zip']};
@@ -88,7 +89,7 @@ test('Install pressed first: download keeps going, each pack is unpacked as soon
   assert.ok(fs.existsSync(path.join(target,'MeguLit.exe')),'program copied');
   assert.equal(fs.existsSync(stage),false,'staging folder removed');
   assert.equal(fs.existsSync(path.join(root,'runtime')),false,'nothing unpacked in the source folder');
- }finally{src.close();fs.rmSync(work,{recursive:true,force:true});}
+ }finally{src.close();fs.rmSync(work,{recursive:true,force:true,maxRetries:30,retryDelay:300});}
 });
 
 test('download ends first: waits for Install, nothing unpacked before it; repair fetches only missing packs',{skip,timeout:120000},async()=>{
@@ -103,7 +104,7 @@ test('download ends first: waits for Install, nothing unpacked before it; repair
   assert.ok(at(ev,'unpack-start')>at(ev,'confirmed'),'no unpack before Install');
   for(const id of ['base','reading','voice'])assert.ok(has(root,id),id);
   assert.equal(fs.existsSync(stage),false,'staging folder removed');
- }finally{src.close();fs.rmSync(work,{recursive:true,force:true});}
+ }finally{src.close();fs.rmSync(work,{recursive:true,force:true,maxRetries:30,retryDelay:300});}
 });
 
 test('window closed mid-way: next launch reuses the finished pack and resumes the half one',{skip,timeout:180000},async()=>{
@@ -123,7 +124,7 @@ test('window closed mid-way: next launch reuses the finished pack and resumes th
   assert.ok(ev2.find(e=>e.kind==='downloaded'&&e.id==='reading').resumed>0,'reading resumed');
   assert.ok(src.served.reading-before.reading<P.reading.length*0.8,'only the missing part of reading fetched: '+(src.served.reading-before.reading));
   for(const id of ['base','reading','voice'])assert.ok(has(root,id),id);
- }finally{src.close();fs.rmSync(work,{recursive:true,force:true});}
+ }finally{src.close();fs.rmSync(work,{recursive:true,force:true,maxRetries:30,retryDelay:300});}
 });
 
 const otherDrive=(()=>{const here=path.parse(path.resolve(tmpBase)).root.toUpperCase();for(const d of (process.env.MEGULIT_TEST_OTHER_DRIVES||'E:\\,D:\\,H:\\,C:\\').split(',')){if(d.toUpperCase()!==here&&fs.existsSync(d))return d;}return null;})();
@@ -137,7 +138,7 @@ test('staging and install folder on different drives',{skip:skip||(!otherDrive&&
   for(const id of ['base','reading','voice'])assert.ok(has(target,id),id+' on the other drive');
   assert.equal(fs.readdirSync(target).filter(n=>/\.unpack$/.test(n)).length,0,'no unpack leftovers');
   assert.equal(fs.existsSync(stage),false,'staging folder removed');
- }finally{src.close();fs.rmSync(work,{recursive:true,force:true});fs.rmSync(far,{recursive:true,force:true});}
+ }finally{src.close();fs.rmSync(work,{recursive:true,force:true,maxRetries:30,retryDelay:300});fs.rmSync(far,{recursive:true,force:true});}
 });
 
 test('not enough space on the chosen drive: says so up front and does not start installing',{skip,timeout:60000},async()=>{
@@ -149,7 +150,7 @@ test('not enough space on the chosen drive: says so up front and does not start 
   assert.ok(!ev.some(e=>e.kind==='confirmed'),'not confirmed');
   assert.ok(at(ev,'download-start')<Infinity,'download still runs meanwhile');
   assert.equal(ev.at(-1).code,1);
- }finally{src.close();fs.rmSync(work,{recursive:true,force:true});}
+ }finally{src.close();fs.rmSync(work,{recursive:true,force:true,maxRetries:30,retryDelay:300});}
 });
 
 test('no Lite/Full choice left in the setup window',()=>{

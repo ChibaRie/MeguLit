@@ -6,6 +6,8 @@ This is an inventory, not a claim that the complete project's license audit is f
 - Tauri, Wry, WebView2 bindings, native menu/tray/dialog libraries, Serde and transitive dependencies: exact versions in `desktop/Cargo.lock`; retain their individual package notices when producing a distribution
 - Node.js: bundled runtime with its original `runtime/NODE-LICENSE.txt`
 - Microsoft WebView2 loader: generic x64 dependency artifact; the Evergreen WebView2 runtime is installed separately
+- Microsoft.Web.WebView2 1.0.2849.39 (Microsoft, BSD 3-Clause, from the official NuGet package): `setup/webview2/Microsoft.Web.WebView2.Core.dll`, `Microsoft.Web.WebView2.WinForms.dll` (net462 wrappers) and `x64/WebView2Loader.dll`, `x86/WebView2Loader.dll`, with the package's `LICENSE.txt` next to them. The setup window's new interface (setup\setup-web.ps1) loads them; the Evergreen WebView2 runtime is installed separately and, when it is missing, the old setup window is used
+- three.js r168 (MIT) and GSAP 3.13.0 (GreenSock standard license): `setup/ui-web/vendor/`, bundled so the new setup interface runs offline
 - JMdict-derived data: imported from the user's existing dictionary data. Retain the dictionary source attribution and applicable data/translation notices before public distribution; the data is not newly authored by this rewrite
 - LunaHook and its engine adaptations: source and notices retained under `preserved/source/`; the custom native/runtime bridge is now integrated with the independent reader, with live game verification still pending
 - LunaHook MAGES character table (GPL-3.0): `services/original-engines/mages-charset-sghd.txt` is copied from LunaHook's MAGES engine adaptation and used to decode STEINS;GATE scripts for zero-latency translation

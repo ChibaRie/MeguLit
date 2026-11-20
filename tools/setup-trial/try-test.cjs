@@ -1,6 +1,6 @@
 /* End-to-end check of the trial in a headless Chrome (nothing appears on the desktop): the real engine downloads a fixture package set
    through the throttle, the page is driven like a user would (press Install, close during the download, reopen and resume).
-   node setup/try/try-test.cjs <fixtureDir> <testHome> [rateMBps] */
+   node tools/setup-trial/try-test.cjs <fixtureDir> <testHome> [rateMBps] */
 const { spawn, execFileSync } = require('child_process'), fs = require('fs'), path = require('path'), http = require('http');
 const FIX = path.resolve(process.argv[2]), HOME = path.resolve(process.argv[3]), RATE = process.argv[4] || '24';
 const CHROME = 'C:/Program Files/Google/Chrome/Application/chrome.exe', SERVER = path.join(__dirname, 'try-server.cjs');

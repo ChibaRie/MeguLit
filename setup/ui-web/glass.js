@@ -370,5 +370,6 @@
     if (plateDark !== d) { plateDark = d; logoImg.src = 'logos/logo-C-' + (d ? 'white' : 'black') + '.svg'; plates.forEach(redrawPlate); } }
   GL.setMix = (m) => { applyTheme(m); GL.draw(); }; applyTheme(night);
   GL.dbg = { get plates() { return gplates; } };
+  GL.setScale = (k) => { renderer.setPixelRatio(Math.max(0.5, Math.min(window.devicePixelRatio || 1, REDUCE ? 1 : 2) * k)); resize(); };   /* low frame rate: lower the render resolution */
   window.GL = GL;
 })();

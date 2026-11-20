@@ -1,10 +1,10 @@
 /* MeguLit setup TRIAL: a runnable preview of the new installer interface on top of the real downloader.
-   node setup/try/try-server.cjs [--home <dir>] [--rate <MB/s>] [--full] [--fixture <dir>] [--no-browser] [--port <n>]
-   - serves setup/ui-web and a tiny JSON API; runs setup/try/try-engine.ps1 (the real MeguFetch engine) and shows its state
+   node tools/setup-trial/try-server.cjs [--home <dir>] [--rate <MB/s>] [--full] [--fixture <dir>] [--no-browser] [--port <n>]
+   - serves setup/ui-web and a tiny JSON API; runs tools/setup-trial/try-engine.ps1 (the real MeguFetch engine) and shows its state
    - TRIAL SAFETY: installs only into <home>/try-install/MeguLit by default; refuses any folder that is, or lies inside, a real MeguLit install
      (E:\MeguLit, or any folder with MeguLit.exe); no registry, no uninstall entry, no Start menu entry; shortcuts only go to <home>/try-install/_trial-shortcuts
    - speed: by default the real sources are reached through a local throttle (about 15 MB/s over three listeners) so the ~590 MB download lasts about 40 s;
-     --rate <MB/s> changes it, --full removes it.  Reset: setup/try/reset-trial.cmd (or --reset) wipes the trial folder and the resume cache. */
+     --rate <MB/s> changes it, --full removes it.  Reset: tools/setup-trial/reset-trial.cmd (or --reset) wipes the trial folder and the resume cache. */
 const http = require('http'), https = require('https'), fs = require('fs'), path = require('path'), cp = require('child_process'), os = require('os');
 const arg = (k, d) => { const i = process.argv.indexOf('--' + k); return i < 0 ? d : (process.argv[i + 1] && !process.argv[i + 1].startsWith('--') ? process.argv[i + 1] : true); };
 const REPO = path.resolve(__dirname, '../..'), UI = path.join(REPO, 'setup/ui-web');
@@ -137,7 +137,7 @@ setInterval(() => { if (beaten && Date.now() - lastBeat > 20000) shutdown(); }, 
   console.log('MeguLit setup trial on', url, FULL ? '(full speed)' : `(throttled to ${(RATE / 1048576).toFixed(0)} MB/s)`, '\ninstall folder (trial):', DEFAULT_TARGET);
   if (!arg('no-browser', false)) {
     /* real frameless window: a WinForms form with a WebView2 control (no system title bar); falls back to an Edge/Chrome app window only with --appwindow */
-    const dll = arg('hostdll', path.join(HOME, 'try-host')), nativeUrl = url + '&native=1';
+    const dll = arg('hostdll', path.join(REPO, 'setup/webview2')), nativeUrl = url + '&native=1';
     if (!arg('appwindow', false) && fs.existsSync(path.join(dll, 'Microsoft.Web.WebView2.Core.dll'))) {
       const hargs = ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-STA', '-File', path.join(__dirname, 'try-host.ps1'), '-Url', nativeUrl, '-DllDir', dll, '-UserData', path.join(STATE_DIR, 'webview2'), '-Icon', path.join(REPO, 'setup/logo.png'), '-Log', path.join(STATE_DIR, 'host.log')];
       browser = cp.spawn('powershell.exe', hargs, { windowsHide: true, stdio: 'ignore' }); browser.on('exit', () => setTimeout(shutdown, 300)); fs.writeFileSync(path.join(STATE_DIR, 'host.pid'), String(browser.pid));

@@ -1,6 +1,6 @@
 /* Drives the REAL trial window (frameless WebView2 host) over its DevTools port with genuine mouse events, and checks every control.
-   The server+host must already be running (setup/try/Start-Trial.cmd, or run-real.cmd on the hidden desktop) with
-   WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9333.   node setup/try/try-real-test.cjs <stage> <home>
+   The server+host must already be running (tools/setup-trial/Start-Trial.cmd, or run-real.cmd on the hidden desktop) with
+   WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9333.   node tools/setup-trial/try-real-test.cjs <stage> <home>
    stages: controls | install | resume-close | resume-finish | error */
 const fs = require('fs'), path = require('path'), http = require('http'), cp = require('child_process');
 const stage = process.argv[2] || 'controls', HOME = path.resolve(process.argv[3] || 'H:/MeguLit-Work/setup-ui-redesign');
