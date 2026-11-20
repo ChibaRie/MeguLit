@@ -85,5 +85,30 @@ const manifest = JSON.parse(fs.readFileSync(path.join(SRC, 'setup', 'runtime.jso
       post(h, '0x112', '0xF060'); await sleep(1200); await c.click('#leave'); await waitFor(() => fs.existsSync(path.join(WORK, 'exit.txt')), 30000, 'exit after Alt+F4 + confirm'); ok('Alt+F4, then "回头再来", ends the setup', true);
     }
   }
+  if (stage === 'formal') {
+    const REAL = 'E:\\try\\real\\MeguLit', STAGE2 = 'E:\\try\\stage-real';
+    const ps = (mode) => cp.execFileSync('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', 'E:\\try\\formal-backup.ps1', '-Mode', mode], { encoding: 'utf8' });
+    for (const combo of [{ desk: true, menu: false }, { desk: false, menu: true }].filter((x, i) => !process.env.COMBO || +process.env.COMBO === i + 1)) {
+      const tag = 'desk' + (combo.desk ? 'ON' : 'OFF') + '-menu' + (combo.menu ? 'ON' : 'OFF');
+      for (const d of [REAL, STAGE2]) try { fs.rmSync(d, { recursive: true, force: true }); } catch (e) { /* none */ }
+      launch({ MEGULIT_SETUP_TEST: '', MEGULIT_SETUP_TARGET: REAL, MEGULIT_SETUP_STAGING: STAGE2 }); const c = await connect();
+      await waitFor(async () => (await c.ev('window.Scene&&Scene.section')) === 'loc', 60000, 'location screen'); await sleep(3500);
+      for (const [sel, want] of [['#swDesk', combo.desk], ['#swMenu', combo.menu]]) { let cur = (await c.ev(`document.querySelector("${sel}").getAttribute("aria-checked")`)) === 'true'; for (let n = 0; n < 4 && cur !== want; n++) { await c.click(sel); await sleep(1200); cur = (await c.ev(`document.querySelector("${sel}").getAttribute("aria-checked")`)) === 'true'; } }
+      const sw = await c.ev('document.getElementById("swDesk").getAttribute("aria-checked")+"/"+document.getElementById("swMenu").getAttribute("aria-checked")'); ok(tag + ': switches set on the page (desktop/menu)', sw === `${combo.desk}/${combo.menu}`, sw);
+      await c.click('#install'); await waitFor(async () => (await c.ev('Scene.section')) === 'done', 600000, 'done screen'); await sleep(3000); await c.shot(tag + '-done'); ok(tag + ': real (non-test) install reached the done screen', true);
+      await c.click('#launch'); await waitFor(() => fs.existsSync(path.join(WORK, 'exit.txt')), 60000, 'script exit'); await sleep(1500);
+      const st = ps('state'); console.log(st);
+      const lnk = st.split('\n').filter((l) => l.startsWith('LNK ')).map((l) => JSON.parse(l.slice(4)));
+      const desk = lnk.find((l) => l.where === 'Desktop' && l.name === 'MeguLit.lnk'), menu = lnk.find((l) => l.where === 'Programs' && l.name === 'MeguLit.lnk'), unl = lnk.find((l) => l.where === 'Programs' && /Uninstall MeguLit/.test(l.name));
+      ok(tag + ': desktop shortcut ' + (combo.desk ? 'created and points to the new folder' : 'not created'), combo.desk ? (desk && desk.target.toLowerCase() === (REAL + '\\MeguLit.exe').toLowerCase()) : !desk, desk && desk.target);
+      ok(tag + ': start-menu shortcut ' + (combo.menu ? 'created and points to the new folder' : 'not created'), combo.menu ? (menu && menu.target.toLowerCase() === (REAL + '\\MeguLit.exe').toLowerCase()) : !menu, menu && menu.target);
+      ok(tag + ': uninstall shortcut only with the start-menu entry', combo.menu ? !!(unl && unl.args.includes(REAL)) : !unl, unl && unl.args);
+      const reg = JSON.parse(st.split('\n').find((l) => l.startsWith('REG ')).slice(4)); ok(tag + ': uninstall registry entry written with the new location', reg.InstallLocation === REAL && /uninstall\.ps1/.test(reg.UninstallString) && reg.UninstallString.includes(REAL) && reg.DisplayName === 'MeguLit' && !!reg.DisplayVersion, { InstallLocation: reg.InstallLocation, DisplayVersion: reg.DisplayVersion });
+      ok(tag + ': files installed', fs.existsSync(path.join(REAL, 'MeguLit.exe')) && fs.existsSync(path.join(REAL, 'runtime', 'node.exe')) && fs.existsSync(path.join(REAL, 'setup', 'uninstall.ps1')));
+      try { cp.execFileSync('taskkill', ['/F', '/IM', 'whoami.exe'], { stdio: 'ignore' }); } catch (e) { /* none */ }
+      if (combo.menu) { try { const dry = cp.execFileSync('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', path.join(REAL, 'setup', 'uninstall.ps1'), '-Root', REAL, '-DryRun'], { encoding: 'utf8', timeout: 60000 }); ok(tag + ': uninstall.ps1 -DryRun lists this install (plan printed, nothing changed)', /MeguLit/.test(dry) && fs.existsSync(path.join(REAL, 'MeguLit.exe')), dry.split('\n').slice(0, 6).join(' | ').slice(0, 300)); } catch (e) { ok(tag + ': uninstall.ps1 -DryRun', false, String(e).slice(0, 200)); } }
+      console.log('restore: ' + ps('restore').replace(/\r?\n/g, ' | '));
+    }
+  }
   fs.writeFileSync(path.join(WORK, stage + '-results.json'), JSON.stringify(results, null, 1)); console.log('\n' + results.filter((x) => x.p).length + '/' + results.length + ' passed'); process.exit(results.every((x) => x.p) ? 0 : 2);
 })().catch((e) => { console.error('TEST ERROR', e); process.exit(1); });

@@ -149,7 +149,8 @@ public class SetupWin : Form {
       $cw = $script:win.Web.CoreWebView2; $cw.Settings.AreDefaultContextMenusEnabled = $false; $cw.Settings.AreDevToolsEnabled = [bool]$env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS; $cw.Settings.IsStatusBarEnabled = $false; $cw.Settings.IsZoomControlEnabled = $false
       $cw.SetVirtualHostNameToFolderMapping('megulit-setup.local', (Join-Path $sourceRoot 'setup\ui-web'), [Microsoft.Web.WebView2.Core.CoreWebView2HostResourceAccessKind]::Allow)
       $cw.add_WebMessageReceived({ param($s2, $a) try { Web-Act ($a.WebMessageAsJson | ConvertFrom-Json) } catch { Web-Log ('message error: ' + $_) } })
-      $q = 'host=2&desk=1'; if ($env:MEGULIT_SETUP_WEB_TEST) { $q += '&t=' + $env:MEGULIT_SETUP_WEB_TEST }
+      $uiLang = $(if ($env:MEGULIT_SETUP_LANG -eq 'en') { 'en' } else { 'zh' })   # Chinese by default like the old window; English only on request (MEGULIT_SETUP_LANG=en). Windows' language says too little: many Chinese users run an English Windows.
+      $q = 'host=2&desk=1&lang=' + $uiLang; if ($env:MEGULIT_SETUP_WEB_TEST) { $q += '&t=' + $env:MEGULIT_SETUP_WEB_TEST }
       $cw.Navigate('https://megulit-setup.local/index.html?' + $q)
     })
     $win.Show(); [void]$web.EnsureCoreWebView2Async($null)

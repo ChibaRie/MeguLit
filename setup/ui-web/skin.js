@@ -28,7 +28,7 @@
   };
   window.__askClose = () => { post({ type: 'asked' }); const b = document.getElementById('btnClose'); if (b) b.click(); };
   /* first frame: the scene exists and two frames were drawn; then say ready (the host waits up to 10 s) */
-  let frames = 0; const t0 = performance.now(), count = () => { frames++; if (!isReady && frames >= 2 && window.Scene && Scene.section && T !== 'silent') { isReady = true; post({ type: 'ready' }); if (T === 'lateboom') setTimeout(() => { throw new Error('test: script error after the first frame'); }, 3000); } requestAnimationFrame(count); };
+  let frames = 0; const t0 = performance.now(), count = () => { frames++; if (!isReady && frames >= 2 && window.Scene && Scene.section && T !== 'silent') { isReady = true; post({ type: 'ready' }); setTimeout(() => { const b = document.getElementById('boot'); if (b) { b.classList.add('gone'); setTimeout(() => b.remove(), 800); } }, 1800); if (T === 'lateboom') setTimeout(() => { throw new Error('test: script error after the first frame'); }, 3000); } requestAnimationFrame(count); };
   requestAnimationFrame(count);
   /* frame-rate guard: halve the render scale first, then give up on the skin */
   let slowChecks = 0, last = 0, lastT = performance.now(); setInterval(() => {
