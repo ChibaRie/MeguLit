@@ -550,6 +550,8 @@ static Rect SurfaceBounds(Rect reader,Rect game,System.Drawing.Rectangle scan){r
         uint fgPid=0,gamePid=0;GetWindowThreadProcessId(fgWindow,out fgPid);if(alive)GetWindowThreadProcessId(Target,out gamePid);
         bool gameFront=alive&&(fg==gameRoot||fgPid!=0&&(fgPid==gamePid||ImeHost(ProcessName(fgPid))));
         bool ownFront=fg==overlayRoot||MenuOpen&&MenuRegionReady&&fgPid!=0&&fgPid==(uint)OverlayPid;
+        /* #468: a screenshot tool in front of the game decides nothing; the layer stays where it is, in the picture */
+        if(alive&&!iconic&&!gameFront&&!ownFront&&CaptureSurfaceFront(fg))return;
         bool ok=TopmostGuard.MayFloat(alive,iconic,gameFront,ownFront);
         LayersMayFloat=ok;if(ok)return;
         /* 2026-11-19 16:57 (user: 「切屏回来还是直接消失」; reader-host.log: layerRaise how:failed on every return). Sunk out of the
@@ -611,7 +613,14 @@ static Rect SurfaceBounds(Rect reader,Rect game,System.Drawing.Rectangle scan){r
         IntPtr w=GetForegroundWindow();if(w==IntPtr.Zero)return ReaderLayerPolicy.None;
         IntPtr fg=GetAncestor(w,3);uint fgPid=0,gamePid=0;GetWindowThreadProcessId(w,out fgPid);
         bool target=Target!=IntPtr.Zero&&IsWindow(Target);if(target)GetWindowThreadProcessId(Target,out gamePid);
-        return ReaderLayerPolicy.Classify(true,target&&fg==GetAncestor(Target,3),target&&fgPid!=0&&(fgPid==gamePid||ImeHost(ProcessName(fgPid))),Overlay!=IntPtr.Zero&&fg==GetAncestor(Overlay,3),fgPid!=0&&fgPid==(uint)OverlayPid);}
+        return ReaderLayerPolicy.Classify(true,target&&fg==GetAncestor(Target,3),target&&fgPid!=0&&(fgPid==gamePid||ImeHost(ProcessName(fgPid))),Overlay!=IntPtr.Zero&&fg==GetAncestor(Overlay,3),fgPid!=0&&fgPid==(uint)OverlayPid,target&&CaptureSurfaceFront(fg));}
+    /* #468: is this foreground root a screenshot surface over the game (ReaderLayerPolicy.CaptureSurface)? */
+    static bool CaptureSurfaceFront(IntPtr fg){
+        if(fg==IntPtr.Zero||Target==IntPtr.Zero||!IsWindow(Target))return false;
+        int style=GetWindowLong(fg,-16),ex=GetWindowLong(fg,-20);Rect w,c;var o=new Point();
+        if(!GetWindowRect(fg,out w)||!GetClientRect(Target,out c)||!ClientToScreen(Target,ref o))return false;
+        bool covers=w.Left<=o.X&&w.Top<=o.Y&&w.Right>=o.X+c.Right&&w.Bottom>=o.Y+c.Bottom;
+        return ReaderLayerPolicy.CaptureSurface((ex&8)!=0,(style&0x00C00000)==0x00C00000,covers,IsIconic(Target));}
     static ReaderLayerPolicy.State DecideLayer(){
         bool bound=TranslationMode&&Target!=IntPtr.Zero&&IsWindow(Target);
         var s=ReaderLayerPolicy.Decide(bound?FrontNow():ReaderLayerPolicy.Foreign,MenuOpen,MenuRegionReady,PreferredOverlay!=IntPtr.Zero,bound&&IsIconic(Target),NowMs());
